@@ -1,0 +1,131 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-manrope: "Manrope", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --navy: #0F1420;
+  --navy-dark: #080C14;
+  --cream: #F5F2EC;
+  --gold: #C9A052;
+  --gold-light: #E8D5A3;
+  --gold-dark: #9A7A35;
+  --brand-orange: #FF6B00;
+}
+
+*,
+*::before,
+*::after {
+  font-family: 'Manrope', var(--font-manrope), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+html,
+body {
+  background-color: #F5F2EC;
+  color: #0F1420;
+  font-family: 'Manrope', var(--font-manrope), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  overflow-x: hidden;
+}
+
+input,
+button,
+textarea,
+select,
+optgroup {
+  font-family: inherit;
+}
+
+code,
+pre,
+kbd,
+samp {
+  font-family: 'Manrope', var(--font-manrope), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+::-webkit-scrollbar-track {
+  background: #EAE6DE;
+}
+::-webkit-scrollbar-thumb {
+  background: #C9A052;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #B38B3E;
+}
+
+/* Luxury button styling */
+.btn-gold {
+  background-color: #C9A052;
+  color: #0F1420;
+  font-weight: 700;
+  transition: all 0.2s ease;
+}
+.btn-gold:hover {
+  background-color: #D8B266;
+  box-shadow: 0 4px 14px rgba(201, 160, 82, 0.35);
+}
+
+/* Print Styles for Pixel-Perfect Multi-Page Luxury PDF Generation */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm 15mm 12mm 15mm;
+  }
+
+  body {
+    background-color: #FFFFFF !important;
+    color: #111111 !important;
+    font-family: 'Manrope', var(--font-manrope), system-ui, -apple-system, sans-serif !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  body, * {
+    font-family: 'Manrope', var(--font-manrope), system-ui, -apple-system, sans-serif !important;
+  }
+
+  /* Hide app navigation, drawers, buttons, shadows */
+  header,
+  aside,
+  footer,
+  .print\\:hidden,
+  button {
+    display: none !important;
+  }
+
+  .doc-page {
+    page-break-after: always;
+    page-break-inside: avoid;
+    break-after: page;
+    min-height: 100vh;
+  }
+
+  .doc-page:last-child {
+    page-break-after: auto;
+  }
+
+  /* Ensure maps and vector SVGs print crisp */
+  svg {
+    max-width: 100% !important;
+    print-color-adjust: exact;
+  }
+
+  .quotation-document,
+  .invoice-document,
+  .flight-brief-document,
+  .charter-agreement-document {
+    padding: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    max-width: 100% !important;
+    width: 100% !important;
+  }
+}
