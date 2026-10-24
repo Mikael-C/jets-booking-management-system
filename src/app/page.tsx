@@ -19,6 +19,11 @@ import GenerateInvoiceView from "@/components/admin/GenerateInvoiceView";
 import AgentRequestsQueueView from "@/components/admin/AgentRequestsQueueView";
 import ClientsView from "@/components/admin/ClientsView";
 import FleetView from "@/components/admin/FleetView";
+import OperatorsView from "@/components/admin/OperatorsView";
+import AuditLogView from "@/components/admin/AuditLogView";
+import PaymentsView from "@/components/admin/PaymentsView";
+import ClientPortalView from "@/components/admin/ClientPortalView";
+import NotificationSettingsView from "@/components/admin/NotificationSettingsView";
 
 // Agent Views
 import AgentOverviewView from "@/components/agent/AgentOverviewView";
@@ -37,12 +42,15 @@ export default function Home() {
 
   // Render view content based on role and activeNav
   const renderContent = () => {
-    if (role === "admin") {
+    // Staff roles: super_admin, admin, operations, finance
+    if (role !== "agent") {
       switch (activeNav) {
         case "overview":
           return <OperationsOverview />;
         case "bookings":
           return <BookingsView />;
+        case "sourcing":
+          return <AgentRequestsQueueView />;
         case "generate_quote":
           return <GenerateQuoteView />;
         case "generate_brief":
@@ -51,12 +59,22 @@ export default function Home() {
           return <GenerateInvoiceView />;
         case "agent_requests":
           return <AgentRequestsQueueView />;
+        case "operators":
+          return <OperatorsView />;
+        case "payments":
+          return <PaymentsView />;
         case "clients":
           return <ClientsView />;
         case "fleet":
           return <FleetView />;
+        case "audit_log":
+          return <AuditLogView />;
+        case "client_portal":
+          return <ClientPortalView />;
+        case "notifications":
+          return <NotificationSettingsView />;
         default:
-          return <BookingsView />;
+          return role === "finance" ? <PaymentsView /> : <OperationsOverview />;
       }
     } else {
       // Agent role

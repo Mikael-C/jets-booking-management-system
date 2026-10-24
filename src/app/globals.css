@@ -76,56 +76,131 @@ samp {
 @media print {
   @page {
     size: A4 portrait;
-    margin: 12mm 15mm 12mm 15mm;
+    margin: 8mm 10mm 8mm 10mm;
   }
 
+  html,
   body {
     background-color: #FFFFFF !important;
+    background: #FFFFFF !important;
     color: #111111 !important;
     font-family: 'Manrope', var(--font-manrope), system-ui, -apple-system, sans-serif !important;
-    print-color-adjust: exact;
-    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact !important;
+    -webkit-print-color-adjust: exact !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
   }
 
   body, * {
     font-family: 'Manrope', var(--font-manrope), system-ui, -apple-system, sans-serif !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
-  /* Hide app navigation, drawers, buttons, shadows */
+  /* Completely hide all non-document UI: main workspace, headers, sidebar, footers, modals */
+  main,
   header,
   aside,
   footer,
-  .print\\:hidden,
-  button {
+  nav,
+  .print\:hidden,
+  button,
+  input,
+  textarea,
+  select {
     display: none !important;
   }
 
+  /* Reset document modal container to static flow so pagination is never clipped */
+  #document-viewer-modal-backdrop {
+    position: static !important;
+    inset: auto !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    width: 100% !important;
+    height: auto !important;
+    display: block !important;
+  }
+
+  #document-viewer-container {
+    position: static !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    max-height: none !important;
+    height: auto !important;
+    overflow: visible !important;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  #printable-document-content {
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: transparent !important;
+    width: 100% !important;
+    height: auto !important;
+  }
+
+  /* Multi-page separation with strict page breaks */
   .doc-page {
-    page-break-after: always;
-    page-break-inside: avoid;
-    break-after: page;
-    min-height: 100vh;
+    page-break-after: always !important;
+    break-after: page !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    border: none !important;
+    box-shadow: none !important;
+    margin: 0 !important;
+    padding: 4mm 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    background: white !important;
+    min-height: auto !important;
   }
 
   .doc-page:last-child {
-    page-break-after: auto;
+    page-break-after: auto !important;
+    break-after: auto !important;
+  }
+
+  /* Prevent card and table rows from being chopped in half */
+  tr,
+  table,
+  img,
+  svg,
+  .border,
+  .rounded-lg,
+  .rounded-xl {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 
   /* Ensure maps and vector SVGs print crisp */
   svg {
     max-width: 100% !important;
-    print-color-adjust: exact;
+    print-color-adjust: exact !important;
   }
 
   .quotation-document,
   .invoice-document,
   .flight-brief-document,
-  .charter-agreement-document {
+  .charter-agreement-document,
+  .passenger-manifest-document,
+  .credit-note-document {
     padding: 0 !important;
     margin: 0 !important;
     box-shadow: none !important;
     border: none !important;
     max-width: 100% !important;
     width: 100% !important;
+    background: transparent !important;
   }
 }

@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useAviation } from "@/lib/aviationContext";
-import { Search, Plus, RotateCcw, Clock, Shield, Plane, Sparkles } from "lucide-react";
+import { Search, Plus, RotateCcw, Clock, Shield, Plane, Sparkles, Bell, Check, X, AlertTriangle, Info, CheckCircle2 } from "lucide-react";
 
 export default function TopHeader() {
   const {
@@ -12,10 +12,16 @@ export default function TopHeader() {
     searchQuery,
     setSearchQuery,
     openNewQuoteModal,
-    resetToDefaultData
+    resetToDefaultData,
+    notifications,
+    markNotificationRead
   } = useAviation();
 
   const [utcTime, setUtcTime] = useState("");
+  const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const notifRef = useRef<HTMLDivElement>(null);
+
+  const unreadCount = notifications.filter((n) => !n.read).length;
 
   useEffect(() => {
     const updateTime = () => {
@@ -29,12 +35,25 @@ export default function TopHeader() {
     return () => clearInterval(interval);
   }, []);
 
+  // Close notifications dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (notifRef.current && !notifRef.current.contains(event.target as Node)) {
+        setIsNotifOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   const getSectionTitle = () => {
     switch (activeNav) {
       case "overview":
         return { section: "Operations Command", title: "Operations Overview & Fleet Readiness" };
       case "bookings":
         return { section: "Operations Control", title: "Charter Bookings & Flight Dispatch" };
+      case "sourcing":
+        return { section: "Admin Queue", title: "Sourcing Log & Operator Responses" };
       case "generate_quote":
         return { section: "Actions", title: "Generate Official Private Charter Quote" };
       case "generate_brief":
@@ -43,6 +62,12 @@ export default function TopHeader() {
         return { section: "Actions", title: "Generate Commercial Tax Invoice" };
       case "agent_requests":
         return { section: "Incoming Queue", title: "Agent Inquiries & RFQ Fulfillment" };
+      case "operators":
+        return { section: "Reference Data", title: "Operator Management & Qualification" };
+      case "payments":
+        return { section: "Finance", title: "Payments & Invoice Management" };
+      case "audit_log":
+        return { section: "Security", title: "Audit Log & Activity Trail" };
       case "clients":
         return { section: "CRM & Accounts", title: "Company Clients Directory" };
       case "fleet":
@@ -57,12 +82,46 @@ export default function TopHeader() {
         return { section: "Outbound Requests", title: "Request Flight Brief from Admin" };
       case "my_requests":
         return { section: "Tracking Desk", title: "My Submitted Requests & Generated Documents" };
+      case "client_portal":
+        return { section: "Client Portal", title: "Client Portal Preview — Quote, Signature, Passengers & Payment" };
+      case "notifications":
+        return { section: "Communications", title: "Notification Settings & Email Templates" };
       default:
         return { section: "Portal", title: "Private Jet Booking Management" };
     }
   };
 
   const navInfo = getSectionTitle();
+
+  const getRoleBadgeLabel = () => {
+    switch (role) {
+      case "super_admin":
+        return "SUPER ADMIN";
+      case "finance":
+        return "FINANCE";
+      case "operations":
+        return "OPERATIONS";
+      case "agent":
+        return "AGENT";
+      case "admin":
+      default:
+        return "ADMIN";
+    }
+  };
+
+  const getNotifIcon = (type: string) => {
+    switch (type) {
+      case "warning":
+        return <AlertTriangle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />;
+      case "success":
+        return <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />;
+      case "error":
+        return <AlertTriangle className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />;
+      case "info":
+      default:
+        return <Info className="w-3.5 h-3.5 text-[#C9A052] flex-shrink-0" />;
+    }
+  };
 
   return (
     <header className="sticky top-0 z-20 bg-[#F5F2EC]/95 backdrop-blur-md border-b border-[#E0DAD0] px-6 py-3.5 flex items-center justify-between gap-4">
@@ -75,7 +134,7 @@ export default function TopHeader() {
           </span>
           <span className="text-gray-300">•</span>
           <span className="text-[10px] font-mono uppercase font-bold text-[#9A7A35] bg-[#C9A052]/15 border border-[#C9A052]/30 px-2.5 py-0.5 rounded-full">
-            {role === "admin" ? "ADMIN" : "AGENT"}
+            {getRoleBadgeLabel()}
           </span>
         </div>
         <h1 className="text-lg font-black text-[#0F1420] tracking-tight">
@@ -97,12 +156,85 @@ export default function TopHeader() {
         </div>
       </div>
 
-      {/* Right Controls: Zulu Clock, Reset Demo, Action CTA */}
+      {/* Right Controls: Zulu Clock, Notifications, Reset Demo, Action CTA */}
       <div className="flex items-center gap-3">
         {/* Aviation Zulu Clock */}
         <div className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-[#E0DAD0] text-[11px] font-mono text-[#0F1420]/80 shadow-sm">
           <Clock className="w-3.5 h-3.5 text-[#C9A052]" />
           <span>{utcTime || "UTC Zulu Active"}</span>
+        </div>
+
+        {/* Notification Bell Dropdown */}
+        <div className="relative" ref={notifRef}>
+          <button
+            onClick={() => setIsNotifOpen((prev) => !prev)}
+            title="System Notifications"
+            className="relative p-2 rounded-xl bg-white border border-[#E0DAD0] text-[#0F1420]/70 hover:text-[#0F1420] hover:border-[#C9A052] transition-colors shadow-sm"
+          >
+            <Bell className="w-4 h-4" />
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-[#C9A052] text-[9px] font-mono font-bold text-[#0F1420] shadow-sm animate-pulse">
+                {unreadCount}
+              </span>
+            )}
+          </button>
+
+          {isNotifOpen && (
+            <div className="absolute right-0 mt-2 w-80 sm:w-96 rounded-2xl bg-[#0F1420] text-white border border-[#1C2436] shadow-2xl z-50 overflow-hidden">
+              <div className="p-3.5 border-b border-[#1C2436] flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Bell className="w-4 h-4 text-[#C9A052]" />
+                  <span className="text-xs font-mono font-bold uppercase tracking-wider text-gray-200">
+                    Notifications & Alerts
+                  </span>
+                </div>
+                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-[#141A29] text-[#C9A052] border border-[#C9A052]/30">
+                  {unreadCount} new
+                </span>
+              </div>
+
+              <div className="max-h-80 overflow-y-auto divide-y divide-[#1C2436]">
+                {notifications.length === 0 ? (
+                  <div className="p-6 text-center text-xs text-gray-400">
+                    No notifications at this time.
+                  </div>
+                ) : (
+                  notifications.map((notif) => (
+                    <div
+                      key={notif.id}
+                      className={`p-3.5 text-xs transition-colors flex items-start gap-3 ${
+                        notif.read ? "bg-[#0F1420]/60 opacity-60" : "bg-[#141A29]/80"
+                      }`}
+                    >
+                      <div className="mt-0.5">{getNotifIcon(notif.type)}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="font-bold text-white text-[11px] truncate">
+                            {notif.title}
+                          </p>
+                          <span className="text-[9px] font-mono text-gray-400 whitespace-nowrap">
+                            {notif.timestamp}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-gray-300 mt-0.5 leading-snug">
+                          {notif.message}
+                        </p>
+                        {!notif.read && (
+                          <button
+                            onClick={() => markNotificationRead(notif.id)}
+                            className="mt-2 text-[10px] font-mono font-bold text-[#C9A052] hover:underline flex items-center gap-1"
+                          >
+                            <Check className="w-3 h-3" />
+                            <span>Mark as read</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Reset Demo State Button */}
@@ -115,7 +247,7 @@ export default function TopHeader() {
         </button>
 
         {/* Primary Gold Action CTA */}
-        {role === "admin" ? (
+        {role !== "agent" ? (
           <button
             onClick={() => setActiveNav("generate_quote")}
             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] text-xs font-extrabold transition-all shadow-md shadow-[#C9A052]/20 cursor-pointer"

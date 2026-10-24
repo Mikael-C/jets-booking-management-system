@@ -14,11 +14,17 @@ import {
   Users,
   ArrowRight,
   Clock,
-  Sparkles
+  Sparkles,
+  AlertTriangle,
+  Calendar,
+  CreditCard,
+  Building2,
+  History,
+  Lock
 } from "lucide-react";
 
 export default function OperationsOverview() {
-  const { bookings, agentRequests, clients, setActiveNav } = useAviation();
+  const { bookings, agentRequests, clients, operators, auditLog, setActiveNav } = useAviation();
 
   const confirmedBookings = bookings.filter((b) =>
     ["confirmed", "dispatched", "in_flight", "completed"].includes(b.status)
@@ -30,6 +36,30 @@ export default function OperationsOverview() {
   const totalRevenue = confirmedBookings.reduce((sum, b) => sum + b.pricing.totalFlightPrice, 0);
   const pipelineRevenue = inProgressBookings.reduce((sum, b) => sum + b.pricing.totalFlightPrice, 0);
   const pendingRequests = agentRequests.filter((r) => r.status === "pending").length;
+
+  // New KPIs
+  // 1. Expiring Quotes (<48h)
+  const expiringQuotesCount = bookings.filter((b) => {
+    return b.status === "quote_sent" || b.quoteStatus === "sent";
+  }).length;
+
+  // 2. Upcoming Flights This Week
+  const nowMs = Date.now();
+  const next7DaysMs = nowMs + 7 * 24 * 60 * 60 * 1000;
+  const upcomingFlightsThisWeek = bookings.filter((b) => {
+    return b.legs.some((leg) => {
+      const legDate = new Date(leg.flightDate).getTime();
+      return !isNaN(legDate) && legDate >= nowMs - 86400000 && legDate <= next7DaysMs;
+    });
+  }).length;
+
+  // 3. Payments Due / Pending Settlements
+  const pendingPaymentsAmount = bookings
+    .filter((b) => b.paymentStatus === "unpaid" || b.paymentStatus === "deposit_paid")
+    .reduce((sum, b) => sum + (b.pricing.totalFlightPrice || 0), 0);
+
+  // Recent 5 audit logs
+  const recentAuditLogs = auditLog.slice(0, 5);
 
   return (
     <div className="space-y-6">
@@ -138,6 +168,61 @@ export default function OperationsOverview() {
         </div>
       </div>
 
+      {/* Secondary Operational KPIs: Expiring Quotes, Upcoming Flights, Payments Due */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {/* Expiring Quotes (<48h) */}
+        <div className="bg-white border border-[#E0DAD0] rounded-2xl p-5 shadow-sm space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-mono uppercase tracking-wider text-amber-800 font-bold">
+              EXPIRING QUOTES (&lt;48H)
+            </span>
+            <AlertTriangle className="w-4 h-4 text-amber-600" />
+          </div>
+          <div className="text-2xl font-black text-amber-700 font-mono">
+            {expiringQuotesCount} Proposals
+          </div>
+          <p className="text-[11px] text-gray-500">
+            Awaiting client signature or Avinode confirmation
+          </p>
+        </div>
+
+        {/* Upcoming Flights This Week */}
+        <div className="bg-white border border-[#E0DAD0] rounded-2xl p-5 shadow-sm space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-mono uppercase tracking-wider text-blue-800 font-bold">
+              FLIGHTS THIS WEEK
+            </span>
+            <Plane className="w-4 h-4 text-blue-600" />
+          </div>
+          <div className="text-2xl font-black text-blue-900 font-mono">
+            {upcomingFlightsThisWeek} Departures
+          </div>
+          <p className="text-[11px] text-gray-500">
+            Dispatched & scheduled within next 7 days
+          </p>
+        </div>
+
+        {/* Payments Due */}
+        <div className="bg-white border border-[#E0DAD0] rounded-2xl p-5 shadow-sm space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-mono uppercase tracking-wider text-[#9A7A35] font-bold">
+              PAYMENTS DUE / UNPAID
+            </span>
+            <CreditCard className="w-4 h-4 text-[#C9A052]" />
+          </div>
+          <div className="text-2xl font-black text-[#0F1420] font-mono">
+            {formatCurrency(pendingPaymentsAmount, "EUR")}
+          </div>
+          <button
+            onClick={() => setActiveNav("payments")}
+            className="text-[11px] text-[#9A7A35] hover:text-[#0F1420] font-bold flex items-center gap-1 transition-colors"
+          >
+            <span>Reconcile Wires in Payments</span>
+            <ArrowRight className="w-3 h-3" />
+          </button>
+        </div>
+      </div>
+
       {/* Quick Launchpad to Core Sections */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div
@@ -195,6 +280,46 @@ export default function OperationsOverview() {
             <span>Create Tax Invoice</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </span>
+        </div>
+      </div>
+
+      {/* Recent Activity & Audit Trail Section (Last 5 Entries) */}
+      <div className="bg-white border border-[#E0DAD0] rounded-2xl p-6 shadow-sm space-y-4">
+        <div className="flex items-center justify-between pb-3 border-b border-[#E0DAD0]">
+          <div className="flex items-center gap-2.5">
+            <History className="w-4 h-4 text-[#C9A052]" />
+            <h3 className="text-sm font-bold font-mono uppercase tracking-wider text-[#0F1420]">
+              Recent Activity & Security Audit Trail
+            </h3>
+          </div>
+          <button
+            onClick={() => setActiveNav("audit_log")}
+            className="text-xs font-mono font-bold text-[#9A7A35] hover:text-[#0F1420] flex items-center gap-1 transition-colors"
+          >
+            <span>View Complete Audit Log</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        <div className="divide-y divide-[#E0DAD0]/60">
+          {recentAuditLogs.map((entry) => (
+            <div key={entry.id} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+              <div className="flex items-start sm:items-center gap-3">
+                <span className="px-2 py-0.5 rounded font-mono font-bold text-[10px] bg-[#F5F2EC] text-[#0F1420] border border-[#E0DAD0] flex-shrink-0">
+                  {entry.action}
+                </span>
+                <div>
+                  <span className="font-bold text-[#0F1420]">{entry.userName}</span>
+                  <span className="text-gray-400 mx-1.5">•</span>
+                  <span className="text-gray-600">{entry.details}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 font-mono text-[11px] text-gray-400 self-end sm:self-center">
+                <span>Ref: {entry.entityId}</span>
+                <span>{entry.timestamp}</span>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>

@@ -1,14 +1,21 @@
-export type UserRole = "admin" | "agent";
+export type UserRole = "super_admin" | "admin" | "finance" | "operations" | "agent";
 
 export type BookingStatus = 
+  | "submitted"
+  | "in_sourcing"
+  | "quoted"
+  | "accepted"
+  | "paid"
+  | "confirmed"
+  | "flown"
+  | "cancelled"
+  | "expired"
   | "draft"
   | "quote_sent"
   | "client_review"
-  | "confirmed"
   | "dispatched"
   | "in_flight"
-  | "completed"
-  | "cancelled";
+  | "completed";
 
 export type TripType = "one_way" | "round_trip" | "multi_leg";
 
@@ -164,6 +171,90 @@ export interface OperatorDetails {
   courtOfJurisdiction: string;
 }
 
+export interface SourcingOption {
+  id: string;
+  operatorName: string;
+  aircraftType: string;
+  aircraftRegistration?: string;
+  baseAirport: string;
+  price: number;
+  currency: "EUR" | "USD" | "GBP" | "CHF";
+  taxesIncluded: boolean;
+  validUntil: string;
+  notes?: string;
+  avInodeTripId?: string;
+  createdAt: string;
+}
+
+export interface RequestMessage {
+  id: string;
+  senderName: string;
+  senderRole: string;
+  content: string;
+  timestamp: string;
+  isFromAdmin: boolean;
+}
+
+export interface OperatorQualDoc {
+  id: string;
+  docType: string;
+  status: "pass" | "fail" | "pending";
+  expiryDate?: string;
+  notes?: string;
+}
+
+export interface OperatorRecord {
+  id: string;
+  legalName: string;
+  tradingName: string;
+  aocNumber: string;
+  aocAuthority: string;
+  aocExpiry: string;
+  baseIcao: string;
+  salesContact: string;
+  salesEmail: string;
+  opsPhone: string;
+  opsEmail: string;
+  status: "pending" | "approved" | "approved_with_conditions" | "suspended" | "rejected";
+  insuranceExpiry?: string;
+  safetyRating?: string;
+  safetyRatingProvider?: string;
+  notes?: string;
+  qualificationChecklist: OperatorQualDoc[];
+  createdAt: string;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  timestamp: string;
+  userEmail: string;
+  userName: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  details: string;
+}
+
+export interface Notification {
+  id: string;
+  type: "info" | "warning" | "success" | "error";
+  title: string;
+  message: string;
+  timestamp: string;
+  read: boolean;
+  entityId?: string;
+  entityType?: string;
+}
+
+export interface MarginRule {
+  id: string;
+  name: string;
+  type: "percentage" | "fixed";
+  value: number;
+  appliesTo: "default" | "client" | "agent" | "route_type" | "aircraft_category";
+  targetId?: string;
+}
+
 export interface Booking {
   id: string;
   tripNumber: string; // e.g. "PEU842-001" or "ZFL433"
@@ -184,12 +275,24 @@ export interface Booking {
   agentName?: string;
   agentEmail?: string;
   commissionPercentage?: number;
+  quoteVersion?: number;
+  quoteStatus?: "draft" | "sent" | "viewed" | "accepted" | "declined";
+  paymentStatus?: "unpaid" | "deposit_paid" | "fully_paid" | "overdue" | "refunded";
+  avInodeTripId?: string;
+  sourcingOptions?: SourcingOption[];
   createdAt: string;
   updatedAt: string;
 }
 
 export type RequestType = "quote" | "flight_brief" | "invoice";
-export type RequestStatus = "pending" | "processing" | "completed" | "declined";
+export type RequestStatus = "pending" | "in_sourcing" | "processing" | "completed" | "declined";
+
+export interface RequestLegItem {
+  originIcao: string;
+  destIcao: string;
+  flightDate: string;
+  departureTime?: string;
+}
 
 export interface AgentRequest {
   id: string;
@@ -229,6 +332,20 @@ export interface AgentRequest {
   generatedDocumentType?: "quotation" | "flight_brief" | "invoice";
   generatedBookingId?: string;
   adminNotes?: string;
+
+  // Expanded fields
+  luggageCount?: number;
+  hasPets?: boolean;
+  specialNeeds?: string;
+  isFlexibleTime?: boolean;
+  quoteVersion?: number;
+  avInodeId?: string;
+  sourcingOptions?: SourcingOption[];
+  messages?: RequestMessage[];
+  priority?: "normal" | "urgent" | "vip";
+  assignedTo?: string;
+  slaDeadline?: string;
+  multiLegs?: RequestLegItem[];
 }
 
 export interface ClientRecord {
@@ -247,4 +364,3 @@ export interface ClientRecord {
   notes?: string;
   createdAt: string;
 }
-

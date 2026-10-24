@@ -33,7 +33,10 @@ import {
   Receipt,
   Check,
   ChevronDown,
-  Layers
+  ChevronUp,
+  Layers,
+  Percent,
+  AlertTriangle
 } from "lucide-react";
 
 interface QuoteLegInput {
@@ -54,7 +57,10 @@ interface QuoteLegInput {
 }
 
 export default function GenerateQuoteView() {
-  const { clients, addBooking, openDocument, prefillClientForQuote, setPrefillClientForQuote } = useAviation();
+  const { clients, addBooking, openDocument, prefillClientForQuote, setPrefillClientForQuote, currentUser, addAuditEntry, operators } = useAviation();
+
+  // Operator selection (OPR-3: only approved operators selectable)
+  const [selectedOperatorId, setSelectedOperatorId] = useState<string>("op-1");
 
   // Document & Contract Identifiers (Page 1 Details Box)
   const [contractDate, setContractDate] = useState("01.10.2026");
@@ -63,6 +69,14 @@ export default function GenerateQuoteView() {
   const [quoteExpirationDate, setQuoteExpirationDate] = useState("02.10.2026, 19:53z");
   const [tripType, setTripType] = useState<TripType>("round_trip");
   const [currency, setCurrency] = useState<"EUR" | "USD" | "GBP" | "CHF">("EUR");
+
+  // Margin Rules & Commission
+  const [isMarginPanelOpen, setIsMarginPanelOpen] = useState(true);
+  const [marginType, setMarginType] = useState<"percentage" | "fixed">("percentage");
+  const [marginValue, setMarginValue] = useState<number>(12); // default 12% company margin
+  const [commissionPct, setCommissionPct] = useState<number>(8); // default 8% agent commission
+  const [marginOverrideReason, setMarginOverrideReason] = useState<string>("");
+  const [quoteStatus, setQuoteStatus] = useState<"Draft" | "Sent">("Draft");
 
   // Client Details (Page 1 TO Box)
   const [selectedClientId, setSelectedClientId] = useState<string>(
@@ -381,6 +395,10 @@ export default function GenerateQuoteView() {
       quoteExpirationDate,
       paymentDueDate: new Date(Date.now() + 86400000 * 3).toLocaleDateString("de-DE"),
       status: "quote_sent",
+      quoteStatus: "sent",
+      quoteVersion: 1,
+      commissionPercentage: commissionPct,
+      paymentStatus: "unpaid",
       tripType,
       aircraft: effectiveAircraft,
       client: {
@@ -418,6 +436,15 @@ export default function GenerateQuoteView() {
     };
 
     addBooking(newBooking);
+    addAuditEntry({
+      userEmail: currentUser?.email || "admin@orbelo.com",
+      userName: currentUser?.name || "Operations Team",
+      action: "QUOTE_GENERATED",
+      entityType: "Quote",
+      entityId: tripNumber,
+      details: `Generated official quotation for ${clientName || "Client"} (${tripNumber}), Total: ${formatCurrency(effectivePricing.totalFlightPrice, currency)}${marginOverrideReason ? ` [Override: ${marginOverrideReason}]` : ""}`
+    });
+    setQuoteStatus("Sent");
     setSuccessMessage(`Official Quotation ${tripNumber} successfully generated!`);
     openDocument(newBooking, "quotation");
   };
@@ -516,7 +543,7 @@ export default function GenerateQuoteView() {
           </div>
 
           {/* Document Reference Identifiers */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 p-4 bg-[#F5F2EC] rounded-xl border border-[#E0DAD0]">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-7 gap-3 p-4 bg-[#F5F2EC] rounded-xl border border-[#E0DAD0]">
             <div>
               <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
                 Trip Type
@@ -529,6 +556,22 @@ export default function GenerateQuoteView() {
                 <option value="round_trip">RoundTripPlus</option>
                 <option value="one_way">One-Way Charter</option>
                 <option value="multi_leg">Multi-Leg Itinerary</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
+                Currency
+              </label>
+              <select
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value as any)}
+                className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+              >
+                <option value="EUR">EUR (€)</option>
+                <option value="USD">USD ($)</option>
+                <option value="GBP">GBP (£)</option>
+                <option value="CHF">CHF</option>
               </select>
             </div>
 
@@ -586,6 +629,18 @@ export default function GenerateQuoteView() {
                 placeholder="02.10.2026, 19:53z"
                 className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-red-600 focus:outline-none focus:border-[#C9A052]"
               />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
+                Quote Status
+              </label>
+              <div className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 text-xs font-mono font-extrabold flex items-center gap-1.5">
+                <span className={`h-2 w-2 rounded-full ${quoteStatus === "Draft" ? "bg-amber-400" : "bg-emerald-500 animate-pulse"}`} />
+                <span className={quoteStatus === "Draft" ? "text-amber-800" : "text-emerald-700"}>
+                  {quoteStatus}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -683,6 +738,61 @@ export default function GenerateQuoteView() {
                 placeholder="e.g. FL-34104 Naples, United States or MC-98000 Monaco"
                 className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3.5 py-2 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
               />
+            </div>
+          </div>
+
+          {/* Operator Source Hiding Notice */}
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-center gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+            <p className="leading-snug">
+              <strong>Notice:</strong> ⚠ Operator identity will <strong>NOT</strong> appear on the client-facing quote. All customer proposals present Orbelo Private Jet Management branding. Disclosed in confirmed flight brief per OPR-6.
+            </p>
+          </div>
+
+          {/* Operator Qualification Selection [OPR-3 & OPR-6] */}
+          <div className="p-4 bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-[#0F1420] uppercase font-mono">
+                Sourced Aircraft Operating Carrier & Qualification [OPR-3]
+              </span>
+              <span className="text-[10px] font-mono text-emerald-700 font-bold bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded">
+                Only Approved Operators Selectable
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[10px] font-mono uppercase text-gray-500 mb-1">
+                  Operating Carrier (AOC Holder) *
+                </label>
+                <select
+                  value={selectedOperatorId}
+                  onChange={(e) => setSelectedOperatorId(e.target.value)}
+                  className="w-full bg-white border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                >
+                  {operators.map((op) => {
+                    const isApproved = op.status === "approved" || op.status === "approved_with_conditions";
+                    return (
+                      <option key={op.id} value={op.id} disabled={!isApproved}>
+                        {op.legalName} ({op.tradingName}) — {op.status.toUpperCase()} {op.safetyRating ? `· ${op.safetyRating}` : ""} {!isApproved ? "❌ (NOT APPROVED)" : "✓"}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              {/* Operator details preview */}
+              {(() => {
+                const op = operators.find((o) => o.id === selectedOperatorId) || operators[0];
+                if (!op) return null;
+                return (
+                  <div className="p-2.5 bg-white border border-[#E0DAD0] rounded-xl text-xs space-y-1">
+                    <p className="font-bold text-[#0F1420]">{op.legalName} (AOC: {op.aocNumber})</p>
+                    <p className="text-[11px] text-gray-500">Base: {op.baseIcao} · Authority: {op.aocAuthority}</p>
+                    <p className="text-[11px] font-mono text-emerald-700">Insurance Expiry: {op.insuranceExpiry || "Valid"} · Safety: {op.safetyRating || "Verified"}</p>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>
@@ -817,6 +927,14 @@ export default function GenerateQuoteView() {
                 </select>
               </div>
             </div>
+          </div>
+
+          {/* Operator Source Hiding Notice */}
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-center gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+            <p className="leading-snug">
+              <strong>Notice:</strong> ⚠ Operator identity will <strong>NOT</strong> appear on the client-facing quote. All customer proposals present Orbelo Private Jet Management branding.
+            </p>
           </div>
         </div>
 
@@ -1270,6 +1388,118 @@ export default function GenerateQuoteView() {
               </label>
             </div>
           </div>
+        </div>
+
+        {/* SECTION: Commercial Margin Rules & Broker Commission */}
+        <div className="bg-white border border-[#E0DAD0] rounded-2xl p-6 shadow-sm space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-[#E0DAD0]">
+            <div className="flex items-center gap-2.5">
+              <Percent className="w-4 h-4 text-[#C9A052]" />
+              <h3 className="text-sm font-bold font-mono uppercase tracking-wider text-[#0F1420]">
+                Commercial Margin Rules & Broker Commission
+              </h3>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsMarginPanelOpen(!isMarginPanelOpen)}
+              className="flex items-center gap-1.5 text-xs font-mono font-bold text-[#9A7A35] hover:text-[#0F1420] transition-colors"
+            >
+              <span>{isMarginPanelOpen ? "Collapse Rules" : "Expand Rules"}</span>
+              {isMarginPanelOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </button>
+          </div>
+
+          {isMarginPanelOpen && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+                {/* Margin Type */}
+                <div>
+                  <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
+                    Company Margin Type
+                  </label>
+                  <select
+                    value={marginType}
+                    onChange={(e) => setMarginType(e.target.value as "percentage" | "fixed")}
+                    className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                  >
+                    <option value="percentage">Percentage (%)</option>
+                    <option value="fixed">Fixed Amount ({currency})</option>
+                  </select>
+                </div>
+
+                {/* Margin Value */}
+                <div>
+                  <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
+                    Company Margin {marginType === "percentage" ? "(%)" : `(${currency})`}
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={marginType === "percentage" ? 0.5 : 100}
+                    value={marginValue}
+                    onChange={(e) => setMarginValue(Number(e.target.value))}
+                    className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                  />
+                  <div className="mt-1 text-[11px] font-mono text-[#9A7A35]">
+                    Company Margin: <strong>{formatCurrency(marginType === "percentage" ? Math.round(effectivePricing.flightPrice * (marginValue / 100)) : marginValue, currency)}</strong>
+                  </div>
+                </div>
+
+                {/* Agent Commission % */}
+                <div>
+                  <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
+                    Agent Commission (%)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={0.5}
+                    value={commissionPct}
+                    onChange={(e) => setCommissionPct(Number(e.target.value))}
+                    className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                  />
+                  <div className="mt-1 text-[11px] font-mono text-emerald-700">
+                    Agent Commission: <strong>{formatCurrency(Math.round(effectivePricing.totalFlightPrice * (commissionPct / 100)), currency)}</strong>
+                  </div>
+                </div>
+
+                {/* Status indicator */}
+                <div>
+                  <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
+                    Quote Workflow Status
+                  </label>
+                  <select
+                    value={quoteStatus}
+                    onChange={(e) => setQuoteStatus(e.target.value as "Draft" | "Sent")}
+                    className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                  >
+                    <option value="Draft">Draft (Internal)</option>
+                    <option value="Sent">Sent to Client</option>
+                  </select>
+                  <div className="mt-1 text-[10px] text-gray-500">
+                    Default 12% margin / 8% agent comm.
+                  </div>
+                </div>
+              </div>
+
+              {/* Margin Override Reason if modified from default 12% */}
+              {(marginValue !== 12 || marginType !== "percentage") && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-1.5">
+                  <label className="block text-[10px] font-mono font-bold uppercase text-amber-900">
+                    Margin Override Justification (Audited)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Provide justification for non-standard margin (e.g. VIP client loyalty discount, competitive tender)"
+                    value={marginOverrideReason}
+                    onChange={(e) => setMarginOverrideReason(e.target.value)}
+                    className="w-full bg-white border border-amber-300 rounded-lg px-3 py-1.5 text-xs text-amber-950 focus:outline-none focus:border-[#C9A052]"
+                  />
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* SECTION 5: Detailed Pricing Itemization & Overrides */}

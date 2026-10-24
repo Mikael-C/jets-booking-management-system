@@ -18,7 +18,13 @@ import {
   Sparkles,
   RefreshCw,
   CheckCircle2,
-  ChevronRight
+  ChevronRight,
+  Search,
+  Building2,
+  CreditCard,
+  ClipboardList,
+  ShieldCheck,
+  Layers
 } from "lucide-react";
 
 export default function Sidebar() {
@@ -29,13 +35,33 @@ export default function Sidebar() {
     logout,
     currentUser,
     agentRequests,
-    bookings
+    bookings,
+    operators
   } = useAviation();
 
   const pendingRequestsCount = agentRequests.filter((r) => r.status === "pending").length;
+  const inSourcingCount = agentRequests.filter((r) => r.status === "in_sourcing").length;
   const inProgressBookingsCount = bookings.filter((b) =>
     ["draft", "quote_sent", "client_review"].includes(b.status)
   ).length;
+
+  const getRoleDisplay = () => {
+    switch (role) {
+      case "super_admin":
+        return "SUPER ADMIN";
+      case "finance":
+        return "FINANCE";
+      case "operations":
+        return "OPERATIONS";
+      case "admin":
+        return "ADMINISTRATOR";
+      case "agent":
+      default:
+        return "CHARTER AGENT";
+    }
+  };
+
+  const isStaffRole = role !== "agent";
 
   return (
     <aside className="w-64 bg-[#0F1420] text-white flex flex-col flex-shrink-0 h-screen sticky top-0 border-r border-[#1C2436] shadow-2xl z-30 select-none">
@@ -66,13 +92,13 @@ export default function Sidebar() {
       {/* Role Badge Indicator */}
       <div className="px-5 py-3 bg-[#0B101A] border-b border-[#1C2436] flex items-center justify-between">
         <div className="flex items-center gap-2">
-          {role === "admin" ? (
+          {isStaffRole ? (
             <Shield className="w-3.5 h-3.5 text-[#C9A052]" />
           ) : (
             <Plane className="w-3.5 h-3.5 text-[#C9A052]" />
           )}
           <span className="text-[11px] font-mono uppercase font-bold tracking-wider text-gray-300">
-            {role === "admin" ? "ADMINISTRATOR" : "CHARTER AGENT"}
+            {getRoleDisplay()}
           </span>
         </div>
         <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" title="System Online" />
@@ -81,8 +107,8 @@ export default function Sidebar() {
       {/* Nav List */}
       <div className="flex-1 overflow-y-auto py-4 px-3 space-y-6">
         
-        {/* Navigation for ADMINISTRATOR */}
-        {role === "admin" && (
+        {/* Navigation for STAFF / ADMIN / SUPER_ADMIN / FINANCE / OPERATIONS */}
+        {isStaffRole && (
           <div className="space-y-1">
             <div className="px-3 pb-2 text-[10px] font-mono uppercase tracking-wider text-gray-400 font-bold">
               Operations Control
@@ -119,6 +145,25 @@ export default function Sidebar() {
               }`}>
                 {bookings.length}
               </span>
+            </button>
+
+            <button
+              onClick={() => setActiveNav("sourcing")}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeNav === "sourcing"
+                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
+                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <Layers className={`w-4 h-4 ${activeNav === "sourcing" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
+                <span>Sourcing & Quotes</span>
+              </div>
+              {inSourcingCount > 0 && (
+                <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold bg-[#C9A052]/20 text-[#C9A052]`}>
+                  {inSourcingCount}
+                </span>
+              )}
             </button>
 
             {/* Direct Document Generators */}
@@ -171,7 +216,7 @@ export default function Sidebar() {
               <ChevronRight className={`w-3.5 h-3.5 ${activeNav === "generate_invoice" ? "text-[#0F1420]" : "text-gray-500"}`} />
             </button>
 
-            {/* Management & Requests */}
+            {/* Directory & Pipeline */}
             <div className="pt-4 px-3 pb-2 text-[10px] font-mono uppercase tracking-wider text-gray-400 font-bold">
               Directory & Pipeline
             </div>
@@ -193,6 +238,39 @@ export default function Sidebar() {
                   {pendingRequestsCount} new
                 </span>
               )}
+            </button>
+
+            <button
+              onClick={() => setActiveNav("operators")}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeNav === "operators"
+                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
+                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <Building2 className={`w-4 h-4 ${activeNav === "operators" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
+                <span>Operators</span>
+              </div>
+              <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold ${
+                activeNav === "operators" ? "bg-[#0F1420] text-white" : "bg-[#1C2436] text-gray-300"
+              }`}>
+                {operators.length}
+              </span>
+            </button>
+
+            <button
+              onClick={() => setActiveNav("payments")}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeNav === "payments"
+                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
+                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <CreditCard className={`w-4 h-4 ${activeNav === "payments" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
+                <span>Payments</span>
+              </div>
             </button>
 
             <button
@@ -220,6 +298,59 @@ export default function Sidebar() {
               <div className="flex items-center gap-2.5">
                 <Shield className={`w-4 h-4 ${activeNav === "fleet" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
                 <span>Fleet Roster</span>
+              </div>
+            </button>
+
+            {/* Client Portal & Notifications */}
+            <div className="pt-4 px-3 pb-2 text-[10px] font-mono uppercase tracking-wider text-gray-400 font-bold">
+              Client Portal & Comms
+            </div>
+
+            <button
+              onClick={() => setActiveNav("client_portal")}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeNav === "client_portal"
+                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
+                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <Send className={`w-4 h-4 ${activeNav === "client_portal" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
+                <span>Client Portal</span>
+              </div>
+              <ChevronRight className={`w-3.5 h-3.5 ${activeNav === "client_portal" ? "text-[#0F1420]" : "text-gray-500"}`} />
+            </button>
+
+            <button
+              onClick={() => setActiveNav("notifications")}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeNav === "notifications"
+                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
+                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <Sparkles className={`w-4 h-4 ${activeNav === "notifications" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
+                <span>Notification Settings</span>
+              </div>
+            </button>
+
+            {/* Security & Audit */}
+            <div className="pt-4 px-3 pb-2 text-[10px] font-mono uppercase tracking-wider text-gray-400 font-bold">
+              Security & Audit
+            </div>
+
+            <button
+              onClick={() => setActiveNav("audit_log")}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeNav === "audit_log"
+                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
+                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <ClipboardList className={`w-4 h-4 ${activeNav === "audit_log" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
+                <span>Audit Log</span>
               </div>
             </button>
           </div>

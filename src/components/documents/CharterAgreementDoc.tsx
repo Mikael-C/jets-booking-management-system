@@ -14,8 +14,8 @@ export default function CharterAgreementDoc({ booking }: CharterAgreementDocProp
   const { client, operator, aircraft, legs, pricing, tripNumber, accountNumber, contractDate, paymentDueDate } = booking;
 
   return (
-    <div className="charter-agreement-document text-gray-900 bg-white font-sans max-w-[850px] mx-auto p-8 sm:p-12 shadow-2xl rounded-sm">
-      <div className="min-h-[1050px] flex flex-col justify-between">
+    <div className="charter-agreement-document text-gray-900 bg-transparent font-sans max-w-[850px] mx-auto">
+      <div className="doc-page min-h-[1050px] bg-white p-8 sm:p-10 rounded-sm shadow-xl border border-gray-200 mb-8 print:mb-0 print:border-none print:shadow-none print:p-0 flex flex-col justify-between">
         <div>
           {/* Header */}
           <div className="flex items-start justify-between border-b-2 border-gray-900 pb-4 mb-6">
