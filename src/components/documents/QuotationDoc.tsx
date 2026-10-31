@@ -156,7 +156,7 @@ export default function QuotationDoc({ booking }: QuotationDocProps) {
                   <th className="p-1.5 border-b">Arrival</th>
                   <th className="p-1.5 border-b text-center">Pax</th>
                   <th className="p-1.5 border-b">Callsign</th>
-                  <th className="p-1.5 border-b">Aircraft Tail</th>
+                  <th className="p-1.5 border-b">Aircraft Category</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -171,11 +171,33 @@ export default function QuotationDoc({ booking }: QuotationDocProps) {
                     <td className="p-1.5 font-mono font-semibold">{leg.arrivalTimeLocal}</td>
                     <td className="p-1.5 text-center font-bold">{leg.paxCount}</td>
                     <td className="p-1.5 font-mono font-bold text-gray-700">{leg.flightNumber}</td>
-                    <td className="p-1.5 font-mono text-gray-700">{leg.aircraftRegistration}</td>
+                    <td className="p-1.5 text-gray-700 font-semibold">{aircraft.categoryLabel || "Executive Jet"}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
+
+            {/* Flight Legs Pet & Luggage Summary */}
+            {legs.some((l) => l.pets?.hasPets || l.luggage) && (
+              <div className="mt-2 p-2 bg-gray-50 rounded border border-gray-200 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px]">
+                {legs.map((leg) => (
+                  <div key={leg.legNumber} className="space-y-0.5">
+                    <span className="font-bold text-gray-800 font-mono">Leg #{leg.legNumber} Cargo & Cabin:</span>
+                    {leg.pets?.hasPets && (
+                      <p className="text-gray-600">
+                        🐾 <strong>Pets:</strong> {leg.pets.petCount} ({leg.pets.petType || "Approved Pet"}, {leg.pets.totalWeightKg} kg)
+                      </p>
+                    )}
+                    {leg.luggage && (
+                      <p className="text-gray-600">
+                        🧳 <strong>Luggage:</strong> {leg.luggage.standardSuitcases || leg.luggage.pieceCount} pcs ({leg.luggage.totalWeightKg} kg) — {leg.luggage.dimensionsDescription || "Standard Cabin & Hold"}
+                        {leg.luggage.specialLuggageDescription && ` · ${leg.luggage.specialLuggageDescription}`}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Pricing Engine Itemization */}
@@ -235,20 +257,31 @@ export default function QuotationDoc({ booking }: QuotationDocProps) {
           <div className="text-[10px] text-gray-600 space-y-1.5 border-t border-gray-200 pt-2.5">
             <div className="flex items-center justify-between">
               <p className="font-bold text-gray-900 uppercase text-[11px]">
-                Payment Terms & Remittance [QTE-9]
+                Payment Choices & Remittance Terms [QTE-9]
               </p>
               <span className="font-mono text-[10px] text-gray-500">Ref: #{booking.invoiceNumber}</span>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 text-[10px]">
+            {/* Payment Choice Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[10px]">
               <div className="p-2 bg-gray-50 rounded border border-gray-200">
-                <span className="font-bold text-gray-900 block font-mono">OPTION 1: FULL PAYMENT</span>
+                <span className="font-bold text-gray-900 block font-mono">CHOICE 1: BANK WIRE (0% FEE)</span>
                 <p>100% Total Due: <strong className="font-mono text-gray-900">{formatCurrency(pricing.totalFlightPrice, pricing.currency)}</strong></p>
-                <p className="text-gray-500">Due: {booking.paymentDueDate}</p>
+                <p className="text-gray-500">SEPA / SWIFT wire transfer with zero processing fee. Due: {booking.paymentDueDate}</p>
+              </div>
+
+              <div className="p-2 bg-amber-50/60 rounded border border-amber-300">
+                <div className="flex justify-between items-center mb-0.5">
+                  <span className="font-bold text-gray-900 font-mono">CHOICE 2: CREDIT / DEBIT CARD</span>
+                  <span className="text-[9px] font-mono font-bold bg-amber-200 text-amber-900 px-1 py-0.2 rounded">+3.5% Card Fee</span>
+                </div>
+                <p className="text-gray-700">Flight: <span className="font-mono">{formatCurrency(pricing.totalFlightPrice, pricing.currency)}</span></p>
+                <p className="text-gray-600">Card Fee (3.5%): <span className="font-mono">+{formatCurrency(pricing.totalFlightPrice * 0.035, pricing.currency)}</span></p>
+                <p className="font-bold text-[#0F1420] pt-0.5 border-t border-amber-200">Total with Card: <strong className="font-mono text-amber-900">{formatCurrency(pricing.totalFlightPrice * 1.035, pricing.currency)}</strong></p>
               </div>
 
               <div className="p-2 bg-gray-50 rounded border border-gray-200">
-                <span className="font-bold text-gray-900 block font-mono">OPTION 2: DEPOSIT & BALANCE</span>
+                <span className="font-bold text-gray-900 block font-mono">CHOICE 3: DEPOSIT & BALANCE</span>
                 <p>Deposit (25%): <strong className="font-mono text-gray-900">{formatCurrency(pricing.totalFlightPrice * 0.25, pricing.currency)}</strong> upon signing</p>
                 <p>Balance (75%): <strong className="font-mono text-gray-900">{formatCurrency(pricing.totalFlightPrice * 0.75, pricing.currency)}</strong> due 7 days prior</p>
               </div>
@@ -361,11 +394,16 @@ export default function QuotationDoc({ booking }: QuotationDocProps) {
 
           {/* Cancellation Policy Schedule */}
           <div className="mb-4">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-900 mb-1.5 border-b border-gray-300 pb-0.5">
-              Cancellation Policy Schedule
-            </h3>
+            <div className="flex items-center justify-between border-b border-gray-300 pb-0.5 mb-1.5">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-gray-900">
+                Cancellation Policy Schedule
+              </h3>
+              <span className="text-[10px] font-mono font-bold text-amber-800 bg-amber-100 border border-amber-300 px-1.5 py-0.2 rounded">
+                Subject to Operator Policy
+              </span>
+            </div>
             <p className="text-[11px] text-gray-600 mb-2 leading-relaxed">
-              In the event of a flight cancellation, fees are assessed in accordance with international charter terms:
+              In the event of a flight cancellation, fees are assessed in accordance with international charter terms and are subject to operating carrier approval:
             </p>
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-2.5 text-xs space-y-1.5">
               <div className="flex justify-between items-center py-0.5 border-b border-gray-200 text-[11px]">
@@ -382,7 +420,7 @@ export default function QuotationDoc({ booking }: QuotationDocProps) {
               </div>
               <div className="flex justify-between items-center py-0.5 text-[11px]">
                 <span className="text-gray-800">• Within 24 hours of departure or passenger no-show:</span>
-                <span className="font-bold text-red-600 font-mono">75% - 100% of Charter Price</span>
+                <span className="font-bold text-red-600 font-mono">75% - 100% (Subject to Operator Tariff)</span>
               </div>
             </div>
           </div>
@@ -391,12 +429,12 @@ export default function QuotationDoc({ booking }: QuotationDocProps) {
           <div className="mb-4 bg-gold/5 border border-gold/30 rounded-lg p-3">
             <div className="flex items-center justify-between mb-1">
               <h4 className="text-xs font-bold uppercase tracking-wider text-gray-900">
-                Last - Minute Trip Cancellation Insurance
+                Last - Minute Trip Cancellation Insurance (Subject to Operator)
               </h4>
               <span className="font-mono font-bold text-gold-dark text-xs">€ 1 000.- / leg</span>
             </div>
             <p className="text-[11px] text-gray-600 mb-2 leading-relaxed">
-              Cancel free of charge up to 24 hours before your confirmed time of departure with zero penalty fees.
+              Cancel free of charge up to 24 hours before your confirmed time of departure with zero penalty fees, subject to individual operator terms and acceptance.
             </p>
             <div className="flex items-center gap-2 text-[11px] font-semibold text-gray-800 bg-white p-2 rounded border border-gray-200">
               <input
@@ -405,7 +443,7 @@ export default function QuotationDoc({ booking }: QuotationDocProps) {
                 checked={!!services.cancellationInsurance}
                 readOnly
               />
-              <span>Opt-in: Free of charge trip cancellation up to 24h before departure (€ 1 000.- / leg)</span>
+              <span>Opt-in: Free of charge trip cancellation up to 24h before departure (€ 1 000.- / leg, Subject to Operator)</span>
             </div>
           </div>
 
@@ -459,15 +497,15 @@ export default function QuotationDoc({ booking }: QuotationDocProps) {
             </div>
           </div>
 
-          {/* Catering & Partner Services */}
+          {/* Ground Transfers & Concierge */}
           <div className="mb-5">
             <h3 className="text-xs font-bold uppercase tracking-wider text-gray-900 mb-1.5 border-b border-gray-300 pb-0.5">
-              Catering & Ground Transfers
+              Ground Transfers & Concierge Services
             </h3>
             <p className="text-xs text-gray-600 mb-2.5">
-              A wide selection of sweet and salty premium labeled snacks and open bar (soft drinks, beer, wine, coffee, tea) is provided complimentary on all flights, including Taittinger Champagne.
+              A wide selection of sweet and salty premium labeled snacks, fresh fruits, and open executive bar (soft drinks, beer, wine, coffee, tea) is provided complimentary on all flights, including Taittinger Champagne.
             </p>
-            <div className="grid grid-cols-2 gap-2.5 text-xs">
+            <div className="grid grid-cols-3 gap-2.5 text-xs">
               <div className="flex items-center gap-2 p-2 border border-gray-200 rounded bg-gray-50">
                 <input type="checkbox" checked={services.limousineService} readOnly className="rounded text-gold" />
                 <span className="font-medium text-gray-800">VIP Limousine / Chauffeur Service</span>
@@ -480,40 +518,41 @@ export default function QuotationDoc({ booking }: QuotationDocProps) {
                 <input type="checkbox" checked={services.helicopterService} readOnly className="rounded text-gold" />
                 <span className="font-medium text-gray-800">Helicopter Connection Transfer</span>
               </div>
-              <div className="flex items-center gap-2 p-2 border border-gray-200 rounded bg-gray-50">
-                <input type="checkbox" checked={true} readOnly className="rounded text-gold" />
-                <span className="font-medium text-gray-800">Bespoke In-Flight VIP Catering</span>
-              </div>
             </div>
             {services.vipCateringDetails && (
               <p className="text-[11px] text-gray-600 italic mt-2 bg-yellow-50 p-2 border border-yellow-200 rounded">
-                Special Requests: {services.vipCateringDetails}
+                Concierge Notes: {services.vipCateringDetails}
               </p>
             )}
           </div>
 
-          {/* De-Icing Insurance */}
+          {/* De-Icing Protection Insurance */}
           <div className="mb-5">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-900 mb-1.5 border-b border-gray-300 pb-0.5">
-              De-Icing Protection Insurance
-            </h3>
+            <div className="flex items-center justify-between border-b border-gray-300 pb-0.5 mb-1.5">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-gray-900">
+                De-Icing Protection Figures & Options
+              </h3>
+              <span className="text-[10px] font-mono font-bold text-sky-800 bg-sky-100 border border-sky-300 px-1.5 py-0.2 rounded">
+                Figures Subject to Operator
+              </span>
+            </div>
             <p className="text-xs text-gray-600 mb-2">
-              We offer the option to secure de-icing insurance before departure, providing fixed costs:
+              De-icing protection figures are subject to operator tariff card, station handling rates, and actual weather conditions at departure station:
             </p>
             <div className="grid grid-cols-2 gap-3 text-xs">
               <div className={`p-2.5 rounded-lg border ${services.deicingInsurance === "at_reservation" ? "border-gold bg-gold/10" : "border-gray-200 bg-gray-50"}`}>
                 <div className="flex justify-between font-bold text-gray-900 mb-0.5">
-                  <span>Option 1: Book at Reservation</span>
-                  <span className="font-mono text-gold-dark">€ 400 / leg</span>
+                  <span>Option 1: Book at Reservation (Subject to Operator)</span>
+                  <span className="font-mono text-gold-dark">€ 400 / leg est.</span>
                 </div>
-                <p className="text-[10px] text-gray-500">Secure full de-icing coverage upon signing this agreement.</p>
+                <p className="text-[10px] text-gray-500">De-icing protection rate subject to operator confirmation upon signing this agreement.</p>
               </div>
               <div className={`p-2.5 rounded-lg border ${services.deicingInsurance === "within_48h" ? "border-gold bg-gold/10" : "border-gray-200 bg-gray-50"}`}>
                 <div className="flex justify-between font-bold text-gray-900 mb-0.5">
-                  <span>Option 2: Book Later</span>
-                  <span className="font-mono text-gray-700">€ 800 / leg</span>
+                  <span>Option 2: Book Later (Subject to Operator)</span>
+                  <span className="font-mono text-gray-700">€ 800 / leg est.</span>
                 </div>
-                <p className="text-[10px] text-gray-500">Add coverage up to 48 hours prior to scheduled departure.</p>
+                <p className="text-[10px] text-gray-500">Add coverage up to 48 hours prior to scheduled departure subject to operator terms.</p>
               </div>
             </div>
           </div>

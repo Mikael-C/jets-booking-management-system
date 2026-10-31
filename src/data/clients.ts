@@ -3,6 +3,7 @@ import { ClientRecord } from "@/types/aviation";
 export const initialClients: ClientRecord[] = [
   {
     id: "client-1",
+    accountNumber: "ACC-21737",
     fullName: "Edward Brinkmann",
     companyName: "Brinkmann Global Capital",
     streetAddress: "3606 Enterprise Ave",
@@ -19,6 +20,7 @@ export const initialClients: ClientRecord[] = [
   },
   {
     id: "client-2",
+    accountNumber: "ACC-99482",
     fullName: "Countess Sophie von Habsburg",
     companyName: "Habsburg Heritage Foundation",
     streetAddress: "Herrengasse 14",
@@ -35,6 +37,7 @@ export const initialClients: ClientRecord[] = [
   },
   {
     id: "client-3",
+    accountNumber: "ACC-48392",
     fullName: "Alexander Moretti",
     companyName: "Moretti Luxury Yachts S.r.l.",
     streetAddress: "7 Boulevard Albert 1er",
@@ -51,6 +54,7 @@ export const initialClients: ClientRecord[] = [
   },
   {
     id: "client-4",
+    accountNumber: "ACC-10984",
     fullName: "Dr. Aris Thorne",
     companyName: "BioPharma Global Therapeutics",
     streetAddress: "Bahnhofstrasse 45",
@@ -67,6 +71,7 @@ export const initialClients: ClientRecord[] = [
   },
   {
     id: "client-5",
+    accountNumber: "ACC-10029",
     fullName: "Elena Rostova",
     companyName: "Rostova Prime Family Office",
     streetAddress: "DIFC Gate Precinct 4, Level 5",
@@ -83,6 +88,7 @@ export const initialClients: ClientRecord[] = [
   },
   {
     id: "client-6",
+    accountNumber: "ACC-88210",
     fullName: "Lord Julian Sterling",
     companyName: "Sterling Equities Partners",
     streetAddress: "14 Berkeley Square, Mayfair",
@@ -98,3 +104,11 @@ export const initialClients: ClientRecord[] = [
     createdAt: "2024-09-01"
   }
 ];
+
+export function getClientById(id: string): ClientRecord | undefined {
+  return initialClients.find((c) => c.id === id);
+}
+
+export function getClientByAccountNumber(accNo: string): ClientRecord | undefined {
+  return initialClients.find((c) => c.accountNumber.toLowerCase() === accNo.toLowerCase());
+}

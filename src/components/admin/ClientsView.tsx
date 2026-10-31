@@ -122,6 +122,7 @@ export default function ClientsView() {
   const [newVipTier, setNewVipTier] = useState<ClientRecord["vipTier"]>("Private VIP");
   const [newPreferredJet, setNewPreferredJet] = useState("Midsize Jet");
   const [newNotes, setNewNotes] = useState("");
+  const [newAccountNumber, setNewAccountNumber] = useState("");
 
   const filteredClients = clients.filter((c) => {
     if (!searchTerm.trim()) return true;
@@ -130,7 +131,8 @@ export default function ClientsView() {
       c.fullName.toLowerCase().includes(q) ||
       (c.companyName?.toLowerCase().includes(q) ?? false) ||
       c.email.toLowerCase().includes(q) ||
-      c.phone.toLowerCase().includes(q)
+      c.phone.toLowerCase().includes(q) ||
+      (c.accountNumber?.toLowerCase().includes(q) ?? false)
     );
   });
 
@@ -147,6 +149,7 @@ export default function ClientsView() {
     e.preventDefault();
     const newClientRecord: ClientRecord = {
       id: `client-${Date.now()}`,
+      accountNumber: newAccountNumber.trim() || `ACC-${Math.floor(10000 + Math.random() * 89999)}`,
       fullName: newFullName,
       companyName: newCompany,
       phone: newPhone,
@@ -174,6 +177,7 @@ export default function ClientsView() {
     setNewCityCountry("");
     setNewVat("");
     setNewNotes("");
+    setNewAccountNumber("");
   };
 
   const handleInviteAgentSubmit = (e: React.FormEvent) => {
@@ -330,7 +334,12 @@ export default function ClientsView() {
                     filteredClients.map((client) => (
                       <tr key={client.id} className="hover:bg-[#FDFCFA] transition-colors">
                         <td className="py-3 px-4">
-                          <p className="font-bold text-[#0F1420]">{client.fullName}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="font-bold text-[#0F1420]">{client.fullName}</p>
+                            <span className="text-[10px] font-mono bg-[#C9A052]/10 text-[#C9A052] px-2 py-0.5 rounded font-bold border border-[#C9A052]/20">
+                              {client.accountNumber}
+                            </span>
+                          </div>
                           <span className="text-[10px] font-mono text-[#C9A052] font-semibold">
                             {client.vipTier}
                           </span>
@@ -570,6 +579,28 @@ export default function ClientsView() {
                     onChange={(e) => setNewCompany(e.target.value)}
                     className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
                   />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-mono uppercase text-gray-500 mb-1">
+                  Client Account Number (Unique ID)
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="e.g. ACC-21737 (Auto-generated if empty)"
+                    value={newAccountNumber}
+                    onChange={(e) => setNewAccountNumber(e.target.value)}
+                    className="flex-1 bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs text-[#0F1420] font-mono focus:outline-none focus:border-[#C9A052]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setNewAccountNumber(`ACC-${Math.floor(10000 + Math.random() * 89999)}`)}
+                    className="px-3 py-1.5 rounded-xl bg-[#F5F2EC] hover:bg-[#E0DAD0] text-[#0F1420] text-[10px] font-mono font-bold border border-[#D1C9BC] transition-all"
+                  >
+                    Generate
+                  </button>
                 </div>
               </div>
 

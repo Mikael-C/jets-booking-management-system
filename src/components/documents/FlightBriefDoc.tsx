@@ -255,6 +255,7 @@ export default function FlightBriefDoc({ booking }: FlightBriefDocProps) {
             {legs.map((leg) => {
               const cmdr = leg.crew.find((c) => c.role === "CMDR") || { name: "Capt. Emmanuel Audrain", phone: "+43 664 8489 904" };
               const fo = leg.crew.find((c) => c.role === "F/O") || { name: "First Officer Hajar Amrani", phone: "+43 664 8489 928" };
+              const fa = leg.crew.find((c) => c.role === "Cabin Attendant") || { name: "Claire Dupont (Allocated)", phone: "+33 6 44 19 88 03" };
               const passengerNames = leg.passengers.map((p) => p.fullName).join(", ") || client.fullName;
 
               return (
@@ -273,22 +274,37 @@ export default function FlightBriefDoc({ booking }: FlightBriefDocProps) {
                     <div className="space-y-1">
                       <div className="flex items-center gap-1 font-bold text-gray-900 border-b border-gray-200 pb-0.5 text-[11px]">
                         <ShieldCheck className="w-3.5 h-3.5 text-gold" />
-                        <span>Aircraft & Crew</span>
+                        <span>Aircraft & Assigned Crew</span>
                       </div>
                       <p className="text-[11px]"><span className="text-gray-500">Tail:</span> <strong className="font-mono text-gray-900">{leg.aircraftRegistration}</strong></p>
                       <p className="text-[11px]"><span className="text-gray-500">CMDR:</span> <span className="font-semibold">{cmdr.name}</span></p>
                       <p className="font-mono text-[10px] text-gray-600 pl-3">{cmdr.phone}</p>
                       <p className="text-[11px]"><span className="text-gray-500">F/O:</span> <span className="font-semibold">{fo.name}</span></p>
                       {fo.phone && <p className="font-mono text-[10px] text-gray-600 pl-3">{fo.phone}</p>}
+                      <p className="text-[11px] pt-0.5 border-t border-gray-200/60">
+                        <span className="text-gray-500">Flight Attendant:</span> <span className="font-semibold text-gold-dark">{fa.name}</span>
+                      </p>
+                      {fa.phone && <p className="font-mono text-[10px] text-gray-600 pl-3">{fa.phone}</p>}
                     </div>
 
-                    {/* Passengers */}
+                    {/* Passengers, Pets & Luggage */}
                     <div className="space-y-1">
                       <div className="flex items-center gap-1 font-bold text-gray-900 border-b border-gray-200 pb-0.5 text-[11px]">
                         <User className="w-3.5 h-3.5 text-gold" />
-                        <span>Passengers ({leg.paxCount})</span>
+                        <span>Passengers ({leg.paxCount}) & Cargo</span>
                       </div>
                       <p className="text-gray-800 font-medium text-[11px]">{passengerNames}</p>
+                      {leg.pets?.hasPets && (
+                        <p className="text-[10px] text-purple-800 bg-purple-50 p-1 rounded border border-purple-200">
+                          🐾 <strong>Pets:</strong> {leg.pets.petCount} ({leg.pets.petType || "Cabin Pet"}, {leg.pets.totalWeightKg} kg)
+                        </p>
+                      )}
+                      {leg.luggage && (
+                        <p className="text-[10px] text-gray-700 bg-amber-50/60 p-1 rounded border border-amber-200">
+                          🧳 <strong>Luggage:</strong> {leg.luggage.standardSuitcases || leg.luggage.pieceCount} pcs ({leg.luggage.totalWeightKg} kg)
+                          {leg.luggage.dimensionsDescription && ` · ${leg.luggage.dimensionsDescription}`}
+                        </p>
+                      )}
                       <p className="text-[10px] text-emerald-700 flex items-center gap-1 font-semibold pt-1">
                         <ShieldCheck className="w-3 h-3" /> APIS & Passports Verified
                       </p>

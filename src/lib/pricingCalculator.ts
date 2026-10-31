@@ -116,6 +116,19 @@ export function calculatePricing(
   };
 }
 
+export function calculateCardFee(totalAmount: number, feePercentage: number = 3.5): { feeAmount: number; totalWithFee: number } {
+  const feeAmount = Math.round(totalAmount * (feePercentage / 100) * 100) / 100;
+  const totalWithFee = Math.round((totalAmount + feeAmount) * 100) / 100;
+  return { feeAmount, totalWithFee };
+}
+
+export function applyMargin(baseCost: number, marginType: "percentage" | "fixed", marginValue: number): number {
+  if (marginType === "percentage") {
+    return Math.round(baseCost * (1 + marginValue / 100));
+  }
+  return Math.round(baseCost + marginValue);
+}
+
 export function formatCurrency(amount: number, currency: "EUR" | "USD" | "GBP" | "CHF" = "EUR"): string {
   const symbolMap = {
     EUR: "€",

@@ -28,14 +28,27 @@ export default function BookingsView() {
     convertQuoteToBooked
   } = useAviation();
 
-  const [activeTab, setActiveTab] = useState<"all" | "in_progress" | "confirmed" | "completed">("all");
+  const [activeTab, setActiveTab] = useState<
+    "all" | "confirmed" | "quotes_sent" | "quotes_pending" | "quotes_undecided" | "completed"
+  >("all");
+
+  const countAll = bookings.length;
+  const countConfirmed = bookings.filter((b) => ["confirmed", "dispatched", "in_flight"].includes(b.status)).length;
+  const countQuotesSent = bookings.filter((b) => b.quoteStatus === "sent" || b.status === "quote_sent").length;
+  const countQuotesPending = bookings.filter((b) => b.quoteStatus === "pending").length;
+  const countQuotesUndecided = bookings.filter((b) => b.quoteStatus === "undecided" || b.status === "client_review").length;
+  const countCompleted = bookings.filter((b) => b.status === "completed").length;
 
   const filteredBookings = bookings.filter((b) => {
     // Status filter
-    if (activeTab === "in_progress") {
-      if (!["draft", "quote_sent", "client_review"].includes(b.status)) return false;
-    } else if (activeTab === "confirmed") {
+    if (activeTab === "confirmed") {
       if (!["confirmed", "dispatched", "in_flight"].includes(b.status)) return false;
+    } else if (activeTab === "quotes_sent") {
+      if (b.quoteStatus !== "sent" && b.status !== "quote_sent") return false;
+    } else if (activeTab === "quotes_pending") {
+      if (b.quoteStatus !== "pending") return false;
+    } else if (activeTab === "quotes_undecided") {
+      if (b.quoteStatus !== "undecided" && b.status !== "client_review") return false;
     } else if (activeTab === "completed") {
       if (b.status !== "completed") return false;
     }
@@ -44,6 +57,7 @@ export default function BookingsView() {
     if (searchQuery.trim() !== "") {
       const q = searchQuery.toLowerCase();
       const matchTrip = b.tripNumber.toLowerCase().includes(q);
+      const matchQuoteRef = (b.quoteReference || "").toLowerCase().includes(q);
       const matchClient = b.client.fullName.toLowerCase().includes(q);
       const matchCompany = b.client.companyName?.toLowerCase().includes(q) ?? false;
       const matchAircraft = b.aircraft.name.toLowerCase().includes(q) || (b.aircraft.registration?.toLowerCase().includes(q) ?? false);
@@ -54,7 +68,7 @@ export default function BookingsView() {
           l.origin.city.toLowerCase().includes(q) ||
           l.destination.city.toLowerCase().includes(q)
       );
-      if (!matchTrip && !matchClient && !matchCompany && !matchAircraft && !matchRoute) return false;
+      if (!matchTrip && !matchQuoteRef && !matchClient && !matchCompany && !matchAircraft && !matchRoute) return false;
     }
 
     return true;
@@ -64,34 +78,34 @@ export default function BookingsView() {
     switch (status) {
       case "confirmed":
         return (
-          <span className="px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1 w-max">
+          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1 w-max">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
             CONFIRMED
           </span>
         );
       case "dispatched":
         return (
-          <span className="px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-indigo-100 text-indigo-800 border border-indigo-300 flex items-center gap-1 w-max">
+          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-indigo-100 text-indigo-800 border border-indigo-300 flex items-center gap-1 w-max">
             <span className="h-1.5 w-1.5 rounded-full bg-indigo-600" />
             DISPATCHED
           </span>
         );
       case "in_flight":
         return (
-          <span className="px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-sky-100 text-sky-800 border border-sky-300 flex items-center gap-1 w-max animate-pulse">
+          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-sky-100 text-sky-800 border border-sky-300 flex items-center gap-1 w-max animate-pulse">
             <Plane className="w-2.5 h-2.5" />
             IN FLIGHT
           </span>
         );
       case "completed":
         return (
-          <span className="px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-gray-200 text-gray-700 border border-gray-300 flex items-center gap-1 w-max">
+          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-gray-200 text-gray-700 border border-gray-300 flex items-center gap-1 w-max">
             COMPLETED
           </span>
         );
       default:
         return (
-          <span className="px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1 w-max">
+          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1 w-max">
             <Clock className="w-2.5 h-2.5" />
             {status.toUpperCase().replace("_", " ")}
           </span>
@@ -99,22 +113,55 @@ export default function BookingsView() {
     }
   };
 
-  const countAll = bookings.length;
-  const countInProgress = bookings.filter((b) => ["draft", "quote_sent", "client_review"].includes(b.status)).length;
-  const countConfirmed = bookings.filter((b) => ["confirmed", "dispatched", "in_flight"].includes(b.status)).length;
-  const countCompleted = bookings.filter((b) => b.status === "completed").length;
+  const getQuoteBadge = (b: Booking) => {
+    const isBooked = ["confirmed", "dispatched", "in_flight", "completed"].includes(b.status);
+    if (isBooked) {
+      return (
+        <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+          BOOKED FLIGHT
+        </span>
+      );
+    }
+    const qStatus = (b.quoteStatus || (b.status === "quote_sent" ? "sent" : b.status === "client_review" ? "undecided" : "draft")).toLowerCase();
+    switch (qStatus) {
+      case "sent":
+        return (
+          <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-blue-100 text-blue-800 border border-blue-300">
+            QUOTE: SENT
+          </span>
+        );
+      case "pending":
+        return (
+          <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-amber-100 text-amber-800 border border-amber-300">
+            QUOTE: PENDING
+          </span>
+        );
+      case "undecided":
+        return (
+          <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-purple-100 text-purple-800 border border-purple-300">
+            QUOTE: UNDECIDED
+          </span>
+        );
+      default:
+        return (
+          <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-gray-100 text-gray-700 border border-gray-300">
+            QUOTE: DRAFT
+          </span>
+        );
+    }
+  };
 
   return (
     <div className="space-y-6">
       
       {/* Category Tabs & Subheader Bar */}
-      <div className="bg-white border border-[#E0DAD0] rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="bg-white border border-[#E0DAD0] rounded-2xl p-4 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         
         {/* Category Tabs */}
         <div className="flex flex-wrap items-center gap-1.5 bg-[#F5F2EC] p-1.5 rounded-xl border border-[#E0DAD0]">
           <button
             onClick={() => setActiveTab("all")}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
               activeTab === "all"
                 ? "bg-[#0F1420] text-white shadow-sm"
                 : "text-[#0F1420]/70 hover:text-[#0F1420]"
@@ -127,22 +174,8 @@ export default function BookingsView() {
           </button>
 
           <button
-            onClick={() => setActiveTab("in_progress")}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
-              activeTab === "in_progress"
-                ? "bg-[#0F1420] text-white shadow-sm"
-                : "text-[#0F1420]/70 hover:text-[#0F1420]"
-            }`}
-          >
-            <span>In-Progress Quotes</span>
-            <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${activeTab === "in_progress" ? "bg-amber-400 text-[#0F1420]" : "bg-[#E0DAD0] text-gray-700"}`}>
-              {countInProgress}
-            </span>
-          </button>
-
-          <button
             onClick={() => setActiveTab("confirmed")}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
               activeTab === "confirmed"
                 ? "bg-[#0F1420] text-white shadow-sm"
                 : "text-[#0F1420]/70 hover:text-[#0F1420]"
@@ -155,8 +188,50 @@ export default function BookingsView() {
           </button>
 
           <button
+            onClick={() => setActiveTab("quotes_sent")}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              activeTab === "quotes_sent"
+                ? "bg-[#0F1420] text-white shadow-sm"
+                : "text-[#0F1420]/70 hover:text-[#0F1420]"
+            }`}
+          >
+            <span>Quotes Sent</span>
+            <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${activeTab === "quotes_sent" ? "bg-blue-400 text-white" : "bg-[#E0DAD0] text-gray-700"}`}>
+              {countQuotesSent}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("quotes_pending")}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              activeTab === "quotes_pending"
+                ? "bg-[#0F1420] text-white shadow-sm"
+                : "text-[#0F1420]/70 hover:text-[#0F1420]"
+            }`}
+          >
+            <span>Quotes Pending</span>
+            <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${activeTab === "quotes_pending" ? "bg-amber-400 text-[#0F1420]" : "bg-[#E0DAD0] text-gray-700"}`}>
+              {countQuotesPending}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("quotes_undecided")}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              activeTab === "quotes_undecided"
+                ? "bg-[#0F1420] text-white shadow-sm"
+                : "text-[#0F1420]/70 hover:text-[#0F1420]"
+            }`}
+          >
+            <span>Quotes Undecided</span>
+            <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${activeTab === "quotes_undecided" ? "bg-purple-400 text-white" : "bg-[#E0DAD0] text-gray-700"}`}>
+              {countQuotesUndecided}
+            </span>
+          </button>
+
+          <button
             onClick={() => setActiveTab("completed")}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
               activeTab === "completed"
                 ? "bg-[#0F1420] text-white shadow-sm"
                 : "text-[#0F1420]/70 hover:text-[#0F1420]"
@@ -225,11 +300,26 @@ export default function BookingsView() {
                       {/* Trip & Status */}
                       <td className="py-4 px-4">
                         <div className="flex flex-col gap-1">
-                          <span className="font-extrabold text-[#0F1420] font-mono text-sm tracking-wide group-hover:text-[#C9A052] transition-colors flex items-center gap-1.5">
-                            {booking.tripNumber}
-                            <Eye className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity text-[#C9A052]" />
-                          </span>
-                          {getStatusBadge(booking.status)}
+                          {["confirmed", "dispatched", "in_flight", "completed"].includes(booking.status) ? (
+                            <span className="font-extrabold text-[#0F1420] font-mono text-sm tracking-wide group-hover:text-[#C9A052] transition-colors flex items-center gap-1.5">
+                              Trip #{booking.tripNumber}
+                              <Eye className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity text-[#C9A052]" />
+                            </span>
+                          ) : (
+                            <div className="flex flex-col">
+                              <span className="font-bold text-[#9A7A35] font-mono text-xs tracking-wide group-hover:text-[#C9A052] transition-colors flex items-center gap-1.5">
+                                {booking.quoteReference || `QTE-${booking.tripNumber}`}
+                                <Eye className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity text-[#C9A052]" />
+                              </span>
+                              <span className="text-[10px] text-gray-400 font-mono italic">
+                                (Trip # assigned on booking)
+                              </span>
+                            </div>
+                          )}
+                          <div className="flex items-center gap-1 flex-wrap">
+                            {getStatusBadge(booking.status)}
+                            {getQuoteBadge(booking)}
+                          </div>
                         </div>
                       </td>
 

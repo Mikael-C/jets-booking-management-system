@@ -41,6 +41,8 @@ interface EditableLegBrief {
   cmdrPhone: string;
   foName: string;
   foPhone: string;
+  faName?: string;
+  faPhone?: string;
   passengerNames: string;
   depHandlerName: string;
   depHandlerPhone: string;
@@ -100,6 +102,8 @@ export default function GenerateBriefView() {
       cmdrPhone: "+33 6 61 39 47 63",
       foName: "Franklin BONNIVEAU",
       foPhone: "+33 6 61 39 47 00",
+      faName: "Claire Dupont",
+      faPhone: "+33 6 44 19 88 03",
       passengerNames: "Luca Cesare Armando Ceretti, Marc Edouard Dwek",
       depHandlerName: "Aviavip",
       depHandlerPhone: "+33 493 213737",
@@ -123,6 +127,8 @@ export default function GenerateBriefView() {
       cmdrPhone: "+33 6 61 39 47 63",
       foName: "Franklin BONNIVEAU",
       foPhone: "+33 6 61 39 47 00",
+      faName: "Claire Dupont",
+      faPhone: "+33 6 44 19 88 03",
       passengerNames: "Luca Cesare Armando Ceretti, Marc Edouard Dwek",
       depHandlerName: "Airport Altenrhein",
       depHandlerPhone: "+41 71 858 5165",
@@ -178,6 +184,10 @@ export default function GenerateBriefView() {
               name: "Franklin BONNIVEAU",
               phone: "+33 6 61 39 47 00"
             };
+            const fa = leg.crew.find((c) => c.role === "Cabin Attendant") || {
+              name: "Claire Dupont",
+              phone: "+33 6 44 19 88 03"
+            };
             const pNames = leg.passengers.map((p) => p.fullName).join(", ") || b.client.fullName;
 
             return {
@@ -195,6 +205,8 @@ export default function GenerateBriefView() {
               cmdrPhone: cmdr.phone,
               foName: fo.name,
               foPhone: fo.phone || "",
+              faName: fa.name,
+              faPhone: fa.phone || "",
               passengerNames: pNames,
               depHandlerName: leg.departureHandling.name || "Aviavip",
               depHandlerPhone: leg.departureHandling.phone || "+33 493 213737",
@@ -234,6 +246,8 @@ export default function GenerateBriefView() {
         cmdrPhone: last ? last.cmdrPhone : "+33 6 61 39 47 63",
         foName: last ? last.foName : "Franklin BONNIVEAU",
         foPhone: last ? last.foPhone : "+33 6 61 39 47 00",
+        faName: last ? (last.faName || "Claire Dupont") : "Claire Dupont",
+        faPhone: last ? (last.faPhone || "+33 6 44 19 88 03") : "+33 6 44 19 88 03",
         passengerNames: last ? last.passengerNames : clientName,
         depHandlerName: "Executive FBO",
         depHandlerPhone: "+33 493 213737",
@@ -281,7 +295,8 @@ export default function GenerateBriefView() {
         aircraftRegistration: leg.aircraftRegistration || aircraftRegistration,
         crew: [
           { role: "CMDR", name: leg.cmdrName, phone: leg.cmdrPhone },
-          { role: "F/O", name: leg.foName, phone: leg.foPhone }
+          { role: "F/O", name: leg.foName, phone: leg.foPhone },
+          { role: "Cabin Attendant", name: leg.faName || "Claire Dupont", phone: leg.faPhone || "+33 6 44 19 88 03" }
         ],
         passengers: parsedPassengers.length > 0 ? parsedPassengers : [{ id: "p1", fullName: clientName, isLeadPassenger: true }],
         departureHandling: {
@@ -734,30 +749,36 @@ export default function GenerateBriefView() {
 
                   <div>
                     <label className="block text-[10px] font-mono uppercase text-[#0F1420]/70 mb-1">
-                      From (ICAO)
+                      From (Airport)
                     </label>
-                    <input
-                      type="text"
-                      placeholder="LFMN"
+                    <select
                       value={leg.originIcao}
                       onChange={(e) => handleLegChange(index, "originIcao", e.target.value)}
-                      required
-                      className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1.5 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                    />
+                      className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1.5 text-xs font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                    >
+                      {airportsData.map((a) => (
+                        <option key={a.icao} value={a.icao}>
+                          {a.icao} — {a.city} ({a.iata})
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   <div>
                     <label className="block text-[10px] font-mono uppercase text-[#0F1420]/70 mb-1">
-                      To (ICAO)
+                      To (Airport)
                     </label>
-                    <input
-                      type="text"
-                      placeholder="LSZR"
+                    <select
                       value={leg.destIcao}
                       onChange={(e) => handleLegChange(index, "destIcao", e.target.value)}
-                      required
-                      className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1.5 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                    />
+                      className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1.5 text-xs font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                    >
+                      {airportsData.map((a) => (
+                        <option key={a.icao} value={a.icao}>
+                          {a.icao} — {a.city} ({a.iata})
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   <div>
@@ -890,6 +911,26 @@ export default function GenerateBriefView() {
                           placeholder="+33 6 61 39 47 00"
                           value={leg.foPhone}
                           onChange={(e) => handleLegChange(index, "foPhone", e.target.value)}
+                          className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 text-xs font-mono text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-mono uppercase text-gray-500 mb-0.5">Flight Attendant Name</label>
+                        <input
+                          type="text"
+                          placeholder="Claire Dupont"
+                          value={leg.faName || ""}
+                          onChange={(e) => handleLegChange(index, "faName", e.target.value)}
+                          className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-mono uppercase text-gray-500 mb-0.5">Flight Attendant Phone</label>
+                        <input
+                          type="tel"
+                          placeholder="+33 6 44 19 88 03"
+                          value={leg.faPhone || ""}
+                          onChange={(e) => handleLegChange(index, "faPhone", e.target.value)}
                           className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 text-xs font-mono text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
                         />
                       </div>

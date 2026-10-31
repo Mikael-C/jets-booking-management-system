@@ -16,6 +16,7 @@ import BookingsView from "@/components/admin/BookingsView";
 import GenerateQuoteView from "@/components/admin/GenerateQuoteView";
 import GenerateBriefView from "@/components/admin/GenerateBriefView";
 import GenerateInvoiceView from "@/components/admin/GenerateInvoiceView";
+import GenerateContractView from "@/components/admin/GenerateContractView";
 import AgentRequestsQueueView from "@/components/admin/AgentRequestsQueueView";
 import ClientsView from "@/components/admin/ClientsView";
 import FleetView from "@/components/admin/FleetView";
@@ -57,6 +58,8 @@ export default function Home() {
           return <GenerateBriefView />;
         case "generate_invoice":
           return <GenerateInvoiceView />;
+        case "generate_contract":
+          return <GenerateContractView />;
         case "agent_requests":
           return <AgentRequestsQueueView />;
         case "operators":

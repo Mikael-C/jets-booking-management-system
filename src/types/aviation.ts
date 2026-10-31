@@ -88,6 +88,22 @@ export interface PassengerManifestItem {
   hasPet?: boolean;
 }
 
+export interface PetDetails {
+  hasPets: boolean;
+  petCount: number;
+  totalWeightKg: number;
+  petType?: string;
+  notes?: string;
+}
+
+export interface LuggageDetails {
+  pieceCount: number;
+  totalWeightKg: number;
+  standardSuitcases: number;
+  dimensionsDescription?: string;
+  specialLuggageDescription?: string;
+}
+
 export interface FlightLeg {
   legNumber: number;
   flightDate: string; // YYYY-MM-DD
@@ -104,6 +120,8 @@ export interface FlightLeg {
   departureHandling: HandlingAgent;
   arrivalHandling: HandlingAgent;
   distanceNm?: number;
+  pets?: PetDetails;
+  luggage?: LuggageDetails;
 }
 
 export interface PricingBreakdown {
@@ -153,6 +171,7 @@ export interface ClientDetails {
   phone: string;
   email: string;
   vatNumber?: string;
+  accountNumber?: string;
 }
 
 export interface OperatorDetails {
@@ -257,9 +276,9 @@ export interface MarginRule {
 
 export interface Booking {
   id: string;
-  tripNumber: string; // e.g. "PEU842-001" or "ZFL433"
+  tripNumber: string; // e.g. "PEU842-001" or "ZFL433" (Assigned when booked as a flight)
   invoiceNumber: string; // e.g. "00106020"
-  accountNumber: string; // e.g. "2{21737}" or "284169"
+  accountNumber: string; // Linked to client account e.g. "ACC-21737"
   contractDate: string; // DD.MM.YYYY
   quoteExpirationDate: string; // DD.MM.YYYY, HH:mmz
   paymentDueDate: string; // DD.MM.YYYY
@@ -276,8 +295,19 @@ export interface Booking {
   agentEmail?: string;
   commissionPercentage?: number;
   quoteVersion?: number;
-  quoteStatus?: "draft" | "sent" | "viewed" | "accepted" | "declined";
+  quoteStatus?: "draft" | "sent" | "pending" | "undecided" | "accepted" | "declined" | "expired";
+  quoteReference?: string;
   paymentStatus?: "unpaid" | "deposit_paid" | "fully_paid" | "overdue" | "refunded";
+  paymentReason?: string;
+  paymentMethodChoice?: "wire" | "card" | "escrow";
+  cardFeePercentage?: number; // 3.5%
+  cardFeeAmount?: number;
+  totalWithCardFee?: number;
+  adminMarginType?: "percentage" | "fixed";
+  adminMarginValue?: number;
+  agentMarginType?: "percentage" | "fixed";
+  agentMarginValue?: number;
+  manualServices?: { id: string; name: string; price: number }[];
   avInodeTripId?: string;
   sourcingOptions?: SourcingOption[];
   createdAt: string;
@@ -346,10 +376,17 @@ export interface AgentRequest {
   assignedTo?: string;
   slaDeadline?: string;
   multiLegs?: RequestLegItem[];
+
+  // Agent margin and pet/luggage details
+  agentMarginPct?: number;
+  agentMarginFixed?: number;
+  pets?: PetDetails;
+  luggage?: LuggageDetails;
 }
 
 export interface ClientRecord {
   id: string;
+  accountNumber: string;
   fullName: string;
   companyName?: string;
   streetAddress: string;

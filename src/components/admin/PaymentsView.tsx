@@ -18,7 +18,10 @@ import {
   X,
   Calendar,
   Send,
-  Building
+  Building,
+  Link,
+  Copy,
+  Check
 } from "lucide-react";
 
 export default function PaymentsView() {
@@ -35,10 +38,18 @@ export default function PaymentsView() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [selectedBookingForPayment, setSelectedBookingForPayment] = useState<Booking | null>(null);
 
+  // Payment Link Generator State
+  const [selectedBookingForLink, setSelectedBookingForLink] = useState<Booking | null>(null);
+  const [linkAmount, setLinkAmount] = useState<number>(0);
+  const [linkReason, setLinkReason] = useState<string>("Charter Flight Settlement");
+  const [linkCopied, setLinkCopied] = useState(false);
+  const [linkPaymentMethod, setLinkPaymentMethod] = useState<"wire" | "card" | "escrow">("card");
+
   // Payment Recording Modal State
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
   const [paymentMethod, setPaymentMethod] = useState<string>("Bank Wire Transfer");
   const [paymentRef, setPaymentRef] = useState<string>("");
+  const [paymentReason, setPaymentReason] = useState<string>("Charter Flight Settlement");
   const [paymentDate, setPaymentDate] = useState<string>(
     new Date().toISOString().split("T")[0]
   );
@@ -91,13 +102,29 @@ export default function PaymentsView() {
     setSelectedBookingForPayment(b);
     setPaymentAmount(b.pricing.totalFlightPrice || 15000);
     setPaymentRef(`WIRE-${Math.floor(100000 + Math.random() * 900000)}`);
+    setPaymentReason(b.paymentReason || "Charter Flight Settlement");
     setPaymentType("fully_paid");
+  };
+
+  const handleOpenPaymentLink = (b: Booking) => {
+    setSelectedBookingForLink(b);
+    setLinkAmount(b.pricing.totalFlightPrice || 15000);
+    setLinkReason(b.paymentReason || "Charter Flight Settlement");
+    setLinkPaymentMethod(b.paymentMethodChoice || "card");
+    setLinkCopied(false);
+  };
+
+  const handleCopyPaymentLink = (url: string) => {
+    navigator.clipboard?.writeText(url);
+    setLinkCopied(true);
+    setTimeout(() => setLinkCopied(false), 3000);
   };
 
   const handleRecordPaymentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedBookingForPayment) return;
 
+    selectedBookingForPayment.paymentReason = paymentReason;
     updateBookingPaymentStatus(selectedBookingForPayment.id, paymentType);
     addAuditEntry({
       userEmail: currentUser?.email || "finance@orbelo.com",
@@ -105,7 +132,7 @@ export default function PaymentsView() {
       action: "PAYMENT_RECORDED",
       entityType: "Payment",
       entityId: selectedBookingForPayment.invoiceNumber || selectedBookingForPayment.tripNumber,
-      details: `Recorded ${paymentType === "fully_paid" ? "full payment" : "deposit"} of ${formatCurrency(paymentAmount, selectedBookingForPayment.pricing.currency || "EUR")} via ${paymentMethod} (Ref: ${paymentRef}) for ${selectedBookingForPayment.client.fullName}`
+      details: `Recorded ${paymentType === "fully_paid" ? "full payment" : "deposit"} of ${formatCurrency(paymentAmount, selectedBookingForPayment.pricing.currency || "EUR")} for Reason: "${paymentReason}" via ${paymentMethod} (Ref: ${paymentRef}) for ${selectedBookingForPayment.client.fullName}`
     });
 
     setSelectedBookingForPayment(null);
@@ -269,6 +296,7 @@ export default function PaymentsView() {
                 <th className="py-3 px-4">Trip # & Flight Date</th>
                 <th className="py-3 px-4">Invoice #</th>
                 <th className="py-3 px-4">Client & Company</th>
+                <th className="py-3 px-4">Payment Purpose / Reason</th>
                 <th className="py-3 px-4">Charter Total</th>
                 <th className="py-3 px-4">Payment Due Date</th>
                 <th className="py-3 px-4">Payment Status</th>
@@ -278,7 +306,7 @@ export default function PaymentsView() {
             <tbody className="divide-y divide-[#E0DAD0]/60">
               {filteredBookings.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-8 text-center text-xs text-gray-500 font-mono">
+                  <td colSpan={8} className="py-8 text-center text-xs text-gray-500 font-mono">
                     No payment records match the filter criteria.
                   </td>
                 </tr>
@@ -306,6 +334,13 @@ export default function PaymentsView() {
                       )}
                     </td>
 
+                    {/* Payment Purpose / Reason */}
+                    <td className="py-3.5 px-4">
+                      <span className="font-mono text-[11px] text-[#0F1420] font-semibold bg-[#F5F2EC] px-2 py-0.5 rounded border border-[#E0DAD0] inline-block">
+                        {b.paymentReason || "Charter Flight Settlement"}
+                      </span>
+                    </td>
+
                     {/* Charter Total */}
                     <td className="py-3.5 px-4 font-mono font-black text-sm text-[#0F1420]">
                       {formatCurrency(b.pricing.totalFlightPrice, b.pricing.currency || "EUR")}
@@ -323,7 +358,16 @@ export default function PaymentsView() {
 
                     {/* Actions */}
                     <td className="py-3.5 px-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => handleOpenPaymentLink(b)}
+                          className="px-2.5 py-1.5 rounded-lg bg-[#C9A052]/15 hover:bg-[#C9A052]/30 text-[#9A7A35] font-mono font-bold text-[11px] transition-colors border border-[#C9A052]/40 flex items-center gap-1 shadow-sm"
+                          title="Generate client payment link"
+                        >
+                          <Link className="w-3.5 h-3.5 text-[#C9A052]" />
+                          <span>Pay Link</span>
+                        </button>
+
                         <button
                           onClick={() => openDocument(b, "invoice")}
                           className="px-2.5 py-1.5 rounded-lg bg-[#F5F2EC] hover:bg-[#EAE6DE] text-[#0F1420] font-mono font-bold text-[11px] transition-colors border border-[#E0DAD0] flex items-center gap-1"
@@ -339,7 +383,7 @@ export default function PaymentsView() {
                             className="px-2.5 py-1.5 rounded-lg bg-[#0F1420] hover:bg-[#1A2338] text-white font-mono font-bold text-[11px] transition-colors flex items-center gap-1 shadow-sm"
                           >
                             <CreditCard className="w-3.5 h-3.5 text-[#C9A052]" />
-                            <span>Record Payment</span>
+                            <span>Record</span>
                           </button>
                         )}
                       </div>
@@ -381,18 +425,40 @@ export default function PaymentsView() {
                 </span>
               </div>
 
-              <div>
-                <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                  Settlement Type
-                </label>
-                <select
-                  value={paymentType}
-                  onChange={(e) => setPaymentType(e.target.value as any)}
-                  className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-lg px-3 py-2 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                >
-                  <option value="fully_paid">100% Full Payment Received</option>
-                  <option value="deposit_paid">Partial Deposit Received (25%)</option>
-                </select>
+              {/* Settlement Type & Reason */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
+                    Settlement Type
+                  </label>
+                  <select
+                    value={paymentType}
+                    onChange={(e) => setPaymentType(e.target.value as any)}
+                    className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-lg px-3 py-2 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                  >
+                    <option value="fully_paid">100% Full Payment Received</option>
+                    <option value="deposit_paid">Partial Deposit Received (25%)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
+                    Payment Reason / Purpose
+                  </label>
+                  <select
+                    value={paymentReason}
+                    onChange={(e) => setPaymentReason(e.target.value)}
+                    className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-lg px-3 py-2 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                  >
+                    <option value="Charter Flight Settlement">Charter Flight Settlement</option>
+                    <option value="Booking Confirmation Deposit (25%)">Booking Confirmation Deposit (25%)</option>
+                    <option value="De-icing Fluid & Airport Tariff">De-icing Fluid & Airport Tariff</option>
+                    <option value="VIP Ground Limousine & Helicopter">VIP Ground Limousine & Helicopter</option>
+                    <option value="In-Flight Catering & Special Handling">In-Flight Catering & Special Handling</option>
+                    <option value="Extended Aircraft Parking & Hangarage">Extended Aircraft Parking & Hangarage</option>
+                    <option value="Owner Approval Repositioning Surcharge">Owner Approval Repositioning Surcharge</option>
+                  </select>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -471,6 +537,155 @@ export default function PaymentsView() {
           </div>
         </div>
       )}
+
+      {/* Generate Client Payment Link Modal */}
+      {selectedBookingForLink && (() => {
+        const currency = selectedBookingForLink.pricing.currency || "EUR";
+        const cardFeeAmount = linkPaymentMethod === "card" ? Math.round(linkAmount * 0.035) : 0;
+        const totalPayable = linkAmount + cardFeeAmount;
+        const generatedUrl = `https://pay.orbelo.com/checkout/${selectedBookingForLink.id}?ref=${selectedBookingForLink.invoiceNumber || selectedBookingForLink.tripNumber}&amt=${totalPayable}&cur=${currency}&method=${linkPaymentMethod}&purpose=${encodeURIComponent(linkReason)}`;
+
+        return (
+          <div className="fixed inset-0 z-50 bg-[#0F1420]/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+            <div className="bg-white rounded-2xl max-w-xl w-full border border-[#E0DAD0] shadow-2xl overflow-hidden text-xs">
+              
+              {/* Header */}
+              <div className="p-5 bg-[#0F1420] text-white flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Link className="w-4 h-4 text-[#C9A052]" />
+                    <span className="text-[10px] font-mono font-bold text-[#C9A052] uppercase tracking-wider">
+                      CLIENT PAYMENT LINK GENERATOR
+                    </span>
+                  </div>
+                  <h3 className="text-base font-bold text-white mt-0.5">
+                    {selectedBookingForLink.client.fullName} • Trip #{selectedBookingForLink.tripNumber}
+                  </h3>
+                </div>
+                <button
+                  onClick={() => setSelectedBookingForLink(null)}
+                  className="p-1.5 rounded-lg bg-white/10 text-white hover:bg-white/20"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 space-y-4">
+                
+                {/* Reason / Purpose */}
+                <div>
+                  <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
+                    Payment Reason / Purpose
+                  </label>
+                  <select
+                    value={linkReason}
+                    onChange={(e) => setLinkReason(e.target.value)}
+                    className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                  >
+                    <option value="Charter Flight Settlement">Charter Flight Settlement (100% Full Balance)</option>
+                    <option value="Flight Reservation Deposit (25%)">Flight Reservation Deposit (25%)</option>
+                    <option value="De-icing Protection Insurance">De-icing Protection Insurance</option>
+                    <option value="VIP Limousine & Tarmac Helicopter Transfer">VIP Limousine & Tarmac Helicopter Transfer</option>
+                    <option value="Bespoke In-Flight Catering Surcharge">Bespoke In-Flight Catering Surcharge</option>
+                    <option value="Post-Flight Incidental Charges & Extended Hangarage">Post-Flight Incidental Charges & Extended Hangarage</option>
+                  </select>
+                </div>
+
+                {/* Amount and Payment Method */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
+                      Charge Amount ({currency})
+                    </label>
+                    <input
+                      type="number"
+                      value={linkAmount}
+                      onChange={(e) => setLinkAmount(Number(e.target.value))}
+                      className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-mono font-black text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
+                      Settlement Gateway
+                    </label>
+                    <select
+                      value={linkPaymentMethod}
+                      onChange={(e) => setLinkPaymentMethod(e.target.value as any)}
+                      className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                    >
+                      <option value="card">Credit Card (+3.5% Card Processing Fee)</option>
+                      <option value="wire">SEPA / SWIFT Wire Transfer (0% Fee)</option>
+                      <option value="escrow">Aviation Escrow Trust Account (0% Fee)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Calculation Summary */}
+                <div className="p-3.5 bg-[#F5F2EC] rounded-xl border border-[#E0DAD0] space-y-1.5 font-mono text-xs">
+                  <div className="flex justify-between text-gray-600">
+                    <span>Base Charter Charge:</span>
+                    <span>{formatCurrency(linkAmount, currency)}</span>
+                  </div>
+                  {linkPaymentMethod === "card" && (
+                    <div className="flex justify-between text-[#9A7A35] font-semibold">
+                      <span>Card Processing Fee (+3.5%):</span>
+                      <span>+{formatCurrency(cardFeeAmount, currency)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-sm font-black text-[#0F1420] pt-1 border-t border-[#E0DAD0]">
+                    <span>Total Client Payment:</span>
+                    <span>{formatCurrency(totalPayable, currency)}</span>
+                  </div>
+                </div>
+
+                {/* Generated Link Box */}
+                <div>
+                  <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
+                    Generated Direct Checkout URL
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={generatedUrl}
+                      className="flex-1 bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-mono text-[#0F1420] select-all outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleCopyPaymentLink(generatedUrl)}
+                      className={`px-4 py-2 rounded-xl font-bold font-mono text-xs flex items-center gap-1.5 transition-all shadow-sm ${
+                        linkCopied
+                          ? "bg-emerald-600 text-white"
+                          : "bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420]"
+                      }`}
+                    >
+                      {linkCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                      <span>{linkCopied ? "Copied!" : "Copy Link"}</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-900 text-[11px] leading-relaxed">
+                  🔒 Payment links expire 72 hours after generation. Transactions are secured via 256-bit SSL encryption and routed directly to Orbelo's escrow or card merchant account.
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="p-4 bg-gray-50 border-t border-[#E0DAD0] flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedBookingForLink(null)}
+                  className="px-4 py-2 rounded-xl bg-gray-200 hover:bg-gray-300 text-[#0F1420] font-bold"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

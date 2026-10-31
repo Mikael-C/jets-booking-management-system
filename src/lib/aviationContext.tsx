@@ -698,7 +698,20 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
   };
 
   const convertQuoteToBooked = (bookingId: string) => {
-    updateBookingStatus(bookingId, "confirmed");
+    setBookings((prev) =>
+      prev.map((b) => {
+        if (b.id !== bookingId) return b;
+        const officialTripNumber = b.tripNumber && b.tripNumber.trim() !== "" ? b.tripNumber : `PEU${Math.floor(100 + Math.random() * 899)}-001`;
+        return {
+          ...b,
+          tripNumber: officialTripNumber,
+          status: "confirmed",
+          quoteStatus: "accepted",
+          updatedAt: new Date().toISOString()
+        };
+      })
+    );
+    setActiveNav("bookings");
   };
 
   const addAgentRequest = (reqData: Omit<AgentRequest, "id" | "createdAt" | "status">): AgentRequest => {

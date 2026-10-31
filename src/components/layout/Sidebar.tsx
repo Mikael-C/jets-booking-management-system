@@ -24,7 +24,8 @@ import {
   CreditCard,
   ClipboardList,
   ShieldCheck,
-  Layers
+  Layers,
+  ScrollText
 } from "lucide-react";
 
 export default function Sidebar() {
@@ -214,6 +215,21 @@ export default function Sidebar() {
                 <span>Generate Invoice</span>
               </div>
               <ChevronRight className={`w-3.5 h-3.5 ${activeNav === "generate_invoice" ? "text-[#0F1420]" : "text-gray-500"}`} />
+            </button>
+
+            <button
+              onClick={() => setActiveNav("generate_contract")}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeNav === "generate_contract"
+                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
+                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <ScrollText className={`w-4 h-4 ${activeNav === "generate_contract" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
+                <span>Generate Contract</span>
+              </div>
+              <ChevronRight className={`w-3.5 h-3.5 ${activeNav === "generate_contract" ? "text-[#0F1420]" : "text-gray-500"}`} />
             </button>
 
             {/* Directory & Pipeline */}

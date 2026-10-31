@@ -21,7 +21,9 @@ import {
   Clock,
   Sparkles,
   Percent,
-  RefreshCw
+  RefreshCw,
+  Search,
+  Layers
 } from "lucide-react";
 
 interface EditableFlownLeg {
@@ -107,63 +109,131 @@ export default function GenerateInvoiceView() {
   );
 
   const [success, setSuccess] = useState(false);
+  const [lookupQuery, setLookupQuery] = useState("");
+  const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
+  const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
+  const [batchGeneratedCount, setBatchGeneratedCount] = useState<number | null>(null);
+
+  const populateFromBooking = (b: Booking) => {
+    setSelectedBookingId(b.id);
+    setInvoiceNumber(b.invoiceNumber || `0010${Math.floor(6020 + Math.random() * 3970)}`);
+    setTripNumber(b.tripNumber || "PEU842-001");
+    setAccountNumber(b.accountNumber || "ACC-21737");
+    setInvoiceDate(b.contractDate || "02.10.2026");
+    setPaymentDueDate(b.paymentDueDate || "03.10.2026");
+    setCurrency(b.pricing?.currency || "EUR");
+
+    setClientName(b.client.fullName);
+    setCompanyName(b.client.companyName || b.client.fullName);
+    setStreetAddress(b.client.streetAddress);
+    setCityCountry(b.client.cityPostalCountry);
+    setClientVat(b.client.vatNumber || "");
+
+    setOperatorName(b.operator.companyName || "GlobeAir GmbH");
+    setRepName(b.operator.representativeName || "Ezeokeke, Obiefuna");
+    setOperatorEmail(b.operator.supportEmail || "customercare@globeair.com");
+    setOperatorPhone(b.operator.supportPhone || "00437221727400");
+    setOperatorVat(b.operator.vatNumber || "ATU 6335 7619");
+
+    setAircraftName(b.aircraft.name);
+    setTripType(b.tripType || "round_trip");
+
+    if (b.legs && b.legs.length > 0) {
+      setFlownLegs(
+        b.legs.map((leg) => ({
+          flightDate: leg.flightDate,
+          originIcao: leg.origin.icao,
+          destIcao: leg.destination.icao,
+          departureTime: leg.departureTimeLocal,
+          arrivalTime: leg.arrivalTimeLocal,
+          paxCount: leg.paxCount,
+          flightNumber: leg.flightNumber
+        }))
+      );
+    }
+
+    if (b.pricing) {
+      setFlightPrice(b.pricing.flightPrice || 11500);
+      setAirportFees(b.pricing.airportFees || 1140);
+      setPassengerFees(b.pricing.passengerFees || 80);
+      setDayOfWeekDiscount(b.pricing.dayOfWeekDiscount || 0);
+      setInboundTax(b.pricing.inboundPassengerTax || 200);
+      setOutboundTax(b.pricing.outboundPassengerTax || 200);
+      setAdditionalService(b.pricing.additionalServicesTotal || 0);
+    }
+
+    setBankName(b.operator.bankName || defaultOperator.bankName);
+    setIban(b.operator.iban || defaultOperator.iban);
+    setBic(b.operator.bic || defaultOperator.bic);
+    setAccountHolder(b.operator.accountHolder || defaultOperator.accountHolder);
+  };
 
   // Sync state when selecting a booking from dropdown
   const handleBookingChange = (id: string) => {
-    setSelectedBookingId(id);
     const b = bookings.find((item) => item.id === id);
     if (b) {
-      setInvoiceNumber(b.invoiceNumber || "00106020");
-      setTripNumber(b.tripNumber || "PEU842-001");
-      setAccountNumber(b.accountNumber || "2{21737}");
-      setInvoiceDate(b.contractDate || "02.10.2026");
-      setPaymentDueDate(b.paymentDueDate || "03.10.2026");
-      setCurrency(b.pricing?.currency || "EUR");
-
-      setClientName(b.client.fullName);
-      setCompanyName(b.client.companyName || b.client.fullName);
-      setStreetAddress(b.client.streetAddress);
-      setCityCountry(b.client.cityPostalCountry);
-      setClientVat(b.client.vatNumber || "");
-
-      setOperatorName(b.operator.companyName || "GlobeAir GmbH");
-      setRepName(b.operator.representativeName || "Ezeokeke, Obiefuna");
-      setOperatorEmail(b.operator.supportEmail || "customercare@globeair.com");
-      setOperatorPhone(b.operator.supportPhone || "00437221727400");
-      setOperatorVat(b.operator.vatNumber || "ATU 6335 7619");
-
-      setAircraftName(b.aircraft.name);
-      setTripType(b.tripType || "round_trip");
-
-      if (b.legs && b.legs.length > 0) {
-        setFlownLegs(
-          b.legs.map((leg) => ({
-            flightDate: leg.flightDate,
-            originIcao: leg.origin.icao,
-            destIcao: leg.destination.icao,
-            departureTime: leg.departureTimeLocal,
-            arrivalTime: leg.arrivalTimeLocal,
-            paxCount: leg.paxCount,
-            flightNumber: leg.flightNumber
-          }))
-        );
-      }
-
-      if (b.pricing) {
-        setFlightPrice(b.pricing.flightPrice || 11500);
-        setAirportFees(b.pricing.airportFees || 1140);
-        setPassengerFees(b.pricing.passengerFees || 80);
-        setDayOfWeekDiscount(b.pricing.dayOfWeekDiscount || 0);
-        setInboundTax(b.pricing.inboundPassengerTax || 200);
-        setOutboundTax(b.pricing.outboundPassengerTax || 200);
-        setAdditionalService(b.pricing.additionalServicesTotal || 0);
-      }
-
-      setBankName(b.operator.bankName || defaultOperator.bankName);
-      setIban(b.operator.iban || defaultOperator.iban);
-      setBic(b.operator.bic || defaultOperator.bic);
-      setAccountHolder(b.operator.accountHolder || defaultOperator.accountHolder);
+      populateFromBooking(b);
     }
+  };
+
+  // Keyed smart lookup by Trip #, Invoice #, Quote Ref, Account #, or Client name
+  const handleKeyedLookup = (query: string) => {
+    setLookupQuery(query);
+    const trimmed = query.trim().toLowerCase();
+    if (!trimmed) return;
+
+    const matched = bookings.find((b) =>
+      (b.tripNumber && b.tripNumber.toLowerCase().includes(trimmed)) ||
+      (b.invoiceNumber && b.invoiceNumber.toLowerCase().includes(trimmed)) ||
+      (b.quoteReference && b.quoteReference.toLowerCase().includes(trimmed)) ||
+      (b.accountNumber && b.accountNumber.toLowerCase().includes(trimmed)) ||
+      (b.client.fullName.toLowerCase().includes(trimmed))
+    );
+
+    if (matched) {
+      populateFromBooking(matched);
+      setFeedbackMsg(`✓ Loaded flight details for ${matched.client.fullName} (${matched.tripNumber})`);
+      setTimeout(() => setFeedbackMsg(null), 3500);
+    }
+  };
+
+  // Generate unique collision-free invoice number
+  const generateUniqueInvoiceNumber = () => {
+    const existing = new Set(bookings.map((b) => b.invoiceNumber));
+    let uniqueNum = "";
+    let attempts = 0;
+    do {
+      uniqueNum = `0010${Math.floor(6020 + Math.random() * 3970)}`;
+      attempts++;
+    } while (existing.has(uniqueNum) && attempts < 100);
+    setInvoiceNumber(uniqueNum);
+    setFeedbackMsg(`✓ Assigned new unique invoice #${uniqueNum}`);
+    setTimeout(() => setFeedbackMsg(null), 3000);
+  };
+
+  // Batch generate unique invoices in one click
+  const handleBatchGenerateInvoices = () => {
+    let baseSeq = 106030;
+    const existing = new Set(bookings.map((b) => b.invoiceNumber));
+    let count = 0;
+    bookings.forEach((b) => {
+      if (!b.invoiceNumber || b.invoiceNumber === "00106020" || b.invoiceNumber.includes("PENDING")) {
+        while (existing.has(`00${baseSeq}`)) {
+          baseSeq++;
+        }
+        const newInv = `00${baseSeq}`;
+        existing.add(newInv);
+        b.invoiceNumber = newInv;
+        count++;
+        baseSeq++;
+      }
+    });
+    setBatchGeneratedCount(count);
+    setFeedbackMsg(`✓ Successfully batch generated ${count} unique commercial invoices with sequential numbering!`);
+    setTimeout(() => {
+      setIsBatchModalOpen(false);
+      setFeedbackMsg(null);
+    }, 3500);
   };
 
   // Pricing calculations
@@ -312,22 +382,122 @@ export default function GenerateInvoiceView() {
           </p>
         </div>
 
-        {/* Trip Selector */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-mono font-bold text-[#0F1420]/70">Trip:</span>
-          <select
-            value={selectedBookingId}
-            onChange={(e) => handleBookingChange(e.target.value)}
-            className="bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3 py-1.5 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+        {/* Trip Selector & Batch Invoicing */}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-mono font-bold text-[#0F1420]/70">Trip:</span>
+            <select
+              value={selectedBookingId}
+              onChange={(e) => handleBookingChange(e.target.value)}
+              className="bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3 py-1.5 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+            >
+              {bookings.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.tripNumber} ({b.client.fullName} • {formatCurrency(b.pricing?.totalFlightPrice || 12870, b.pricing?.currency || "EUR")})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsBatchModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0F1420] hover:bg-[#1A2338] text-[#C9A052] border border-[#C9A052]/40 text-xs font-mono font-bold transition-all shadow-sm"
+            title="Batch generate unique invoices for multiple flights in one click"
           >
-            {bookings.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.tripNumber} ({b.client.fullName} • {formatCurrency(b.pricing?.totalFlightPrice || 12870, b.pricing?.currency || "EUR")})
-              </option>
-            ))}
-          </select>
+            <Layers className="w-3.5 h-3.5 text-[#C9A052]" />
+            <span>Batch Generate Invoices</span>
+          </button>
         </div>
       </div>
+
+      {/* Keyed Smart Lookup Bar */}
+      <div className="p-4 bg-white border border-[#E0DAD0] rounded-2xl shadow-sm space-y-2">
+        <label className="block text-[11px] font-mono font-bold uppercase tracking-wider text-[#0F1420]">
+          Keyed Booking Lookup (Auto-Populate All Details)
+        </label>
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
+            <input
+              type="text"
+              placeholder="Key in Trip Number (e.g. PEU842-001), Invoice #, Quote Ref, Account #, or Client Name to auto-fill..."
+              value={lookupQuery}
+              onChange={(e) => handleKeyedLookup(e.target.value)}
+              className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl pl-9 pr-4 py-2 text-xs font-mono text-[#0F1420] placeholder-gray-400 focus:outline-none focus:border-[#C9A052]"
+            />
+          </div>
+          {lookupQuery && (
+            <button
+              type="button"
+              onClick={() => setLookupQuery("")}
+              className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-xs font-mono text-gray-600"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+        <p className="text-[10px] text-gray-500 font-mono">
+          Keying in any identifier instantly matches the booked flight and links all client, route, and financial breakdown details.
+        </p>
+      </div>
+
+      {feedbackMsg && (
+        <div className="p-3.5 rounded-xl bg-[#C9A052]/15 border border-[#C9A052]/40 text-[#0F1420] text-xs font-bold flex items-center justify-between">
+          <span>{feedbackMsg}</span>
+          <button onClick={() => setFeedbackMsg(null)} className="text-gray-500 hover:text-black">✕</button>
+        </div>
+      )}
+
+      {/* Batch Invoices Modal */}
+      {isBatchModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white border border-[#E0DAD0] rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-[#E0DAD0]">
+              <div className="flex items-center gap-2">
+                <Layers className="w-5 h-5 text-[#C9A052]" />
+                <h3 className="text-sm font-black font-mono uppercase text-[#0F1420]">
+                  Batch Invoicing Engine
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsBatchModalOpen(false)}
+                className="text-gray-400 hover:text-black font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-gray-600 leading-relaxed">
+              Generate unique sequential invoice numbers across all booked flights in the register in one single batch action.
+            </p>
+
+            <div className="p-3.5 bg-[#F5F2EC] rounded-xl border border-[#E0DAD0] text-xs font-mono space-y-1">
+              <p>Total Bookings in Registry: <strong>{bookings.length}</strong></p>
+              <p>Unassigned / Default Invoices: <strong>{bookings.filter((b) => !b.invoiceNumber || b.invoiceNumber === "00106020" || b.invoiceNumber.includes("PENDING")).length}</strong></p>
+              <p className="text-emerald-700 font-bold">Uniqueness Constraint: Guaranteed (Collision-Free Series)</p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsBatchModalOpen(false)}
+                className="px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-xs font-bold text-[#0F1420]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleBatchGenerateInvoices}
+                className="px-4 py-2 rounded-xl bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] text-xs font-black uppercase font-mono tracking-wider shadow-md"
+              >
+                Generate All Invoices
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {success && (
         <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-bold flex items-center justify-between">
@@ -367,9 +537,20 @@ export default function GenerateInvoiceView() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 text-xs">
             <div>
-              <label className="block text-[11px] font-bold text-[#0F1420]/80 uppercase font-mono mb-1">
-                Invoice Number
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-[11px] font-bold text-[#0F1420]/80 uppercase font-mono">
+                  Invoice Number
+                </label>
+                <button
+                  type="button"
+                  onClick={generateUniqueInvoiceNumber}
+                  className="text-[10px] font-mono text-[#9A7A35] hover:text-[#0F1420] flex items-center gap-0.5"
+                  title="Generate Unique Number"
+                >
+                  <RefreshCw className="w-2.5 h-2.5" />
+                  <span>Unique</span>
+                </button>
+              </div>
               <input
                 type="text"
                 value={invoiceNumber}
