@@ -24,8 +24,12 @@ import {
   Plus,
   ExternalLink,
   ShieldAlert,
-  Tag
+  Tag,
+  Loader2,
+  Sparkles,
+  Download
 } from "lucide-react";
+import { api } from "@/lib/api";
 
 interface FboRecord {
   id: string;
@@ -169,6 +173,33 @@ export default function FleetView() {
   // FBO Directory state (REF-2)
   const [fboSearch, setFboSearch] = useState("");
   const [selectedFbo, setSelectedFbo] = useState<FboRecord | null>(null);
+
+  // Jet Images Search State (Unsplash & Pexels APIs via Backend)
+  const [jetImageQuery, setJetImageQuery] = useState("Gulfstream G650 cabin");
+  const [jetImageView, setJetImageView] = useState<"all" | "interior" | "exterior">("all");
+  const [jetImagesResults, setJetImagesResults] = useState<any[]>([]);
+  const [isLoadingImages, setIsLoadingImages] = useState(false);
+
+  const handleSearchJetImages = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!jetImageQuery.trim()) return;
+    setIsLoadingImages(true);
+    try {
+      let results: any[] = [];
+      if (jetImageView === "interior") {
+        results = await api.jetImages.interior(jetImageQuery);
+      } else if (jetImageView === "exterior") {
+        results = await api.jetImages.exterior(jetImageQuery);
+      } else {
+        results = await api.jetImages.search(jetImageQuery);
+      }
+      setJetImagesResults(Array.isArray(results) ? results : []);
+    } catch (err) {
+      console.warn("Failed to search jet images:", err);
+    } finally {
+      setIsLoadingImages(false);
+    }
+  };
 
   // Filtered fleet per REF-6
   const filteredFleet = fleetData.filter((jet) => {
@@ -540,6 +571,110 @@ export default function FleetView() {
                 </div>
               </div>
             ))}
+          </div>
+
+          {/* Live Jet Images Explorer (Connected to Backend Unsplash / Pexels APIs) */}
+          <div className="pt-6 border-t border-[#E0DAD0] space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h4 className="text-sm font-bold text-[#0F1420] flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-[#C9A052]" />
+                  Live Private Jet Image Explorer (Unsplash & Pexels APIs)
+                </h4>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Search millions of licensed interior and exterior private aviation photos via the backend image proxy.
+                </p>
+              </div>
+
+              {/* View Filters */}
+              <div className="flex items-center gap-1 bg-[#F5F2EC] p-1 rounded-xl border border-[#E0DAD0]">
+                <button
+                  type="button"
+                  onClick={() => setJetImageView("all")}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                    jetImageView === "all" ? "bg-[#0F1420] text-white" : "text-gray-600 hover:text-[#0F1420]"
+                  }`}
+                >
+                  All Photos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setJetImageView("interior")}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                    jetImageView === "interior" ? "bg-[#0F1420] text-white" : "text-gray-600 hover:text-[#0F1420]"
+                  }`}
+                >
+                  Cabins & Interiors
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setJetImageView("exterior")}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                    jetImageView === "exterior" ? "bg-[#0F1420] text-white" : "text-gray-600 hover:text-[#0F1420]"
+                  }`}
+                >
+                  Tarmac & Exteriors
+                </button>
+              </div>
+            </div>
+
+            {/* Search Bar */}
+            <form onSubmit={handleSearchJetImages} className="flex gap-2">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Search model, cabin, or tarmac (e.g. Gulfstream G650, Challenger 350, Citation)..."
+                  value={jetImageQuery}
+                  onChange={(e) => setJetImageQuery(e.target.value)}
+                  className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl pl-9 pr-4 py-2.5 text-xs text-[#0F1420] font-medium focus:outline-none focus:border-[#C9A052]"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={isLoadingImages}
+                className="px-5 py-2.5 rounded-xl bg-[#0F1420] hover:bg-[#1E2538] text-[#C9A052] border border-[#C9A052]/40 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+              >
+                {isLoadingImages ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Search className="w-3.5 h-3.5" />
+                )}
+                <span>Search Photos</span>
+              </button>
+            </form>
+
+            {/* Results Grid */}
+            {jetImagesResults.length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 pt-2">
+                {jetImagesResults.map((img, idx) => (
+                  <div
+                    key={img.id || idx}
+                    className="group border border-[#E0DAD0] hover:border-[#C9A052] rounded-xl overflow-hidden bg-[#F5F2EC] transition-all shadow-sm"
+                  >
+                    <div className="h-40 bg-gray-200 relative overflow-hidden">
+                      <img
+                        src={img.url || img.thumb}
+                        alt={img.description || "Private Jet"}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        loading="lazy"
+                      />
+                      <span className="absolute top-2 left-2 px-2 py-0.5 rounded bg-black/60 text-[9px] font-mono text-white">
+                        {img.source || "Unsplash"}
+                      </span>
+                    </div>
+                    <div className="p-2.5">
+                      <p className="text-[11px] font-bold text-[#0F1420] truncate">
+                        {img.description || "Private Jet Photo"}
+                      </p>
+                      <p className="text-[10px] text-gray-500 font-mono truncate">
+                        By {img.photographer || img.credit || "Professional Aviation"}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

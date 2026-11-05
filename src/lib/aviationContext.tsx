@@ -5,6 +5,7 @@ import {
   Booking,
   BookingStatus,
   UserRole,
+  UserRecord,
   AgentRequest,
   ClientRecord,
   RequestStatus,
@@ -21,6 +22,7 @@ import { initialAgentRequests } from "@/data/initialRequests";
 import { fleetData } from "@/data/fleet";
 import { findAirportByCode } from "@/data/airports";
 import { calculatePricing, calculateDistanceNm, estimateFlightTimeMinutes, formatFlightTime } from "@/lib/pricingCalculator";
+import { api } from "@/lib/api";
 
 export type DocumentType = "quotation" | "invoice" | "flight_brief" | "charter_agreement" | "passenger_manifest" | "credit_note";
 
@@ -30,6 +32,69 @@ export interface UserProfile {
   role: UserRole;
   title: string;
 }
+
+export const initialUsers: UserRecord[] = [
+  {
+    id: "usr-superadmin",
+    name: "Maximilian von Bern",
+    email: "superadmin@orbelo.com",
+    role: "super_admin",
+    isActive: true,
+    title: "Chief Executive Officer & Super Admin",
+    lastLogin: "Just now",
+    createdAt: "2026-01-01T00:00:00Z"
+  },
+  {
+    id: "usr-admin",
+    name: "Capt. Alexander Vance",
+    email: "admin@orbelo.com",
+    role: "admin",
+    isActive: true,
+    title: "Flight Operations Director",
+    lastLogin: "2 hours ago",
+    createdAt: "2026-01-05T00:00:00Z"
+  },
+  {
+    id: "usr-finance",
+    name: "Elena Rostova",
+    email: "finance@orbelo.com",
+    role: "finance",
+    isActive: true,
+    title: "Chief Financial Officer",
+    lastLogin: "Yesterday",
+    createdAt: "2026-01-10T00:00:00Z"
+  },
+  {
+    id: "usr-ops",
+    name: "David Schneider",
+    email: "ops@orbelo.com",
+    role: "operations",
+    isActive: true,
+    title: "Flight Dispatch & OCC",
+    lastLogin: "3 hours ago",
+    createdAt: "2026-01-12T00:00:00Z"
+  },
+  {
+    id: "usr-agent",
+    name: "Marcus Vance",
+    email: "agent@orbelo.com",
+    role: "agent",
+    isActive: true,
+    title: "Executive Charter Broker",
+    lastLogin: "1 hour ago",
+    createdAt: "2026-02-01T00:00:00Z"
+  },
+  {
+    id: "usr-agent2",
+    name: "Sophia Laurent",
+    email: "sophia@orbelo.com",
+    role: "agent",
+    isActive: true,
+    title: "Senior Charter Broker",
+    lastLogin: "4 days ago",
+    createdAt: "2026-02-15T00:00:00Z"
+  }
+];
 
 export const initialOperators: OperatorRecord[] = [
   {
@@ -265,9 +330,16 @@ interface AviationContextType {
   isAuthenticated: boolean;
   currentUser: UserProfile | null;
   role: UserRole;
-  login: (role: UserRole, email?: string, name?: string) => void;
+  login: (role: UserRole, email?: string, name?: string, password?: string) => Promise<void> | void;
   logout: () => void;
   setRole: (role: UserRole) => void;
+
+  // Users Management
+  users: UserRecord[];
+  addUser: (userData: { name: string; email: string; password?: string; role: UserRole; phone?: string; title?: string }) => Promise<UserRecord>;
+  updateUser: (id: string, updates: Partial<UserRecord> & { password?: string }) => Promise<UserRecord>;
+  deleteUser: (id: string) => Promise<void>;
+  refreshUsers: () => Promise<void>;
 
   // Navigation
   activeNav: string;
@@ -347,6 +419,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
   const [activeNav, setActiveNav] = useState<string>("bookings");
 
   // Core Data
+  const [users, setUsers] = useState<UserRecord[]>(initialUsers);
   const [bookings, setBookings] = useState<Booking[]>(initialBookings);
   const [clients, setClients] = useState<ClientRecord[]>(initialClients);
   const [agentRequests, setAgentRequests] = useState<AgentRequest[]>(initialAgentRequests);
@@ -373,6 +446,10 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       localStorage.removeItem("orbelo_is_authenticated");
       localStorage.removeItem("orbelo_current_user");
 
+      const savedUsers = localStorage.getItem("orbelo_users_v2");
+      if (savedUsers) {
+        setUsers(JSON.parse(savedUsers));
+      }
       const savedBookings = localStorage.getItem("orbelo_bookings_v2");
       if (savedBookings) {
         setBookings(JSON.parse(savedBookings));
@@ -397,6 +474,56 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       if (savedNotifs) {
         setNotifications(JSON.parse(savedNotifs));
       }
+
+      // Live backend API synchronization (syncs when backend server is running)
+      api.users.list()
+        .then((res) => {
+          if (res?.data && res.data.length > 0) {
+            setUsers(res.data.map((u: any) => ({ ...u, id: u.id || u._id })));
+          }
+        })
+        .catch(() => {});
+
+      api.bookings.list({ limit: 100 })
+        .then((res) => {
+          if (res?.data && res.data.length > 0) {
+            setBookings(res.data.map((b: any) => ({ ...b, id: b.id || b._id })));
+          }
+        })
+        .catch(() => {});
+
+      api.clients.list({ limit: 100 })
+        .then((res) => {
+          if (res?.clients && res.clients.length > 0) {
+            setClients(res.clients.map((c: any) => ({ ...c, id: c.id || c._id })));
+          }
+        })
+        .catch(() => {});
+
+      api.operators.list({ limit: 100 })
+        .then((res) => {
+          if (res?.operators && res.operators.length > 0) {
+            setOperators(res.operators.map((o: any) => ({ ...o, id: o.id || o._id })));
+          }
+        })
+        .catch(() => {});
+
+      api.agentRequests.list({ limit: 100 })
+        .then((res) => {
+          if (res?.data && res.data.length > 0) {
+            setAgentRequests(res.data.map((r: any) => ({ ...r, id: r.id || r._id })));
+          }
+        })
+        .catch(() => {});
+
+      api.auditLog.list({ limit: 100 })
+        .then((res) => {
+          const list = res?.data || res?.entries;
+          if (list && list.length > 0) {
+            setAuditLog(list.map((a: any) => ({ ...a, id: a.id || a._id })));
+          }
+        })
+        .catch(() => {});
     } catch {
       // Use defaults if parse fails
     }
@@ -405,6 +532,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
   // Sync business records state to localStorage
   useEffect(() => {
     try {
+      localStorage.setItem("orbelo_users_v2", JSON.stringify(users));
       localStorage.setItem("orbelo_bookings_v2", JSON.stringify(bookings));
       localStorage.setItem("orbelo_requests_v2", JSON.stringify(agentRequests));
       localStorage.setItem("orbelo_clients_v2", JSON.stringify(clients));
@@ -414,7 +542,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     } catch {
       // Ignore
     }
-  }, [bookings, agentRequests, clients, operators, auditLog, notifications]);
+  }, [users, bookings, agentRequests, clients, operators, auditLog, notifications]);
 
   const addAuditEntry = (entry: Omit<AuditLogEntry, "id" | "timestamp">) => {
     const newEntry: AuditLogEntry = {
@@ -423,6 +551,16 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       timestamp: new Date().toISOString().replace("T", " ").substring(0, 19)
     };
     setAuditLog((prev) => [newEntry, ...prev]);
+
+    // Forward to backend audit trail in background
+    api.auditLog.create({
+      userEmail: entry.userEmail,
+      userName: entry.userName,
+      action: entry.action,
+      entityType: entry.entityType,
+      entityId: entry.entityId,
+      details: entry.details
+    }).catch(() => {});
   };
 
   const getRoleDetails = (targetRole: UserRole, email?: string, name?: string) => {
@@ -430,7 +568,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       case "super_admin":
         return {
           name: name || "Maximilian von Bern",
-          email: email || "admin@orbelo.com",
+          email: email || "superadmin@orbelo.com",
           title: "Chief Executive Officer & Super Admin"
         };
       case "finance":
@@ -461,8 +599,9 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const login = (newRole: UserRole, email?: string, name?: string) => {
+  const login = async (newRole: UserRole, email?: string, name?: string, password?: string) => {
     const details = getRoleDetails(newRole, email, name);
+    const pwd = password || "orbelo2026!";
     const user: UserProfile = {
       role: newRole,
       name: details.name,
@@ -474,6 +613,28 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     setIsAuthenticated(true);
     setActiveNav(newRole === "agent" ? "request_quote" : "bookings");
 
+    // Authenticate with backend API in background & persist JWT
+    try {
+      const res = await api.auth.login(details.email, pwd);
+      const token = res?.data?.accessToken || res?.data?.token;
+      if (token) {
+        localStorage.setItem("orbelo_access_token", token);
+        if (res.data.refreshToken) {
+          localStorage.setItem("orbelo_refresh_token", res.data.refreshToken);
+        }
+      }
+      if (res?.data?.user) {
+        setCurrentUser({
+          role: res.data.user.role || newRole,
+          name: res.data.user.name || details.name,
+          email: res.data.user.email || details.email,
+          title: res.data.user.title || details.title
+        });
+      }
+    } catch (err: any) {
+      console.warn("Backend auth offline (operating in local resilience mode):", err.message);
+    }
+
     addAuditEntry({
       userEmail: details.email,
       userName: details.name,
@@ -482,6 +643,113 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       entityId: `AUTH-${Date.now().toString().slice(-4)}`,
       details: `User logged in with role: ${newRole}`
     });
+  };
+
+  const refreshUsers = async () => {
+    try {
+      const res = await api.users.list();
+      if (res?.data && res.data.length > 0) {
+        setUsers(res.data.map((u: any) => ({ ...u, id: u.id || u._id })));
+      }
+    } catch {
+      // Fallback to local state
+    }
+  };
+
+  const addUser = async (userData: { name: string; email: string; password?: string; role: UserRole; phone?: string; title?: string }): Promise<UserRecord> => {
+    const defaultPwd = userData.password || "orbelo2026!";
+    const newRecord: UserRecord = {
+      id: `usr-${Date.now()}`,
+      name: userData.name,
+      email: userData.email.toLowerCase(),
+      role: userData.role,
+      isActive: true,
+      phone: userData.phone || "",
+      title: userData.title || "",
+      createdAt: new Date().toISOString(),
+      lastLogin: "Never"
+    };
+
+    try {
+      const res = await api.users.create({
+        name: userData.name,
+        email: userData.email,
+        password: defaultPwd,
+        role: userData.role,
+        phone: userData.phone,
+        title: userData.title
+      });
+      if (res?.data) {
+        newRecord.id = res.data.id || res.data._id || newRecord.id;
+      }
+    } catch (err: any) {
+      console.warn("Backend user creation offline (saved locally):", err.message);
+    }
+
+    setUsers((prev) => [newRecord, ...prev]);
+
+    addAuditEntry({
+      userEmail: currentUser?.email || "admin@orbelo.com",
+      userName: currentUser?.name || "Administrator",
+      action: "USER_CREATED",
+      entityType: "User",
+      entityId: newRecord.id,
+      details: `Created new user account for ${newRecord.name} (${newRecord.email}) with role '${newRecord.role}'`
+    });
+
+    return newRecord;
+  };
+
+  const updateUser = async (id: string, updates: Partial<UserRecord> & { password?: string }): Promise<UserRecord> => {
+    try {
+      await api.users.update(id, updates);
+    } catch (err: any) {
+      console.warn("Backend user update offline (saved locally):", err.message);
+    }
+
+    let updatedRecord: UserRecord | null = null;
+    setUsers((prev) =>
+      prev.map((u) => {
+        if (u.id === id || (u as any)._id === id) {
+          updatedRecord = { ...u, ...updates };
+          return updatedRecord;
+        }
+        return u;
+      })
+    );
+
+    addAuditEntry({
+      userEmail: currentUser?.email || "admin@orbelo.com",
+      userName: currentUser?.name || "Administrator",
+      action: updates.isActive !== undefined ? "USER_STATUS_CHANGE" : "USER_UPDATED",
+      entityType: "User",
+      entityId: id,
+      details: `Updated user account: ${Object.keys(updates).filter(k => k !== 'password').join(', ') || 'Password reset'}`
+    });
+
+    return updatedRecord || (updates as UserRecord);
+  };
+
+  const deleteUser = async (id: string): Promise<void> => {
+    const target = users.find((u) => u.id === id || (u as any)._id === id);
+    try {
+      await api.users.delete(id);
+    } catch (err: any) {
+      console.warn("Backend user deletion offline (deleted locally):", err.message);
+    }
+
+    setUsers((prev) => prev.filter((u) => u.id !== id && (u as any)._id !== id));
+
+    if (target) {
+      addAuditEntry({
+        userEmail: currentUser?.email || "superadmin@orbelo.com",
+        userName: currentUser?.name || "Super Admin",
+        action: "USER_DELETED",
+        entityType: "User",
+        entityId: id,
+        details: `Deleted user account: ${target.name} (${target.email}, role: ${target.role})`
+      });
+    }
   };
 
   const logout = () => {
@@ -500,6 +768,8 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     try {
       localStorage.removeItem("orbelo_is_authenticated");
       localStorage.removeItem("orbelo_current_user");
+      localStorage.removeItem("orbelo_access_token");
+      localStorage.removeItem("orbelo_refresh_token");
     } catch {
       // Ignore
     }
@@ -558,6 +828,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
 
   const addBooking = (newBooking: Booking) => {
     setBookings((prev) => [newBooking, ...prev]);
+    api.bookings.create(newBooking).catch((err) => console.log("Backend sync note:", err.message));
     if (currentUser) {
       addAuditEntry({
         userEmail: currentUser.email,
@@ -574,6 +845,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     setBookings((prev) =>
       prev.map((b) => (b.id === bookingId ? { ...b, status, updatedAt: new Date().toISOString() } : b))
     );
+    api.bookings.updateStatus(bookingId, status).catch((err) => console.log("Backend sync note:", err.message));
     if (activeBooking && activeBooking.id === bookingId) {
       setActiveBooking((prev) => (prev ? { ...prev, status } : null));
     }
@@ -597,6 +869,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     setBookings((prev) =>
       prev.map((b) => (b.id === bookingId ? { ...b, paymentStatus, updatedAt: new Date().toISOString() } : b))
     );
+    api.bookings.updatePaymentStatus(bookingId, paymentStatus || "unpaid").catch((err) => console.log("Backend sync note:", err.message));
     if (activeBooking && activeBooking.id === bookingId) {
       setActiveBooking((prev) => (prev ? { ...prev, paymentStatus } : null));
     }
@@ -711,6 +984,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
         };
       })
     );
+    api.bookings.confirm(bookingId).catch((err) => console.log("Backend sync note:", err.message));
     setActiveNav("bookings");
   };
 
@@ -731,6 +1005,28 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       status: "pending"
     };
     setAgentRequests((prev) => [newReq, ...prev]);
+
+    api.agentRequests.create({
+      type: newReq.type,
+      title: newReq.title || `Quote Request: ${newReq.route}`,
+      agentName: newReq.agentName,
+      agentEmail: newReq.agentEmail,
+      clientName: newReq.clientName,
+      clientEmail: newReq.clientEmail,
+      clientPhone: newReq.clientPhone,
+      route: newReq.route,
+      originIcao: newReq.originIcao,
+      destIcao: newReq.destIcao,
+      flightDate: newReq.flightDate,
+      returnDate: newReq.returnFlightDate,
+      paxCount: newReq.paxCount,
+      tripType: newReq.tripType,
+      aircraftCategory: "any",
+      preferredAircraft: newReq.aircraftPreference || "",
+      budget: 0,
+      priority: newReq.priority,
+      notes: newReq.specialRequests || newReq.budgetNotes || "",
+    }).catch((err) => console.log("Backend sync note:", err.message));
 
     // Create a notification for admin
     const newNotif: Notification = {
@@ -770,6 +1066,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
           : r
       )
     );
+    api.agentRequests.updateStatus(reqId, status).catch((err) => console.log("Backend sync note:", err.message));
 
     if (currentUser) {
       addAuditEntry({
@@ -1025,6 +1322,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
 
   const addClient = (client: ClientRecord) => {
     setClients((prev) => [client, ...prev]);
+    api.clients.create(client).catch((err) => console.log("Backend sync note:", err.message));
     if (currentUser) {
       addAuditEntry({
         userEmail: currentUser.email,
@@ -1039,6 +1337,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
 
   const addOperator = (op: OperatorRecord) => {
     setOperators((prev) => [op, ...prev]);
+    api.operators.create(op).catch((err) => console.log("Backend sync note:", err.message));
     if (currentUser) {
       addAuditEntry({
         userEmail: currentUser.email,
@@ -1055,6 +1354,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     setOperators((prev) =>
       prev.map((op) => (op.id === opId ? { ...op, status } : op))
     );
+    api.operators.updateStatus(opId, status).catch((err) => console.log("Backend sync note:", err.message));
     if (currentUser) {
       addAuditEntry({
         userEmail: currentUser.email,
@@ -1098,6 +1398,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, read: true } : n))
     );
+    api.notifications.markRead(id).catch((err) => console.log("Backend sync note:", err.message));
   };
 
   const resetToDefaultData = () => {
@@ -1128,6 +1429,11 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
         login,
         logout,
         setRole,
+        users,
+        addUser,
+        updateUser,
+        deleteUser,
+        refreshUsers,
         activeNav,
         setActiveNav,
         bookings,

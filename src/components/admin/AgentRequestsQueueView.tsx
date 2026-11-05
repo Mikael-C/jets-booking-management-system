@@ -29,8 +29,13 @@ import {
   ChevronDown,
   ChevronUp,
   Tag,
-  Hash
+  Hash,
+  Zap,
+  RefreshCw,
+  Loader2,
+  Globe
 } from "lucide-react";
+import { api } from "@/lib/api";
 
 export default function AgentRequestsQueueView() {
   const {
@@ -66,6 +71,78 @@ export default function AgentRequestsQueueView() {
     new Date(Date.now() + 86400000 * 2).toISOString().split("T")[0]
   );
   const [sourcingNotes, setSourcingNotes] = useState("");
+
+  // Avinode Live Sourcing Modal State
+  const [avinodeModalReq, setAvinodeModalReq] = useState<AgentRequest | null>(null);
+  const [avinodeResults, setAvinodeResults] = useState<any[]>([]);
+  const [isLoadingAvinode, setIsLoadingAvinode] = useState(false);
+  const [avinodeRfqSuccess, setAvinodeRfqSuccess] = useState(false);
+  const [avinodeError, setAvinodeError] = useState<string | null>(null);
+
+  const handleQueryAvinode = async (req: AgentRequest) => {
+    setAvinodeModalReq(req);
+    setIsLoadingAvinode(true);
+    setAvinodeError(null);
+    setAvinodeRfqSuccess(false);
+    try {
+      const parts = req.route.split(" ");
+      const originIcao = req.originIcao || parts[0] || "LSGG";
+      const destIcao = req.destIcao || parts[parts.length - 1] || "LIMJ";
+      const results = await api.avinode.searchTrips({
+        originIcao,
+        destinationIcao: destIcao,
+        departureDate: req.flightDate || new Date().toISOString().split("T")[0],
+        paxCount: req.paxCount || 4,
+        currency: "EUR"
+      });
+      setAvinodeResults(Array.isArray(results) ? results : []);
+    } catch (e: any) {
+      console.warn("Avinode search error:", e);
+      setAvinodeError(e.message || "Failed to search Avinode marketplace");
+      setAvinodeResults([]);
+    } finally {
+      setIsLoadingAvinode(false);
+    }
+  };
+
+  const handleSendAvinodeRfq = async (req: AgentRequest) => {
+    try {
+      const parts = req.route.split(" ");
+      const originIcao = req.originIcao || parts[0] || "LSGG";
+      const destIcao = req.destIcao || parts[parts.length - 1] || "LIMJ";
+      await api.avinode.sendRfq({
+        agentRequestId: req.id,
+        originIcao,
+        destinationIcao: destIcao,
+        departureDate: req.flightDate || new Date().toISOString().split("T")[0],
+        paxCount: req.paxCount || 4,
+        notes: req.specialRequests || `Requested by ${req.agentName}`
+      });
+      setAvinodeRfqSuccess(true);
+      updateAgentRequestStatus(req.id, "in_sourcing");
+      setTimeout(() => setAvinodeRfqSuccess(false), 3000);
+    } catch (e: any) {
+      setAvinodeError(e.message || "Failed to broadcast RFQ");
+    }
+  };
+
+  const handleAcceptAvinodeOption = (req: AgentRequest, option: any) => {
+    addSourcingOption(req.id, {
+      operatorName: option.operator?.name || "Avinode Operator",
+      aircraftType: option.aircraft?.name || option.aircraft?.category || "Charter Jet",
+      aircraftRegistration: option.aircraft?.registration || "TBD",
+      baseAirport: option.operator?.country || "Europe",
+      price: option.priceUSD || 15000,
+      currency: "EUR",
+      taxesIncluded: true,
+      validUntil: option.validUntil ? option.validUntil.split("T")[0] : new Date(Date.now() + 86400000).toISOString().split("T")[0],
+      notes: `Direct from Avinode marketplace. Flight time: ${option.flightTime || 'N/A'}`
+    });
+    if (option.id) {
+      updateAgentRequestAvinodeId(req.id, option.id);
+    }
+    setAvinodeModalReq(null);
+  };
 
   const filteredRequests = agentRequests.filter((r) => {
     if (filter === "pending") return r.status === "pending";
@@ -547,6 +624,16 @@ Special Requests: ${req.specialRequests || "None"}`;
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2.5">
+                      {/* Avinode Marketplace Live Query Button */}
+                      <button
+                        onClick={() => handleQueryAvinode(req)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0F1420] hover:bg-[#1E2538] text-[#C9A052] border border-[#C9A052]/40 text-xs font-bold transition-all shadow-sm cursor-pointer"
+                        title="Query live Avinode marketplace for available aircraft and charter quotes"
+                      >
+                        <Zap className="w-3.5 h-3.5 text-[#C9A052]" />
+                        <span>Avinode Marketplace</span>
+                      </button>
+
                       {/* Avinode Copy Button */}
                       <button
                         onClick={() => handleCopyAvinode(req)}
@@ -1004,6 +1091,142 @@ Special Requests: ${req.specialRequests || "None"}`;
                 className="px-4 py-2 rounded-xl bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] text-xs font-black uppercase tracking-wider"
               >
                 Generate Document Now
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── AVINODE MARKETPLACE RESULTS MODAL ── */}
+      {avinodeModalReq && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white border border-[#E0DAD0] rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-[#E0DAD0]">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-[#0F1420] flex items-center justify-center">
+                  <Zap className="w-4 h-4 text-[#C9A052]" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-[#0F1420]">
+                    Avinode Marketplace Live Sourcing
+                  </h3>
+                  <p className="text-xs text-gray-500 font-mono">
+                    Route: {avinodeModalReq.route} • {avinodeModalReq.flightDate} • {avinodeModalReq.paxCount} Pax
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setAvinodeModalReq(null)}
+                className="text-gray-400 hover:text-gray-700 text-sm font-bold p-1 rounded-lg"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Broadcast RFQ Action Banner */}
+            <div className="bg-[#0F1420] text-white p-3.5 rounded-xl flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold text-[#C9A052] flex items-center gap-1.5">
+                  <Globe className="w-3.5 h-3.5" />
+                  Avinode Operator Network Broadcast
+                </p>
+                <p className="text-[11px] text-gray-300 mt-0.5">
+                  Broadcast this RFQ directly to certified European & global charter operators.
+                </p>
+              </div>
+              <button
+                onClick={() => handleSendAvinodeRfq(avinodeModalReq)}
+                disabled={avinodeRfqSuccess}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
+                  avinodeRfqSuccess
+                    ? "bg-emerald-500 text-white"
+                    : "bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420]"
+                }`}
+              >
+                {avinodeRfqSuccess ? "✓ RFQ Broadcasted!" : "Send Avinode RFQ"}
+              </button>
+            </div>
+
+            {/* Loading state */}
+            {isLoadingAvinode && (
+              <div className="py-12 text-center space-y-3">
+                <Loader2 className="w-8 h-8 text-[#C9A052] animate-spin mx-auto" />
+                <p className="text-xs font-mono text-gray-600">
+                  Querying live operator fleet availability and empty legs across Avinode...
+                </p>
+              </div>
+            )}
+
+            {/* Error or results */}
+            {!isLoadingAvinode && avinodeError && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
+                {avinodeError}
+              </div>
+            )}
+
+            {!isLoadingAvinode && avinodeResults.length > 0 && (
+              <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
+                <p className="text-[11px] font-mono font-bold text-gray-500 uppercase tracking-wider">
+                  Available Market Options ({avinodeResults.length})
+                </p>
+                {avinodeResults.map((opt, i) => (
+                  <div
+                    key={opt.id || i}
+                    className="p-3 bg-[#F5F2EC] border border-[#E0DAD0] hover:border-[#C9A052] rounded-xl flex items-center justify-between gap-3 transition-all"
+                  >
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-2">
+                        <span className="font-extrabold text-xs text-[#0F1420]">
+                          {opt.aircraft?.name || "Private Jet"}
+                        </span>
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white text-gray-700 border border-[#E0DAD0]">
+                          {opt.aircraft?.category || "Light"}
+                        </span>
+                        {opt.aircraft?.registration && (
+                          <span className="text-[10px] font-mono text-gray-500">
+                            {opt.aircraft.registration}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-600">
+                        Operator: <strong className="text-[#0F1420]">{opt.operator?.name || "Charter Operator"}</strong> ({opt.operator?.country || "Europe"})
+                        {opt.flightTime && ` • Est. ${opt.flightTime}`}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <span className="text-xs font-mono font-extrabold text-[#0F1420]">
+                          €{(opt.priceUSD || 15000).toLocaleString()}
+                        </span>
+                        <span className="block text-[9px] font-mono text-emerald-700 font-bold">
+                          Avinode Direct
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => handleAcceptAvinodeOption(avinodeModalReq, opt)}
+                        className="px-2.5 py-1.5 rounded-lg bg-[#0F1420] hover:bg-[#1E2538] text-[#C9A052] text-xs font-bold transition-all shadow-sm whitespace-nowrap cursor-pointer"
+                      >
+                        + Import Option
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {!isLoadingAvinode && avinodeResults.length === 0 && !avinodeError && (
+              <div className="py-8 text-center text-xs text-gray-500">
+                No immediate marketplace direct quotes found. Click "Send Avinode RFQ" above to broadcast to operators.
+              </div>
+            )}
+
+            <div className="pt-3 border-t border-[#E0DAD0] flex justify-end">
+              <button
+                onClick={() => setAvinodeModalReq(null)}
+                className="px-4 py-2 rounded-xl bg-gray-200 text-gray-800 text-xs font-bold"
+              >
+                Close
               </button>
             </div>
           </div>

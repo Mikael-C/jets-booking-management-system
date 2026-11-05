@@ -25,6 +25,7 @@ import AuditLogView from "@/components/admin/AuditLogView";
 import PaymentsView from "@/components/admin/PaymentsView";
 import ClientPortalView from "@/components/admin/ClientPortalView";
 import NotificationSettingsView from "@/components/admin/NotificationSettingsView";
+import UserManagementView from "@/components/admin/UserManagementView";
 
 // Agent Views
 import AgentOverviewView from "@/components/agent/AgentOverviewView";
@@ -70,8 +71,12 @@ export default function Home() {
           return <ClientsView />;
         case "fleet":
           return <FleetView />;
+        case "activities":
         case "audit_log":
           return <AuditLogView />;
+        case "users":
+        case "user_management":
+          return <UserManagementView />;
         case "client_portal":
           return <ClientPortalView />;
         case "notifications":

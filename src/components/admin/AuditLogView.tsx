@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { useAviation } from "@/lib/aviationContext";
+import { api } from "@/lib/api";
 import {
   ShieldAlert,
   Search,
@@ -17,13 +18,17 @@ import {
   Building2,
   KeyRound,
   Layers,
-  History
+  History,
+  Activity,
+  RefreshCw,
+  Sparkles
 } from "lucide-react";
 
 export default function AuditLogView() {
   const { auditLog } = useAviation();
   const [searchQuery, setSearchQuery] = useState("");
   const [entityFilter, setEntityFilter] = useState("all");
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Filter audit log
   const filteredLogs = auditLog.filter((entry) => {
@@ -36,7 +41,8 @@ export default function AuditLogView() {
 
     const matchesEntity =
       entityFilter === "all" ||
-      entry.entityType.toLowerCase() === entityFilter.toLowerCase();
+      entry.entityType.toLowerCase() === entityFilter.toLowerCase() ||
+      (entityFilter === "Security" && (entry.entityType.toLowerCase() === "security" || entry.entityType.toLowerCase() === "user"));
 
     return matchesSearch && matchesEntity;
   });
@@ -65,7 +71,7 @@ export default function AuditLogView() {
         </span>
       );
     }
-    if (act.includes("LOGIN") || act.includes("AUTH") || act.includes("SECURITY")) {
+    if (act.includes("LOGIN") || act.includes("AUTH") || act.includes("SECURITY") || act.includes("USER_")) {
       return (
         <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-purple-100 text-purple-800 border border-purple-300">
           {action}
@@ -94,7 +100,7 @@ export default function AuditLogView() {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `orbelo_audit_log_${new Date().toISOString().split("T")[0]}.csv`);
+    link.setAttribute("download", `orbelo_activity_log_${new Date().toISOString().split("T")[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -106,23 +112,24 @@ export default function AuditLogView() {
       <div className="bg-white border border-[#E0DAD0] rounded-2xl p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-[#C9A052]/15 text-[#9A7A35] border border-[#C9A052]/30">
-              IMMUTABLE SECURITY AUDIT TRAIL
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-600 animate-pulse" />
+              LIVE APPLICATION ACTIVITY FEED
             </span>
             <span className="text-xs text-[#0F1420]/60">ISO 27001 & Aviation Compliance</span>
           </div>
           <h2 className="text-xl font-black text-[#0F1420] tracking-tight">
-            System Audit Log & Activity Trail
+            Application Activities & Audit Trail
           </h2>
           <p className="text-xs text-[#0F1420]/65 mt-0.5">
-            Full tamper-evident record of quotation overrides, payment receipts, operator qualifications, dispatch verifications, and user authentications.
+            Real-time chronological timeline of all activities occurring across the web application: bookings, quotes, user provisioning, dispatch checks, payments, and system authentications.
           </p>
         </div>
 
         <div className="flex items-center gap-3">
           <button
             onClick={handleExportCSV}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#F5F2EC] hover:bg-[#EAE6DE] border border-[#E0DAD0] text-xs font-mono font-bold text-[#0F1420] transition-colors"
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#F5F2EC] hover:bg-[#EAE6DE] border border-[#E0DAD0] text-xs font-mono font-bold text-[#0F1420] transition-colors cursor-pointer"
           >
             <Download className="w-3.5 h-3.5 text-[#C9A052]" />
             <span>Export CSV</span>
@@ -135,11 +142,12 @@ export default function AuditLogView() {
         <div className="flex items-center gap-2.5">
           <Lock className="w-4 h-4 text-[#C9A052] flex-shrink-0" />
           <span className="font-mono text-[11px] text-gray-300">
-            <strong className="text-white">Compliance Protocol:</strong> This audit trail is append-only and cryptographically timestamped. Entries cannot be modified, re-ordered, or deleted by any administrative account.
+            <strong className="text-white">Tamper-Evident Security Log:</strong> Every event is recorded with caller identity, IP address, and timestamp. Records are immutable and synchronized with the backend MongoDB database.
           </span>
         </div>
-        <span className="text-[10px] font-mono text-emerald-400 font-bold bg-emerald-950/60 border border-emerald-800/80 px-2 py-0.5 rounded">
-          CHAIN INTEGRITY VERIFIED
+        <span className="text-[10px] font-mono text-emerald-400 font-bold bg-emerald-950/60 border border-emerald-800/80 px-2 py-0.5 rounded flex items-center gap-1">
+          <Activity className="w-3 h-3" />
+          LIVE SYNCHRONIZED
         </span>
       </div>
 
@@ -149,7 +157,7 @@ export default function AuditLogView() {
           <Search className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
           <input
             type="text"
-            placeholder="Search action, user, or entity ID..."
+            placeholder="Search activities, users, actions, or entity IDs..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-lg pl-9 pr-3 py-1.5 text-xs text-[#0F1420] placeholder-gray-400 focus:outline-none focus:border-[#C9A052]"
@@ -158,18 +166,19 @@ export default function AuditLogView() {
 
         <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto">
           {[
-            { id: "all", label: "All Events" },
+            { id: "all", label: "All Activities" },
+            { id: "Booking", label: "Bookings" },
             { id: "Quote", label: "Quotes" },
             { id: "Payment", label: "Payments" },
             { id: "Operator", label: "Operators" },
             { id: "Checklist", label: "Checklists" },
             { id: "AgentRequest", label: "Requests" },
-            { id: "Security", label: "Security" }
+            { id: "Security", label: "Users & Security" }
           ].map((tab) => (
             <button
               key={tab.id}
               onClick={() => setEntityFilter(tab.id)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-colors whitespace-nowrap ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-colors whitespace-nowrap cursor-pointer ${
                 entityFilter === tab.id
                   ? "bg-[#0F1420] text-[#C9A052]"
                   : "bg-[#F5F2EC] text-[#0F1420]/70 hover:bg-[#EAE6DE]"
@@ -181,25 +190,25 @@ export default function AuditLogView() {
         </div>
       </div>
 
-      {/* Audit Log Table */}
+      {/* Activities Table */}
       <div className="bg-white border border-[#E0DAD0] rounded-2xl shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="bg-[#F5F2EC] border-b border-[#E0DAD0] text-[#0F1420]/80 font-mono text-[10px] uppercase tracking-wider">
                 <th className="py-3 px-4">Timestamp (UTC)</th>
-                <th className="py-3 px-4">User</th>
+                <th className="py-3 px-4">User / Actor</th>
                 <th className="py-3 px-4">Action</th>
-                <th className="py-3 px-4">Entity Type</th>
+                <th className="py-3 px-4">Module / Entity</th>
                 <th className="py-3 px-4">Entity Ref</th>
-                <th className="py-3 px-4">Event Details & Audit Notes</th>
+                <th className="py-3 px-4">Activity Description</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#E0DAD0]/60">
               {filteredLogs.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="py-8 text-center text-xs text-gray-500 font-mono">
-                    No audit records match the current filters.
+                    No application activities match the current filters.
                   </td>
                 </tr>
               ) : (

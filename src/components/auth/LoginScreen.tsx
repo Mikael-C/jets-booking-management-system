@@ -19,14 +19,17 @@ import {
   AlertTriangle,
   RotateCcw,
   X,
-  Check
+  Check,
+  Eye,
+  EyeOff
 } from "lucide-react";
 
 export default function LoginScreen() {
   const { login } = useAviation();
-  const [selectedRole, setSelectedRole] = useState<UserRole>("admin");
-  const [email, setEmail] = useState("admin@orbelo.com");
-  const [password, setPassword] = useState("••••••••••••");
+  const [selectedRole, setSelectedRole] = useState<UserRole>("super_admin");
+  const [email, setEmail] = useState("superadmin@orbelo.com");
+  const [password, setPassword] = useState("orbelo2026!");
+  const [showPassword, setShowPassword] = useState(false);
 
   // USR-1: 2FA State (TOTP mandatory for staff, optional for agents)
   const [step, setStep] = useState<"credentials" | "2fa">("credentials");
@@ -51,7 +54,7 @@ export default function LoginScreen() {
     {
       role: "super_admin",
       label: "Super Admin",
-      email: "admin@orbelo.com",
+      email: "superadmin@orbelo.com",
       name: "Maximilian von Bern",
       icon: <Crown className="w-3.5 h-3.5 text-[#C9A052]" />,
       desc: "Full system administration, user provisioning, security audits, financial oversight & global margins.",
@@ -114,7 +117,7 @@ export default function LoginScreen() {
     if (currentConfig.isStaff || agent2FaEnabled) {
       setStep("2fa");
     } else {
-      login(selectedRole, email, currentConfig.name);
+      login(selectedRole, email, currentConfig.name, password);
     }
   };
 
@@ -125,7 +128,7 @@ export default function LoginScreen() {
       return;
     }
     // Accept valid 6-digit TOTP
-    login(selectedRole, email, currentConfig.name);
+    login(selectedRole, email, currentConfig.name, password);
   };
 
   const handleResetPassword = (e: React.FormEvent) => {
@@ -253,12 +256,30 @@ export default function LoginScreen() {
                 <div className="relative">
                   <Lock className="w-4 h-4 text-[#0F1420]/40 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
-                    type="password"
+                    type={showPassword ? "text" : "password"}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
-                    className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl pl-10 pr-4 py-2.5 text-xs text-[#0F1420] placeholder-[#0F1420]/40 focus:outline-none focus:border-[#C9A052] focus:ring-1 focus:ring-[#C9A052] transition-colors"
+                    className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl pl-10 pr-10 py-2.5 text-xs text-[#0F1420] placeholder-[#0F1420]/40 focus:outline-none focus:border-[#C9A052] focus:ring-1 focus:ring-[#C9A052] transition-colors"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    title={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <div className="flex items-center justify-between text-[11px] font-mono text-[#0F1420]/70 bg-[#F5F2EC] border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 mt-1.5">
+                  <span>Default password: <strong className="text-[#0F1420] font-bold font-mono">orbelo2026!</strong></span>
+                  <button
+                    type="button"
+                    onClick={() => setPassword("orbelo2026!")}
+                    className="text-[10px] text-[#C9A052] font-bold hover:underline"
+                  >
+                    Auto-Fill
+                  </button>
                 </div>
               </div>
 
@@ -343,9 +364,9 @@ export default function LoginScreen() {
                 type="button"
                 onClick={() => {
                   setTotpCode("849201");
-                  login(selectedRole, email, currentConfig.name);
+                  login(selectedRole, email, currentConfig.name, password);
                 }}
-                className="w-full py-1.5 text-[10px] text-gray-500 hover:text-[#C9A052] font-mono text-center underline"
+                className="w-full py-1.5 text-[10px] text-gray-500 hover:text-[#C9A052] font-mono text-center underline cursor-pointer"
               >
                 Auto-fill demo code (849201) & enter
               </button>
@@ -354,53 +375,53 @@ export default function LoginScreen() {
 
           {/* Quick Demo One-Click Access Buttons */}
           <div className="mt-5 pt-4 border-t border-[#E0DAD0] space-y-2">
-            <span className="block text-[10px] font-mono uppercase tracking-wider text-center text-[#0F1420]/50 font-bold">
-              Instant One-Click Demo Access
+            <span className="block text-[10px] font-mono uppercase tracking-wider text-center text-[#0F1420]/60 font-bold">
+              Instant One-Click Role Access (Password: orbelo2026!)
             </span>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               <button
                 type="button"
-                onClick={() => login("admin", "admin@orbelo.com", "Capt. Alexander Vance")}
-                className="py-1.5 px-2.5 rounded-lg bg-[#0F1420] hover:bg-[#1A2338] text-white text-[10px] font-bold transition-all border border-[#0F1420] flex items-center justify-center gap-1"
+                onClick={() => login("super_admin", "superadmin@orbelo.com", "Maximilian von Bern", "orbelo2026!")}
+                className="py-2 px-2.5 rounded-lg bg-[#0B101A] hover:bg-[#141A29] text-white text-[10px] font-bold transition-all border border-[#C9A052]/40 flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
               >
-                <Shield className="w-3 h-3 text-[#C9A052]" />
-                <span>Admin</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => login("operations", "ops@orbelo.com", "David Schneider")}
-                className="py-1.5 px-2.5 rounded-lg bg-[#141A29] hover:bg-[#1C2436] text-white text-[10px] font-bold transition-all border border-[#1C2436] flex items-center justify-center gap-1"
-              >
-                <Cog className="w-3 h-3 text-[#C9A052]" />
-                <span>Ops</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => login("finance", "finance@orbelo.com", "Elena Rostova")}
-                className="py-1.5 px-2.5 rounded-lg bg-[#141A29] hover:bg-[#1C2436] text-white text-[10px] font-bold transition-all border border-[#1C2436] flex items-center justify-center gap-1"
-              >
-                <CreditCard className="w-3 h-3 text-[#C9A052]" />
-                <span>Finance</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => login("super_admin", "admin@orbelo.com", "Maximilian von Bern")}
-                className="py-1.5 px-2.5 rounded-lg bg-[#0B101A] hover:bg-[#141A29] text-white text-[10px] font-bold transition-all border border-[#C9A052]/40 flex items-center justify-center gap-1"
-              >
-                <Crown className="w-3 h-3 text-[#C9A052]" />
+                <Crown className="w-3.5 h-3.5 text-[#C9A052]" />
                 <span>Super Admin</span>
               </button>
 
               <button
                 type="button"
-                onClick={() => login("agent", "agent@orbelo.com", "Marcus Vance")}
-                className="col-span-2 sm:col-span-2 py-1.5 px-2.5 rounded-lg bg-[#F5F2EC] hover:bg-[#EAE6DE] text-[#0F1420] text-[10px] font-bold transition-all border border-[#D1C9BC] flex items-center justify-center gap-1"
+                onClick={() => login("admin", "admin@orbelo.com", "Capt. Alexander Vance", "orbelo2026!")}
+                className="py-2 px-2.5 rounded-lg bg-[#0F1420] hover:bg-[#1A2338] text-white text-[10px] font-bold transition-all border border-[#0F1420] flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
               >
-                <Plane className="w-3 h-3 text-[#C9A052]" />
-                <span>Charter Agent Demo</span>
+                <Shield className="w-3.5 h-3.5 text-[#C9A052]" />
+                <span>Admin</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => login("operations", "ops@orbelo.com", "David Schneider", "orbelo2026!")}
+                className="py-2 px-2.5 rounded-lg bg-[#141A29] hover:bg-[#1C2436] text-white text-[10px] font-bold transition-all border border-[#1C2436] flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+              >
+                <Cog className="w-3.5 h-3.5 text-[#C9A052]" />
+                <span>Ops</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => login("finance", "finance@orbelo.com", "Elena Rostova", "orbelo2026!")}
+                className="py-2 px-2.5 rounded-lg bg-[#141A29] hover:bg-[#1C2436] text-white text-[10px] font-bold transition-all border border-[#1C2436] flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+              >
+                <CreditCard className="w-3.5 h-3.5 text-[#C9A052]" />
+                <span>Finance</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => login("agent", "agent@orbelo.com", "Marcus Vance", "orbelo2026!")}
+                className="col-span-2 sm:col-span-2 py-2 px-2.5 rounded-lg bg-[#F5F2EC] hover:bg-[#EAE6DE] text-[#0F1420] text-[10px] font-bold transition-all border border-[#D1C9BC] flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+              >
+                <Plane className="w-3.5 h-3.5 text-[#C9A052]" />
+                <span>Charter Agent</span>
               </button>
             </div>
           </div>

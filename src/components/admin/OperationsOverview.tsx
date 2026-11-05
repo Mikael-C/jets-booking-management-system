@@ -293,10 +293,10 @@ export default function OperationsOverview() {
             </h3>
           </div>
           <button
-            onClick={() => setActiveNav("audit_log")}
-            className="text-xs font-mono font-bold text-[#9A7A35] hover:text-[#0F1420] flex items-center gap-1 transition-colors"
+            onClick={() => setActiveNav("activities")}
+            className="text-xs font-mono font-bold text-[#9A7A35] hover:text-[#0F1420] flex items-center gap-1 transition-colors cursor-pointer"
           >
-            <span>View Complete Audit Log</span>
+            <span>View All Activities & Audit Trail</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </div>

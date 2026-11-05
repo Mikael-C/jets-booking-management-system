@@ -1,5 +1,17 @@
 export type UserRole = "super_admin" | "admin" | "finance" | "operations" | "agent";
 
+export interface UserRecord {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  isActive: boolean;
+  phone?: string;
+  title?: string;
+  lastLogin?: string;
+  createdAt?: string;
+}
+
 export type BookingStatus = 
   | "submitted"
   | "in_sourcing"

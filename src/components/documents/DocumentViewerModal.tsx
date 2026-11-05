@@ -9,6 +9,7 @@ import CharterAgreementDoc from "./CharterAgreementDoc";
 import PassengerManifestDoc from "./PassengerManifestDoc";
 import CreditNoteDoc from "./CreditNoteDoc";
 import { downloadDocumentAsPdf } from "@/lib/pdfExporter";
+import { api } from "@/lib/api";
 import {
   X,
   Printer,
@@ -74,6 +75,31 @@ export default function DocumentViewerModal() {
     const docName = docNameMap[currentDoc] || "Charter_Document";
     const fileName = `Orbelo_${docName}_${activeBooking.tripNumber}.pdf`;
 
+    // Try backend PDFKit generation endpoint
+    try {
+      if (currentDoc === "quotation") {
+        await api.documents.downloadQuotation(activeBooking.id, fileName);
+        setDownloadSuccess(true);
+        setTimeout(() => setDownloadSuccess(false), 2500);
+        setIsDownloadingPdf(false);
+        return;
+      } else if (currentDoc === "invoice") {
+        await api.documents.downloadInvoice(activeBooking.id, fileName);
+        setDownloadSuccess(true);
+        setTimeout(() => setDownloadSuccess(false), 2500);
+        setIsDownloadingPdf(false);
+        return;
+      } else if (currentDoc === "flight_brief") {
+        await api.documents.downloadFlightBrief(activeBooking.id, fileName);
+        setDownloadSuccess(true);
+        setTimeout(() => setDownloadSuccess(false), 2500);
+        setIsDownloadingPdf(false);
+        return;
+      }
+    } catch {
+      // Fallback seamlessly to high-res client canvas exporter
+    }
+
     const success = await downloadDocumentAsPdf(documentContentRef.current, {
       fileName,
       scale: 2,
@@ -92,10 +118,9 @@ export default function DocumentViewerModal() {
         action: "DOCUMENT_DOWNLOADED",
         entityType: "Document",
         entityId: activeBooking.tripNumber,
-        details: `Successfully downloaded un-scattered PDF: ${fileName}`
+        details: `Successfully downloaded PDF: ${fileName}`
       });
     } else {
-      // Fallback gracefully to browser print dialog if client-side canvas has an issue
       window.print();
     }
   };
@@ -108,7 +133,10 @@ export default function DocumentViewerModal() {
 
   const handleSendEmail = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!recipientEmail.trim()) return;
+    if (!recipientEmail.trim() || !activeBooking) return;
+
+    // Send email via backend if connected
+    api.quotes.send(activeBooking.id).catch((err) => console.log("Email dispatch local note:", err.message));
 
     const ts = new Date().toLocaleString();
     setSentLog((prev) => [

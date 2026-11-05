@@ -25,7 +25,9 @@ import {
   ClipboardList,
   ShieldCheck,
   Layers,
-  ScrollText
+  ScrollText,
+  Activity,
+  UserCheck
 } from "lucide-react";
 
 export default function Sidebar() {
@@ -351,24 +353,46 @@ export default function Sidebar() {
               </div>
             </button>
 
-            {/* Security & Audit */}
+            {/* Governance & Activities */}
             <div className="pt-4 px-3 pb-2 text-[10px] font-mono uppercase tracking-wider text-gray-400 font-bold">
-              Security & Audit
+              Governance & Activities
             </div>
 
             <button
-              onClick={() => setActiveNav("audit_log")}
+              onClick={() => setActiveNav("activities")}
               className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "audit_log"
+                activeNav === "activities" || activeNav === "audit_log"
                   ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
                   : "text-gray-300 hover:text-white hover:bg-[#141A29]"
               }`}
             >
               <div className="flex items-center gap-2.5">
-                <ClipboardList className={`w-4 h-4 ${activeNav === "audit_log" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Audit Log</span>
+                <Activity className={`w-4 h-4 ${activeNav === "activities" || activeNav === "audit_log" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
+                <span>Activities</span>
               </div>
+              <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" title="Live Events Active" />
             </button>
+
+            {(role === "super_admin" || role === "admin") && (
+              <button
+                onClick={() => setActiveNav("users")}
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                  activeNav === "users" || activeNav === "user_management"
+                    ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
+                    : "text-gray-300 hover:text-white hover:bg-[#141A29]"
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <UserCheck className={`w-4 h-4 ${activeNav === "users" || activeNav === "user_management" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
+                  <span>User Management</span>
+                </div>
+                {role === "super_admin" && (
+                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[#C9A052]/20 text-[#C9A052] font-bold">
+                    RBAC
+                  </span>
+                )}
+              </button>
+            )}
           </div>
         )}
 
