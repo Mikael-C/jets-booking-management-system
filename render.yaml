@@ -1,0 +1,49 @@
+services:
+  # ─── Express Backend Web Service ──────────────────────────────
+  - type: web
+    name: orbelo-backend
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node src/server.js
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: FRONTEND_URL
+        sync: false
+      - key: AVINODE_MOCK_MODE
+        value: "true"
+      - key: AVINODE_BASE_URL
+        value: https://api.avinode.com
+      - key: AVINODE_API_KEY
+        sync: false
+      - key: UNSPLASH_ACCESS_KEY
+        sync: false
+      - key: PEXELS_API_KEY
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: EMAIL_FROM
+        value: Orbelo Aviation <ops@orbelo.com>
