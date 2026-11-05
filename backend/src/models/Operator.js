@@ -2,10 +2,10 @@ const mongoose = require('mongoose');
 
 const qualDocSchema = new mongoose.Schema({
   id: { type: String },
-  name: { type: String, required: true },
+  name: { type: String, default: '' },
+  docType: { type: String, default: '' },
   status: {
     type: String,
-    enum: ['pending', 'approved', 'rejected', 'expired', 'not_applicable'],
     default: 'pending',
   },
   expiryDate: { type: String, default: '' },
@@ -38,11 +38,10 @@ const operatorSchema = new mongoose.Schema(
     insuranceExpiry: { type: String, default: '' },
     insuranceCoverage: { type: Number, default: 0 },
     safetyRating: {
-      type: Number,
-      min: 0,
-      max: 5,
-      default: 0,
+      type: mongoose.Schema.Types.Mixed,
+      default: '',
     },
+    safetyRatingProvider: { type: String, default: '' },
     isArgusRated: { type: Boolean, default: false },
     isWyvernRated: { type: Boolean, default: false },
     isIsBaoRegistered: { type: Boolean, default: false },

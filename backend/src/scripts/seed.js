@@ -1,3 +1,5 @@
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 require('dotenv').config();
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
@@ -18,23 +20,27 @@ const seedDatabase = async (force = false) => {
   const isDirect = mongoose.connection.readyState === 0;
   if (isDirect) {
     console.log('🌱 Connecting to MongoDB...');
-    await mongoose.connect(MONGODB_URI);
+    await mongoose.connect(MONGODB_URI, {
+      serverSelectionTimeoutMS: 15000,
+    });
     console.log('✅ Connected to MongoDB');
   }
 
   const forceSeed = force || process.env.FORCE_SEED === 'true';
   const existingUsers = await User.countDocuments();
+  const existingClients = await Client.countDocuments();
+  const existingOperators = await Operator.countDocuments();
 
-  if (existingUsers > 0 && !forceSeed) {
-    console.log(`ℹ️ Database already contains ${existingUsers} users. Skipping seed to protect live data.`);
+  if (existingUsers > 0 && existingClients > 0 && existingOperators > 0 && !forceSeed) {
+    console.log(`ℹ️ Database already contains data (${existingUsers} users, ${existingClients} clients, ${existingOperators} operators). Skipping seed to protect live data.`);
     console.log('💡 Set FORCE_SEED=true in environment variables if you want to wipe and re-seed.');
     if (isDirect && require.main === module) {
       await mongoose.connection.close();
     }
-    return { skipped: true, existingUsers };
+    return { skipped: true, existingUsers, existingClients, existingOperators };
   }
 
-  console.log(existingUsers === 0 ? '🌱 Empty database detected. Seeding initial Orbelo data...' : '⚠️ FORCE_SEED=true detected. Clearing and re-seeding...');
+  console.log(existingClients === 0 ? '🌱 Seeding initial Orbelo data...' : '⚠️ FORCE_SEED=true detected. Clearing and re-seeding...');
 
   // Clear existing data
   await Promise.all([
@@ -183,15 +189,15 @@ const seedDatabase = async (force = false) => {
 
   // ─── Sample Notifications ──────────────────────────────
   await Notification.insertMany([
-    { type: 'warning', title: 'AOC Expiry Warning', message: 'GlobeAir AG AOC expires in 15 days. Renewal verification required.', read: false, entityType: 'operator' },
-    { type: 'info', title: 'New Agent RFQ Received', message: 'Marcus Vance submitted a quote request for LSGG ⇄ LIMJ.', read: false, entityType: 'request' },
-    { type: 'success', title: 'Wire Transfer Verified', message: 'Payment of €18,450.00 received for Trip PEU842-001.', read: true, entityType: 'payment' }
+    { userEmail: 'superadmin@orbelo.com', type: 'warning', title: 'AOC Expiry Warning', message: 'GlobeAir AG AOC expires in 15 days. Renewal verification required.', read: false, entityType: 'operator' },
+    { userEmail: 'superadmin@orbelo.com', type: 'info', title: 'New Agent RFQ Received', message: 'Marcus Vance submitted a quote request for LSGG ⇄ LIMJ.', read: false, entityType: 'request' },
+    { userEmail: 'superadmin@orbelo.com', type: 'success', title: 'Wire Transfer Verified', message: 'Payment of €18,450.00 received for Trip PEU842-001.', read: true, entityType: 'payment' }
   ]);
   console.log('🔔 Created sample notifications');
 
   // ─── Seed Audit ────────────────────────────────────────
   await AuditLog.insertMany([
-    { timestamp: new Date(), userEmail: 'superadmin@orbelo.com', userName: 'Maximilian von Bern', action: 'SEED_COMPLETED', entityType: 'System', entityId: 'SEED', details: 'Database seeded with initial Orbelo data' }
+    { timestamp: new Date(), userEmail: 'superadmin@orbelo.com', userName: 'Maximilian von Bern', action: 'SEED_COMPLETED', entityType: 'system', entityId: 'SEED', details: 'Database seeded with initial Orbelo data' }
   ]);
 
   console.log('\n✅ Database seeded successfully!');

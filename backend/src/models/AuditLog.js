@@ -9,11 +9,8 @@ const auditLogSchema = new mongoose.Schema(
     action: { type: String, required: true, index: true },
     entityType: {
       type: String,
-      enum: [
-        'booking', 'agent_request', 'client', 'operator', 'aircraft',
-        'user', 'payment', 'document', 'quote', 'sourcing', 'avinode', 'system',
-      ],
       required: true,
+      lowercase: true,
       index: true,
     },
     entityId: { type: String, default: '', index: true },

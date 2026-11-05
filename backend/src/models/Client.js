@@ -30,7 +30,6 @@ const clientSchema = new mongoose.Schema(
     },
     preferredJetCategory: {
       type: String,
-      enum: ['light', 'midsize', 'super-midsize', 'large', 'ultra-long-range', 'any'],
       default: 'any',
     },
     notes: { type: String, default: '' },

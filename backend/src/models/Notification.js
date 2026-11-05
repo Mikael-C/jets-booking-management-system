@@ -5,10 +5,10 @@ const notificationSchema = new mongoose.Schema(
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: true,
+      default: null,
       index: true,
     },
-    userEmail: { type: String, required: true, index: true },
+    userEmail: { type: String, default: '', index: true },
     type: {
       type: String,
       enum: [

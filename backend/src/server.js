@@ -14,14 +14,16 @@ const startServer = async () => {
     // Auto-seed initial data if database is empty or FORCE_SEED=true
     try {
       const User = require('./models/User');
+      const Client = require('./models/Client');
       const userCount = await User.countDocuments();
-      if (userCount === 0 || process.env.FORCE_SEED === 'true') {
-        logger.info('🌱 Empty database detected on startup — automatically seeding initial data...');
+      const clientCount = await Client.countDocuments();
+      if (userCount === 0 || clientCount === 0 || process.env.FORCE_SEED === 'true') {
+        logger.info('🌱 Empty or partially seeded database detected on startup — automatically seeding initial data...');
         const { seedDatabase } = require('./scripts/seed');
         await seedDatabase(process.env.FORCE_SEED === 'true');
         logger.info('✅ Auto-seed completed successfully!');
       } else {
-        logger.info(`ℹ️  Database contains ${userCount} existing users — skipping seed.`);
+        logger.info(`ℹ️  Database contains ${userCount} existing users and ${clientCount} clients — skipping seed.`);
       }
     } catch (seedErr) {
       logger.warn('Auto-seed check notice: ' + seedErr.message);
