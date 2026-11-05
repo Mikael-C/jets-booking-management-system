@@ -11,6 +11,22 @@ const startServer = async () => {
     await connectDB();
     logger.info('✅ MongoDB connected successfully');
 
+    // Auto-seed initial data if database is empty or FORCE_SEED=true
+    try {
+      const User = require('./models/User');
+      const userCount = await User.countDocuments();
+      if (userCount === 0 || process.env.FORCE_SEED === 'true') {
+        logger.info('🌱 Empty database detected on startup — automatically seeding initial data...');
+        const { seedDatabase } = require('./scripts/seed');
+        await seedDatabase(process.env.FORCE_SEED === 'true');
+        logger.info('✅ Auto-seed completed successfully!');
+      } else {
+        logger.info(`ℹ️  Database contains ${userCount} existing users — skipping seed.`);
+      }
+    } catch (seedErr) {
+      logger.warn('Auto-seed check notice: ' + seedErr.message);
+    }
+
     const server = app.listen(PORT, '0.0.0.0', () => {
       logger.info(`🚀 Orbelo Backend running on port ${PORT} [${process.env.NODE_ENV || 'development'}]`);
       logger.info(`🔗 Health: http://localhost:${PORT}/health`);

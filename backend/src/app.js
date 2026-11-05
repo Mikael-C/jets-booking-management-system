@@ -86,6 +86,25 @@ app.get('/', (req, res) => {
   });
 });
 
+// ─── One-Time Seed Trigger (for free-tier hosting without shell access) ───────
+app.all(['/api/seed', '/seed'], async (req, res) => {
+  const secret = req.query.secret || req.body?.secret || req.headers['x-seed-secret'];
+  const expectedSecret = process.env.SEED_SECRET || 'orbelo2026!';
+  if (secret !== expectedSecret) {
+    return res.status(401).json({
+      success: false,
+      message: 'Unauthorized: Pass ?secret=orbelo2026! to seed the database',
+    });
+  }
+  const { seedDatabase } = require('./scripts/seed');
+  const result = await seedDatabase(req.query.force === 'true');
+  res.json({
+    success: true,
+    message: 'Database seed operation executed successfully!',
+    result,
+  });
+});
+
 // ─── Public Routes (no auth required) ─────────────────────────────────────────
 app.use('/api/auth', authRoutes);
 app.use('/api/airports', airportRoutes);

@@ -5,7 +5,7 @@ services:
     runtime: node
     rootDir: backend
     buildCommand: npm install
-    startCommand: node src/server.js
+    startCommand: node src/scripts/seed.js && node src/server.js
     healthCheckPath: /api/health
     autoDeploy: true
     envVars:

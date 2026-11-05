@@ -14,10 +14,27 @@ const AuditLog = require('../models/AuditLog');
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/orbelo';
 
-const seed = async () => {
-  console.log('🌱 Connecting to MongoDB...');
-  await mongoose.connect(MONGODB_URI);
-  console.log('✅ Connected');
+const seedDatabase = async (force = false) => {
+  const isDirect = mongoose.connection.readyState === 0;
+  if (isDirect) {
+    console.log('🌱 Connecting to MongoDB...');
+    await mongoose.connect(MONGODB_URI);
+    console.log('✅ Connected to MongoDB');
+  }
+
+  const forceSeed = force || process.env.FORCE_SEED === 'true';
+  const existingUsers = await User.countDocuments();
+
+  if (existingUsers > 0 && !forceSeed) {
+    console.log(`ℹ️ Database already contains ${existingUsers} users. Skipping seed to protect live data.`);
+    console.log('💡 Set FORCE_SEED=true in environment variables if you want to wipe and re-seed.');
+    if (isDirect && require.main === module) {
+      await mongoose.connection.close();
+    }
+    return { skipped: true, existingUsers };
+  }
+
+  console.log(existingUsers === 0 ? '🌱 Empty database detected. Seeding initial Orbelo data...' : '⚠️ FORCE_SEED=true detected. Clearing and re-seeding...');
 
   // Clear existing data
   await Promise.all([
@@ -25,17 +42,17 @@ const seed = async () => {
     Operator.deleteMany({}), Booking.deleteMany({}), AgentRequest.deleteMany({}),
     Notification.deleteMany({}), AuditLog.deleteMany({})
   ]);
-  console.log('🧹 Cleared existing data');
+  console.log('🧹 Cleared existing collections');
 
   // ─── Users ─────────────────────────────────────────────
   const passwordHash = await bcrypt.hash('orbelo2026!', 12);
   const users = await User.insertMany([
-    { name: 'Maximilian von Bern', email: 'superadmin@orbelo.com', passwordHash, role: 'super_admin', isActive: true },
-    { name: 'Capt. Alexander Vance', email: 'admin@orbelo.com', passwordHash, role: 'admin', isActive: true },
-    { name: 'Elena Rostova', email: 'finance@orbelo.com', passwordHash, role: 'finance', isActive: true },
-    { name: 'David Schneider', email: 'ops@orbelo.com', passwordHash, role: 'operations', isActive: true },
-    { name: 'Marcus Vance', email: 'agent@orbelo.com', passwordHash, role: 'agent', isActive: true },
-    { name: 'Sophia Laurent', email: 'sophia@orbelo.com', passwordHash, role: 'agent', isActive: true },
+    { name: 'Maximilian von Bern', email: 'superadmin@orbelo.com', passwordHash, role: 'super_admin', isActive: true, title: 'Chief Executive Officer & Super Admin' },
+    { name: 'Capt. Alexander Vance', email: 'admin@orbelo.com', passwordHash, role: 'admin', isActive: true, title: 'Flight Operations Director' },
+    { name: 'Elena Rostova', email: 'finance@orbelo.com', passwordHash, role: 'finance', isActive: true, title: 'Chief Financial Officer' },
+    { name: 'David Schneider', email: 'ops@orbelo.com', passwordHash, role: 'operations', isActive: true, title: 'Flight Dispatch & OCC' },
+    { name: 'Marcus Vance', email: 'agent@orbelo.com', passwordHash, role: 'agent', isActive: true, title: 'Executive Charter Broker' },
+    { name: 'Sophia Laurent', email: 'sophia@orbelo.com', passwordHash, role: 'agent', isActive: true, title: 'Senior Charter Broker' },
   ]);
   console.log(`👤 Created ${users.length} users`);
 
@@ -174,7 +191,7 @@ const seed = async () => {
 
   // ─── Seed Audit ────────────────────────────────────────
   await AuditLog.insertMany([
-    { timestamp: new Date(), userEmail: 'admin@orbelo.com', userName: 'Capt. Alexander Vance', action: 'SEED_COMPLETED', entityType: 'System', entityId: 'SEED', details: 'Database seeded with initial Orbelo data' }
+    { timestamp: new Date(), userEmail: 'superadmin@orbelo.com', userName: 'Maximilian von Bern', action: 'SEED_COMPLETED', entityType: 'System', entityId: 'SEED', details: 'Database seeded with initial Orbelo data' }
   ]);
 
   console.log('\n✅ Database seeded successfully!');
@@ -185,11 +202,20 @@ const seed = async () => {
   console.log('  Operations:  ops@orbelo.com');
   console.log('  Agent:       agent@orbelo.com');
 
-  await mongoose.connection.close();
-  process.exit(0);
+  if (isDirect && require.main === module) {
+    await mongoose.connection.close();
+  }
+
+  return { success: true, users: users.length, aircraft: aircraft.length };
 };
 
-seed().catch(err => {
-  console.error('❌ Seed failed:', err);
-  process.exit(1);
-});
+if (require.main === module) {
+  seedDatabase()
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error('❌ Seed failed:', err);
+      process.exit(1);
+    });
+}
+
+module.exports = { seedDatabase };
