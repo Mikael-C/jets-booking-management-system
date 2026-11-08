@@ -52,9 +52,20 @@ export interface Aircraft {
   id: string;
   name: string;
   manufacturer: string;
-  category: "light" | "midsize" | "super-midsize" | "large" | "ultra-long-range";
+  category:
+    | "turboprop"
+    | "piston"
+    | "entry-level"
+    | "light"
+    | "super-light"
+    | "midsize"
+    | "super-midsize"
+    | "heavy"
+    | "large"
+    | "ultra-long-range"
+    | "vip-airliner";
   categoryLabel: string;
-  registration?: string; // Tail e.g. OE-FFB, F-HSBL
+  registration?: string;
   tagline?: string;
   description?: string;
   passengers: number;
@@ -72,6 +83,16 @@ export interface Aircraft {
   smokingCabin: boolean;
   imageExterior: string;
   imageInterior: string;
+  images?: Array<{
+    url: string;
+    thumb?: string;
+    alt?: string;
+    type: string;
+    source?: string;
+    credit?: string;
+    creditUrl?: string;
+  }>;
+  additionalImages?: string[];
 }
 
 export interface CrewMember {

@@ -14,7 +14,18 @@ const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
 const aircraftSchema = Joi.object({
   name: Joi.string().required(),
   manufacturer: Joi.string().required(),
-  category: Joi.string().valid('light', 'midsize', 'super-midsize', 'large', 'ultra-long-range').required(),
+  category: Joi.string().valid(
+    'turboprop',
+    'piston',
+    'entry-level',
+    'light',
+    'super-light',
+    'midsize',
+    'super-midsize',
+    'heavy',
+    'ultra-long-range',
+    'vip-airliner'
+  ).required(),
   categoryLabel: Joi.string().required(),
   registration: Joi.string().optional().allow(''),
   tagline: Joi.string().optional().allow(''),

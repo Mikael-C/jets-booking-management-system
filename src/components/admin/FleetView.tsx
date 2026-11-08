@@ -308,11 +308,16 @@ export default function FleetView() {
                   className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
                 >
                   <option value="all">All Categories</option>
+                  <option value="turboprop">Turboprop</option>
+                  <option value="piston">Piston</option>
+                  <option value="entry-level">Entry Level</option>
                   <option value="light">Light Jet</option>
-                  <option value="midsize">Midsize Jet</option>
-                  <option value="super-midsize">Super-Midsize Jet</option>
-                  <option value="large">Heavy Jet</option>
-                  <option value="ultra-long-range">Ultra-Long-Range Jet</option>
+                  <option value="super-light">Super Light</option>
+                  <option value="midsize">Mid-Size</option>
+                  <option value="super-midsize">Super Mid-Size</option>
+                  <option value="heavy">Heavy Jet</option>
+                  <option value="ultra-long-range">Ultra-Long-Range</option>
+                  <option value="vip-airliner">VIP Airliner</option>
                 </select>
               </div>
 
