@@ -3,7 +3,13 @@
  * Connects frontend to the Express.js / Node.js backend hosted on Render (or local dev)
  */
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+const getBaseApiUrl = (): string => {
+  const raw = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+  const trimmed = raw.trim().replace(/\/+$/, "");
+  return trimmed.endsWith("/api") ? trimmed : `${trimmed}/api`;
+};
+
+const API_BASE_URL = getBaseApiUrl();
 
 function getAuthHeader(): Record<string, string> {
   if (typeof window === "undefined") return {};
@@ -12,7 +18,8 @@ function getAuthHeader(): Record<string, string> {
 }
 
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-  const url = `${API_BASE_URL}${endpoint.startsWith("/") ? endpoint : `/${endpoint}`}`;
+  const cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+  const url = `${API_BASE_URL}${cleanEndpoint}`;
   const headers = {
     "Content-Type": "application/json",
     ...getAuthHeader(),

@@ -37,25 +37,56 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' }
 }));
 
-const allowedOrigins = [
-  process.env.FRONTEND_URL,
-  'http://localhost:3000',
-  'http://localhost:3001',
-].filter(Boolean);
+const isOriginAllowed = (origin) => {
+  if (!origin) return true; // Mobile apps, Postman, curl, server-to-server, health checks
+  
+  const frontendEnv = process.env.FRONTEND_URL;
+  if (frontendEnv === '*' || !frontendEnv) return true;
+
+  // Split multiple comma-separated URLs and clean trailing slashes
+  const configured = frontendEnv
+    .split(',')
+    .map(u => u.trim().replace(/\/+$/, ''))
+    .filter(Boolean);
+
+  if (configured.includes(origin)) return true;
+
+  // Always allow localhost & local development ports
+  if (/^http:\/\/localhost(:\d+)?$/.test(origin)) return true;
+  if (/^http:\/\/127\.0\.0\.1(:\d+)?$/.test(origin)) return true;
+
+  // Always allow all Vercel domains & preview deployments (*.vercel.app)
+  if (/^https:\/\/([a-zA-Z0-9_-]+\.)?vercel\.app$/.test(origin)) return true;
+
+  return false;
+};
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (mobile, curl, Render health checks)
-    if (!origin || allowedOrigins.includes(origin)) {
+    if (isOriginAllowed(origin)) {
       callback(null, true);
     } else {
+      logger.warn(`CORS blocked for origin: ${origin}`);
       callback(new Error(`CORS policy: origin ${origin} not allowed`));
     }
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
 }));
+
+// ─── URL Normalization & Auto-API Prefix Middleware ───────────────────────────
+// Handles cases where frontend calls //clients or /clients instead of /api/clients
+app.use((req, res, next) => {
+  if (req.url.startsWith('//')) {
+    req.url = req.url.replace(/^\/+/, '/');
+  }
+  const nonApiPaths = ['/health', '/api/health', '/api-docs', '/', '/seed', '/api/seed'];
+  if (!req.url.startsWith('/api/') && !nonApiPaths.includes(req.url.split('?')[0])) {
+    req.url = `/api${req.url}`;
+  }
+  next();
+});
 
 app.use(compression());
 app.use(express.json({ limit: '10mb' }));
