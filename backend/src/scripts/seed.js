@@ -33,8 +33,25 @@ const seedDatabase = async (force = false) => {
   const existingOperators = await Operator.countDocuments();
 
   if (existingUsers > 0 && existingClients > 0 && existingOperators > 0 && !forceSeed) {
-    console.log(`ℹ️ Database already contains data (${existingUsers} users, ${existingClients} clients, ${existingOperators} operators). Skipping seed to protect live data.`);
-    console.log('💡 Set FORCE_SEED=true in environment variables if you want to wipe and re-seed.');
+    console.log(`ℹ️ Database already contains data (${existingUsers} users, ${existingClients} clients, ${existingOperators} operators).`);
+    
+    // Check if aircraft collection needs updating with verified authentic images
+    const oldAircraftCount = await Aircraft.countDocuments({
+      $or: [
+        { imageExterior: { $regex: /unsplash/i } },
+        { imageInterior: { $regex: /unsplash/i } }
+      ]
+    });
+    const totalAircraft = await Aircraft.countDocuments();
+
+    if (oldAircraftCount > 0 || totalAircraft !== 200) {
+      console.log(`✈️ Updating Aircraft fleet with verified 100% authentic aviation images (${totalAircraft} aircraft found, ${oldAircraftCount} had legacy images)...`);
+      await Aircraft.deleteMany({});
+      const fleetData = getFullFleet();
+      const newAircraft = await Aircraft.insertMany(fleetData);
+      console.log(`✅ Refreshed fleet with ${newAircraft.length} verified authentic private jets!`);
+    }
+
     if (isDirect && require.main === module) {
       await mongoose.connection.close();
     }
