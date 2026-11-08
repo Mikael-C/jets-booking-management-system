@@ -325,12 +325,73 @@ export const initialAuditLog: AuditLogEntry[] = [
   }
 ];
 
+export const formatAuditDetails = (details: any): string => {
+  if (details === null || details === undefined) return "Activity recorded";
+  if (typeof details === "string") return details;
+  if (typeof details === "object") {
+    try {
+      if (details.tripNumber || details.status || details.clientName) {
+        return [
+          details.tripNumber ? `Trip: ${details.tripNumber}` : null,
+          details.status ? `Status: ${details.status}` : null,
+          details.clientName ? `Client: ${details.clientName}` : null,
+        ].filter(Boolean).join(" • ");
+      }
+      if (details.oldStatus && details.newStatus) {
+        return `Status updated from '${details.oldStatus}' to '${details.newStatus}'`;
+      }
+      if (details.email) {
+        return `Authentication event for ${details.email}`;
+      }
+      return JSON.stringify(details);
+    } catch {
+      return String(details);
+    }
+  }
+  return String(details);
+};
+
+export const normalizeAuditLogEntry = (a: any): AuditLogEntry => {
+  let ts = String(a?.timestamp || "");
+  if (ts.includes("T")) {
+    ts = ts.replace("T", " ").substring(0, 19);
+  }
+
+  return {
+    id: String(a?.id || a?._id || `aud-${Date.now()}-${Math.floor(Math.random() * 1000)}`),
+    timestamp: ts || new Date().toISOString().replace("T", " ").substring(0, 19),
+    userEmail: String(a?.userEmail || "system@orbelo.com"),
+    userName: String(a?.userName || "System"),
+    action: String(a?.action || "ACTIVITY"),
+    entityType: String(a?.entityType || "General"),
+    entityId: String(a?.entityId || "—"),
+    details: formatAuditDetails(a?.details),
+  };
+};
+
+export const getRoleDefaultNav = (targetRole: UserRole): string => {
+  switch (targetRole) {
+    case "super_admin":
+      return "overview";
+    case "admin":
+      return "bookings";
+    case "finance":
+      return "payments";
+    case "operations":
+      return "overview";
+    case "agent":
+      return "agent_overview";
+    default:
+      return "bookings";
+  }
+};
+
 interface AviationContextType {
   // Auth state
   isAuthenticated: boolean;
   currentUser: UserProfile | null;
   role: UserRole;
-  login: (role: UserRole, email?: string, name?: string, password?: string) => Promise<void> | void;
+  login: (roleOrEmail: UserRole | string, emailOrPassword?: string, name?: string, password?: string) => Promise<{ success: boolean; role: UserRole; error?: string }> | void;
   logout: () => void;
   setRole: (role: UserRole) => void;
 
@@ -340,6 +401,7 @@ interface AviationContextType {
   updateUser: (id: string, updates: Partial<UserRecord> & { password?: string }) => Promise<UserRecord>;
   deleteUser: (id: string) => Promise<void>;
   refreshUsers: () => Promise<void>;
+  refreshAuditLog: () => Promise<void>;
 
   // Navigation
   activeNav: string;
@@ -468,7 +530,14 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       }
       const savedAudit = localStorage.getItem("orbelo_audit_v2");
       if (savedAudit) {
-        setAuditLog(JSON.parse(savedAudit));
+        try {
+          const parsed = JSON.parse(savedAudit);
+          if (Array.isArray(parsed)) {
+            setAuditLog(parsed.map(normalizeAuditLogEntry));
+          }
+        } catch {
+          // ignore
+        }
       }
       const savedNotifs = localStorage.getItem("orbelo_notifications_v2");
       if (savedNotifs) {
@@ -519,8 +588,8 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       api.auditLog.list({ limit: 100 })
         .then((res) => {
           const list = res?.data || res?.entries;
-          if (list && list.length > 0) {
-            setAuditLog(list.map((a: any) => ({ ...a, id: a.id || a._id })));
+          if (list && Array.isArray(list) && list.length > 0) {
+            setAuditLog(list.map(normalizeAuditLogEntry));
           }
         })
         .catch(() => {});
@@ -545,8 +614,10 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
   }, [users, bookings, agentRequests, clients, operators, auditLog, notifications]);
 
   const addAuditEntry = (entry: Omit<AuditLogEntry, "id" | "timestamp">) => {
+    const formattedDetails = formatAuditDetails(entry.details);
     const newEntry: AuditLogEntry = {
       ...entry,
+      details: formattedDetails,
       id: `aud-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       timestamp: new Date().toISOString().replace("T", " ").substring(0, 19)
     };
@@ -559,8 +630,20 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       action: entry.action,
       entityType: entry.entityType,
       entityId: entry.entityId,
-      details: entry.details
+      details: formattedDetails
     }).catch(() => {});
+  };
+
+  const refreshAuditLog = async () => {
+    try {
+      const res = await api.auditLog.list({ limit: 100 });
+      const list = res?.data || res?.entries;
+      if (list && Array.isArray(list) && list.length > 0) {
+        setAuditLog(list.map(normalizeAuditLogEntry));
+      }
+    } catch (err: any) {
+      console.warn("Audit refresh notice:", err?.message);
+    }
   };
 
   const getRoleDetails = (targetRole: UserRole, email?: string, name?: string) => {
@@ -599,23 +682,75 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const login = async (newRole: UserRole, email?: string, name?: string, password?: string) => {
-    const details = getRoleDetails(newRole, email, name);
-    const pwd = password || "orbelo2026!";
+  const login = async (
+    roleOrEmail: UserRole | string,
+    emailOrPassword?: string,
+    name?: string,
+    password?: string
+  ): Promise<{ success: boolean; role: UserRole; error?: string }> => {
+    const knownRoles: UserRole[] = ["super_admin", "admin", "finance", "operations", "agent"];
+    let targetRole: UserRole = "admin";
+    let targetEmail = "";
+    let targetName = "";
+    let targetPassword = "orbelo2026!";
+
+    if (knownRoles.includes(roleOrEmail as UserRole)) {
+      // Legacy call signature: login(role, email, name, password)
+      targetRole = roleOrEmail as UserRole;
+      targetEmail = emailOrPassword || "";
+      targetName = name || "";
+      targetPassword = password || "orbelo2026!";
+    } else {
+      // Modern unified credentials call: login(email, password)
+      targetEmail = (roleOrEmail || "").trim().toLowerCase();
+      targetPassword = emailOrPassword || "orbelo2026!";
+
+      // Match against registered users
+      const matched = users.find((u) => u.email.toLowerCase() === targetEmail);
+      if (matched) {
+        if (!matched.isActive) {
+          throw new Error("This account is currently deactivated. Please contact your system administrator.");
+        }
+        targetRole = matched.role;
+        targetName = matched.name;
+      } else {
+        // Fallback role inference from corporate address
+        if (targetEmail.includes("superadmin") || targetEmail.includes("ceo") || targetEmail.includes("maximilian")) {
+          targetRole = "super_admin";
+        } else if (targetEmail.includes("finance") || targetEmail.includes("elena") || targetEmail.includes("cfo") || targetEmail.includes("billing")) {
+          targetRole = "finance";
+        } else if (targetEmail.includes("ops") || targetEmail.includes("schneider") || targetEmail.includes("dispatch")) {
+          targetRole = "operations";
+        } else if (targetEmail.includes("agent") || targetEmail.includes("marcus") || targetEmail.includes("sophia") || targetEmail.includes("broker")) {
+          targetRole = "agent";
+        } else {
+          targetRole = "admin";
+        }
+      }
+    }
+
+    const details = getRoleDetails(targetRole, targetEmail, targetName);
+    const finalEmail = targetEmail || details.email;
+    const finalName = targetName || details.name;
+
     const user: UserProfile = {
-      role: newRole,
-      name: details.name,
-      email: details.email,
+      role: targetRole,
+      name: finalName,
+      email: finalEmail,
       title: details.title
     };
+
     setCurrentUser(user);
-    setRoleState(newRole);
+    setRoleState(targetRole);
     setIsAuthenticated(true);
-    setActiveNav(newRole === "agent" ? "request_quote" : "bookings");
+
+    // Respective dashboard routing based on role
+    const targetNav = getRoleDefaultNav(targetRole);
+    setActiveNav(targetNav);
 
     // Authenticate with backend API in background & persist JWT
     try {
-      const res = await api.auth.login(details.email, pwd);
+      const res = await api.auth.login(finalEmail, targetPassword);
       const token = res?.data?.accessToken || res?.data?.token;
       if (token) {
         localStorage.setItem("orbelo_access_token", token);
@@ -624,25 +759,33 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
         }
       }
       if (res?.data?.user) {
+        const bUser = res.data.user;
+        const bRole: UserRole = bUser.role || targetRole;
         setCurrentUser({
-          role: res.data.user.role || newRole,
-          name: res.data.user.name || details.name,
-          email: res.data.user.email || details.email,
-          title: res.data.user.title || details.title
+          role: bRole,
+          name: bUser.name || finalName,
+          email: bUser.email || finalEmail,
+          title: bUser.title || details.title
         });
+        if (bRole !== targetRole) {
+          setRoleState(bRole);
+          setActiveNav(getRoleDefaultNav(bRole));
+        }
       }
     } catch (err: any) {
-      console.warn("Backend auth offline (operating in local resilience mode):", err.message);
+      console.warn("Backend auth offline (operating in local resilience mode):", err?.message);
     }
 
     addAuditEntry({
-      userEmail: details.email,
-      userName: details.name,
+      userEmail: finalEmail,
+      userName: finalName,
       action: "USER_LOGIN",
       entityType: "Security",
       entityId: `AUTH-${Date.now().toString().slice(-4)}`,
-      details: `User logged in with role: ${newRole}`
+      details: `User logged in with role: ${targetRole} to dashboard: ${targetNav}`
     });
+
+    return { success: true, role: targetRole };
   };
 
   const refreshUsers = async () => {
@@ -785,7 +928,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
         title: details.title
       });
     }
-    setActiveNav(newRole === "agent" ? "request_quote" : "bookings");
+    setActiveNav(getRoleDefaultNav(newRole));
   };
 
   const openDocument = (booking: Booking, docType: DocumentType) => {
@@ -1476,6 +1619,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
         updateOperatorChecklist,
         auditLog,
         addAuditEntry,
+        refreshAuditLog,
         notifications,
         markNotificationRead,
         resetToDefaultData

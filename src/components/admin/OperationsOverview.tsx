@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { useAviation } from "@/lib/aviationContext";
+import { useAviation, formatAuditDetails } from "@/lib/aviationContext";
 import { formatCurrency } from "@/lib/pricingCalculator";
 import {
   Plane,
@@ -311,7 +311,7 @@ export default function OperationsOverview() {
                 <div>
                   <span className="font-bold text-[#0F1420]">{entry.userName}</span>
                   <span className="text-gray-400 mx-1.5">•</span>
-                  <span className="text-gray-600">{entry.details}</span>
+                  <span className="text-gray-600">{formatAuditDetails(entry?.details)}</span>
                 </div>
               </div>
               <div className="flex items-center gap-3 font-mono text-[11px] text-gray-400 self-end sm:self-center">

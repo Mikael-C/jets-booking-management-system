@@ -284,7 +284,7 @@ export interface AuditLogEntry {
   action: string;
   entityType: string;
   entityId: string;
-  details: string;
+  details: string | any;
 }
 
 export interface Notification {

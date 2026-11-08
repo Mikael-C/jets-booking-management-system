@@ -66,8 +66,14 @@ export default function TopHeader() {
         return { section: "Reference Data", title: "Operator Management & Qualification" };
       case "payments":
         return { section: "Finance", title: "Payments & Invoice Management" };
+      case "activities":
       case "audit_log":
-        return { section: "Security", title: "Audit Log & Activity Trail" };
+        return { section: "Governance & Security", title: "Activities & Application Audit Trail" };
+      case "users":
+      case "user_management":
+        return { section: "Administration", title: "User & Role-Based Access Control (RBAC)" };
+      case "generate_contract":
+        return { section: "Actions", title: "Generate Master Charter Broker Agreement" };
       case "clients":
         return { section: "CRM & Accounts", title: "Company Clients Directory" };
       case "fleet":

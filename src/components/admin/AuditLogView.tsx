@@ -1,100 +1,112 @@
 "use client";
 
 import React, { useState } from "react";
-import { useAviation } from "@/lib/aviationContext";
-import { api } from "@/lib/api";
+import { useAviation, formatAuditDetails } from "@/lib/aviationContext";
 import {
-  ShieldAlert,
   Search,
   Lock,
   Download,
-  Calendar,
-  User,
-  Filter,
-  CheckCircle2,
-  AlertTriangle,
-  FileText,
-  CreditCard,
-  Building2,
-  KeyRound,
-  Layers,
-  History,
   Activity,
-  RefreshCw,
-  Sparkles
+  RefreshCw
 } from "lucide-react";
 
 export default function AuditLogView() {
-  const { auditLog } = useAviation();
+  const { auditLog, refreshAuditLog } = useAviation();
   const [searchQuery, setSearchQuery] = useState("");
   const [entityFilter, setEntityFilter] = useState("all");
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Filter audit log
-  const filteredLogs = auditLog.filter((entry) => {
-    const matchesSearch =
-      entry.userName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      entry.userEmail.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      entry.action.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      entry.entityId.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      entry.details.toLowerCase().includes(searchQuery.toLowerCase());
+  // Safe logs array fallback
+  const logs = Array.isArray(auditLog) ? auditLog : [];
 
+  // Filter audit log safely
+  const filteredLogs = logs.filter((entry) => {
+    if (!entry) return false;
+
+    const userName = String(entry.userName || "").toLowerCase();
+    const userEmail = String(entry.userEmail || "").toLowerCase();
+    const action = String(entry.action || "").toLowerCase();
+    const entityId = String(entry.entityId || "").toLowerCase();
+    const details = formatAuditDetails(entry.details).toLowerCase();
+    const query = searchQuery.trim().toLowerCase();
+
+    const matchesSearch =
+      !query ||
+      userName.includes(query) ||
+      userEmail.includes(query) ||
+      action.includes(query) ||
+      entityId.includes(query) ||
+      details.includes(query);
+
+    const entityType = String(entry.entityType || "").toLowerCase();
+    const filterType = entityFilter.toLowerCase();
     const matchesEntity =
-      entityFilter === "all" ||
-      entry.entityType.toLowerCase() === entityFilter.toLowerCase() ||
-      (entityFilter === "Security" && (entry.entityType.toLowerCase() === "security" || entry.entityType.toLowerCase() === "user"));
+      filterType === "all" ||
+      entityType === filterType ||
+      (filterType === "security" && (entityType === "security" || entityType === "user"));
 
     return matchesSearch && matchesEntity;
   });
 
   // Action badge color
-  const getActionBadge = (action: string) => {
-    const act = action.toUpperCase();
+  const getActionBadge = (action?: string) => {
+    const act = String(action || "ACTIVITY").toUpperCase();
     if (act.includes("PAYMENT")) {
       return (
         <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-          {action}
+          {action || "PAYMENT"}
         </span>
       );
     }
     if (act.includes("OVERRIDE") || act.includes("DISCOUNT") || act.includes("WARNING")) {
       return (
         <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-amber-100 text-amber-900 border border-amber-300">
-          {action}
+          {action || "WARNING"}
         </span>
       );
     }
     if (act.includes("DELETE") || act.includes("REJECT") || act.includes("SUSPEND")) {
       return (
         <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-red-100 text-red-800 border border-red-300">
-          {action}
+          {action || "DELETE"}
         </span>
       );
     }
     if (act.includes("LOGIN") || act.includes("AUTH") || act.includes("SECURITY") || act.includes("USER_")) {
       return (
         <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-purple-100 text-purple-800 border border-purple-300">
-          {action}
+          {action || "SECURITY"}
         </span>
       );
     }
     return (
       <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-blue-100 text-blue-800 border border-blue-300">
-        {action}
+        {action || "ACTIVITY"}
       </span>
     );
+  };
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      if (refreshAuditLog) {
+        await refreshAuditLog();
+      }
+    } finally {
+      setTimeout(() => setIsRefreshing(false), 500);
+    }
   };
 
   const handleExportCSV = () => {
     const headers = ["Timestamp", "User Name", "User Email", "Action", "Entity Type", "Entity ID", "Details"];
     const rows = filteredLogs.map((l) => [
-      `"${l.timestamp}"`,
-      `"${l.userName}"`,
-      `"${l.userEmail}"`,
-      `"${l.action}"`,
-      `"${l.entityType}"`,
-      `"${l.entityId}"`,
-      `"${l.details.replace(/"/g, '""')}"`
+      `"${String(l?.timestamp || "").replace(/"/g, '""')}"`,
+      `"${String(l?.userName || "").replace(/"/g, '""')}"`,
+      `"${String(l?.userEmail || "").replace(/"/g, '""')}"`,
+      `"${String(l?.action || "").replace(/"/g, '""')}"`,
+      `"${String(l?.entityType || "").replace(/"/g, '""')}"`,
+      `"${String(l?.entityId || "").replace(/"/g, '""')}"`,
+      `"${formatAuditDetails(l?.details).replace(/"/g, '""')}"`
     ]);
     const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
     const encodedUri = encodeURI(csvContent);
@@ -126,10 +138,20 @@ export default function AuditLogView() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#F5F2EC] hover:bg-[#EAE6DE] border border-[#E0DAD0] text-xs font-mono font-bold text-[#0F1420] transition-colors cursor-pointer disabled:opacity-50"
+            title="Refresh activity logs"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-[#C9A052] ${isRefreshing ? "animate-spin" : ""}`} />
+            <span>Refresh</span>
+          </button>
+
           <button
             onClick={handleExportCSV}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#F5F2EC] hover:bg-[#EAE6DE] border border-[#E0DAD0] text-xs font-mono font-bold text-[#0F1420] transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#0F1420] hover:bg-[#1a2336] border border-[#0F1420] text-xs font-mono font-bold text-white transition-colors cursor-pointer shadow-sm"
           >
             <Download className="w-3.5 h-3.5 text-[#C9A052]" />
             <span>Export CSV</span>
@@ -142,7 +164,7 @@ export default function AuditLogView() {
         <div className="flex items-center gap-2.5">
           <Lock className="w-4 h-4 text-[#C9A052] flex-shrink-0" />
           <span className="font-mono text-[11px] text-gray-300">
-            <strong className="text-white">Tamper-Evident Security Log:</strong> Every event is recorded with caller identity, IP address, and timestamp. Records are immutable and synchronized with the backend MongoDB database.
+            <strong className="text-white">Tamper-Evident Security Log:</strong> Every event is recorded with caller identity, IP address, and timestamp. Records are immutable and synchronized with the backend database.
           </span>
         </div>
         <span className="text-[10px] font-mono text-emerald-400 font-bold bg-emerald-950/60 border border-emerald-800/80 px-2 py-0.5 rounded flex items-center gap-1">
@@ -212,42 +234,46 @@ export default function AuditLogView() {
                   </td>
                 </tr>
               ) : (
-                filteredLogs.map((entry) => (
-                  <tr key={entry.id} className="hover:bg-[#FDFCFA] transition-colors">
-                    {/* Timestamp */}
-                    <td className="py-3.5 px-4 font-mono text-gray-600 whitespace-nowrap text-[11px]">
-                      {entry.timestamp}
-                    </td>
+                filteredLogs.map((entry, idx) => {
+                  const entryKey = entry?.id || (entry as any)?._id || `log-${idx}`;
+                  const detailsText = formatAuditDetails(entry?.details);
+                  return (
+                    <tr key={entryKey} className="hover:bg-[#FDFCFA] transition-colors">
+                      {/* Timestamp */}
+                      <td className="py-3.5 px-4 font-mono text-gray-600 whitespace-nowrap text-[11px]">
+                        {String(entry?.timestamp || "")}
+                      </td>
 
-                    {/* User */}
-                    <td className="py-3.5 px-4">
-                      <div className="font-bold text-[#0F1420]">{entry.userName}</div>
-                      <p className="text-[10px] font-mono text-gray-500">{entry.userEmail}</p>
-                    </td>
+                      {/* User */}
+                      <td className="py-3.5 px-4">
+                        <div className="font-bold text-[#0F1420]">{entry?.userName || "System"}</div>
+                        <p className="text-[10px] font-mono text-gray-500">{entry?.userEmail || "system@orbelo.com"}</p>
+                      </td>
 
-                    {/* Action */}
-                    <td className="py-3.5 px-4">
-                      {getActionBadge(entry.action)}
-                    </td>
+                      {/* Action */}
+                      <td className="py-3.5 px-4">
+                        {getActionBadge(entry?.action)}
+                      </td>
 
-                    {/* Entity Type */}
-                    <td className="py-3.5 px-4">
-                      <span className="font-mono text-[11px] text-[#0F1420] font-semibold bg-[#F5F2EC] px-2 py-0.5 rounded border border-[#E0DAD0]">
-                        {entry.entityType}
-                      </span>
-                    </td>
+                      {/* Entity Type */}
+                      <td className="py-3.5 px-4">
+                        <span className="font-mono text-[11px] text-[#0F1420] font-semibold bg-[#F5F2EC] px-2 py-0.5 rounded border border-[#E0DAD0]">
+                          {entry?.entityType || "General"}
+                        </span>
+                      </td>
 
-                    {/* Entity ID */}
-                    <td className="py-3.5 px-4 font-mono font-bold text-[#9A7A35] text-[11px]">
-                      {entry.entityId}
-                    </td>
+                      {/* Entity ID */}
+                      <td className="py-3.5 px-4 font-mono font-bold text-[#9A7A35] text-[11px]">
+                        {entry?.entityId || "—"}
+                      </td>
 
-                    {/* Details */}
-                    <td className="py-3.5 px-4 text-[#0F1420]/80 text-xs">
-                      {entry.details}
-                    </td>
-                  </tr>
-                ))
+                      {/* Details */}
+                      <td className="py-3.5 px-4 text-[#0F1420]/80 text-xs leading-relaxed">
+                        {detailsText}
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

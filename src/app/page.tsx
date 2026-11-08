@@ -100,7 +100,7 @@ export default function Home() {
         case "clients":
           return <ClientsView />;
         default:
-          return <AgentRequestQuoteView />;
+          return <AgentOverviewView />;
       }
     }
   };
