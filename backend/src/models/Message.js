@@ -22,13 +22,13 @@ const messageSchema = new mongoose.Schema(
     }, // 'operations', 'broker_desk', 'finance', 'client_services', or 'direct'
     senderId: { type: String, default: '' },
     senderName: { type: String, required: true },
-    senderEmail: { type: String, required: true, index: true },
+    senderEmail: { type: String, required: true, index: true, lowercase: true, trim: true },
     senderRole: {
       type: String,
       enum: ['super_admin', 'admin', 'finance', 'operations', 'agent', 'client', 'system'],
       default: 'operations',
     },
-    recipientEmail: { type: String, default: '', index: true },
+    recipientEmail: { type: String, default: '', index: true, lowercase: true, trim: true },
     recipientName: { type: String, default: '' },
     recipientRole: { type: String, default: '' },
     content: { type: String, required: true },
@@ -37,7 +37,7 @@ const messageSchema = new mongoose.Schema(
     attachments: { type: [messageAttachmentSchema], default: [] },
     readBy: [
       {
-        userEmail: { type: String, required: true },
+        userEmail: { type: String, required: true, lowercase: true, trim: true },
         readAt: { type: Date, default: Date.now },
       },
     ],

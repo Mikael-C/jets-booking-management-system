@@ -773,6 +773,7 @@ interface AviationContextType {
 
   // In-App Messaging
   messages: AppMessage[];
+  refreshMessages: () => Promise<void>;
   sendMessage: (msg: {
     channel?: string;
     recipientEmail?: string;
@@ -1011,6 +1012,16 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     }
   }, [users, bookings, agentRequests, clients, operators, auditLog, notifications, messages]);
 
+  // Periodic background synchronization of in-app messages every 6 seconds so incoming messages appear live
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    refreshMessages().catch(() => {});
+    const interval = setInterval(() => {
+      refreshMessages().catch(() => {});
+    }, 6000);
+    return () => clearInterval(interval);
+  }, [isAuthenticated, currentUser?.email]);
+
   const addAuditEntry = (entry: Omit<AuditLogEntry, "id" | "timestamp">) => {
     const formattedDetails = formatAuditDetails(entry.details);
     const newEntry: AuditLogEntry = {
@@ -1242,6 +1253,10 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       details: `User logged in with role: ${targetRole} to dashboard: ${targetNav}`
     });
 
+    // Live synchronization of messages and directory for logged-in user
+    refreshMessages().catch(() => {});
+    refreshUsers().catch(() => {});
+
     return { success: true, role: targetRole };
   };
 
@@ -1253,6 +1268,50 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       }
     } catch {
       // Fallback to local state
+    }
+  };
+
+  const refreshMessages = async (): Promise<void> => {
+    try {
+      const res = await api.messages.list({ limit: 200 });
+      if (res?.data && Array.isArray(res.data)) {
+        const currentEmail = (currentUser?.email || "").trim().toLowerCase();
+        const backendIds = new Set(res.data.map((m: any) => m.id || m._id));
+        const backendList: AppMessage[] = res.data.map((m: any) => {
+          const isRead = m.read !== undefined
+            ? m.read
+            : (Array.isArray(m.readBy) && m.readBy.some((r: any) => (r.userEmail || "").toLowerCase() === currentEmail));
+          return {
+            id: m.id || m._id,
+            channel: m.channel,
+            senderId: m.senderId,
+            senderName: m.senderName,
+            senderEmail: (m.senderEmail || "").toLowerCase(),
+            senderRole: m.senderRole,
+            recipientEmail: m.recipientEmail ? m.recipientEmail.toLowerCase() : undefined,
+            recipientName: m.recipientName,
+            recipientRole: m.recipientRole,
+            content: m.content,
+            tripNumber: m.tripNumber,
+            requestId: m.requestId,
+            attachments: m.attachments,
+            timestamp: m.timestamp || (m.createdAt ? m.createdAt.replace("T", " ").substring(0, 16) : ""),
+            read: isRead,
+          };
+        });
+
+        setMessages((prev) => {
+          // Keep recent optimistic local messages not yet returned by backend
+          const retainedLocal = prev.filter((p) => !backendIds.has(p.id) && p.id.startsWith("msg-"));
+          const merged = [...backendList, ...retainedLocal];
+          try {
+            localStorage.setItem("orbelo_messages_v2", JSON.stringify(merged));
+          } catch {}
+          return merged;
+        });
+      }
+    } catch (err: any) {
+      console.warn("Messages sync notice:", err?.message);
     }
   };
 
@@ -2064,14 +2123,20 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     requestId?: string;
     attachments?: MessageAttachment[];
   }) => {
+    const sEmail = (currentUser?.email || (role === "agent" ? "agent@orbelo.com" : "admin@orbelo.com")).trim().toLowerCase();
+    const rEmail = msgData.recipientEmail ? msgData.recipientEmail.trim().toLowerCase() : undefined;
+    const finalChannel = msgData.channel && msgData.channel !== "direct"
+      ? msgData.channel
+      : (rEmail ? "direct" : "operations");
+
     const newMsg: AppMessage = {
       id: `msg-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      channel: msgData.recipientEmail ? "direct" : (msgData.channel || "operations"),
+      channel: finalChannel,
       senderId: currentUser?.id || "",
       senderName: currentUser?.name || (role === "agent" ? "Marcus Vance" : "Operations Desk"),
-      senderEmail: currentUser?.email || (role === "agent" ? "marcus.vance@orbelo-brokerage.com" : "admin@orbelo.com"),
+      senderEmail: sEmail,
       senderRole: (currentUser?.role || role || "operations") as any,
-      recipientEmail: msgData.recipientEmail,
+      recipientEmail: rEmail,
       recipientName: msgData.recipientName,
       recipientRole: msgData.recipientRole,
       content: msgData.content,
@@ -2082,9 +2147,31 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       read: true,
     };
 
-    setMessages((prev) => [...prev, newMsg]);
+    setMessages((prev) => {
+      const next = [...prev, newMsg];
+      try {
+        localStorage.setItem("orbelo_messages_v2", JSON.stringify(next));
+      } catch {}
+      return next;
+    });
 
-    api.messages.send(msgData).catch((err) => console.log("Backend message sync notice:", err.message));
+    api.messages
+      .send({
+        channel: finalChannel,
+        recipientEmail: rEmail,
+        recipientName: msgData.recipientName,
+        recipientRole: msgData.recipientRole,
+        content: msgData.content,
+        tripNumber: msgData.tripNumber,
+        requestId: msgData.requestId,
+        attachments: msgData.attachments,
+      })
+      .then((res) => {
+        if (res?.data?.id) {
+          setMessages((prev) => prev.map((m) => (m.id === newMsg.id ? { ...m, id: res.data.id } : m)));
+        }
+      })
+      .catch((err) => console.log("Backend message sync notice:", err.message));
 
     if (msgData.requestId) {
       addMessage(msgData.requestId, {
@@ -2108,11 +2195,31 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
   };
 
   const markMessageRead = (msgId: string) => {
-    setMessages((prev) => prev.map((m) => (m.id === msgId ? { ...m, read: true } : m)));
+    setMessages((prev) => {
+      const next = prev.map((m) => (m.id === msgId ? { ...m, read: true } : m));
+      try {
+        localStorage.setItem("orbelo_messages_v2", JSON.stringify(next));
+      } catch {}
+      return next;
+    });
     api.messages.markRead(msgId).catch(() => {});
   };
 
-  const unreadMessageCount = messages.filter((m) => !m.read && m.senderEmail !== currentUser?.email).length;
+  const unreadMessageCount = messages.filter((m) => {
+    if (m.read) return false;
+    const myEmail = (currentUser?.email || "").trim().toLowerCase();
+    const sEmail = (m.senderEmail || "").trim().toLowerCase();
+    if (sEmail && sEmail === myEmail) return false;
+
+    // Direct message
+    if (m.channel === "direct") {
+      const rEmail = (m.recipientEmail || "").trim().toLowerCase();
+      return rEmail === myEmail;
+    }
+
+    // Public department channel
+    return true;
+  }).length;
 
   // ─── Tokenomics & Subscription Methods ──────────────────────────────────────
   const openTokenModal = (prompt?: string) => {
@@ -2406,6 +2513,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
         notifications,
         markNotificationRead,
         messages,
+        refreshMessages,
         sendMessage,
         markMessageRead,
         unreadMessageCount,

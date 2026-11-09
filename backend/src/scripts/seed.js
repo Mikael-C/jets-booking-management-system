@@ -13,6 +13,7 @@ const Booking = require('../models/Booking');
 const AgentRequest = require('../models/AgentRequest');
 const Notification = require('../models/Notification');
 const AuditLog = require('../models/AuditLog');
+const Message = require('../models/Message');
 const { getFullFleet } = require('../seed/fleetData');
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/orbelo';
@@ -46,6 +47,118 @@ const seedDatabase = async (force = false) => {
       } catch (err) {
         console.warn('Booking seeding error:', err.message);
       }
+    }
+
+    // Ensure initial communications messages exist
+    const existingMessages = await Message.countDocuments();
+    if (existingMessages === 0) {
+      console.log('💬 Seeding initial communication messages...');
+      await Message.insertMany([
+        {
+          id: 'msg-1001',
+          channel: 'operations',
+          senderName: 'David Schneider',
+          senderEmail: 'ops@orbelo.com',
+          senderRole: 'operations',
+          content: 'Eurocontrol CFMU slot issued for PEU842-001 (LSGG → LIMJ). CTOT is confirmed at 11:24z. Ground handling at Genoa AGS notified.',
+          tripNumber: 'PEU842-001',
+          readBy: [{ userEmail: 'ops@orbelo.com', readAt: new Date() }],
+        },
+        {
+          id: 'msg-1002',
+          channel: 'operations',
+          senderName: 'Maximilian von Bern',
+          senderEmail: 'superadmin@orbelo.com',
+          senderRole: 'super_admin',
+          content: 'Excellent. Please verify crew FDP limits for Captain Audrain prior to departure.',
+          tripNumber: 'PEU842-001',
+          readBy: [{ userEmail: 'superadmin@orbelo.com', readAt: new Date() }],
+        },
+        {
+          id: 'msg-1003',
+          channel: 'broker_desk',
+          senderName: 'Marcus Vance',
+          senderEmail: 'agent@orbelo.com',
+          senderRole: 'agent',
+          content: 'Hello Operations Team! Submitting quotation request for Lord Julian Sterling: London Luton (EGGW) → Nice (LFMN) for 4 VIP passengers. Challenger 350 or Citation Latitude preferred.',
+          requestId: 'req-101',
+          readBy: [{ userEmail: 'agent@orbelo.com', readAt: new Date() }],
+        },
+        {
+          id: 'msg-1004',
+          channel: 'broker_desk',
+          senderName: 'Capt. Alexander Vance',
+          senderEmail: 'admin@orbelo.com',
+          senderRole: 'admin',
+          content: 'Hi Marcus, quote PEU603-001 has been compiled with Citation Latitude (OE-LGT) at €31,800 all-inclusive. Document attached below.',
+          requestId: 'req-101',
+          tripNumber: 'PEU603-001',
+          attachments: [
+            {
+              name: 'Official_Quotation_PEU603-001.pdf',
+              type: 'quotation',
+              tripNumber: 'PEU603-001',
+              docType: 'quotation',
+              fileSize: '284 KB',
+            },
+          ],
+          readBy: [{ userEmail: 'admin@orbelo.com', readAt: new Date() }],
+        },
+        {
+          id: 'msg-1005',
+          channel: 'finance',
+          senderName: 'Elena Rostova',
+          senderEmail: 'finance@orbelo.com',
+          senderRole: 'finance',
+          content: 'Wire transfer of €13,320.45 received from Brinkmann Global Capital for invoice #00106020. Payment status updated to Fully Paid.',
+          tripNumber: 'PEU842-001',
+          attachments: [
+            {
+              name: 'Tax_Invoice_00106020.pdf',
+              type: 'invoice',
+              tripNumber: 'PEU842-001',
+              docType: 'invoice',
+              fileSize: '210 KB',
+            },
+          ],
+          readBy: [{ userEmail: 'finance@orbelo.com', readAt: new Date() }],
+        },
+        {
+          id: 'msg-1006',
+          channel: 'client_services',
+          senderName: 'Sophia Laurent',
+          senderEmail: 'sophia@orbelo.com',
+          senderRole: 'agent',
+          content: 'Client has requested onboard catering update: 1 bottle Dom Pérignon Vintage 2013 and gluten-free canapés. Please coordinate with Signature Flight Support.',
+          requestId: 'req-102',
+          readBy: [{ userEmail: 'sophia@orbelo.com', readAt: new Date() }],
+        },
+        {
+          id: 'msg-1007',
+          channel: 'direct',
+          senderName: 'Capt. Alexander Vance',
+          senderEmail: 'admin@orbelo.com',
+          senderRole: 'admin',
+          recipientName: 'Marcus Vance',
+          recipientEmail: 'agent@orbelo.com',
+          recipientRole: 'agent',
+          content: 'Welcome to the dispatch channel Marcus. Your broker credentials and 2,000 sourcing tokens have been configured. Let me know if you need assistance with the Nice routing.',
+          readBy: [{ userEmail: 'admin@orbelo.com', readAt: new Date() }, { userEmail: 'agent@orbelo.com', readAt: new Date() }],
+        },
+        {
+          id: 'msg-1008',
+          channel: 'direct',
+          senderName: 'Marcus Vance',
+          senderEmail: 'agent@orbelo.com',
+          senderRole: 'agent',
+          recipientName: 'Capt. Alexander Vance',
+          recipientEmail: 'admin@orbelo.com',
+          recipientRole: 'admin',
+          content: 'Thank you Captain Vance! Sourcing quotes on Avinode now. Will attach the formal quotation once ready.',
+          readBy: [{ userEmail: 'agent@orbelo.com', readAt: new Date() }, { userEmail: 'admin@orbelo.com', readAt: new Date() }],
+        },
+      ]);
+      console.log('✅ Seeded initial communication messages!');
     }
     
     // Check if aircraft collection needs updating with verified authentic images

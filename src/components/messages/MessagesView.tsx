@@ -42,9 +42,11 @@ interface ChannelConfig {
 export default function MessagesView() {
   const {
     messages,
+    refreshMessages,
     sendMessage,
     markMessageRead,
     currentUser,
+    users,
     role,
     bookings,
     agentRequests,
@@ -58,7 +60,15 @@ export default function MessagesView() {
   const [showAttachmentPicker, setShowAttachmentPicker] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const channels: ChannelConfig[] = [
+  // Auto-refresh messages on mount and on window focus
+  useEffect(() => {
+    refreshMessages?.();
+    const handleFocus = () => refreshMessages?.();
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, [refreshMessages]);
+
+  const departmentChannels: ChannelConfig[] = [
     {
       id: "broker_desk",
       name: "broker_desk",
@@ -87,58 +97,73 @@ export default function MessagesView() {
       icon: Hash,
       category: "channel"
     },
-    // Direct User Messages
-    {
-      id: "dm-ops",
-      name: "David Schneider (OCC Dispatch)",
-      description: "Direct channel with Operations Dispatcher",
-      icon: User,
-      category: "direct",
-      recipientEmail: "ops@orbelo.com",
-      recipientName: "David Schneider",
-      recipientRole: "operations"
-    },
-    {
-      id: "dm-marcus",
-      name: "Marcus Vance (Broker)",
-      description: "Direct channel with Executive Broker",
-      icon: User,
-      category: "direct",
-      recipientEmail: "marcus.vance@orbelo-brokerage.com",
-      recipientName: "Marcus Vance",
-      recipientRole: "agent"
-    },
-    {
-      id: "dm-sophia",
-      name: "Sophia Laurent (Broker)",
-      description: "Direct channel with Broker Sophia Laurent",
-      icon: User,
-      category: "direct",
-      recipientEmail: "sophia.laurent@orbelo-brokerage.com",
-      recipientName: "Sophia Laurent",
-      recipientRole: "agent"
-    },
-    {
-      id: "dm-finance",
-      name: "Elena Rostova (CFO)",
-      description: "Direct channel with Finance Controller",
-      icon: User,
-      category: "direct",
-      recipientEmail: "finance@orbelo.com",
-      recipientName: "Elena Rostova",
-      recipientRole: "finance"
-    }
   ];
+
+  // Dynamic direct message contacts:
+  // Derived from `users` (excluding currentUser), plus any other unique email addresses present in `messages`
+  const myEmail = (currentUser?.email || "").toLowerCase().trim();
+
+  const dmContactsMap = new Map<string, { email: string; name: string; role: string; title?: string }>();
+
+  // Add all registered users (excluding current user)
+  (users || []).forEach((u) => {
+    const uEmail = (u.email || "").trim().toLowerCase();
+    if (uEmail && uEmail !== myEmail) {
+      dmContactsMap.set(uEmail, {
+        email: uEmail,
+        name: u.name || uEmail.split("@")[0],
+        role: u.role || "operations",
+        title: u.title
+      });
+    }
+  });
+
+  // Also include any user from messages who isn't currentUser
+  (messages || []).forEach((m) => {
+    const sEmail = (m.senderEmail || "").trim().toLowerCase();
+    if (sEmail && sEmail !== myEmail && !dmContactsMap.has(sEmail)) {
+      dmContactsMap.set(sEmail, {
+        email: sEmail,
+        name: m.senderName || sEmail.split("@")[0],
+        role: (m.senderRole as any) || "agent"
+      });
+    }
+    const rEmail = (m.recipientEmail || "").trim().toLowerCase();
+    if (rEmail && rEmail !== myEmail && !dmContactsMap.has(rEmail)) {
+      dmContactsMap.set(rEmail, {
+        email: rEmail,
+        name: m.recipientName || rEmail.split("@")[0],
+        role: (m.recipientRole as any) || "agent"
+      });
+    }
+  });
+
+  const directChannels: ChannelConfig[] = Array.from(dmContactsMap.values()).map((contact) => ({
+    id: `dm-${contact.email}`,
+    name: contact.name,
+    description: `Direct channel with ${contact.name}${contact.title ? ` • ${contact.title}` : ""}`,
+    icon: User,
+    category: "direct",
+    recipientEmail: contact.email,
+    recipientName: contact.name,
+    recipientRole: contact.role
+  }));
+
+  const channels: ChannelConfig[] = [...departmentChannels, ...directChannels];
 
   const currentChannel = channels.find((c) => c.id === activeChannelId) || channels[0];
 
-  // Filter messages for current channel / DM
+  // Filter messages for current channel / DM (case-insensitive)
   const channelMessages = messages.filter((m) => {
+    const userEmail = (currentUser?.email || "").toLowerCase().trim();
+    const mSender = (m.senderEmail || "").toLowerCase().trim();
+    const mRecipient = (m.recipientEmail || "").toLowerCase().trim();
+
     if (currentChannel.category === "direct") {
-      const recipient = currentChannel.recipientEmail;
+      const targetEmail = (currentChannel.recipientEmail || "").toLowerCase().trim();
       return (
-        (m.senderEmail === recipient && (m.recipientEmail === currentUser?.email || !m.recipientEmail)) ||
-        (m.recipientEmail === recipient && m.senderEmail === currentUser?.email) ||
+        (mSender === targetEmail && (mRecipient === userEmail || !mRecipient)) ||
+        (mRecipient === targetEmail && (mSender === userEmail || !mSender)) ||
         m.channel === currentChannel.id
       );
     }
@@ -162,8 +187,10 @@ export default function MessagesView() {
 
   // Mark visible unread messages as read
   useEffect(() => {
+    const userEmail = (currentUser?.email || "").toLowerCase().trim();
     displayedMessages.forEach((m) => {
-      if (!m.read && m.senderEmail !== currentUser?.email) {
+      const sEmail = (m.senderEmail || "").toLowerCase().trim();
+      if (!m.read && sEmail !== userEmail) {
         markMessageRead(m.id);
       }
     });
@@ -328,6 +355,15 @@ export default function MessagesView() {
                   .filter((c) => c.category === "direct")
                   .map((dm) => {
                     const isActive = activeChannelId === dm.id;
+                    const dmEmail = (dm.recipientEmail || "").toLowerCase().trim();
+                    const unreadInDm = messages.filter((m) => {
+                      if (m.read) return false;
+                      const sEmail = (m.senderEmail || "").toLowerCase().trim();
+                      const rEmail = (m.recipientEmail || "").toLowerCase().trim();
+                      const userEmail = (currentUser?.email || "").toLowerCase().trim();
+                      return sEmail === dmEmail && (rEmail === userEmail || !rEmail);
+                    }).length;
+
                     return (
                       <button
                         key={dm.id}
@@ -346,7 +382,14 @@ export default function MessagesView() {
                           </div>
                           <span className="truncate">{dm.name}</span>
                         </div>
-                        <span className="h-2 w-2 rounded-full bg-emerald-500" title="Online" />
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {unreadInDm > 0 && (
+                            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-[#C9A052] text-[#0F1420]">
+                              {unreadInDm}
+                            </span>
+                          )}
+                          <span className="h-2 w-2 rounded-full bg-emerald-500" title="Online" />
+                        </div>
                       </button>
                     );
                   })}
@@ -396,7 +439,7 @@ export default function MessagesView() {
               </div>
             ) : (
               displayedMessages.map((msg) => {
-                const isCurrentUser = msg.senderEmail === currentUser?.email;
+                const isCurrentUser = msg.senderEmail?.toLowerCase().trim() === currentUser?.email?.toLowerCase().trim();
                 return (
                   <div
                     key={msg.id}
@@ -421,7 +464,9 @@ export default function MessagesView() {
                     >
                       {/* Sender Details */}
                       <div className={`flex items-center gap-2 text-[11px] ${isCurrentUser ? "justify-end" : ""}`}>
-                        <span className="font-bold text-[#0F1420]">{msg.senderName}</span>
+                        <span className="font-bold text-[#0F1420]">
+                          {isCurrentUser ? `${msg.senderName} (You)` : msg.senderName}
+                        </span>
                         {getRoleBadge(msg.senderRole)}
                         <span className="text-[10px] font-mono text-gray-400">{msg.timestamp}</span>
                       </div>
@@ -526,7 +571,7 @@ export default function MessagesView() {
 
               <input
                 type="text"
-                placeholder={`Message #${currentChannel.name}...`}
+                placeholder={currentChannel.category === "channel" ? `Message #${currentChannel.name}...` : `Message ${currentChannel.recipientName || currentChannel.name}...`}
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
                 className="flex-1 bg-transparent px-2 py-1 text-xs text-[#0F1420] focus:outline-none"

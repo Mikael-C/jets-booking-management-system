@@ -17,8 +17,8 @@ const getMessageFilter = (id) => {
 
 // GET /api/messages
 router.get('/', async (req, res) => {
-  const { channel, recipientEmail, tripNumber, requestId, limit = 50 } = req.query;
-  const userEmail = req.user.email;
+  const { channel, recipientEmail, tripNumber, requestId, limit = 100 } = req.query;
+  const userEmail = (req.user?.email || '').trim().toLowerCase();
   const userRole = req.userRole;
 
   const query = { isDeleted: false };
@@ -26,27 +26,31 @@ router.get('/', async (req, res) => {
   if (channel && channel !== 'direct' && channel !== 'all') {
     query.channel = channel;
   } else if (recipientEmail) {
-    // Direct message between user and recipient
+    const recLower = recipientEmail.trim().toLowerCase();
     query.$or = [
-      { senderEmail: userEmail, recipientEmail },
-      { senderEmail: recipientEmail, recipientEmail: userEmail },
+      { senderEmail: userEmail, recipientEmail: recLower },
+      { senderEmail: recLower, recipientEmail: userEmail },
     ];
   } else if (tripNumber) {
     query.tripNumber = tripNumber;
   } else if (requestId) {
     query.requestId = requestId;
-  } else if (userRole === 'agent') {
-    // Agents see public channels or messages addressing them
-    query.$or = [
-      { channel: { $in: ['broker_desk', 'operations', 'general'] } },
-      { senderEmail: userEmail },
-      { recipientEmail: userEmail },
-    ];
+  } else {
+    // When no specific filter is given (general list):
+    // Super admins and admins see all messages.
+    // Other roles see all public channels + direct messages where they are sender or recipient.
+    if (userRole !== 'super_admin' && userRole !== 'admin') {
+      query.$or = [
+        { channel: { $in: ['broker_desk', 'operations', 'finance', 'client_services', 'general'] } },
+        { senderEmail: userEmail },
+        { recipientEmail: userEmail },
+      ];
+    }
   }
 
   const messages = await Message.find(query)
     .sort({ createdAt: 1 })
-    .limit(Math.min(150, parseInt(limit)))
+    .limit(Math.min(250, parseInt(limit)))
     .lean();
 
   res.json({
@@ -60,11 +64,14 @@ router.get('/', async (req, res) => {
 
 // GET /api/messages/unread-count
 router.get('/unread-count', async (req, res) => {
-  const userEmail = req.user.email;
+  const userEmail = (req.user?.email || '').trim().toLowerCase();
   const count = await Message.countDocuments({
     isDeleted: false,
     senderEmail: { $ne: userEmail },
-    $or: [{ recipientEmail: userEmail }, { channel: { $exists: true } }],
+    $or: [
+      { recipientEmail: userEmail },
+      { channel: { $in: ['broker_desk', 'operations', 'finance', 'client_services', 'general'] } }
+    ],
     'readBy.userEmail': { $ne: userEmail },
   });
 
@@ -79,21 +86,27 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ success: false, message: 'Message content or attachment is required' });
   }
 
+  const userEmail = (req.user?.email || '').trim().toLowerCase();
+  const recEmail = recipientEmail ? recipientEmail.trim().toLowerCase() : '';
+
+  // Preserve public channel name if provided (e.g. broker_desk), only default to direct if no channel provided
+  const finalChannel = channel && channel !== 'direct' ? channel : (recEmail ? 'direct' : 'operations');
+
   const messageDoc = {
     id: `msg-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-    channel: recipientEmail ? 'direct' : channel,
-    senderId: req.user._id ? req.user._id.toString() : '',
-    senderName: req.user.name || 'Staff Member',
-    senderEmail: req.user.email,
-    senderRole: req.user.role || req.userRole || 'operations',
-    recipientEmail: recipientEmail || '',
+    channel: finalChannel,
+    senderId: req.user?._id ? req.user._id.toString() : '',
+    senderName: req.user?.name || 'Staff Member',
+    senderEmail: userEmail,
+    senderRole: req.user?.role || req.userRole || 'operations',
+    recipientEmail: recEmail,
     recipientName: recipientName || '',
     recipientRole: recipientRole || '',
     content: content || 'Shared a document',
     tripNumber: tripNumber || '',
     requestId: requestId || '',
     attachments: attachments || [],
-    readBy: [{ userEmail: req.user.email, readAt: new Date() }],
+    readBy: [{ userEmail, readAt: new Date() }],
   };
 
   const newMessage = await Message.create(messageDoc);
@@ -138,11 +151,11 @@ router.post('/', async (req, res) => {
 
 // PATCH /api/messages/:id/read
 router.patch('/:id/read', async (req, res) => {
-  const userEmail = req.user.email;
+  const userEmail = (req.user?.email || '').trim().toLowerCase();
   const message = await Message.findOne(getMessageFilter(req.params.id));
   if (!message) return res.status(404).json({ success: false, message: 'Message not found' });
 
-  const alreadyRead = message.readBy.some((r) => r.userEmail === userEmail);
+  const alreadyRead = message.readBy.some((r) => (r.userEmail || '').toLowerCase() === userEmail);
   if (!alreadyRead) {
     message.readBy.push({ userEmail, readAt: new Date() });
     await message.save();
