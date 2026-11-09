@@ -26,11 +26,24 @@ import {
   Send,
   Eye,
   CheckCircle2,
-  Loader2
+  Loader2,
+  MessageSquare,
+  Sparkles
 } from "lucide-react";
 
 export default function DocumentViewerModal() {
-  const { isDocumentModalOpen, closeDocument, activeBooking, activeDocType, addAuditEntry, currentUser } = useAviation();
+  const {
+    isDocumentModalOpen,
+    closeDocument,
+    activeBooking,
+    activeDocType,
+    addAuditEntry,
+    currentUser,
+    sendMessage,
+    agentRequests,
+    updateAgentRequestStatus,
+    setActiveNav
+  } = useAviation();
   const [currentDoc, setCurrentDoc] = useState<DocumentType>(activeDocType);
   const [copiedLink, setCopiedLink] = useState(false);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
@@ -44,14 +57,39 @@ export default function DocumentViewerModal() {
   const [emailSent, setEmailSent] = useState(false);
   const [sentLog, setSentLog] = useState<{ email: string; doc: string; time: string; status: string }[]>([]);
 
+  // Share & Deliver to Agent Modal State
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [shareAgentEmail, setShareAgentEmail] = useState("");
+  const [shareAgentName, setShareAgentName] = useState("");
+  const [shareCustomNote, setShareCustomNote] = useState("");
+  const [isSharing, setIsSharing] = useState(false);
+  const [shareSuccess, setShareSuccess] = useState(false);
+
   // Sync currentDoc when modal opens with a specific type
   React.useEffect(() => {
     setCurrentDoc(activeDocType);
     if (activeBooking) {
-      setRecipientEmail(activeBooking.client.email);
+      setRecipientEmail(activeBooking.client?.email || "");
       setEmailSubject(`Orbelo Private Charter — ${activeDocType.replace("_", " ").toUpperCase()} (${activeBooking.tripNumber})`);
+
+      const linkedReq = agentRequests.find(
+        (r) =>
+          r.bookingId === activeBooking.id ||
+          r.generatedBookingId === activeBooking.id ||
+          r.agentEmail === activeBooking.agentEmail ||
+          r.clientEmail === activeBooking.client?.email
+      );
+
+      const resolvedAgentEmail = activeBooking.agentEmail || linkedReq?.agentEmail || "marcus.vance@orbelo-brokerage.com";
+      const resolvedAgentName = activeBooking.agentName || linkedReq?.agentName || "Marcus Vance";
+
+      setShareAgentEmail(resolvedAgentEmail);
+      setShareAgentName(resolvedAgentName);
+      setShareCustomNote(
+        `Hello ${resolvedAgentName}, official ${activeDocType.replace("_", " ")} document for trip ${activeBooking.tripNumber} (${activeBooking.client?.fullName}) has been compiled and is ready for your client.`
+      );
     }
-  }, [activeDocType, activeBooking]);
+  }, [activeDocType, activeBooking, agentRequests]);
 
   if (!isDocumentModalOpen || !activeBooking) return null;
 
@@ -75,31 +113,50 @@ export default function DocumentViewerModal() {
     const docName = docNameMap[currentDoc] || "Charter_Document";
     const fileName = `Orbelo_${docName}_${activeBooking.tripNumber}.pdf`;
 
-    // Try backend PDFKit generation endpoint
+    // 1. Attempt official backend PDFKit generation endpoint with safety
     try {
       if (currentDoc === "quotation") {
-        await api.documents.downloadQuotation(activeBooking.id, fileName);
+        await api.documents.downloadQuotation(activeBooking.id, fileName, activeBooking);
         setDownloadSuccess(true);
         setTimeout(() => setDownloadSuccess(false), 2500);
         setIsDownloadingPdf(false);
         return;
       } else if (currentDoc === "invoice") {
-        await api.documents.downloadInvoice(activeBooking.id, fileName);
+        await api.documents.downloadInvoice(activeBooking.id, fileName, activeBooking);
         setDownloadSuccess(true);
         setTimeout(() => setDownloadSuccess(false), 2500);
         setIsDownloadingPdf(false);
         return;
       } else if (currentDoc === "flight_brief") {
-        await api.documents.downloadFlightBrief(activeBooking.id, fileName);
+        await api.documents.downloadFlightBrief(activeBooking.id, fileName, activeBooking);
+        setDownloadSuccess(true);
+        setTimeout(() => setDownloadSuccess(false), 2500);
+        setIsDownloadingPdf(false);
+        return;
+      } else if (currentDoc === "charter_agreement") {
+        await api.documents.downloadCharterAgreement(activeBooking.id, fileName, activeBooking);
+        setDownloadSuccess(true);
+        setTimeout(() => setDownloadSuccess(false), 2500);
+        setIsDownloadingPdf(false);
+        return;
+      } else if (currentDoc === "passenger_manifest") {
+        await api.documents.downloadPassengerManifest(activeBooking.id, fileName, activeBooking);
+        setDownloadSuccess(true);
+        setTimeout(() => setDownloadSuccess(false), 2500);
+        setIsDownloadingPdf(false);
+        return;
+      } else if (currentDoc === "credit_note") {
+        await api.documents.downloadCreditNote(activeBooking.id, fileName, activeBooking);
         setDownloadSuccess(true);
         setTimeout(() => setDownloadSuccess(false), 2500);
         setIsDownloadingPdf(false);
         return;
       }
-    } catch {
-      // Fallback seamlessly to high-res client canvas exporter
+    } catch (backendErr) {
+      console.warn("Backend PDF generation notice, falling back to high-res client canvas renderer:", backendErr);
     }
 
+    // 2. High-res client canvas exporter fallback (ensures never corrupt or unsupported)
     const success = await downloadDocumentAsPdf(documentContentRef.current, {
       fileName,
       scale: 2,
@@ -129,6 +186,66 @@ export default function DocumentViewerModal() {
     navigator.clipboard?.writeText(window.location.href);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2000);
+  };
+
+  const handleShareWithAgent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeBooking) return;
+    setIsSharing(true);
+
+    const docName = currentDoc.replace("_", " ").toUpperCase();
+    const fileName = `Orbelo_${docName}_${activeBooking.tripNumber}.pdf`;
+
+    // 1. Post in-app message with document card attached
+    await sendMessage({
+      channel: "broker_desk",
+      recipientEmail: shareAgentEmail,
+      recipientName: shareAgentName,
+      recipientRole: "agent",
+      content:
+        shareCustomNote ||
+        `Official ${docName} compiled for client ${activeBooking.client?.fullName}. Trip reference: ${activeBooking.tripNumber}.`,
+      tripNumber: activeBooking.tripNumber,
+      attachments: [
+        {
+          name: fileName,
+          type: currentDoc,
+          tripNumber: activeBooking.tripNumber,
+          docType: currentDoc,
+          fileSize: "285 KB"
+        }
+      ]
+    });
+
+    // 2. Send email via backend if connected
+    api.quotes.send(activeBooking.id).catch(() => {});
+
+    // 3. Mark linked AgentRequest as completed
+    const linkedReq = agentRequests.find(
+      (r) =>
+        r.bookingId === activeBooking.id ||
+        r.generatedBookingId === activeBooking.id ||
+        (r.clientEmail === activeBooking.client?.email && r.status !== "completed")
+    );
+    if (linkedReq) {
+      updateAgentRequestStatus(linkedReq.id, "completed", activeBooking.id, "Document compiled and shared with agent");
+    }
+
+    addAuditEntry({
+      userEmail: currentUser?.email || "admin@orbelo.com",
+      userName: currentUser?.name || "Admin",
+      action: "DOCUMENT_SHARED_WITH_AGENT",
+      entityType: "Document",
+      entityId: activeBooking.tripNumber,
+      details: `Delivered ${docName} to agent ${shareAgentName} (${shareAgentEmail}) via in-app message & email`
+    });
+
+    setIsSharing(false);
+    setShareSuccess(true);
+    setTimeout(() => {
+      setShareSuccess(false);
+      setIsShareModalOpen(false);
+    }, 2200);
   };
 
   const handleSendEmail = (e: React.FormEvent) => {
@@ -193,8 +310,31 @@ export default function DocumentViewerModal() {
             </div>
           </div>
 
-          {/* Action Buttons: Email, Share, Direct PDF Download, Print, Close */}
+          {/* Action Buttons: Share with Agent, Email, Share Link, Direct PDF Download, Print, Close */}
           <div className="flex items-center gap-2">
+            {/* Share & Deliver to Agent */}
+            <button
+              onClick={() => setIsShareModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#C9A052]/20 hover:bg-[#C9A052]/30 text-[#C9A052] border border-[#C9A052]/40 text-xs font-bold transition-colors cursor-pointer"
+              title="Share document directly with the requesting Broker Agent via in-app message and email"
+            >
+              <Send className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Share with Agent</span>
+            </button>
+
+            {/* In-App Messages Direct Navigation */}
+            <button
+              onClick={() => {
+                closeDocument();
+                setActiveNav("messages");
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-medium transition-colors border border-gray-700 cursor-pointer"
+              title="Open In-App Messages"
+            >
+              <MessageSquare className="w-3.5 h-3.5 text-[#C9A052]" />
+              <span className="hidden sm:inline">Messages</span>
+            </button>
+
             {/* DOC-7: Email send button */}
             <button
               onClick={() => setIsEmailModalOpen(true)}
@@ -377,6 +517,133 @@ export default function DocumentViewerModal() {
                   </div>
                 ))}
               </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Share / Deliver Directly to Agent Modal */}
+      {isShareModalOpen && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+          <div className="bg-white border border-[#E0DAD0] rounded-2xl p-6 max-w-lg w-full shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-[#E0DAD0]">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-[#0F1420] flex items-center justify-center">
+                  <Send className="w-4 h-4 text-[#C9A052]" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold text-[#0F1420]">
+                    Share Document with Broker Agent
+                  </h3>
+                  <p className="text-[11px] text-gray-500 font-mono">
+                    Trip Reference: {activeBooking.tripNumber} • {currentDoc.replace("_", " ").toUpperCase()}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsShareModalOpen(false)}
+                className="text-gray-400 hover:text-gray-600 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {shareSuccess ? (
+              <div className="p-5 bg-emerald-50 border border-emerald-200 rounded-xl text-center space-y-2">
+                <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto" />
+                <h4 className="text-sm font-bold text-emerald-900">Delivered Successfully to Agent!</h4>
+                <p className="text-xs text-emerald-700">
+                  Document sent via in-app notification & chat thread to <span className="font-bold">{shareAgentName}</span> ({shareAgentEmail}).
+                </p>
+                <p className="text-[11px] text-emerald-600 font-mono">
+                  Linked Agent Request marked as Completed.
+                </p>
+              </div>
+            ) : (
+              <form onSubmit={handleShareWithAgent} className="space-y-3.5 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-mono uppercase text-gray-500 mb-1">
+                      Agent Name
+                    </label>
+                    <input
+                      type="text"
+                      value={shareAgentName}
+                      onChange={(e) => setShareAgentName(e.target.value)}
+                      required
+                      className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-mono uppercase text-gray-500 mb-1">
+                      Agent Email
+                    </label>
+                    <input
+                      type="email"
+                      value={shareAgentEmail}
+                      onChange={(e) => setShareAgentEmail(e.target.value)}
+                      required
+                      className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-mono uppercase text-gray-500 mb-1">
+                    Broker Brief / Accompanying Note
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={shareCustomNote}
+                    onChange={(e) => setShareCustomNote(e.target.value)}
+                    className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl p-3 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052] resize-none"
+                    placeholder="Provide any instructions or summary for the broker..."
+                  />
+                </div>
+
+                {/* Delivery Channels Checklist */}
+                <div className="p-3 bg-[#F5F2EC] rounded-xl border border-[#E0DAD0] space-y-2">
+                  <div className="flex items-center gap-2 text-xs text-[#0F1420] font-semibold">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <span>In-App Messages Channel: <span className="font-mono text-gray-600">#broker_desk</span></span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-[#0F1420] font-semibold">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <span>Attached Document: <span className="font-mono text-gray-600">Official_{currentDoc.toUpperCase()}_{activeBooking.tripNumber}.pdf</span></span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-[#0F1420] font-semibold">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <span>Auto-Complete Inbound RFQ / In-Sourcing Status</span>
+                  </div>
+                </div>
+
+                <div className="flex gap-2.5 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsShareModalOpen(false)}
+                    className="px-4 py-2.5 rounded-xl bg-[#F5F2EC] hover:bg-[#EAE5DA] text-[#0F1420] text-xs font-bold border border-[#D1C9BC] cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSharing}
+                    className="flex-1 py-2.5 rounded-xl bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] text-xs font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+                  >
+                    {isSharing ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin text-[#0F1420]" />
+                        <span>Transmitting to Agent...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-4 h-4" />
+                        <span>Deliver to Agent ({shareAgentName})</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
             )}
           </div>
         </div>

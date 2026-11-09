@@ -31,6 +31,7 @@ const sourcingOptionSchema = new mongoose.Schema({
 
 const agentRequestSchema = new mongoose.Schema(
   {
+    id: { type: String, index: true },
     requestNumber: { type: String, unique: true, index: true },
     type: {
       type: String,

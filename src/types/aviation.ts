@@ -460,3 +460,31 @@ export interface ClientRecord {
   notes?: string;
   createdAt: string;
 }
+
+export interface MessageAttachment {
+  name: string;
+  url?: string;
+  type?: "quotation" | "flight_brief" | "invoice" | "charter_agreement" | "passenger_manifest" | "credit_note" | "document" | "image";
+  tripNumber?: string;
+  docType?: string;
+  fileSize?: string;
+}
+
+export interface AppMessage {
+  id: string;
+  channel: string; // 'operations', 'broker_desk', 'finance', 'client_services', or 'direct'
+  senderId?: string;
+  senderName: string;
+  senderEmail: string;
+  senderRole: "super_admin" | "admin" | "finance" | "operations" | "agent" | "client" | "system";
+  recipientEmail?: string;
+  recipientName?: string;
+  recipientRole?: string;
+  content: string;
+  tripNumber?: string;
+  requestId?: string;
+  attachments?: MessageAttachment[];
+  timestamp: string;
+  read?: boolean;
+}
+

@@ -30,7 +30,8 @@ import {
   UserCheck,
   Coins,
   PlusCircle,
-  User
+  User,
+  MessageSquare
 } from "lucide-react";
 
 export default function Sidebar() {
@@ -44,7 +45,8 @@ export default function Sidebar() {
     bookings,
     operators,
     tokenBalance,
-    openTokenModal
+    openTokenModal,
+    unreadMessageCount
   } = useAviation();
 
   const pendingRequestsCount = agentRequests.filter((r) => r.status === "pending").length;
@@ -358,6 +360,25 @@ export default function Sidebar() {
               </div>
             </button>
 
+            <button
+              onClick={() => setActiveNav("messages")}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeNav === "messages"
+                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
+                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <MessageSquare className={`w-4 h-4 ${activeNav === "messages" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
+                <span>Messages & Chat</span>
+              </div>
+              {unreadMessageCount > 0 && (
+                <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-full bg-[#C9A052] text-[#0F1420]">
+                  {unreadMessageCount}
+                </span>
+              )}
+            </button>
+
             {/* Governance & Activities */}
             <div className="pt-4 px-3 pb-2 text-[10px] font-mono uppercase tracking-wider text-gray-400 font-bold">
               Governance & Activities
@@ -546,6 +567,25 @@ export default function Sidebar() {
                 <Users className={`w-4 h-4 ${activeNav === "clients" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
                 <span>Clients</span>
               </div>
+            </button>
+
+            <button
+              onClick={() => setActiveNav("messages")}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeNav === "messages"
+                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
+                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <MessageSquare className={`w-4 h-4 ${activeNav === "messages" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
+                <span>Messages & Chat</span>
+              </div>
+              {unreadMessageCount > 0 && (
+                <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-full bg-[#C9A052] text-[#0F1420]">
+                  {unreadMessageCount}
+                </span>
+              )}
             </button>
 
             <button

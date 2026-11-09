@@ -170,6 +170,7 @@ const manualServiceSchema = new mongoose.Schema({
 
 const bookingSchema = new mongoose.Schema(
   {
+    id: { type: String, index: true },
     tripNumber: { type: String, default: '', index: true },
     invoiceNumber: { type: String, default: '' },
     accountNumber: { type: String, default: '' },

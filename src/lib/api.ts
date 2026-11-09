@@ -136,45 +136,83 @@ export const api = {
 
   // Documents (PDFs)
   documents: {
-    downloadQuotation: async (bookingId: string, filename = "quotation.pdf") => {
-      const res = await fetch(`${API_BASE_URL}/documents/quotation/${bookingId}`, {
+    _downloadPdf: async (endpoint: string, filename: string, bookingData?: any) => {
+      const headers: Record<string, string> = { ...getAuthHeader() };
+      if (bookingData) {
+        headers["Content-Type"] = "application/json";
+      }
+      const res = await fetch(`${API_BASE_URL}${endpoint}`, {
         method: "POST",
-        headers: getAuthHeader(),
+        headers,
+        body: bookingData ? JSON.stringify({ booking: bookingData }) : undefined,
       });
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        throw new Error(`PDF generation failed (${res.status}): ${errText || res.statusText}`);
+      }
+
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.includes("pdf") && !contentType.includes("octet-stream")) {
+        const text = await res.text().catch(() => "");
+        throw new Error(`Invalid response format (not PDF): ${text.substring(0, 100)}`);
+      }
+
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       a.download = filename;
+      document.body.appendChild(a);
       a.click();
+      a.remove();
       window.URL.revokeObjectURL(url);
     },
-    downloadInvoice: async (bookingId: string, filename = "invoice.pdf") => {
-      const res = await fetch(`${API_BASE_URL}/documents/invoice/${bookingId}`, {
+    downloadQuotation: async (bookingId: string, filename = "quotation.pdf", bookingData?: any) => {
+      return api.documents._downloadPdf(`/documents/quotation/${bookingId}`, filename, bookingData);
+    },
+    downloadInvoice: async (bookingId: string, filename = "invoice.pdf", bookingData?: any) => {
+      return api.documents._downloadPdf(`/documents/invoice/${bookingId}`, filename, bookingData);
+    },
+    downloadFlightBrief: async (bookingId: string, filename = "flight-brief.pdf", bookingData?: any) => {
+      return api.documents._downloadPdf(`/documents/flight-brief/${bookingId}`, filename, bookingData);
+    },
+    downloadCharterAgreement: async (bookingId: string, filename = "charter-agreement.pdf", bookingData?: any) => {
+      return api.documents._downloadPdf(`/documents/charter-agreement/${bookingId}`, filename, bookingData);
+    },
+    downloadPassengerManifest: async (bookingId: string, filename = "passenger-manifest.pdf", bookingData?: any) => {
+      return api.documents._downloadPdf(`/documents/passenger-manifest/${bookingId}`, filename, bookingData);
+    },
+    downloadCreditNote: async (bookingId: string, filename = "credit-note.pdf", bookingData?: any) => {
+      return api.documents._downloadPdf(`/documents/credit-note/${bookingId}`, filename, bookingData);
+    },
+  },
+
+  // In-App Messaging
+  messages: {
+    list: (params?: { channel?: string; recipientEmail?: string; tripNumber?: string; requestId?: string; limit?: number }) => {
+      const q = params ? `?${new URLSearchParams(params as any).toString()}` : "";
+      return request<{ success: boolean; data: any[] }>(`/messages${q}`);
+    },
+    unreadCount: () => request<{ success: boolean; count: number }>("/messages/unread-count"),
+    send: (data: {
+      channel?: string;
+      recipientEmail?: string;
+      recipientName?: string;
+      recipientRole?: string;
+      content: string;
+      tripNumber?: string;
+      requestId?: string;
+      attachments?: any[];
+    }) =>
+      request<{ success: boolean; data: any }>("/messages", {
         method: "POST",
-        headers: getAuthHeader(),
-      });
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      a.click();
-      window.URL.revokeObjectURL(url);
-    },
-    downloadFlightBrief: async (bookingId: string, filename = "flight-brief.pdf") => {
-      const res = await fetch(`${API_BASE_URL}/documents/flight-brief/${bookingId}`, {
-        method: "POST",
-        headers: getAuthHeader(),
-      });
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      a.click();
-      window.URL.revokeObjectURL(url);
-    },
+        body: JSON.stringify(data),
+      }),
+    markRead: (id: string) =>
+      request<{ success: boolean; message: string }>(`/messages/${id}/read`, {
+        method: "PATCH",
+      }),
   },
 
   // Dashboard Analytics

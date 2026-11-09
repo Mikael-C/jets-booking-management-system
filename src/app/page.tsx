@@ -37,6 +37,7 @@ import AgentRequestsListView from "@/components/agent/AgentRequestsListView";
 // Profile & Tokenomics
 import ProfileView from "@/components/profile/ProfileView";
 import TokenSubscriptionModal from "@/components/tokens/TokenSubscriptionModal";
+import MessagesView from "@/components/messages/MessagesView";
 
 export default function Home() {
   const { isAuthenticated, role, activeNav } = useAviation();
@@ -85,6 +86,8 @@ export default function Home() {
           return <ClientPortalView />;
         case "notifications":
           return <NotificationSettingsView />;
+        case "messages":
+          return <MessagesView />;
         case "profile":
           return <ProfileView />;
         default:
@@ -105,6 +108,8 @@ export default function Home() {
           return <AgentRequestsListView />;
         case "clients":
           return <ClientsView />;
+        case "messages":
+          return <MessagesView />;
         case "profile":
           return <ProfileView />;
         default:

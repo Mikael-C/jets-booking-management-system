@@ -30,6 +30,7 @@ const auditLogRoutes = require('./routes/auditLog');
 const sourcingRoutes = require('./routes/sourcing');
 const userRoutes = require('./routes/users');
 const tokenRoutes = require('./routes/tokens');
+const messageRoutes = require('./routes/messages');
 
 const app = express();
 
@@ -158,6 +159,7 @@ app.use('/api/audit-log', authenticate, auditLogRoutes);
 app.use('/api/sourcing', authenticate, sourcingRoutes);
 app.use('/api/users', authenticate, userRoutes);
 app.use('/api/tokens', authenticate, tokenRoutes);
+app.use('/api/messages', authenticate, messageRoutes);
 
 // ─── 404 Handler ──────────────────────────────────────────────────────────────
 app.use((req, res) => {

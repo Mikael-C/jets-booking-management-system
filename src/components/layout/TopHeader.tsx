@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { useAviation } from "@/lib/aviationContext";
-import { Search, Plus, RotateCcw, Clock, Shield, Plane, Sparkles, Bell, Check, X, AlertTriangle, Info, CheckCircle2, Coins, User } from "lucide-react";
+import { Search, Plus, RotateCcw, Clock, Shield, Plane, Sparkles, Bell, Check, X, AlertTriangle, Info, CheckCircle2, Coins, User, MessageSquare } from "lucide-react";
 
 export default function TopHeader() {
   const {
@@ -16,7 +16,8 @@ export default function TopHeader() {
     notifications,
     markNotificationRead,
     tokenBalance,
-    openTokenModal
+    openTokenModal,
+    unreadMessageCount
   } = useAviation();
 
   const [utcTime, setUtcTime] = useState("");
@@ -94,6 +95,8 @@ export default function TopHeader() {
         return { section: "Client Portal", title: "Client Portal Preview — Quote, Signature, Passengers & Payment" };
       case "notifications":
         return { section: "Communications", title: "Notification Settings & Email Templates" };
+      case "messages":
+        return { section: "Communications", title: "In-App Messages & Executive Dispatch" };
       case "profile":
         return { section: "User Account", title: "User Profile & Security Settings" };
       default:
@@ -258,6 +261,24 @@ export default function TopHeader() {
             <span>{tokenBalance.toLocaleString()} Tokens</span>
           </button>
         )}
+
+        {/* Messages Quick Button */}
+        <button
+          onClick={() => setActiveNav("messages")}
+          className={`relative p-2 rounded-xl border transition-colors shadow-sm cursor-pointer ${
+            activeNav === "messages"
+              ? "bg-[#0F1420] text-white border-[#0F1420]"
+              : "bg-white border-[#E0DAD0] text-[#0F1420]/70 hover:text-[#0F1420] hover:border-[#C9A052]"
+          }`}
+          title="In-App Messages & Dispatch"
+        >
+          <MessageSquare className="w-4 h-4" />
+          {unreadMessageCount > 0 && (
+            <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-1 rounded-full bg-[#C9A052] text-[#0F1420] font-mono font-black text-[9px] flex items-center justify-center shadow-sm">
+              {unreadMessageCount}
+            </span>
+          )}
+        </button>
 
         {/* Profile & Account Quick Button */}
         <button

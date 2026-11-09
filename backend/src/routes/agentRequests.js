@@ -1,11 +1,27 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const AgentRequest = require('../models/AgentRequest');
 const Booking = require('../models/Booking');
 const { authorize } = require('../middleware/auth');
 const { v4: uuidv4 } = require('uuid');
 const { createAuditEntry } = require('../services/auditService');
 const { sendAgentNotificationEmail } = require('../services/emailService');
+
+// Helper to look up agent requests by Mongo _id, custom id, or requestNumber
+const getAgentRequestFilter = (id) => {
+  const isObjectId = mongoose.Types.ObjectId.isValid(id) && String(new mongoose.Types.ObjectId(id)) === String(id);
+  if (isObjectId) {
+    return {
+      $or: [{ _id: id }, { id: id }, { requestNumber: id }, { avInodeTripId: id }],
+      isDeleted: false,
+    };
+  }
+  return {
+    $or: [{ id: id }, { requestNumber: id }, { avInodeTripId: id }],
+    isDeleted: false,
+  };
+};
 
 // GET /api/agent-requests
 router.get('/', async (req, res) => {
@@ -54,7 +70,7 @@ router.get('/', async (req, res) => {
 
 // GET /api/agent-requests/:id
 router.get('/:id', async (req, res) => {
-  const request = await AgentRequest.findOne({ _id: req.params.id, isDeleted: false });
+  const request = await AgentRequest.findOne(getAgentRequestFilter(req.params.id));
   if (!request) return res.status(404).json({ success: false, message: 'Request not found' });
 
   if (req.userRole === 'agent' && request.agentEmail !== req.user.email) {
@@ -88,7 +104,7 @@ router.post('/', async (req, res) => {
 
 // PUT /api/agent-requests/:id
 router.put('/:id', async (req, res) => {
-  const request = await AgentRequest.findOne({ _id: req.params.id, isDeleted: false });
+  const request = await AgentRequest.findOne(getAgentRequestFilter(req.params.id));
   if (!request) return res.status(404).json({ success: false, message: 'Request not found' });
 
   if (req.userRole === 'agent' && request.agentEmail !== req.user.email) {
@@ -107,7 +123,7 @@ router.patch('/:id/status', authorize('super_admin', 'admin', 'operations'), asy
   const { status, assignedTo, assignedToEmail } = req.body;
   if (!status) return res.status(400).json({ success: false, message: 'status is required' });
 
-  const request = await AgentRequest.findOne({ _id: req.params.id, isDeleted: false });
+  const request = await AgentRequest.findOne(getAgentRequestFilter(req.params.id));
   if (!request) return res.status(404).json({ success: false, message: 'Request not found' });
 
   request.status = status;
@@ -137,7 +153,7 @@ router.post('/:id/messages', async (req, res) => {
   const { message, attachments } = req.body;
   if (!message) return res.status(400).json({ success: false, message: 'message is required' });
 
-  const request = await AgentRequest.findOne({ _id: req.params.id, isDeleted: false });
+  const request = await AgentRequest.findOne(getAgentRequestFilter(req.params.id));
   if (!request) return res.status(404).json({ success: false, message: 'Request not found' });
 
   if (req.userRole === 'agent' && request.agentEmail !== req.user.email) {
@@ -162,7 +178,7 @@ router.post('/:id/messages', async (req, res) => {
 
 // GET /api/agent-requests/:id/messages
 router.get('/:id/messages', async (req, res) => {
-  const request = await AgentRequest.findOne({ _id: req.params.id, isDeleted: false }).select('messages agentEmail');
+  const request = await AgentRequest.findOne(getAgentRequestFilter(req.params.id)).select('messages agentEmail');
   if (!request) return res.status(404).json({ success: false, message: 'Request not found' });
 
   if (req.userRole === 'agent' && request.agentEmail !== req.user.email) {
@@ -174,7 +190,7 @@ router.get('/:id/messages', async (req, res) => {
 
 // POST /api/agent-requests/:id/sourcing-options
 router.post('/:id/sourcing-options', authorize('super_admin', 'admin', 'operations'), async (req, res) => {
-  const request = await AgentRequest.findOne({ _id: req.params.id, isDeleted: false });
+  const request = await AgentRequest.findOne(getAgentRequestFilter(req.params.id));
   if (!request) return res.status(404).json({ success: false, message: 'Request not found' });
 
   const option = { id: uuidv4(), ...req.body };
@@ -186,7 +202,7 @@ router.post('/:id/sourcing-options', authorize('super_admin', 'admin', 'operatio
 
 // DELETE /api/agent-requests/:id/sourcing-options/:optionId
 router.delete('/:id/sourcing-options/:optionId', authorize('super_admin', 'admin', 'operations'), async (req, res) => {
-  const request = await AgentRequest.findOne({ _id: req.params.id, isDeleted: false });
+  const request = await AgentRequest.findOne(getAgentRequestFilter(req.params.id));
   if (!request) return res.status(404).json({ success: false, message: 'Request not found' });
 
   request.sourcingOptions = request.sourcingOptions.filter((o) => o.id !== req.params.optionId);
@@ -201,7 +217,7 @@ router.patch('/:id/avinode-id', authorize('super_admin', 'admin', 'operations'),
   if (!avInodeTripId) return res.status(400).json({ success: false, message: 'avInodeTripId is required' });
 
   const request = await AgentRequest.findOneAndUpdate(
-    { _id: req.params.id, isDeleted: false },
+    getAgentRequestFilter(req.params.id),
     { avInodeTripId },
     { new: true }
   );
@@ -212,7 +228,7 @@ router.patch('/:id/avinode-id', authorize('super_admin', 'admin', 'operations'),
 
 // POST /api/agent-requests/:id/fulfill — fulfill request → creates booking
 router.post('/:id/fulfill', authorize('super_admin', 'admin', 'operations'), async (req, res) => {
-  const request = await AgentRequest.findOne({ _id: req.params.id, isDeleted: false });
+  const request = await AgentRequest.findOne(getAgentRequestFilter(req.params.id));
   if (!request) return res.status(404).json({ success: false, message: 'Request not found' });
 
   if (request.fulfilledBookingId) {
@@ -278,7 +294,7 @@ router.post('/:id/fulfill', authorize('super_admin', 'admin', 'operations'), asy
 
 // DELETE /api/agent-requests/:id
 router.delete('/:id', authorize('super_admin', 'admin'), async (req, res) => {
-  const request = await AgentRequest.findOne({ _id: req.params.id, isDeleted: false });
+  const request = await AgentRequest.findOne(getAgentRequestFilter(req.params.id));
   if (!request) return res.status(404).json({ success: false, message: 'Request not found' });
 
   request.isDeleted = true;

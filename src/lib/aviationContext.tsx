@@ -23,11 +23,14 @@ import {
   PricingBreakdown,
   AdditionalServices,
   DispatchChecklistStep,
-  TokenTransaction
+  TokenTransaction,
+  AppMessage,
+  MessageAttachment
 } from "@/types/aviation";
 import { initialBookings, defaultOperator } from "@/data/initialBookings";
 import { initialClients } from "@/data/clients";
 import { initialAgentRequests } from "@/data/initialRequests";
+import { initialMessages } from "@/data/initialMessages";
 import { fleetData } from "@/data/fleet";
 import { findAirportByCode } from "@/data/airports";
 import { calculatePricing, calculateDistanceNm, estimateFlightTimeMinutes, formatFlightTime } from "@/lib/pricingCalculator";
@@ -768,6 +771,21 @@ interface AviationContextType {
   notifications: Notification[];
   markNotificationRead: (id: string) => void;
 
+  // In-App Messaging
+  messages: AppMessage[];
+  sendMessage: (msg: {
+    channel?: string;
+    recipientEmail?: string;
+    recipientName?: string;
+    recipientRole?: string;
+    content: string;
+    tripNumber?: string;
+    requestId?: string;
+    attachments?: MessageAttachment[];
+  }) => Promise<void>;
+  markMessageRead: (msgId: string) => void;
+  unreadMessageCount: number;
+
   // Tokenomics (Agent role)
   tokenBalance: number;
   tokenTier: "free" | "standard" | "pro" | "enterprise";
@@ -811,6 +829,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
   const [operators, setOperators] = useState<OperatorRecord[]>(initialOperators);
   const [auditLog, setAuditLog] = useState<AuditLogEntry[]>(initialAuditLog);
   const [notifications, setNotifications] = useState<Notification[]>(initialNotifications);
+  const [messages, setMessages] = useState<AppMessage[]>(initialMessages);
 
   // Tokenomics State (Agent role)
   const [tokenBalance, setTokenBalance] = useState<number>(2000);
@@ -894,6 +913,17 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       if (savedNotifs) {
         setNotifications(JSON.parse(savedNotifs));
       }
+      const savedMessages = localStorage.getItem("orbelo_messages_v2");
+      if (savedMessages) {
+        try {
+          const parsed = JSON.parse(savedMessages);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setMessages(parsed);
+          }
+        } catch {
+          // ignore
+        }
+      }
 
       // Live backend API synchronization (syncs when backend server is running)
       api.users.list()
@@ -944,6 +974,14 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
         })
         .catch(() => {});
 
+      api.messages.list({ limit: 100 })
+        .then((res) => {
+          if (res?.data && Array.isArray(res.data) && res.data.length > 0) {
+            setMessages(res.data);
+          }
+        })
+        .catch(() => {});
+
       api.auditLog.list({ limit: 100 })
         .then((res) => {
           const list = res?.data || res?.entries;
@@ -967,10 +1005,11 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem("orbelo_operators_v2", JSON.stringify(operators));
       localStorage.setItem("orbelo_audit_v2", JSON.stringify(auditLog));
       localStorage.setItem("orbelo_notifications_v2", JSON.stringify(notifications));
+      localStorage.setItem("orbelo_messages_v2", JSON.stringify(messages));
     } catch {
       // Ignore
     }
-  }, [users, bookings, agentRequests, clients, operators, auditLog, notifications]);
+  }, [users, bookings, agentRequests, clients, operators, auditLog, notifications, messages]);
 
   const addAuditEntry = (entry: Omit<AuditLogEntry, "id" | "timestamp">) => {
     const formattedDetails = formatAuditDetails(entry.details);
@@ -1720,6 +1759,10 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       })
     );
 
+    api.agentRequests
+      .addMessage(reqId, message.content, (message as any).attachments)
+      .catch((err) => console.log("Backend message sync notice:", err.message));
+
     if (currentUser) {
       addAuditEntry({
         userEmail: currentUser.email,
@@ -1894,6 +1937,8 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
         { id: "step-3", label: "Origin & Destination FBO Ramp Handling Booked", category: "ground", isCompleted: false, requiredForDispatch: true },
         { id: "step-4", label: "Airport Slots & PPR Cleared", category: "permits", isCompleted: false, requiredForDispatch: true }
       ],
+      agentName: req.agentName,
+      agentEmail: req.agentEmail,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
@@ -1902,6 +1947,28 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     updateAgentRequestStatus(req.id, "completed", newBooking.id, "Admin generated official document");
     const docType: DocumentType =
       req.type === "quote" ? "quotation" : req.type === "flight_brief" ? "flight_brief" : "invoice";
+
+    // Auto-deliver in-app message to agent with the generated document attached
+    const docName = req.type === "quote" ? "Quotation" : req.type === "flight_brief" ? "Flight Brief" : "Tax Invoice";
+    sendMessage({
+      channel: "broker_desk",
+      recipientEmail: req.agentEmail,
+      recipientName: req.agentName,
+      recipientRole: "agent",
+      content: `Official ${docName} compiled and delivered for ${req.clientName} (${req.route}). Booking reference: ${newBooking.tripNumber}.`,
+      tripNumber: newBooking.tripNumber,
+      requestId: req.id,
+      attachments: [
+        {
+          name: `Official_${docName}_${newBooking.tripNumber}.pdf`,
+          type: req.type === "quote" ? "quotation" : req.type === "flight_brief" ? "flight_brief" : "invoice",
+          tripNumber: newBooking.tripNumber,
+          docType: docType,
+          fileSize: "285 KB"
+        }
+      ]
+    }).catch(() => {});
+
     openDocument(newBooking, docType);
   };
 
@@ -1985,6 +2052,67 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     );
     api.notifications.markRead(id).catch((err) => console.log("Backend sync note:", err.message));
   };
+
+  // ─── In-App Messaging Methods ──────────────────────────────────────────────
+  const sendMessage = async (msgData: {
+    channel?: string;
+    recipientEmail?: string;
+    recipientName?: string;
+    recipientRole?: string;
+    content: string;
+    tripNumber?: string;
+    requestId?: string;
+    attachments?: MessageAttachment[];
+  }) => {
+    const newMsg: AppMessage = {
+      id: `msg-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      channel: msgData.recipientEmail ? "direct" : (msgData.channel || "operations"),
+      senderId: currentUser?.id || "",
+      senderName: currentUser?.name || (role === "agent" ? "Marcus Vance" : "Operations Desk"),
+      senderEmail: currentUser?.email || (role === "agent" ? "marcus.vance@orbelo-brokerage.com" : "admin@orbelo.com"),
+      senderRole: (currentUser?.role || role || "operations") as any,
+      recipientEmail: msgData.recipientEmail,
+      recipientName: msgData.recipientName,
+      recipientRole: msgData.recipientRole,
+      content: msgData.content,
+      tripNumber: msgData.tripNumber,
+      requestId: msgData.requestId,
+      attachments: msgData.attachments,
+      timestamp: new Date().toISOString().replace("T", " ").substring(0, 16),
+      read: true,
+    };
+
+    setMessages((prev) => [...prev, newMsg]);
+
+    api.messages.send(msgData).catch((err) => console.log("Backend message sync notice:", err.message));
+
+    if (msgData.requestId) {
+      addMessage(msgData.requestId, {
+        senderName: newMsg.senderName,
+        senderRole: newMsg.senderRole,
+        content: newMsg.content,
+        isFromAdmin: role !== "agent"
+      });
+    }
+
+    if (currentUser) {
+      addAuditEntry({
+        userEmail: currentUser.email,
+        userName: currentUser.name,
+        action: "MESSAGE_SENT",
+        entityType: "Message",
+        entityId: newMsg.id,
+        details: `Sent message in ${newMsg.channel}${msgData.tripNumber ? ` [${msgData.tripNumber}]` : ""}`
+      });
+    }
+  };
+
+  const markMessageRead = (msgId: string) => {
+    setMessages((prev) => prev.map((m) => (m.id === msgId ? { ...m, read: true } : m)));
+    api.messages.markRead(msgId).catch(() => {});
+  };
+
+  const unreadMessageCount = messages.filter((m) => !m.read && m.senderEmail !== currentUser?.email).length;
 
   // ─── Tokenomics & Subscription Methods ──────────────────────────────────────
   const openTokenModal = (prompt?: string) => {
@@ -2277,6 +2405,10 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
         refreshAuditLog,
         notifications,
         markNotificationRead,
+        messages,
+        sendMessage,
+        markMessageRead,
+        unreadMessageCount,
         tokenBalance,
         tokenTier,
         subscriptionStatus,
