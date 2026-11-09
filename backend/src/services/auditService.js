@@ -5,27 +5,32 @@ const logger = require('../middleware/logger');
  * Create an audit log entry
  */
 const createAuditEntry = async ({
-  user,
-  action,
-  entityType,
+  user = null,
+  userEmail = '',
+  userName = '',
+  userRole = '',
+  action = 'ACTIVITY',
+  entityType = 'general',
   entityId = '',
   details = {},
   changes = { before: null, after: null },
+  ipAddress = '',
+  userAgent = '',
   req = null,
-}) => {
+} = {}) => {
   try {
     const entry = await AuditLog.create({
       timestamp: new Date(),
-      userEmail: user?.email || 'system',
-      userName: user?.name || 'System',
-      userRole: user?.role || 'system',
+      userEmail: user?.email || userEmail || 'system',
+      userName: user?.name || userName || 'System',
+      userRole: user?.role || userRole || 'system',
       action,
-      entityType,
-      entityId: String(entityId),
+      entityType: String(entityType || 'general').toLowerCase(),
+      entityId: String(entityId || ''),
       details,
       changes,
-      ipAddress: req ? (req.headers['x-forwarded-for'] || req.ip || '') : '',
-      userAgent: req ? (req.headers['user-agent'] || '') : '',
+      ipAddress: ipAddress || (req ? (req.headers['x-forwarded-for'] || req.ip || '') : ''),
+      userAgent: userAgent || (req ? (req.headers['user-agent'] || '') : ''),
       success: true,
     });
     return entry;
@@ -126,6 +131,7 @@ const getAuditLogs = async ({
 
 module.exports = {
   createAuditEntry,
+  createAuditLog: createAuditEntry,
   logBookingAction,
   logStatusChange,
   logAuthEvent,

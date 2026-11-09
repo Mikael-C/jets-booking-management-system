@@ -5,7 +5,7 @@ const bcrypt = require('bcryptjs');
 const User = require('../models/User');
 const { authorize } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
-const { logAuthEvent, createAuditLog } = require('../services/auditService');
+const { logAuthEvent, createAuditLog, createAuditEntry } = require('../services/auditService');
 
 const VALID_ROLES = ['super_admin', 'admin', 'finance', 'operations', 'agent'];
 
@@ -114,8 +114,8 @@ router.post('/', authorize('super_admin', 'admin'), validate(createUserSchema), 
     isActive: true,
   });
 
-  // Audit trail
-  await createAuditLog({
+  // Audit trail (safely logged without blocking response)
+  createAuditEntry({
     userEmail: req.user?.email || 'system',
     userName: req.user?.name || 'Administrator',
     action: 'USER_CREATED',
@@ -123,6 +123,8 @@ router.post('/', authorize('super_admin', 'admin'), validate(createUserSchema), 
     entityId: newUser._id.toString(),
     details: `Created user account for ${newUser.name} (${newUser.email}) with role '${role}'`,
     ipAddress: req.ip,
+  }).catch((err) => {
+    // Non-blocking
   });
 
   res.status(201).json({
@@ -181,7 +183,7 @@ router.patch('/:id', authorize('super_admin', 'admin'), validate(updateUserSchem
     .map(k => `${k}=${updates[k]}`)
     .join(', ');
 
-  await createAuditLog({
+  createAuditEntry({
     userEmail: req.user?.email || 'system',
     userName: req.user?.name || 'Administrator',
     action: req.body.isActive !== undefined ? 'USER_STATUS_CHANGE' : 'USER_UPDATED',
@@ -189,7 +191,7 @@ router.patch('/:id', authorize('super_admin', 'admin'), validate(updateUserSchem
     entityId: updatedUser._id.toString(),
     details: `Updated user ${updatedUser.name} (${updatedUser.email}): ${detailsList || 'Password reset'}`,
     ipAddress: req.ip,
-  });
+  }).catch(() => {});
 
   res.json({
     success: true,
@@ -219,7 +221,7 @@ router.delete('/:id', authorize('super_admin'), async (req, res) => {
   await User.findByIdAndDelete(req.params.id);
 
   // Audit trail
-  await createAuditLog({
+  createAuditEntry({
     userEmail: req.user?.email || 'system',
     userName: req.user?.name || 'Super Admin',
     action: 'USER_DELETED',
@@ -227,7 +229,7 @@ router.delete('/:id', authorize('super_admin'), async (req, res) => {
     entityId: targetUser._id.toString(),
     details: `Deleted user account ${targetUser.name} (${targetUser.email}, role: ${targetUser.role})`,
     ipAddress: req.ip,
-  });
+  }).catch(() => {});
 
   res.json({
     success: true,
