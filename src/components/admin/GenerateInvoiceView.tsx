@@ -55,14 +55,14 @@ export default function GenerateInvoiceView() {
   const [companyName, setCompanyName] = useState("Edward Brinkmann");
   const [streetAddress, setStreetAddress] = useState("3606 Enterprise Ave");
   const [cityCountry, setCityCountry] = useState("FL-34104 Naples, United States");
-  const [clientVat, setClientVat] = useState("ATU 6335 7619");
+  const [clientVat, setClientVat] = useState("US-8492041");
 
   // Remittance Entity (FROM)
-  const [operatorName, setOperatorName] = useState("GlobeAir GmbH");
-  const [repName, setRepName] = useState("Ezeokeke, Obiefuna");
-  const [operatorEmail, setOperatorEmail] = useState("customercare@globeair.com");
-  const [operatorPhone, setOperatorPhone] = useState("00437221727400");
-  const [operatorVat, setOperatorVat] = useState("ATU 6335 7619");
+  const [operatorName, setOperatorName] = useState(defaultOperator.companyName);
+  const [repName, setRepName] = useState(defaultOperator.representativeName);
+  const [operatorEmail, setOperatorEmail] = useState(defaultOperator.supportEmail);
+  const [operatorPhone, setOperatorPhone] = useState(defaultOperator.supportPhone);
+  const [operatorVat, setOperatorVat] = useState(defaultOperator.vatNumber);
 
   // Trip Summary
   const [aircraftName, setAircraftName] = useState("Cessna Citation Mustang");
@@ -100,12 +100,12 @@ export default function GenerateInvoiceView() {
   const [additionalService, setAdditionalService] = useState<number>(0);
 
   // Bank References
-  const [bankName, setBankName] = useState("Raiffeisenlandesbank Oberösterreich AG");
-  const [iban, setIban] = useState("AT32 3400 0000 0266 7483");
-  const [bic, setBic] = useState("RZOOAT2LXXX");
-  const [accountHolder, setAccountHolder] = useState("GlobeAir GmbH");
+  const [bankName, setBankName] = useState(defaultOperator.bankName);
+  const [iban, setIban] = useState(defaultOperator.iban);
+  const [bic, setBic] = useState(defaultOperator.bic);
+  const [accountHolder, setAccountHolder] = useState(defaultOperator.accountHolder);
   const [paymentTermsNote, setPaymentTermsNote] = useState(
-    "Jetcard Customer agrees to pay all bank charges. SEPA wiring is preferred."
+    "Customer agrees to pay all bank charges. SEPA wiring or Fedwire is preferred."
   );
 
   const [success, setSuccess] = useState(false);
@@ -129,11 +129,11 @@ export default function GenerateInvoiceView() {
     setCityCountry(b.client.cityPostalCountry);
     setClientVat(b.client.vatNumber || "");
 
-    setOperatorName(b.operator.companyName || "GlobeAir GmbH");
-    setRepName(b.operator.representativeName || "Ezeokeke, Obiefuna");
-    setOperatorEmail(b.operator.supportEmail || "customercare@globeair.com");
-    setOperatorPhone(b.operator.supportPhone || "00437221727400");
-    setOperatorVat(b.operator.vatNumber || "ATU 6335 7619");
+    setOperatorName(b.operator?.companyName || defaultOperator.companyName);
+    setRepName(b.operator?.representativeName || defaultOperator.representativeName);
+    setOperatorEmail(b.operator?.supportEmail || defaultOperator.supportEmail);
+    setOperatorPhone(b.operator?.supportPhone || defaultOperator.supportPhone);
+    setOperatorVat(b.operator?.vatNumber || defaultOperator.vatNumber);
 
     setAircraftName(b.aircraft.name);
     setTripType(b.tripType || "round_trip");

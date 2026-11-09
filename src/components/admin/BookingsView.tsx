@@ -17,7 +17,8 @@ import {
   Clock,
   CheckCircle2,
   AlertCircle,
-  RefreshCw
+  RefreshCw,
+  RotateCcw
 } from "lucide-react";
 
 export default function BookingsView() {
@@ -30,6 +31,7 @@ export default function BookingsView() {
     refreshBookings,
     isBookingsLoading,
     bookingsSource,
+    setActiveNav
   } = useAviation();
 
   // Fetch live bookings from backend database on mount
@@ -423,49 +425,75 @@ export default function BookingsView() {
                         </div>
                       </td>
 
-                      {/* Actions & Documents */}
+                      {/* Actions & Documents: Lifecycle flow Quote -> Contract -> Booked Contract */}
                       <td className="py-4 px-4 text-right" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-end gap-1.5">
-                          {/* Quote */}
-                          <button
-                            onClick={() => openDocument(booking, "quotation")}
-                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] text-[11px] font-bold transition-all shadow-sm"
-                            title="Generate & View Quotation"
-                          >
-                            <FileText className="w-3.5 h-3.5" />
-                            <span>Quote</span>
-                          </button>
+                        <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                          {/* Booked Contract Actions: Generate Flight Brief, Invoice, Credit Note */}
+                          {!isInProgress ? (
+                            <>
+                              {/* Flight Brief */}
+                              <button
+                                onClick={() => openDocument(booking, "flight_brief")}
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] text-[11px] font-bold transition-all shadow-sm"
+                                title="Generate & View Flight Brief"
+                              >
+                                <Compass className="w-3.5 h-3.5" />
+                                <span>Brief</span>
+                              </button>
 
-                          {/* Invoice */}
-                          <button
-                            onClick={() => openDocument(booking, "invoice")}
-                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] text-[11px] font-bold transition-all shadow-sm"
-                            title="Generate & View Tax Invoice"
-                          >
-                            <Receipt className="w-3.5 h-3.5" />
-                            <span>Invoice</span>
-                          </button>
+                              {/* Tax Invoice */}
+                              <button
+                                onClick={() => openDocument(booking, "invoice")}
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] text-[11px] font-bold transition-all shadow-sm"
+                                title="Generate & View Tax Invoice"
+                              >
+                                <Receipt className="w-3.5 h-3.5" />
+                                <span>Invoice</span>
+                              </button>
 
-                          {/* Brief */}
-                          <button
-                            onClick={() => openDocument(booking, "flight_brief")}
-                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] text-[11px] font-bold transition-all shadow-sm"
-                            title="Generate & View Flight Brief"
-                          >
-                            <Compass className="w-3.5 h-3.5" />
-                            <span>Brief</span>
-                          </button>
+                              {/* Credit Note */}
+                              <button
+                                onClick={() => openDocument(booking, "credit_note")}
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-100 hover:bg-red-200 text-red-900 border border-red-300 text-[11px] font-bold transition-all shadow-sm"
+                                title="Generate & View Credit Note"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5 text-red-700" />
+                                <span>Credit Note</span>
+                              </button>
+                            </>
+                          ) : (
+                            /* Quote / Contract in progress actions */
+                            <>
+                              {/* Quote */}
+                              <button
+                                onClick={() => openDocument(booking, "quotation")}
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] text-[11px] font-bold transition-all shadow-sm"
+                                title="Generate & View Quotation"
+                              >
+                                <FileText className="w-3.5 h-3.5" />
+                                <span>Quote</span>
+                              </button>
 
-                          {/* Confirm deal if in progress */}
-                          {isInProgress && (
-                            <button
-                              onClick={() => convertQuoteToBooked(booking.id)}
-                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition-all shadow-sm ml-1"
-                              title="Lock in Confirmed Booking"
-                            >
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                              <span>Confirm</span>
-                            </button>
+                              {/* Proceed to Contract */}
+                              <button
+                                onClick={() => setActiveNav("generate_contract")}
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#141A29] hover:bg-[#1E2638] text-[#C9A052] text-[11px] font-bold transition-all shadow-sm"
+                                title="Proceed to Contract Generation"
+                              >
+                                <ScrollText className="w-3.5 h-3.5" />
+                                <span>Contract</span>
+                              </button>
+
+                              {/* Lock in & Confirm Booking */}
+                              <button
+                                onClick={() => convertQuoteToBooked(booking.id)}
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition-all shadow-sm"
+                                title="Confirm Contract & Book Flight"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                <span>Confirm</span>
+                              </button>
+                            </>
                           )}
                         </div>
                       </td>

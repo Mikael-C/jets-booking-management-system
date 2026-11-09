@@ -45,7 +45,7 @@ export default function CharterAgreementDoc({ booking }: CharterAgreementDocProp
                 The Carrier / Operator
               </h4>
               <p className="font-semibold text-gray-900">{operator.legalEntity}</p>
-              <p className="text-gray-600">Flughafenstraße 3 / Objekt 10, 4063 Hörsching, Austria</p>
+              <p className="text-gray-600">London Biggin Hill Airport (EGKB), Executive Aviation Terminal, United Kingdom</p>
               <p className="text-gray-600">Company Registry: {operator.commercialRegistry}</p>
               <p className="text-gray-600">Tax Registration: {operator.vatNumber}</p>
               <p className="text-gray-600">Contact: {operator.supportEmail} • {operator.supportPhone}</p>
@@ -140,13 +140,13 @@ export default function CharterAgreementDoc({ booking }: CharterAgreementDocProp
                 <strong>2. Payment & Settlement:</strong> The total charter fee of {formatCurrency(pricing.totalFlightPrice, pricing.currency)} is due no later than {paymentDueDate}. Flight operations are conditional on full payment clearance in escrow prior to dispatch.
               </p>
               <p>
-                <strong>3. Cancellation Charges:</strong> Cancellations made &gt;7 days prior to departure incur a 10% fee (min. €500); between 7 days and 48 hours incur 30%; between 48 hours and 24 hours incur 50%; and under 24 hours incur 75%-100% of the total charter price.
+                <strong>3. Cancellation Policy:</strong> Will be updated later. Standard private aviation charter carriage terms apply.
               </p>
               <p>
                 <strong>4. Documentation & Border Control:</strong> Charterer is strictly responsible for ensuring all passengers possess valid passports, visas, health declarations, and immigration clearances. APIS data must be finalized 2 hours prior to wheels-up.
               </p>
               <p>
-                <strong>5. Governing Law:</strong> This Agreement shall be governed by and construed in accordance with Austrian Law, with the competent court of Linz, Austria exercising exclusive jurisdiction.
+                <strong>5. Governing Law:</strong> This Agreement shall be governed by and construed in accordance with English Law, with the competent Commercial Court of London, United Kingdom exercising exclusive jurisdiction.
               </p>
             </div>
           </div>

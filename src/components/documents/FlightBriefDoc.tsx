@@ -66,7 +66,7 @@ export default function FlightBriefDoc({ booking }: FlightBriefDocProps) {
               <p className="text-gray-700">{operator.representativeName}</p>
               <p className="text-blue-700 font-medium">{operator.supportEmail}</p>
               <p className="text-gray-600">{operator.supportPhone}</p>
-              <p className="text-gray-500 mt-0.5">AOC: AT-0842 • EASA Part-CAT</p>
+              <p className="text-gray-500 mt-0.5">AOC: GB-8422 • EASA & UK-CAA Part-CAT</p>
             </div>
 
             <div>
@@ -165,13 +165,19 @@ export default function FlightBriefDoc({ booking }: FlightBriefDocProps) {
                   <tr key={leg.legNumber}>
                     <td className="p-1.5 font-mono font-bold text-gold">{leg.legNumber}</td>
                     <td className="p-1.5 font-medium">{leg.flightDate}</td>
-                    <td className="p-1.5 font-bold text-gray-900">{leg.origin.city} ({leg.origin.icao})</td>
-                    <td className="p-1.5 font-bold text-gray-900">{leg.destination.city} ({leg.destination.icao})</td>
+                    <td className="p-1.5">
+                      <div className="font-bold text-gray-900">{leg.origin.name || leg.origin.city} <span className="font-mono text-gray-600">[{leg.origin.icao}{leg.origin.iata ? `/${leg.origin.iata}` : ''}]</span></div>
+                      <div className="text-[10px] text-amber-800 font-medium">FBO: {leg.departureHandling?.name || "Executive FBO"}</div>
+                    </td>
+                    <td className="p-1.5">
+                      <div className="font-bold text-gray-900">{leg.destination.name || leg.destination.city} <span className="font-mono text-gray-600">[{leg.destination.icao}{leg.destination.iata ? `/${leg.destination.iata}` : ''}]</span></div>
+                      <div className="text-[10px] text-amber-800 font-medium">FBO: {leg.arrivalHandling?.name || "Executive FBO"}</div>
+                    </td>
                     <td className="p-1.5 font-mono font-semibold">{leg.departureTimeLocal}</td>
                     <td className="p-1.5 font-mono font-semibold">{leg.arrivalTimeLocal}</td>
                     <td className="p-1.5">{leg.flightTimeFormatted}</td>
                     <td className="p-1.5 text-center font-bold">{leg.paxCount}</td>
-                    <td className="p-1.5 font-mono font-bold text-gray-700">{leg.flightNumber}</td>
+                    <td className="p-1.5 font-mono font-bold text-amber-900">{leg.flightNumber}</td>
                   </tr>
                 ))}
               </tbody>
@@ -200,7 +206,7 @@ export default function FlightBriefDoc({ booking }: FlightBriefDocProps) {
         <div className="mt-4 pt-2.5 border-t border-gray-200 text-[9px] text-gray-500 flex justify-between items-end">
           <div>
             <p className="font-semibold text-gray-800">Orbelo Flight Operations Center</p>
-            <p>Flughafenstraße 3 / Objekt 10 • 4063 Hörsching • Austria • 24/7 OCC: {operator.supportPhone}</p>
+            <p>London Biggin Hill (EGKB) • Geneva Cointrin (LSGG) • 24/7 OCC Duty: {operator.supportPhone}</p>
           </div>
           <div className="text-right">
             <p className="font-bold text-gray-700">Page 1 of 2</p>
@@ -253,8 +259,8 @@ export default function FlightBriefDoc({ booking }: FlightBriefDocProps) {
           {/* Detailed Per-Leg Cards: Crew, Manifest, Handling */}
           <div className="space-y-4 mb-4">
             {legs.map((leg) => {
-              const cmdr = leg.crew.find((c) => c.role === "CMDR") || { name: "Capt. Emmanuel Audrain", phone: "+43 664 8489 904" };
-              const fo = leg.crew.find((c) => c.role === "F/O") || { name: "First Officer Hajar Amrani", phone: "+43 664 8489 928" };
+              const cmdr = leg.crew.find((c) => c.role === "CMDR") || { name: "Capt. Alexander Vance", phone: "+44 7700 900842" };
+              const fo = leg.crew.find((c) => c.role === "F/O") || { name: "First Officer Marcus Lindqvist", phone: "+44 7700 900890" };
               const fa = leg.crew.find((c) => c.role === "Cabin Attendant") || { name: "Claire Dupont (Allocated)", phone: "+33 6 44 19 88 03" };
               const passengerNames = leg.passengers.map((p) => p.fullName).join(", ") || client.fullName;
 
@@ -262,10 +268,10 @@ export default function FlightBriefDoc({ booking }: FlightBriefDocProps) {
                 <div key={leg.legNumber} className="border border-gray-200 rounded-lg p-3 bg-white shadow-sm space-y-2">
                   <div className="flex items-center justify-between pb-1.5 border-b border-gray-200 text-xs">
                     <span className="font-extrabold text-gray-900 font-mono">
-                      LEG {leg.legNumber}: {leg.origin.icao} ({leg.origin.city}) → {leg.destination.icao} ({leg.destination.city})
+                      LEG {leg.legNumber}: {leg.origin.name || leg.origin.city} [{leg.origin.icao}] → {leg.destination.name || leg.destination.city} [{leg.destination.icao}]
                     </span>
                     <span className="font-mono text-gray-500">
-                      {leg.flightDate} • Callsign: <strong>{leg.flightNumber}</strong>
+                      {leg.flightDate} • Callsign: <strong className="text-amber-900">{leg.flightNumber}</strong>
                     </span>
                   </div>
 

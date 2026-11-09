@@ -22,7 +22,9 @@ import {
   Sparkles,
   Phone,
   Mail,
-  Building
+  Building,
+  RotateCcw,
+  ArrowRight
 } from "lucide-react";
 
 export default function BookingDetailDrawer() {
@@ -32,11 +34,17 @@ export default function BookingDetailDrawer() {
     toggleChecklistItem,
     updateBookingStatus,
     openDocument,
+    convertQuoteToBooked,
+    setActiveNav,
     role
   } = useAviation();
 
   if (!selectedBookingForDetail) return null;
   const booking = selectedBookingForDetail;
+
+  const isBooked = ["confirmed", "dispatched", "in_flight", "completed"].includes(booking.status);
+  const isContractStage = booking.status === "contract_sent";
+  const isQuoteStage = !isBooked && !isContractStage;
 
   const totalSteps = booking.checklist.length;
   const completedSteps = booking.checklist.filter((s) => s.isCompleted).length;
@@ -74,10 +82,18 @@ export default function BookingDetailDrawer() {
             COMPLETED FLIGHT
           </span>
         );
+      case "contract_sent":
+        return (
+          <span className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-blue-100 text-blue-800 border border-blue-300 flex items-center gap-1.5">
+            <ScrollText className="w-3 h-3" />
+            CONTRACT ISSUED
+          </span>
+        );
       default:
         return (
           <span className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1.5">
-            IN-PROGRESS ({status.toUpperCase().replace("_", " ")})
+            <Clock className="w-3 h-3" />
+            ACTIVE QUOTATION
           </span>
         );
     }
@@ -96,14 +112,25 @@ export default function BookingDetailDrawer() {
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-xs font-mono uppercase tracking-wider text-[#C9A052] font-bold">
-                  CHARTER TRIP RECORD
+                  {isBooked ? "CONFIRMED CHARTER RECORD" : isContractStage ? "CONTRACT REVIEW STAGE" : "CHARTER QUOTATION"}
                 </span>
                 <span className="text-gray-500">•</span>
                 <span className="text-xs font-mono text-gray-300">Acc: {booking.accountNumber}</span>
               </div>
               <h2 className="text-xl font-black text-white flex items-center gap-2.5">
-                Trip {booking.tripNumber}
+                {isBooked ? (
+                  <>Trip {booking.tripNumber}</>
+                ) : (
+                  <>Quote Ref: {booking.quoteReference || (booking.tripNumber ? `QTE-${booking.tripNumber.replace(/\D/g, '') || booking.tripNumber}` : "QTE-PENDING")}</>
+                )}
               </h2>
+              <p className="text-[11px] text-gray-400 font-mono mt-0.5">
+                {isBooked ? (
+                  <>Callsign: <strong className="text-white">{booking.legs[0]?.flightNumber || "PEU842"}</strong> • Tail: <strong className="text-white">{booking.aircraft.registration || "OE-FFB"}</strong></>
+                ) : (
+                  <span className="text-[#C9A052]">Flight call sign and Trip ID assigned upon booking confirmation</span>
+                )}
+              </p>
             </div>
           </div>
 
@@ -118,47 +145,206 @@ export default function BookingDetailDrawer() {
           </div>
         </div>
 
+        {/* Lifecycle Flow Stepper: Quote -> Contract -> Booked contract */}
+        <div className="px-6 py-3.5 bg-[#141A29] border-b border-[#1C2436]">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[10px] font-mono uppercase tracking-wider text-[#C9A052] font-bold">
+              Charter Lifecycle Progression
+            </span>
+            <span className="text-[10px] font-mono text-gray-400">
+              Flow: Quote → Contract → Booked Contract
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between gap-2">
+            {/* Step 1: Quote */}
+            <div
+              className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-bold transition-all flex-1 ${
+                isQuoteStage
+                  ? "bg-[#C9A052]/20 border-[#C9A052] text-[#C9A052] ring-1 ring-[#C9A052]"
+                  : "bg-emerald-950/40 border-emerald-500/40 text-emerald-400"
+              }`}
+            >
+              {isQuoteStage ? (
+                <span className="h-5 w-5 rounded-full bg-[#C9A052] text-[#0F1420] text-[10px] font-black flex items-center justify-center flex-shrink-0">
+                  1
+                </span>
+              ) : (
+                <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0" />
+              )}
+              <div className="min-w-0">
+                <div className="text-[9px] uppercase font-mono tracking-wider opacity-70">Step 1</div>
+                <div className="truncate text-xs">Quotation</div>
+              </div>
+            </div>
+
+            <div className={`w-4 sm:w-8 h-0.5 ${!isQuoteStage ? "bg-emerald-500" : "bg-gray-700"}`} />
+
+            {/* Step 2: Contract */}
+            <div
+              className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-bold transition-all flex-1 ${
+                isContractStage
+                  ? "bg-[#C9A052]/20 border-[#C9A052] text-[#C9A052] ring-1 ring-[#C9A052]"
+                  : isBooked
+                  ? "bg-emerald-950/40 border-emerald-500/40 text-emerald-400"
+                  : "bg-gray-900/60 border-gray-800 text-gray-500"
+              }`}
+            >
+              {isContractStage ? (
+                <span className="h-5 w-5 rounded-full bg-[#C9A052] text-[#0F1420] text-[10px] font-black flex items-center justify-center flex-shrink-0">
+                  2
+                </span>
+              ) : isBooked ? (
+                <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0" />
+              ) : (
+                <span className="h-5 w-5 rounded-full bg-gray-800 text-gray-400 text-[10px] font-black flex items-center justify-center flex-shrink-0">
+                  2
+                </span>
+              )}
+              <div className="min-w-0">
+                <div className="text-[9px] uppercase font-mono tracking-wider opacity-70">Step 2</div>
+                <div className="truncate text-xs">Contract</div>
+              </div>
+            </div>
+
+            <div className={`w-4 sm:w-8 h-0.5 ${isBooked ? "bg-emerald-500" : "bg-gray-700"}`} />
+
+            {/* Step 3: Booked Contract */}
+            <div
+              className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-bold transition-all flex-1 ${
+                isBooked
+                  ? "bg-[#C9A052]/20 border-[#C9A052] text-[#C9A052] ring-1 ring-[#C9A052]"
+                  : "bg-gray-900/60 border-gray-800 text-gray-500"
+              }`}
+            >
+              <span
+                className={`h-5 w-5 rounded-full text-[10px] font-black flex items-center justify-center flex-shrink-0 ${
+                  isBooked ? "bg-[#C9A052] text-[#0F1420]" : "bg-gray-800 text-gray-400"
+                }`}
+              >
+                3
+              </span>
+              <div className="min-w-0">
+                <div className="text-[9px] uppercase font-mono tracking-wider opacity-70">Step 3</div>
+                <div className="truncate text-xs">Booked Contract</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Scrollable Body Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           
-          {/* Action Document Generation Bar */}
+          {/* Action Document Generation Bar according to Flow:
+              Quote -> Contract -> Booked contract: From here, you can generate: Flight briefs, Invoice, credit note */}
           <div className="p-4 rounded-2xl bg-white border border-[#E0DAD0] shadow-sm">
-            <span className="block text-[10px] font-mono uppercase tracking-wider text-[#0F1420]/60 font-bold mb-2.5">
-              Generate & Download Documents
-            </span>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              <button
-                onClick={() => openDocument(booking, "quotation")}
-                className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] font-extrabold text-xs transition-all shadow-sm"
-              >
-                <FileText className="w-3.5 h-3.5" />
-                <span>Quotation</span>
-              </button>
-
-              <button
-                onClick={() => openDocument(booking, "invoice")}
-                className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] font-extrabold text-xs transition-all shadow-sm"
-              >
-                <Receipt className="w-3.5 h-3.5" />
-                <span>Tax Invoice</span>
-              </button>
-
-              <button
-                onClick={() => openDocument(booking, "flight_brief")}
-                className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] font-extrabold text-xs transition-all shadow-sm"
-              >
-                <Compass className="w-3.5 h-3.5" />
-                <span>Flight Brief</span>
-              </button>
-
-              <button
-                onClick={() => openDocument(booking, "charter_agreement")}
-                className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] font-extrabold text-xs transition-all shadow-sm"
-              >
-                <ScrollText className="w-3.5 h-3.5" />
-                <span>Agreement</span>
-              </button>
+            <div className="flex items-center justify-between mb-2.5">
+              <span className="block text-[10px] font-mono uppercase tracking-wider text-[#0F1420]/60 font-bold">
+                {isBooked ? "Booked Flight Operations & Billing Documents" : isContractStage ? "Contract Execution & Signature" : "Quotation Phase Documents"}
+              </span>
+              <span className="text-[10px] font-mono font-bold text-[#C9A052]">
+                {isBooked ? "Booked Contract Active" : isContractStage ? "Contract Stage" : "Quote Stage"}
+              </span>
             </div>
+
+            {isBooked ? (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {/* Flight Brief */}
+                <button
+                  onClick={() => openDocument(booking, "flight_brief")}
+                  className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] font-extrabold text-xs transition-all shadow-sm cursor-pointer"
+                  title="Generate Operational Flight Brief with FBO & Crew details"
+                >
+                  <Compass className="w-3.5 h-3.5" />
+                  <span>Flight Brief</span>
+                </button>
+
+                {/* Tax Invoice */}
+                <button
+                  onClick={() => openDocument(booking, "invoice")}
+                  className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] font-extrabold text-xs transition-all shadow-sm cursor-pointer"
+                  title="Generate Official Tax Invoice"
+                >
+                  <Receipt className="w-3.5 h-3.5" />
+                  <span>Tax Invoice</span>
+                </button>
+
+                {/* Credit Note */}
+                <button
+                  onClick={() => openDocument(booking, "credit_note")}
+                  className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-red-100 hover:bg-red-200 text-red-900 border border-red-300 font-extrabold text-xs transition-all shadow-sm cursor-pointer"
+                  title="Generate Official Credit Note Adjustment"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-red-700" />
+                  <span>Credit Note</span>
+                </button>
+
+                {/* Charter Agreement */}
+                <button
+                  onClick={() => openDocument(booking, "charter_agreement")}
+                  className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-[#141A29] hover:bg-[#1C2436] text-[#C9A052] font-extrabold text-xs transition-all shadow-sm cursor-pointer"
+                  title="View Executed Charter Agreement"
+                >
+                  <ScrollText className="w-3.5 h-3.5" />
+                  <span>Agreement</span>
+                </button>
+              </div>
+            ) : isContractStage ? (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <button
+                  onClick={() => openDocument(booking, "charter_agreement")}
+                  className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] font-extrabold text-xs transition-all shadow-sm cursor-pointer"
+                >
+                  <ScrollText className="w-3.5 h-3.5" />
+                  <span>View Contract</span>
+                </button>
+
+                <button
+                  onClick={() => openDocument(booking, "quotation")}
+                  className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-[#F5F2EC] hover:bg-[#EBE5DB] text-[#0F1420] font-extrabold text-xs border border-[#E0DAD0] transition-all shadow-sm cursor-pointer"
+                >
+                  <FileText className="w-3.5 h-3.5 text-[#C9A052]" />
+                  <span>Review Quote</span>
+                </button>
+
+                <button
+                  onClick={() => convertQuoteToBooked(booking.id)}
+                  className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs transition-all shadow-sm cursor-pointer"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>Execute & Book</span>
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <button
+                  onClick={() => openDocument(booking, "quotation")}
+                  className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] font-extrabold text-xs transition-all shadow-sm cursor-pointer"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>View Quotation</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setSelectedBookingForDetail(null);
+                    setActiveNav("generate_contract");
+                  }}
+                  className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-[#141A29] hover:bg-[#1C2436] text-[#C9A052] font-extrabold text-xs transition-all shadow-sm cursor-pointer"
+                >
+                  <ScrollText className="w-3.5 h-3.5" />
+                  <span>Proceed to Contract</span>
+                </button>
+
+                <button
+                  onClick={() => convertQuoteToBooked(booking.id)}
+                  className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs transition-all shadow-sm cursor-pointer"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>Confirm Booking</span>
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Client & Aircraft Cards */}
@@ -260,7 +446,12 @@ export default function BookingDetailDrawer() {
                       {leg.flightDate} • Dep: {leg.departureTimeLocal}
                     </p>
                     <p className="text-[11px] text-gray-500">
-                      Duration: {leg.flightTimeFormatted} • Call: {leg.flightNumber}
+                      Duration: {leg.flightTimeFormatted} •{" "}
+                      {isBooked ? (
+                        <span className="font-mono text-[#0F1420] font-bold">Call: {leg.flightNumber || "PEU842"}</span>
+                      ) : (
+                        <span className="italic text-gray-400">Callsign: Assigned on Booking</span>
+                      )}
                     </p>
                   </div>
                 </div>
@@ -326,6 +517,13 @@ export default function BookingDetailDrawer() {
                 {completedSteps}/{totalSteps} Cleared ({percentComplete}%)
               </span>
             </div>
+
+            {!isBooked && (
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                <span>Operational dispatch checklist and ATC slot clearances activate upon contract confirmation.</span>
+              </div>
+            )}
 
             {/* Live Progress Bar */}
             <div className="w-full h-2 rounded-full bg-[#E0DAD0] overflow-hidden">
@@ -397,7 +595,15 @@ export default function BookingDetailDrawer() {
           </div>
 
           <div className="flex items-center gap-2">
-            {booking.status !== "dispatched" && (
+            {!isBooked ? (
+              <button
+                onClick={() => convertQuoteToBooked(booking.id)}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md transition-all cursor-pointer"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span>Confirm & Book Flight</span>
+              </button>
+            ) : booking.status !== "dispatched" && (
               <button
                 onClick={() => updateBookingStatus(booking.id, "dispatched")}
                 disabled={!isAllRequiredDone}

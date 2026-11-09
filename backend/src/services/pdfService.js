@@ -191,6 +191,20 @@ const getDestinationText = (leg) => {
   return leg.to || leg.toIcao || 'TBD';
 };
 
+const getOriginHandling = (leg) => {
+  if (!leg) return null;
+  const h = leg.departureHandling;
+  if (!h || !h.name) return null;
+  return `FBO: ${h.name}${h.phone ? ' • Tel: ' + h.phone : ''}${h.email ? ' • ' + h.email : ''}`;
+};
+
+const getDestinationHandling = (leg) => {
+  if (!leg) return null;
+  const h = leg.arrivalHandling;
+  if (!h || !h.name) return null;
+  return `FBO: ${h.name}${h.phone ? ' • Tel: ' + h.phone : ''}${h.email ? ' • ' + h.email : ''}`;
+};
+
 const getFlightDate = (leg) => {
   return leg.flightDate || leg.departureDate || 'TBD';
 };
@@ -236,7 +250,11 @@ const generateQuotationPDF = async (booking) => {
       doc.y += 12;
     }
     drawDetailRow(doc, 'Origin', getOriginText(leg));
+    const depH = getOriginHandling(leg);
+    if (depH) drawDetailRow(doc, 'Origin Handling', depH);
     drawDetailRow(doc, 'Destination', getDestinationText(leg));
+    const arrH = getDestinationHandling(leg);
+    if (arrH) drawDetailRow(doc, 'Destination Handling', arrH);
     drawDetailRow(doc, 'Departure Date', getFlightDate(leg));
     drawDetailRow(doc, 'Departure Time', getFlightTime(leg));
     drawDetailRow(doc, 'Passengers', `${leg.paxCount || 1} VIPs`);
@@ -302,11 +320,11 @@ const generateQuotationPDF = async (booking) => {
   doc.y = totalY + 42;
 
   // Terms
-  drawSectionHeader(doc, 'TERMS & CARRIAGE CONDITIONS');
+  drawSectionHeader(doc, 'TERMS & CANCELLATION POLICY');
   doc.font(FONTS.normal).fontSize(7.5).fillColor(COLORS.gray)
     .text('1. This quotation is valid for 48 hours from the date of issue.', 50)
-    .text('2. All flights are operated under applicable commercial air operator certificates (EC 2111/2005).')
-    .text('3. Payment terms: 50% deposit required upon confirmation, balance due prior to departure.')
+    .text('2. All flights are operated under applicable commercial air operator certificates (EASA Part-CAT / UK-CAA).')
+    .text('3. Cancellation Policy: Will be updated later. Standard private aviation charter carriage terms apply.')
     .text('4. Baggage is subject to aircraft hold volume and weight limits.');
 
   drawFooter(doc, 1, 1);
@@ -507,7 +525,7 @@ const generateCharterAgreementPDF = async (booking) => {
   const terms = [
     '1. CHARTER PRICE: The charter price includes aircraft, crew, fuel, standard catering, and landing fees.',
     '2. PAYMENT: 50% deposit upon confirmation, remaining balance due prior to departure.',
-    '3. CANCELLATION: Cancellations within 72 hours of departure will incur a 100% cancellation fee.',
+    '3. CANCELLATION POLICY: Will be updated later. Standard private aviation charter carriage terms apply.',
     '4. FORCE MAJEURE: Neither party shall be liable for weather disruptions, ATC delays, or regulatory actions.',
   ];
 

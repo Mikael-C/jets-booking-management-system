@@ -312,12 +312,12 @@ const seedDatabase = async (force = false) => {
       qualificationChecklist: stdChecklist
     },
     {
-      legalName: 'GlobeAir AG', tradingName: 'GlobeAir',
-      aocNumber: 'A-123', aocAuthority: 'Austro Control (Austria)', aocExpiry: '2026-11-20',
-      baseIcao: 'LOWL', salesContact: 'Bernhard Mayr', salesEmail: 'sales@globeair.com',
-      opsPhone: '+43 7221 727 400', opsEmail: 'ops@globeair.com', status: 'approved_with_conditions',
-      insuranceExpiry: '2026-11-28', safetyRating: 'IS-BAO Stage 3', safetyRatingProvider: 'IBAC',
-      notes: 'Approved for Citation Mustang fleet only. Subject to annual insurance update renewal.',
+      legalName: 'Zenith Executive Aviation Ltd', tradingName: 'Zenith Aviation',
+      aocNumber: 'UK-AOC-7482', aocAuthority: 'Civil Aviation Authority (UK CAA)', aocExpiry: '2027-11-20',
+      baseIcao: 'EGKB', salesContact: 'Jonathan Sterling', salesEmail: 'charter@zenithaviation.co.uk',
+      opsPhone: '+44 1959 578 400', opsEmail: 'dispatch@zenithaviation.co.uk', status: 'approved_with_conditions',
+      insuranceExpiry: '2027-04-15', safetyRating: 'IS-BAO Stage 3', safetyRatingProvider: 'IBAC',
+      notes: 'Approved for light and midsize jet operations. Continuous airworthiness verified.',
       qualificationChecklist: stdChecklist.map((d, i) => i === 3 ? { ...d, status: 'pending', notes: 'Renewal policy pending receipt' } : d)
     }
   ]);
@@ -330,7 +330,7 @@ const seedDatabase = async (force = false) => {
 
   // ─── Sample Notifications ──────────────────────────────
   await Notification.insertMany([
-    { userEmail: 'superadmin@orbelo.com', type: 'warning', title: 'AOC Expiry Warning', message: 'GlobeAir AG AOC expires in 15 days. Renewal verification required.', read: false, entityType: 'operator' },
+    { userEmail: 'superadmin@orbelo.com', type: 'warning', title: 'AOC Expiry Warning', message: 'Zenith Executive Aviation AOC expires in 15 days. Renewal verification required.', read: false, entityType: 'operator' },
     { userEmail: 'superadmin@orbelo.com', type: 'info', title: 'New Agent RFQ Received', message: 'Marcus Vance submitted a quote request for LSGG ⇄ LIMJ.', read: false, entityType: 'request' },
     { userEmail: 'superadmin@orbelo.com', type: 'success', title: 'Wire Transfer Verified', message: 'Payment of €18,450.00 received for Trip PEU842-001.', read: true, entityType: 'payment' }
   ]);

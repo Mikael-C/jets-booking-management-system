@@ -173,21 +173,21 @@ export const initialOperators: OperatorRecord[] = [
   },
   {
     id: "op-2",
-    legalName: "GlobeAir AG",
-    tradingName: "GlobeAir",
-    aocNumber: "A-123",
-    aocAuthority: "Austro Control (Austria)",
-    aocExpiry: "2026-11-20",
-    baseIcao: "LOWL",
-    salesContact: "Bernhard Mayr",
-    salesEmail: "sales@globeair.com",
-    opsPhone: "+43 7221 727 400",
-    opsEmail: "ops@globeair.com",
+    legalName: "Zenith Executive Aviation Ltd",
+    tradingName: "Zenith Aviation",
+    aocNumber: "UK-AOC-7482",
+    aocAuthority: "Civil Aviation Authority (UK CAA)",
+    aocExpiry: "2027-11-20",
+    baseIcao: "EGKB",
+    salesContact: "Jonathan Sterling",
+    salesEmail: "charter@zenithaviation.co.uk",
+    opsPhone: "+44 1959 578 400",
+    opsEmail: "dispatch@zenithaviation.co.uk",
     status: "approved_with_conditions",
-    insuranceExpiry: "2026-11-28",
+    insuranceExpiry: "2027-04-15",
     safetyRating: "IS-BAO Stage 3",
     safetyRatingProvider: "IBAC",
-    notes: "Approved for Citation Mustang fleet only. Subject to annual insurance update renewal.",
+    notes: "Approved for light and midsize jet operations. Continuous airworthiness verified.",
     qualificationChecklist: [
       { id: "doc-1", docType: "Air Operator Certificate (AOC)", status: "pass", expiryDate: "2026-11-20" },
       { id: "doc-2", docType: "Aircraft registered on AOC", status: "pass" },
@@ -278,7 +278,7 @@ export const initialNotifications: Notification[] = [
     id: "notif-5",
     type: "info",
     title: "Insurance Renewal Due",
-    message: "GlobeAir AG third party liability policy certificate requires renewal by 28.11.2026.",
+    message: "Zenith Executive Aviation third party liability policy certificate requires renewal by 28.11.2026.",
     timestamp: "Yesterday",
     read: true,
     entityId: "op-2",
@@ -465,9 +465,9 @@ export const normalizeBooking = (b: any): Booking => {
   const client: ClientDetails = {
     fullName: String(b?.client?.fullName || "Private Client"),
     companyName: b?.client?.companyName ? String(b.client.companyName) : undefined,
-    streetAddress: String(b?.client?.streetAddress || b?.client?.address || "Flughafenstraße 1"),
-    cityPostalCountry: String(b?.client?.cityPostalCountry || "A-4063 Linz-Hörsching, Austria"),
-    phone: String(b?.client?.phone || "+43 7221 727 400"),
+    streetAddress: String(b?.client?.streetAddress || b?.client?.address || "3606 Enterprise Ave"),
+    cityPostalCountry: String(b?.client?.cityPostalCountry || "FL-34104 Naples, United States"),
+    phone: String(b?.client?.phone || "+1 239 555 0192"),
     email: String(b?.client?.email || "client@orbelo.com"),
     vatNumber: b?.client?.vatNumber ? String(b.client.vatNumber) : undefined,
     accountNumber: String(b?.client?.accountNumber || b?.accountNumber || "ACC-21737"),
@@ -1636,19 +1636,38 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
   };
 
   const convertQuoteToBooked = (bookingId: string) => {
+    let updatedBooking: Booking | null = null;
     setBookings((prev) =>
       prev.map((b) => {
         if (b.id !== bookingId) return b;
         const officialTripNumber = b.tripNumber && b.tripNumber.trim() !== "" ? b.tripNumber : `PEU${Math.floor(100 + Math.random() * 899)}-001`;
-        return {
+        const numSuffix = officialTripNumber.replace(/\D/g, "").slice(0, 3) || "842";
+        const updatedLegs = (b.legs || []).map((l) => ({
+          ...l,
+          flightNumber: l.flightNumber && l.flightNumber.trim() !== "" ? l.flightNumber : `PEU${numSuffix}`
+        }));
+        const updated: Booking = {
           ...b,
           tripNumber: officialTripNumber,
           status: "confirmed",
           quoteStatus: "accepted",
+          legs: updatedLegs,
           updatedAt: new Date().toISOString()
         };
+        updatedBooking = updated;
+        return updated;
       })
     );
+
+    if (updatedBooking) {
+      if (selectedBookingForDetail && selectedBookingForDetail.id === bookingId) {
+        setSelectedBookingForDetail(updatedBooking);
+      }
+      if (activeBooking && activeBooking.id === bookingId) {
+        setActiveBooking(updatedBooking);
+      }
+    }
+
     api.bookings.confirm(bookingId).catch((err) => console.log("Backend sync note:", err.message));
     setActiveNav("bookings");
   };

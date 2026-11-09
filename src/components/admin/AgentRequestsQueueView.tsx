@@ -902,7 +902,7 @@ Special Requests: ${req.specialRequests || "None"}`;
                     <input
                       type="text"
                       required
-                      placeholder="e.g. GlobeAir AG, VistaJet, Luxaviation"
+                      placeholder="e.g. NetJets Europe, VistaJet, Luxaviation"
                       value={sourcingOperator}
                       onChange={(e) => setSourcingOperator(e.target.value)}
                       className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"

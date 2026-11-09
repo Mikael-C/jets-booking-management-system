@@ -51,11 +51,22 @@ export type BookingStatus =
   | "draft"
   | "quote_sent"
   | "client_review"
+  | "contract_sent"
   | "dispatched"
   | "in_flight"
   | "completed";
 
 export type TripType = "one_way" | "round_trip" | "multi_leg";
+
+export interface FboOption {
+  id: string;
+  name: string;
+  phone: string;
+  email: string;
+  vhfFrequency?: string;
+  address?: string;
+  notes?: string;
+}
 
 export interface Airport {
   id: string;
@@ -72,6 +83,7 @@ export interface Airport {
     lat: number;
     lng: number;
   };
+  fbos?: FboOption[];
 }
 
 export interface Aircraft {
@@ -133,6 +145,9 @@ export interface HandlingAgent {
   airportCode: string;
   phone: string;
   email: string;
+  vhfFrequency?: string;
+  address?: string;
+  notes?: string;
 }
 
 export interface PassengerManifestItem {

@@ -827,7 +827,7 @@
         "category": "aircraft",
         "isCompleted": true,
         "completedAt": "01.07.2026 09:00",
-        "completedBy": "GlobeAir Tech",
+        "completedBy": "Orbelo Flight Engineering",
         "requiredForDispatch": true,
         "completed": true
       },
@@ -2251,7 +2251,7 @@
         "category": "aircraft",
         "isCompleted": true,
         "completedAt": "20.10.2026 10:00",
-        "completedBy": "GlobeAir Tech",
+        "completedBy": "Orbelo Flight Engineering",
         "requiredForDispatch": true,
         "completed": true
       },

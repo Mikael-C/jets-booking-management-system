@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { useAviation } from "@/lib/aviationContext";
 import { Booking, FlightLeg, TripType } from "@/types/aviation";
-import { airportsData, findAirportByCode } from "@/data/airports";
+import { airportsData, findAirportByCode, getAirportFbos } from "@/data/airports";
 import { fleetData } from "@/data/fleet";
 import { defaultOperator } from "@/data/initialBookings";
 import { formatCurrency, calculateCardFee } from "@/lib/pricingCalculator";
@@ -643,8 +643,8 @@ export default function GenerateContractView() {
                 </div>
 
                 {/* Origin Dropdown */}
-                <div className="md:col-span-3">
-                  <label className="block text-[10px] font-mono uppercase text-gray-400 mb-1">Origin Airport</label>
+                <div className="md:col-span-3 space-y-1.5">
+                  <label className="block text-[10px] font-mono uppercase text-gray-400 mb-1">Origin Airport & FBO</label>
                   <select
                     value={leg.origin.icao}
                     onChange={(e) => {
@@ -652,22 +652,58 @@ export default function GenerateContractView() {
                       if (found) {
                         const updated = [...legs];
                         updated[index].origin = found;
+                        const fbos = getAirportFbos(found.icao);
+                        if (fbos.length > 0) {
+                          updated[index].departureHandling = {
+                            name: fbos[0].name,
+                            airportCode: found.icao,
+                            phone: fbos[0].phone || "",
+                            email: fbos[0].email || ""
+                          };
+                        }
                         setLegs(updated);
                       }
                     }}
-                    className="w-full bg-white border border-gray-300 rounded-lg px-2.5 py-1.5 font-medium focus:border-[#C9A052] outline-none"
+                    className="w-full bg-white border border-gray-300 rounded-lg px-2.5 py-1.5 font-medium focus:border-[#C9A052] outline-none text-[11px]"
                   >
                     {airportsData.map((a) => (
                       <option key={a.icao} value={a.icao}>
-                        [{a.icao}] {a.city} - {a.name}
+                        [{a.icao}] {a.city} — {a.name}
                       </option>
                     ))}
                   </select>
+
+                  {/* FBO Picker */}
+                  {getAirportFbos(leg.origin.icao).length > 0 && (
+                    <select
+                      value={getAirportFbos(leg.origin.icao).find((f) => f.name === leg.departureHandling?.name)?.id || ""}
+                      onChange={(e) => {
+                        const found = getAirportFbos(leg.origin.icao).find((f) => f.id === e.target.value);
+                        if (found) {
+                          const updated = [...legs];
+                          updated[index].departureHandling = {
+                            name: found.name,
+                            airportCode: leg.origin.icao,
+                            phone: found.phone || "",
+                            email: found.email || ""
+                          };
+                          setLegs(updated);
+                        }
+                      }}
+                      className="w-full bg-[#F5F2EC] border border-[#C9A052]/40 rounded-lg px-2 py-1 text-[10px] font-semibold text-[#0F1420] outline-none"
+                    >
+                      {getAirportFbos(leg.origin.icao).map((f) => (
+                        <option key={f.id} value={f.id}>
+                          FBO: {f.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
 
                 {/* Destination Dropdown */}
-                <div className="md:col-span-3">
-                  <label className="block text-[10px] font-mono uppercase text-gray-400 mb-1">Destination Airport</label>
+                <div className="md:col-span-3 space-y-1.5">
+                  <label className="block text-[10px] font-mono uppercase text-gray-400 mb-1">Destination Airport & FBO</label>
                   <select
                     value={leg.destination.icao}
                     onChange={(e) => {
@@ -675,17 +711,53 @@ export default function GenerateContractView() {
                       if (found) {
                         const updated = [...legs];
                         updated[index].destination = found;
+                        const fbos = getAirportFbos(found.icao);
+                        if (fbos.length > 0) {
+                          updated[index].arrivalHandling = {
+                            name: fbos[0].name,
+                            airportCode: found.icao,
+                            phone: fbos[0].phone || "",
+                            email: fbos[0].email || ""
+                          };
+                        }
                         setLegs(updated);
                       }
                     }}
-                    className="w-full bg-white border border-gray-300 rounded-lg px-2.5 py-1.5 font-medium focus:border-[#C9A052] outline-none"
+                    className="w-full bg-white border border-gray-300 rounded-lg px-2.5 py-1.5 font-medium focus:border-[#C9A052] outline-none text-[11px]"
                   >
                     {airportsData.map((a) => (
                       <option key={a.icao} value={a.icao}>
-                        [{a.icao}] {a.city} - {a.name}
+                        [{a.icao}] {a.city} — {a.name}
                       </option>
                     ))}
                   </select>
+
+                  {/* FBO Picker */}
+                  {getAirportFbos(leg.destination.icao).length > 0 && (
+                    <select
+                      value={getAirportFbos(leg.destination.icao).find((f) => f.name === leg.arrivalHandling?.name)?.id || ""}
+                      onChange={(e) => {
+                        const found = getAirportFbos(leg.destination.icao).find((f) => f.id === e.target.value);
+                        if (found) {
+                          const updated = [...legs];
+                          updated[index].arrivalHandling = {
+                            name: found.name,
+                            airportCode: leg.destination.icao,
+                            phone: found.phone || "",
+                            email: found.email || ""
+                          };
+                          setLegs(updated);
+                        }
+                      }}
+                      className="w-full bg-[#F5F2EC] border border-[#C9A052]/40 rounded-lg px-2 py-1 text-[10px] font-semibold text-[#0F1420] outline-none"
+                    >
+                      {getAirportFbos(leg.destination.icao).map((f) => (
+                        <option key={f.id} value={f.id}>
+                          FBO: {f.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
 
                 <div className="md:col-span-2">
@@ -821,13 +893,13 @@ export default function GenerateContractView() {
               Contractual Terms & Operator Conditions
             </div>
             <p className="text-[11px] text-amber-800 leading-relaxed">
-              • <strong>De-icing Protection:</strong> De-icing fluid consumption, hangarage, and severe weather mitigation costs are strictly <strong>subject to operator terms</strong> and billed at cost.
+              • <strong>Cancellation Policy:</strong> Will be updated later. Standard private aviation charter carriage terms apply.
             </p>
             <p className="text-[11px] text-amber-800 leading-relaxed">
-              • <strong>Last-Minute Cancellations:</strong> Cancellation penalties (&lt;24 hours: 75%-100%) and force majeure policies are <strong>subject to operator policy</strong>.
+              • <strong>Operational Authority:</strong> Commander (Captain) holds absolute operational and safety authority regarding flight routing, weather divergence, and payload.
             </p>
             <p className="text-[11px] text-amber-800 leading-relaxed">
-              • <strong>Jurisdiction:</strong> Austrian Law with Linz, Austria jurisdiction.
+              • <strong>Jurisdiction:</strong> English Law with exclusive jurisdiction of the Commercial Court of London / Geneva Arbitration.
             </p>
           </div>
         </div>
@@ -849,7 +921,7 @@ export default function GenerateContractView() {
               onChange={(e) => setSignatoryCarrier(e.target.value)}
               className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 font-serif italic text-base text-gray-900 outline-none"
             />
-            <p className="text-[10px] text-gray-500 font-mono">Carrier Authorized Representative • Linz, Austria</p>
+            <p className="text-[10px] text-gray-500 font-mono">Carrier Authorized Representative • London & Geneva</p>
           </div>
 
           <div className="p-4 bg-[#FBF9F5] border border-gray-200 rounded-xl space-y-2">
@@ -872,7 +944,7 @@ export default function GenerateContractView() {
               onChange={(e) => setHasAgreedTerms(e.target.checked)}
               className="w-4 h-4 rounded text-[#C9A052]"
             />
-            <span>I confirm this contract adheres to standard EASA Part-CAT and Austrian charter carriage regulations.</span>
+            <span>I confirm this contract adheres to standard EASA Part-CAT and UK-CAA charter carriage regulations.</span>
           </label>
 
           <button

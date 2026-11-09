@@ -3,26 +3,24 @@ import { findAirportByCode } from "./airports";
 import { getAircraftById } from "./fleet";
 
 export const defaultOperator: OperatorDetails = {
-  companyName: "Orbelo GmbH",
-  legalEntity: "Orbelo Private Aviation & Charter Services GmbH",
-  representativeName: "Ezeokeke, Obiefuna",
-  supportEmail: "customercare@orbelo.com",
-  supportPhone: "+43 7221 727 400",
-  vatNumber: "ATU 6335 7619",
+  companyName: "Orbelo Jet Management",
+  legalEntity: "Orbelo Private Aviation & Executive Charter Ltd",
+  representativeName: "Charter Flight Operations",
+  supportEmail: "charter@orbelo.com",
+  supportPhone: "+44 20 7946 0920",
+  vatNumber: "GB 303 612 155",
   additionalVatNumbers: [
-    "IT00268829991",
-    "DE286551690",
-    "GB303612155",
-    "FR66830821799",
-    "NL823480926B01",
-    "NO382321H"
+    "CHE-492.810.334 MWST",
+    "FR 66 830 821 799",
+    "DE 286 551 690",
+    "IT 00268829991"
   ],
-  bankName: "Raiffeisenlandesbank Oberösterreich AG",
-  iban: "AT32 3400 0000 0266 7483",
-  bic: "RZOOAT2LXXX",
-  accountHolder: "Orbelo GmbH",
-  commercialRegistry: "Handelsgericht Linz • FN293097a",
-  courtOfJurisdiction: "Austrian law & Linz court applicable"
+  bankName: "Barclays Private Aviation Banking (London & Geneva)",
+  iban: "GB29 BUKB 2020 1555 9210 44",
+  bic: "BUKBGB22",
+  accountHolder: "Orbelo Jet Management Ltd",
+  commercialRegistry: "UK CAA AOC No. GB-8422 • EASA TCO Certified",
+  courtOfJurisdiction: "English Law • Commercial Court of London"
 };
 
 export const initialBookings: Booking[] = [
@@ -74,8 +72,8 @@ export const initialBookings: Booking[] = [
         aircraftRegistration: "OE-FFB",
         distanceNm: 155,
         crew: [
-          { role: "CMDR", name: "Audrain, Emmanuel", phone: "+43 664 8489 904" },
-          { role: "F/O", name: "El Hassani Amrani, Hajar", phone: "+43 664 8489 928" },
+          { role: "CMDR", name: "Capt. Alexander Vance", phone: "+44 7700 900842" },
+          { role: "F/O", name: "Marcus Lindqvist", phone: "+44 7700 900890" },
           { role: "Cabin Attendant", name: "Claire Dupont", phone: "+33 6 44 19 88 03" }
         ],
         passengers: [
@@ -342,7 +340,7 @@ export const initialBookings: Booking[] = [
       carbonOffsetRatePerHour: 33
     },
     checklist: [
-      { id: "c1", label: "Aircraft Maintenance Release & Airworthiness Signoff", category: "aircraft", isCompleted: true, completedAt: "01.07.2026 09:00", completedBy: "GlobeAir Tech", requiredForDispatch: true },
+      { id: "c1", label: "Aircraft Maintenance Release & Airworthiness Signoff", category: "aircraft", isCompleted: true, completedAt: "01.07.2026 09:00", completedBy: "Orbelo Tech", requiredForDispatch: true },
       { id: "c2", label: "Overflight & Landing Slots / PPR Confirmed", category: "permits", isCompleted: true, completedAt: "01.07.2026 10:30", completedBy: "Dispatch", requiredForDispatch: true },
       { id: "c3", label: "Crew Assignment & FTL Legality Confirmed", category: "crew", isCompleted: true, completedAt: "01.07.2026 11:45", completedBy: "Roster", requiredForDispatch: true },
       { id: "c4", label: "Departure FBO Handling Confirmed", category: "ground", isCompleted: true, completedAt: "01.07.2026 14:00", completedBy: "Ops", requiredForDispatch: true },
@@ -843,7 +841,7 @@ export const initialBookings: Booking[] = [
       carbonOffsetRatePerHour: 33
     },
     checklist: [
-      { id: "c1", label: "Aircraft Maintenance Release & Airworthiness Signoff", category: "aircraft", isCompleted: true, completedAt: "20.10.2026 10:00", completedBy: "GlobeAir Tech", requiredForDispatch: true },
+      { id: "c1", label: "Aircraft Maintenance Release & Airworthiness Signoff", category: "aircraft", isCompleted: true, completedAt: "20.10.2026 10:00", completedBy: "Orbelo Tech", requiredForDispatch: true },
       { id: "c2", label: "Overflight & Landing Slots / PPR Confirmed", category: "permits", isCompleted: false, requiredForDispatch: true },
       { id: "c3", label: "Crew Assignment & FTL Legality Confirmed", category: "crew", isCompleted: true, completedAt: "20.10.2026 11:30", completedBy: "Crew Ops", requiredForDispatch: true },
       { id: "c4", label: "Departure FBO Handling Confirmed (VAH)", category: "ground", isCompleted: false, requiredForDispatch: true },

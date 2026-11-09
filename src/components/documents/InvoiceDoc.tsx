@@ -208,7 +208,7 @@ export default function InvoiceDoc({ booking }: InvoiceDocProps) {
                 <span className="font-mono">{formatCurrency(pricing.subtotal, pricing.currency)}</span>
               </div>
               <div className="flex justify-between text-gray-500 text-[10px]">
-                <span>VAT (0%, International commercial air transportation VAT exempt per §6, Abs. 1, Zif. 3 Austrian VAT Act)</span>
+                <span>VAT (0%, International commercial air transportation VAT exempt per EU Directive 2006/112/EC Art. 148 & UK VAT Act)</span>
                 <span className="font-mono">{formatCurrency(0, pricing.currency)}</span>
               </div>
               <div className="flex justify-between py-1.5 border-t-2 border-gray-900 font-extrabold text-sm text-gray-900 bg-gold/10 px-2.5 rounded">
@@ -236,8 +236,8 @@ export default function InvoiceDoc({ booking }: InvoiceDocProps) {
         {/* Footer */}
         <div className="mt-4 pt-2.5 border-t border-gray-200 text-[9px] text-gray-500 flex justify-between items-end">
           <div>
-            <p className="font-semibold text-gray-800">{operator.companyName}</p>
-            <p>Flughafenstraße 3 / Objekt 10 • 4063 Hörsching • Austria • VAT: {operator.vatNumber}</p>
+            <p className="font-semibold text-gray-800">{operator.companyName} • Executive Private Aviation</p>
+            <p>London Biggin Hill (EGKB) • Geneva International (LSGG) • VAT: {operator.vatNumber}</p>
             <p>{operator.commercialRegistry} • Court of Jurisdiction: {operator.courtOfJurisdiction}</p>
           </div>
           <div className="text-right">

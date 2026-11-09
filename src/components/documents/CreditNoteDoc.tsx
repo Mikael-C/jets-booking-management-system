@@ -138,9 +138,9 @@ export default function CreditNoteDoc({ booking }: CreditNoteDocProps) {
 
           {/* Legal Compliance Text */}
           <div className="p-3 bg-gray-50 border border-gray-200 rounded text-[10px] text-gray-500 space-y-1">
-            <p className="font-bold text-gray-700">EU & Austrian Tax Invoicing Compliance</p>
+            <p className="font-bold text-gray-700">Aviation Commercial Billing & Credit Adjustment Compliance</p>
             <p>
-              This credit note complies with § 11 Abs. 7 of the Austrian VAT Act (UStG 1994) and EU Council Directive 2006/112/EC. Invoicing entity is Orbelo GmbH, Linz / Austria. All sequential numbers are strictly auditable with zero numbering gaps.
+              This credit note is issued pursuant to standard international air charter commercial accounting regulations and EU Council Directive 2006/112/EC. Invoicing entity is {operator.legalEntity}. All sequential credit references are strictly auditable with verified financial audit trail.
             </p>
           </div>
         </div>
@@ -148,9 +148,9 @@ export default function CreditNoteDoc({ booking }: CreditNoteDocProps) {
         {/* Footer */}
         <div className="mt-8 pt-4 border-t border-gray-200 text-[10px] text-gray-500 flex justify-between items-end">
           <div>
-            <p className="font-semibold text-gray-800">{operator.companyName} • Finance Department</p>
-            <p>Flughafenstraße 3 / Objekt 10 • 4063 Hörsching • Austria</p>
-            <p>VAT ID: {operator.vatNumber} • Commercial Court Linz</p>
+            <p className="font-semibold text-gray-800">{operator.companyName} • Executive Finance & Treasury</p>
+            <p>London Biggin Hill (EGKB) • Geneva (LSGG) • VAT: {operator.vatNumber}</p>
+            <p>{operator.commercialRegistry} • Jurisdiction: {operator.courtOfJurisdiction}</p>
           </div>
           <div className="text-right">
             <p>Document: Credit Note</p>

@@ -1,11 +1,11 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useAviation } from "@/lib/aviationContext";
-import { airportsData, findAirportByCode } from "@/data/airports";
+import { airportsData, findAirportByCode, getAirportFbos, getDefaultHandlingAgent, searchAirports } from "@/data/airports";
 import { fleetData } from "@/data/fleet";
 import { defaultOperator } from "@/data/initialBookings";
-import { Booking, FlightLeg, AdditionalServices, TripType, PetDetails, LuggageDetails } from "@/types/aviation";
+import { Booking, FlightLeg, AdditionalServices, TripType, PetDetails, LuggageDetails, Airport, FboOption } from "@/types/aviation";
 import {
   calculatePricing,
   calculateDistanceNm,
@@ -41,7 +41,11 @@ import {
   Briefcase,
   Dog,
   CreditCard,
-  ArrowRight
+  ArrowRight,
+  Search,
+  Image as ImageIcon,
+  ScrollText,
+  CheckSquare
 } from "lucide-react";
 
 interface QuoteLegInput {
@@ -51,8 +55,6 @@ interface QuoteLegInput {
   departureTime: string;
   arrivalTime: string;
   paxCount: number;
-  flightNumber: string;
-  aircraftRegistration?: string;
   depHandlerName: string;
   depHandlerPhone: string;
   depHandlerEmail: string;
@@ -72,17 +74,16 @@ export default function GenerateQuoteView() {
   // Document & Contract Identifiers (Page 1 Details Box)
   const [contractDate, setContractDate] = useState("01.10.2026");
   const [tripNumber, setTripNumber] = useState("PEU842-001");
-  const [accountNumber, setAccountNumber] = useState("2{21737}");
+  const [accountNumber, setAccountNumber] = useState("ACC-21737");
   const [quoteExpirationDate, setQuoteExpirationDate] = useState("02.10.2026, 19:53z");
   const [tripType, setTripType] = useState<TripType>("round_trip");
   const [currency, setCurrency] = useState<"EUR" | "USD" | "GBP" | "CHF">("EUR");
 
   // Margin Rules & Commission
-  const [isMarginPanelOpen, setIsMarginPanelOpen] = useState(true);
+  const [isMarginPanelOpen, setIsMarginPanelOpen] = useState(false);
   const [marginType, setMarginType] = useState<"percentage" | "fixed">("percentage");
   const [marginValue, setMarginValue] = useState<number>(12); // default 12% company margin
   const [commissionPct, setCommissionPct] = useState<number>(8); // default 8% agent commission
-  const [marginOverrideReason, setMarginOverrideReason] = useState<string>("");
   const [quoteStatus, setQuoteStatus] = useState<"Draft" | "Sent" | "Pending" | "Undecided">("Draft");
   const [activeLegTabs, setActiveLegTabs] = useState<Record<number, "routing" | "pets" | "luggage" | "handling">>({});
 
@@ -100,19 +101,53 @@ export default function GenerateQuoteView() {
   );
   const [vatNumber, setVatNumber] = useState(prefillClientForQuote?.vatNumber || "US-8492041");
 
-  // Jet Details (Page 1 Aircraft Box)
+  // ================= Aircraft Selection & Manual Overrides =================
   const [selectedAircraftId, setSelectedAircraftId] = useState("cessna-citation-mustang");
-  const currentAircraft = fleetData.find((a) => a.id === selectedAircraftId) || fleetData[0];
+  const [aircraftSearchQuery, setAircraftSearchQuery] = useState("");
+  const [isAircraftPickerOpen, setIsAircraftPickerOpen] = useState(false);
 
+  const currentAircraft = useMemo(() => {
+    return fleetData.find((a) => a.id === selectedAircraftId) || fleetData[0];
+  }, [selectedAircraftId]);
+
+  // Filtered aircraft list for searchable dropdown
+  const filteredFleet = useMemo(() => {
+    if (!aircraftSearchQuery.trim()) return fleetData.slice(0, 30);
+    const q = aircraftSearchQuery.toLowerCase().trim();
+    return fleetData.filter(
+      (a) =>
+        a.name.toLowerCase().includes(q) ||
+        a.manufacturer.toLowerCase().includes(q) ||
+        a.categoryLabel.toLowerCase().includes(q) ||
+        String(a.passengers).includes(q)
+    );
+  }, [aircraftSearchQuery]);
+
+  // Manual Overrides (Year of Make, Refurbishment, Seats, Smoking Cabin, Photos)
   const [aircraftNameOverride, setAircraftNameOverride] = useState("");
-  const [tailRegistrationOverride, setTailRegistrationOverride] = useState("");
   const [yearOfManufactureOverride, setYearOfManufactureOverride] = useState("");
   const [yearOfRefurbishmentOverride, setYearOfRefurbishmentOverride] = useState("");
   const [passengerSeatsOverride, setPassengerSeatsOverride] = useState<number | "">("");
   const [toiletteOverride, setToiletteOverride] = useState<boolean>(true);
   const [smokingCabinOverride, setSmokingCabinOverride] = useState<boolean>(false);
+  const [exteriorImageOverride, setExteriorImageOverride] = useState<string>("");
+  const [interiorImageOverride, setInteriorImageOverride] = useState<string>("");
 
-  // Legs State with Per-Leg Itinerary, Callsign, and FBO Ground Handling
+  // Sync initial aircraft specs when aircraft changes
+  useEffect(() => {
+    if (currentAircraft) {
+      setAircraftNameOverride(currentAircraft.name);
+      setYearOfManufactureOverride(String(currentAircraft.yearOfManufacture || "2020"));
+      setYearOfRefurbishmentOverride(String(currentAircraft.yearOfRefurbishment || "Recent"));
+      setPassengerSeatsOverride(currentAircraft.passengers);
+      setToiletteOverride(currentAircraft.toilette !== false);
+      setSmokingCabinOverride(!!currentAircraft.smokingCabin);
+      setExteriorImageOverride(currentAircraft.imageExterior || "");
+      setInteriorImageOverride(currentAircraft.imageInterior || "");
+    }
+  }, [selectedAircraftId]);
+
+  // Initial Legs with airport names and respective FBOs (NO callsign on quote)
   const [legs, setLegs] = useState<QuoteLegInput[]>([
     {
       originIcao: "LSGG",
@@ -121,12 +156,10 @@ export default function GenerateQuoteView() {
       departureTime: "11:00",
       arrivalTime: "11:55",
       paxCount: 2,
-      flightNumber: "PEU842-001",
-      aircraftRegistration: "OE-FFB",
-      depHandlerName: "Jet Aviation",
+      depHandlerName: "Jet Aviation Geneva",
       depHandlerPhone: "+41 58 158 1811",
       depHandlerEmail: "gvafbo@jetaviation.com",
-      arrHandlerName: "Ags Ops",
+      arrHandlerName: "Ags Ops Executive Handling",
       arrHandlerPhone: "+39 010 601 5412",
       arrHandlerEmail: "dutymanager@airport.genova.it"
     },
@@ -137,18 +170,16 @@ export default function GenerateQuoteView() {
       departureTime: "15:00",
       arrivalTime: "16:04",
       paxCount: 2,
-      flightNumber: "PEU842-002",
-      aircraftRegistration: "OE-FFB",
-      depHandlerName: "Ags Ops",
+      depHandlerName: "Ags Ops Executive Handling",
       depHandlerPhone: "+39 010 601 5412",
       depHandlerEmail: "dutymanager@airport.genova.it",
-      arrHandlerName: "Jet Aviation",
+      arrHandlerName: "Jet Aviation Geneva",
       arrHandlerPhone: "+41 58 158 1811",
       arrHandlerEmail: "gvafbo@jetaviation.com"
     }
   ]);
 
-  // Additional Services (Pages 2 & 3 of PDF)
+  // Additional Services (De-icing removed as requested)
   const [services, setServices] = useState<AdditionalServices>({
     limousineService: false,
     luxuryCarRental: false,
@@ -171,7 +202,7 @@ export default function GenerateQuoteView() {
   const [customOutboundTax, setCustomOutboundTax] = useState<number>(200);
   const [customAdditionalServices, setCustomAdditionalServices] = useState<number>(0);
 
-  // Bank & Remittance Details (Page 1 Payment Conditions)
+  // Bank & Remittance Details (Orbelo Aviation Management)
   const [bankName, setBankName] = useState(defaultOperator.bankName);
   const [iban, setIban] = useState(defaultOperator.iban);
   const [bic, setBic] = useState(defaultOperator.bic);
@@ -197,7 +228,6 @@ export default function GenerateQuoteView() {
     }
   }, [prefillClientForQuote]);
 
-  // Sync client dropdown
   const handleClientSelectChange = (id: string) => {
     setSelectedClientId(id);
     const found = clients.find((c) => c.id === id);
@@ -215,14 +245,13 @@ export default function GenerateQuoteView() {
     }
   };
 
-  // Helper to re-generate random numbers
   const handleRegenerateNumbers = () => {
     const randomSuffix = Math.floor(100 + Math.random() * 900);
     setTripNumber(`PEU${randomSuffix}-001`);
-    setAccountNumber(`${Math.floor(200000 + Math.random() * 800000)}`);
+    setAccountNumber(`ACC-${Math.floor(20000 + Math.random() * 80000)}`);
   };
 
-  // Helper to add leg
+  // Helper to add leg with default respective FBOs
   const handleAddLeg = () => {
     const lastLeg = legs[legs.length - 1];
     const originIcao = lastLeg ? lastLeg.destIcao : "LSGG";
@@ -238,6 +267,18 @@ export default function GenerateQuoteView() {
     );
     const flightMinutes = estimateFlightTimeMinutes(dist);
 
+    const depFbo = (origAirport.fbos && origAirport.fbos[0]) || {
+      name: `${origAirport.name} FBO`,
+      phone: "+41 58 158 1811",
+      email: `ops@${originIcao.toLowerCase()}.handling.aero`
+    };
+
+    const arrFbo = (destAirport.fbos && destAirport.fbos[0]) || {
+      name: `${destAirport.name} FBO`,
+      phone: "+33 1 48 62 00 00",
+      email: `ops@${destIcao.toLowerCase()}.handling.aero`
+    };
+
     setLegs([
       ...legs,
       {
@@ -247,14 +288,12 @@ export default function GenerateQuoteView() {
         departureTime: "14:00",
         arrivalTime: "15:15",
         paxCount: lastLeg ? lastLeg.paxCount : 2,
-        flightNumber: `PEU${Math.floor(100 + Math.random() * 899)}`,
-        aircraftRegistration: tailRegistrationOverride || currentAircraft.registration || "OE-FFB",
-        depHandlerName: `${origAirport.name} FBO`,
-        depHandlerPhone: "+41 58 158 1811",
-        depHandlerEmail: `ops@${originIcao.toLowerCase()}.handling.aero`,
-        arrHandlerName: `${destAirport.name} FBO`,
-        arrHandlerPhone: "+33 1 48 62 00 00",
-        arrHandlerEmail: `ops@${destIcao.toLowerCase()}.handling.aero`
+        depHandlerName: depFbo.name,
+        depHandlerPhone: depFbo.phone,
+        depHandlerEmail: depFbo.email,
+        arrHandlerName: arrFbo.name,
+        arrHandlerPhone: arrFbo.phone,
+        arrHandlerEmail: arrFbo.email
       }
     ]);
   };
@@ -268,7 +307,27 @@ export default function GenerateQuoteView() {
     const updated = [...legs];
     updated[idx] = { ...updated[idx], [field]: val };
 
-    // Auto-update arrival time if departureTime, origin or dest changed
+    // Auto-update handling agents and arrival times when origin or dest changes
+    if (field === "originIcao") {
+      const origAirport = findAirportByCode(val);
+      const primaryFbo = origAirport.fbos && origAirport.fbos[0];
+      if (primaryFbo) {
+        updated[idx].depHandlerName = primaryFbo.name;
+        updated[idx].depHandlerPhone = primaryFbo.phone;
+        updated[idx].depHandlerEmail = primaryFbo.email;
+      }
+    }
+
+    if (field === "destIcao") {
+      const destAirport = findAirportByCode(val);
+      const primaryFbo = destAirport.fbos && destAirport.fbos[0];
+      if (primaryFbo) {
+        updated[idx].arrHandlerName = primaryFbo.name;
+        updated[idx].arrHandlerPhone = primaryFbo.phone;
+        updated[idx].arrHandlerEmail = primaryFbo.email;
+      }
+    }
+
     if (field === "departureTime" || field === "originIcao" || field === "destIcao") {
       const orig = findAirportByCode(field === "originIcao" ? val : updated[idx].originIcao);
       const dest = findAirportByCode(field === "destIcao" ? val : updated[idx].destIcao);
@@ -291,71 +350,87 @@ export default function GenerateQuoteView() {
     setLegs(updated);
   };
 
-  // Compile full flight legs
-  const compiledLegs: FlightLeg[] = legs.map((leg, idx) => {
-    const originAirport = findAirportByCode(leg.originIcao);
-    const destAirport = findAirportByCode(leg.destIcao);
-    const dist = calculateDistanceNm(
-      originAirport.coordinates?.lat || 46.2,
-      originAirport.coordinates?.lng || 6.1,
-      destAirport.coordinates?.lat || 44.4,
-      destAirport.coordinates?.lng || 8.8
-    );
-    const flightMinutes = estimateFlightTimeMinutes(dist);
+  // Compile full flight legs (No callsign on quote)
+  const compiledLegs: FlightLeg[] = useMemo(() => {
+    return legs.map((leg, idx) => {
+      const originAirport = findAirportByCode(leg.originIcao);
+      const destAirport = findAirportByCode(leg.destIcao);
+      const dist = calculateDistanceNm(
+        originAirport.coordinates?.lat || 46.2,
+        originAirport.coordinates?.lng || 6.1,
+        destAirport.coordinates?.lat || 44.4,
+        destAirport.coordinates?.lng || 8.8
+      );
+      const flightMinutes = estimateFlightTimeMinutes(dist);
 
+      return {
+        legNumber: idx + 1,
+        flightDate: leg.flightDate,
+        origin: originAirport,
+        destination: destAirport,
+        departureTimeLocal: leg.departureTime.includes("h") ? leg.departureTime : `${leg.departureTime} h`,
+        arrivalTimeLocal: leg.arrivalTime.includes("h") ? leg.arrivalTime : `${leg.arrivalTime} h`,
+        flightTimeFormatted: formatFlightTime(flightMinutes),
+        paxCount: leg.paxCount,
+        flightNumber: "", // NO callsign on quote without booking!
+        aircraftRegistration: currentAircraft.registration || "",
+        distanceNm: dist,
+        pets: leg.pets,
+        luggage: leg.luggage,
+        crew: [
+          { role: "CMDR", name: "Capt. Marcus Vance", phone: "+44 7700 900120" },
+          { role: "F/O", name: "Elena Rostova", phone: "+44 7700 900125" },
+          { role: "Cabin Attendant", name: "Sophie Laurent", phone: "+33 6 42 19 88 02" }
+        ],
+        passengers: [
+          { id: `p-${idx}-1`, fullName: clientName || "Lead Passenger", isLeadPassenger: true }
+        ],
+        departureHandling: {
+          name: leg.depHandlerName || `${originAirport.name} FBO`,
+          airportCode: originAirport.icao,
+          phone: leg.depHandlerPhone || "+41 58 158 1811",
+          email: leg.depHandlerEmail || `ops@${originAirport.icao.toLowerCase()}.handling.aero`
+        },
+        arrivalHandling: {
+          name: leg.arrHandlerName || `${destAirport.name} FBO`,
+          airportCode: destAirport.icao,
+          phone: leg.arrHandlerPhone || "+39 010 601 5412",
+          email: leg.arrHandlerEmail || `ops@${destAirport.icao.toLowerCase()}.handling.aero`
+        }
+      };
+    });
+  }, [legs, currentAircraft, clientName]);
+
+  // Effective Aircraft with manual overrides
+  const effectiveAircraft = useMemo(() => {
     return {
-      legNumber: idx + 1,
-      flightDate: leg.flightDate,
-      origin: originAirport,
-      destination: destAirport,
-      departureTimeLocal: leg.departureTime.includes("h") ? leg.departureTime : `${leg.departureTime} h`,
-      arrivalTimeLocal: leg.arrivalTime.includes("h") ? leg.arrivalTime : `${leg.arrivalTime} h`,
-      flightTimeFormatted: formatFlightTime(flightMinutes),
-      paxCount: leg.paxCount,
-      flightNumber: leg.flightNumber || `PEU842`,
-      aircraftRegistration: leg.aircraftRegistration || tailRegistrationOverride || currentAircraft.registration || "OE-FFB",
-      distanceNm: dist,
-      pets: leg.pets,
-      luggage: leg.luggage,
-      crew: [
-        { role: "CMDR", name: "Capt. Audrain, Emmanuel", phone: "+43 664 8489 904" },
-        { role: "F/O", name: "El Hassani Amrani, Hajar", phone: "+43 664 8489 928" },
-        { role: "Cabin Attendant", name: "Sophie Dupont", phone: "+33 6 42 19 88 02" }
-      ],
-      passengers: [
-        { id: `p-${idx}-1`, fullName: clientName || "Lead Passenger", isLeadPassenger: true }
-      ],
-      departureHandling: {
-        name: leg.depHandlerName || `${originAirport.name} FBO`,
-        airportCode: originAirport.icao,
-        phone: leg.depHandlerPhone || "+41 58 158 1811",
-        email: leg.depHandlerEmail || `ops@${originAirport.icao.toLowerCase()}.handling.aero`
-      },
-      arrivalHandling: {
-        name: leg.arrHandlerName || `${destAirport.name} FBO`,
-        airportCode: destAirport.icao,
-        phone: leg.arrHandlerPhone || "+39 010 601 5412",
-        email: leg.arrHandlerEmail || `ops@${destAirport.icao.toLowerCase()}.handling.aero`
-      }
+      ...currentAircraft,
+      name: aircraftNameOverride || currentAircraft.name,
+      yearOfManufacture: yearOfManufactureOverride || currentAircraft.yearOfManufacture,
+      yearOfRefurbishment: yearOfRefurbishmentOverride || currentAircraft.yearOfRefurbishment || "Recent",
+      passengers: typeof passengerSeatsOverride === "number" ? passengerSeatsOverride : currentAircraft.passengers,
+      toilette: toiletteOverride,
+      smokingCabin: smokingCabinOverride,
+      imageExterior: exteriorImageOverride || currentAircraft.imageExterior,
+      imageInterior: interiorImageOverride || currentAircraft.imageInterior
     };
-  });
+  }, [
+    currentAircraft,
+    aircraftNameOverride,
+    yearOfManufactureOverride,
+    yearOfRefurbishmentOverride,
+    passengerSeatsOverride,
+    toiletteOverride,
+    smokingCabinOverride,
+    exteriorImageOverride,
+    interiorImageOverride
+  ]);
 
-  // Effective Aircraft
-  const effectiveAircraft = {
-    ...currentAircraft,
-    name: aircraftNameOverride || currentAircraft.name,
-    registration: tailRegistrationOverride || currentAircraft.registration,
-    yearOfManufacture: yearOfManufactureOverride || currentAircraft.yearOfManufacture,
-    yearOfRefurbishment: yearOfRefurbishmentOverride !== "" ? yearOfRefurbishmentOverride : currentAircraft.yearOfRefurbishment,
-    passengers: typeof passengerSeatsOverride === "number" ? passengerSeatsOverride : currentAircraft.passengers,
-    toilette: toiletteOverride,
-    smokingCabin: smokingCabinOverride
-  };
+  // Pricing calculation
+  const autoPricing = useMemo(() => {
+    return calculatePricing(effectiveAircraft, compiledLegs, services, currency);
+  }, [effectiveAircraft, compiledLegs, services, currency]);
 
-  // Base pricing from calculation
-  const autoPricing = calculatePricing(effectiveAircraft, compiledLegs, services, currency);
-
-  // Effective pricing based on manual override vs auto
   const effectivePricing = overridePricing
     ? {
         flightPrice: customFlightPrice,
@@ -387,7 +462,6 @@ export default function GenerateQuoteView() {
       }
     : autoPricing;
 
-  // Sync auto pricing to custom inputs if not overriding
   useEffect(() => {
     if (!overridePricing) {
       setCustomFlightPrice(autoPricing.flightPrice);
@@ -400,9 +474,11 @@ export default function GenerateQuoteView() {
     }
   }, [autoPricing, overridePricing]);
 
+  // Helper to build official Booking record
   const createBookingObject = (isBookedFlight: boolean): Booking => {
-    const generatedTripNumber = isBookedFlight ? (tripNumber || `PEU842-${Math.floor(100 + Math.random() * 900)}`) : "";
-    const quoteRef = tripNumber || `QTE-${Date.now().toString().slice(-6)}`;
+    // Callsign and Trip Number only created on confirmed booking!
+    const generatedTripNumber = isBookedFlight ? (tripNumber || `ORB-${Math.floor(100 + Math.random() * 900)}`) : "";
+    const quoteRef = tripNumber ? `QTE-${tripNumber.replace("PEU", "").replace("ORB-", "")}` : `QTE-${Date.now().toString().slice(-6)}`;
     const uniqueInvoiceNumber = `INV-2026-${Date.now().toString().slice(-6)}`;
     const statusVal = isBookedFlight ? "confirmed" : (quoteStatus === "Sent" ? "quote_sent" : "draft");
     const quoteStatusVal = isBookedFlight ? "accepted" : (quoteStatus.toLowerCase() as any);
@@ -430,7 +506,7 @@ export default function GenerateQuoteView() {
         streetAddress: clientAddress || "3606 Enterprise Ave",
         cityPostalCountry: clientCityCountry || "FL-34104 Naples, United States",
         phone: clientPhone || "+1 239 555 0192",
-        email: clientEmail || "client@globeair.com",
+        email: clientEmail || "client@orbelo.com",
         vatNumber,
         accountNumber
       },
@@ -442,21 +518,22 @@ export default function GenerateQuoteView() {
         bic: bic || defaultOperator.bic,
         accountHolder: accountHolder || defaultOperator.accountHolder
       },
-      legs: compiledLegs,
+      legs: compiledLegs.map(l => ({
+        ...l,
+        flightNumber: isBookedFlight ? (generatedTripNumber || "ORB-101") : "" // Callsign only on booked contract!
+      })),
       pricing: effectivePricing,
       services,
       cardFeePercentage: 3.5,
       cardFeeAmount: cardFee.feeAmount,
       totalWithCardFee: cardFee.totalWithFee,
       checklist: [
-        { id: "step-1", label: "Aircraft Airworthiness & ARC Validity Verified", category: "aircraft", isCompleted: true, completedAt: "18.10.2026, 08:30", completedBy: "Flight Dispatcher", requiredForDispatch: true },
-        { id: "step-2", label: "ATC Eurocontrol Flight Plan Filed & Accepted", category: "permits", isCompleted: true, completedAt: "18.10.2026, 08:45", completedBy: "Flight Dispatcher", requiredForDispatch: true },
-        { id: "step-3", label: "Origin & Destination FBO Ramp Handling Booked", category: "ground", isCompleted: false, requiredForDispatch: true },
+        { id: "step-1", label: "Aircraft Airworthiness & ARC Validity Verified", category: "aircraft", isCompleted: true, completedAt: "01.10.2026, 08:30", completedBy: "Flight Dispatcher", requiredForDispatch: true },
+        { id: "step-2", label: "ATC Eurocontrol Flight Plan Filed & Accepted", category: "permits", isCompleted: true, completedAt: "01.10.2026, 08:45", completedBy: "Flight Dispatcher", requiredForDispatch: true },
+        { id: "step-3", label: "Origin & Destination FBO Ramp Handling Booked", category: "ground", isCompleted: true, requiredForDispatch: true },
         { id: "step-4", label: "Airport Slots & PPR Cleared", category: "permits", isCompleted: false, requiredForDispatch: true },
         { id: "step-5", label: "Jet A-1 Fuel Uplift & Release Ordered", category: "ground", isCompleted: false, requiredForDispatch: true },
-        { id: "step-6", label: "Crew Duty Time & Fatigue Risk Assessment Validated", category: "crew", isCompleted: true, completedAt: "18.10.2026, 09:00", completedBy: "Crew Ops", requiredForDispatch: true },
-        { id: "step-7", label: "VIP In-Flight Catering & Bar Stocked", category: "passengers", isCompleted: false, requiredForDispatch: false },
-        { id: "step-8", label: "Customs, Immigration & GAR Form Submitted", category: "permits", isCompleted: false, requiredForDispatch: true }
+        { id: "step-6", label: "Crew Duty Time & Fatigue Risk Assessment Validated", category: "crew", isCompleted: true, completedAt: "01.10.2026, 09:00", completedBy: "Crew Ops", requiredForDispatch: true }
       ],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -475,10 +552,29 @@ export default function GenerateQuoteView() {
       entityId: newBooking.quoteReference || newBooking.id,
       details: `Generated official quotation for ${clientName || "Client"} (${newBooking.quoteReference}), Total: ${formatCurrency(effectivePricing.totalFlightPrice, currency)} [Status: ${quoteStatus}]`
     });
-    setSuccessMessage(`Official Quotation [${newBooking.quoteReference}] successfully saved with status: ${quoteStatus}!`);
+    setSuccessMessage(`Official Quotation [${newBooking.quoteReference}] successfully compiled and saved!`);
     openDocument(newBooking, "quotation");
   };
 
+  // Flow Step 2: Quote -> Contract
+  const handleProceedToContract = () => {
+    const newBooking = createBookingObject(false);
+    addBooking(newBooking);
+    addAuditEntry({
+      userEmail: currentUser?.email || "admin@orbelo.com",
+      userName: currentUser?.name || "Operations Team",
+      action: "QUOTE_ADVANCED_TO_CONTRACT",
+      entityType: "Contract",
+      entityId: newBooking.quoteReference || newBooking.id,
+      details: `Quotation ${newBooking.quoteReference} advanced to Contract stage for ${clientName}.`
+    });
+    setSuccessMessage(`Quotation ${newBooking.quoteReference} created! Opening Contract Generator...`);
+    setTimeout(() => {
+      setActiveNav("generate_contract");
+    }, 400);
+  };
+
+  // Flow Step 3: Direct to Booked Contract
   const handleConfirmAndBookFlight = () => {
     const newBooking = createBookingObject(true);
     addBooking(newBooking);
@@ -488,30 +584,31 @@ export default function GenerateQuoteView() {
       action: "FLIGHT_CONFIRMED",
       entityType: "Booking",
       entityId: newBooking.tripNumber,
-      details: `Quotation confirmed and booked as official flight ${newBooking.tripNumber} for ${clientName}.`
+      details: `Quotation confirmed and booked as official flight ${newBooking.tripNumber} (Callsign: ${newBooking.tripNumber}) for ${clientName}.`
     });
-    setSuccessMessage(`Flight Confirmed! Trip Number #${newBooking.tripNumber} created. Navigating to Bookings tab...`);
+    setSuccessMessage(`Flight Confirmed! Booked Contract #${newBooking.tripNumber} created with assigned Callsign.`);
     setTimeout(() => {
       setActiveNav("bookings");
-    }, 800);
+    }, 600);
   };
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto pb-12">
+    <div className="space-y-6 max-w-5xl mx-auto pb-12 select-none">
+      
       {/* View Header */}
       <div className="bg-white border border-[#E0DAD0] rounded-2xl p-6 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-[#C9A052]/15 text-[#9A7A35] border border-[#C9A052]/30">
-              EXECUTIVE QUOTATION ENGINE
+              ORBELO CHARTER ENGINE
             </span>
-            <span className="text-xs text-[#0F1420]/60">Full Template Fidelity</span>
+            <span className="text-xs text-[#0F1420]/60 font-mono">Bespoke Proposal Pipeline</span>
           </div>
           <h2 className="text-xl font-black text-[#0F1420] tracking-tight">
             Generate Official Private Jet Quotation
           </h2>
           <p className="text-xs text-[#0F1420]/65 mt-0.5">
-            Configure all document parameters, routing, aircraft specifications, handling agents, services, and pricing breakdown.
+            Configure client details, aircraft specifications, flight routing, station FBOs, and commercial pricing.
           </p>
         </div>
 
@@ -534,7 +631,7 @@ export default function GenerateQuoteView() {
             type="button"
             onClick={handleRegenerateNumbers}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#F5F2EC] hover:bg-[#EAE6DE] border border-[#E0DAD0] text-xs font-mono font-bold text-[#0F1420]"
-            title="Generate new Trip & Account numbers"
+            title="Generate new Quote & Account numbers"
           >
             <RefreshCw className="w-3.5 h-3.5 text-[#C9A052]" />
             <span>Regenerate IDs</span>
@@ -566,7 +663,7 @@ export default function GenerateQuoteView() {
             <div className="flex items-center gap-2.5">
               <FileText className="w-4 h-4 text-[#C9A052]" />
               <h3 className="text-sm font-bold font-mono uppercase tracking-wider text-[#0F1420]">
-                1. Quotation Details & Client (TO / DETAILS)
+                1. Quotation Details & Client
               </h3>
             </div>
 
@@ -590,7 +687,7 @@ export default function GenerateQuoteView() {
           </div>
 
           {/* Document Reference Identifiers */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-7 gap-3 p-4 bg-[#F5F2EC] rounded-xl border border-[#E0DAD0]">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 p-4 bg-[#F5F2EC] rounded-xl border border-[#E0DAD0]">
             <div>
               <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
                 Trip Type
@@ -600,25 +697,9 @@ export default function GenerateQuoteView() {
                 onChange={(e) => setTripType(e.target.value as any)}
                 className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 text-xs font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
               >
-                <option value="round_trip">RoundTripPlus</option>
+                <option value="round_trip">Round Trip</option>
                 <option value="one_way">One-Way Charter</option>
                 <option value="multi_leg">Multi-Leg Itinerary</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                Currency
-              </label>
-              <select
-                value={currency}
-                onChange={(e) => setCurrency(e.target.value as any)}
-                className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-              >
-                <option value="EUR">EUR (€)</option>
-                <option value="USD">USD ($)</option>
-                <option value="GBP">GBP (£)</option>
-                <option value="CHF">CHF</option>
               </select>
             </div>
 
@@ -631,21 +712,19 @@ export default function GenerateQuoteView() {
                 value={contractDate}
                 onChange={(e) => setContractDate(e.target.value)}
                 required
-                placeholder="01.10.2026"
                 className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 text-xs font-mono text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
               />
             </div>
 
             <div>
               <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                Proposal / Quote Ref
+                Quote Reference
               </label>
               <input
                 type="text"
                 value={tripNumber}
                 onChange={(e) => setTripNumber(e.target.value)}
                 required
-                placeholder="PEU842-001"
                 className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
               />
             </div>
@@ -659,7 +738,6 @@ export default function GenerateQuoteView() {
                 value={accountNumber}
                 onChange={(e) => setAccountNumber(e.target.value)}
                 required
-                placeholder="ACC-21737"
                 className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
               />
             </div>
@@ -673,7 +751,6 @@ export default function GenerateQuoteView() {
                 value={quoteExpirationDate}
                 onChange={(e) => setQuoteExpirationDate(e.target.value)}
                 required
-                placeholder="02.10.2026, 19:53z"
                 className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-red-600 focus:outline-none focus:border-[#C9A052]"
               />
             </div>
@@ -699,27 +776,25 @@ export default function GenerateQuoteView() {
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-xs">
             <div>
               <label className="block text-[11px] font-bold text-[#0F1420]/80 uppercase font-mono mb-1">
-                Client Full Name *
+                Client Name / Lead Passenger *
               </label>
               <input
                 type="text"
                 value={clientName}
                 onChange={(e) => setClientName(e.target.value)}
                 required
-                placeholder="e.g. Edward Brinkmann"
                 className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3.5 py-2 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
               />
             </div>
 
             <div>
               <label className="block text-[11px] font-bold text-[#0F1420]/80 uppercase font-mono mb-1">
-                Company / Organization
+                Company Name
               </label>
               <input
                 type="text"
                 value={companyName}
                 onChange={(e) => setCompanyName(e.target.value)}
-                placeholder="e.g. Brinkmann Capital SAM"
                 className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3.5 py-2 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
               />
             </div>
@@ -732,7 +807,7 @@ export default function GenerateQuoteView() {
                 type="text"
                 value={vatNumber}
                 onChange={(e) => setVatNumber(e.target.value)}
-                placeholder="e.g. US-8492041 or ATU 6335 7619"
+                placeholder="e.g. US-8492041 or GB303612155"
                 className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3.5 py-2 text-xs font-mono text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
               />
             </div>
@@ -746,7 +821,6 @@ export default function GenerateQuoteView() {
                 value={clientEmail}
                 onChange={(e) => setClientEmail(e.target.value)}
                 required
-                placeholder="e.g. e.brinkmann@luxurycap.com"
                 className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3.5 py-2 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
               />
             </div>
@@ -760,7 +834,6 @@ export default function GenerateQuoteView() {
                 value={clientPhone}
                 onChange={(e) => setClientPhone(e.target.value)}
                 required
-                placeholder="e.g. +1 239 555 0192"
                 className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3.5 py-2 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
               />
             </div>
@@ -773,7 +846,6 @@ export default function GenerateQuoteView() {
                 type="text"
                 value={clientAddress}
                 onChange={(e) => setClientAddress(e.target.value)}
-                placeholder="e.g. 3606 Enterprise Ave"
                 className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3.5 py-2 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
               />
             </div>
@@ -786,150 +858,159 @@ export default function GenerateQuoteView() {
                 type="text"
                 value={clientCityCountry}
                 onChange={(e) => setClientCityCountry(e.target.value)}
-                placeholder="e.g. FL-34104 Naples, United States or MC-98000 Monaco"
                 className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3.5 py-2 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
               />
             </div>
           </div>
-
-          {/* Operator Source Hiding Notice */}
-          <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-center gap-2.5">
-            <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
-            <p className="leading-snug">
-              <strong>Notice:</strong> ⚠ Operator identity will <strong>NOT</strong> appear on the client-facing quote. All customer proposals present Orbelo Private Jet Management branding. Disclosed in confirmed flight brief per OPR-6.
-            </p>
-          </div>
-
-          {/* Operator Qualification Selection [OPR-3 & OPR-6] */}
-          <div className="p-4 bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-[#0F1420] uppercase font-mono">
-                Sourced Aircraft Operating Carrier & Qualification [OPR-3]
-              </span>
-              <span className="text-[10px] font-mono text-emerald-700 font-bold bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded">
-                Only Approved Operators Selectable
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[10px] font-mono uppercase text-gray-500 mb-1">
-                  Operating Carrier (AOC Holder) *
-                </label>
-                <select
-                  value={selectedOperatorId}
-                  onChange={(e) => setSelectedOperatorId(e.target.value)}
-                  className="w-full bg-white border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                >
-                  {operators.map((op) => {
-                    const isApproved = op.status === "approved" || op.status === "approved_with_conditions";
-                    return (
-                      <option key={op.id} value={op.id} disabled={!isApproved}>
-                        {op.legalName} ({op.tradingName}) — {op.status.toUpperCase()} {op.safetyRating ? `· ${op.safetyRating}` : ""} {!isApproved ? "❌ (NOT APPROVED)" : "✓"}
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
-
-              {/* Operator details preview */}
-              {(() => {
-                const op = operators.find((o) => o.id === selectedOperatorId) || operators[0];
-                if (!op) return null;
-                return (
-                  <div className="p-2.5 bg-white border border-[#E0DAD0] rounded-xl text-xs space-y-1">
-                    <p className="font-bold text-[#0F1420]">{op.legalName} (AOC: {op.aocNumber})</p>
-                    <p className="text-[11px] text-gray-500">Base: {op.baseIcao} · Authority: {op.aocAuthority}</p>
-                    <p className="text-[11px] font-mono text-emerald-700">Insurance Expiry: {op.insuranceExpiry || "Valid"} · Safety: {op.safetyRating || "Verified"}</p>
-                  </div>
-                );
-              })()}
-            </div>
-          </div>
         </div>
 
-        {/* SECTION 2: Aircraft Selection & Jet Specifications Override */}
-        <div className="bg-white border border-[#E0DAD0] rounded-2xl p-6 shadow-sm space-y-4">
+        {/* SECTION 2: Searchable Aircraft Dropdown & Manual Overrides (Clean Layout) */}
+        <div className="bg-white border border-[#E0DAD0] rounded-2xl p-6 shadow-sm space-y-5">
           <div className="flex items-center justify-between pb-3 border-b border-[#E0DAD0]">
             <div className="flex items-center gap-2.5">
               <Sparkles className="w-4 h-4 text-[#C9A052]" />
               <h3 className="text-sm font-bold font-mono uppercase tracking-wider text-[#0F1420]">
-                2. Jet Details (Aircraft Specifications)
+                2. Aircraft Selection & Specifications
               </h3>
             </div>
-            <span className="text-xs text-[#0F1420]/60 font-mono">
-              Model: <strong className="text-[#0F1420]">{effectiveAircraft.name}</strong>
+            <span className="text-xs text-[#0F1420]/70 font-mono">
+              Selected: <strong className="text-[#0F1420]">{effectiveAircraft.name}</strong>
             </span>
           </div>
 
-          {/* Jet Model Dropdown Selector */}
-          <div className="p-4 bg-[#F5F2EC] rounded-xl border border-[#E0DAD0] space-y-2">
-            <label className="block text-xs font-mono font-bold uppercase text-[#0F1420]">
-              Jet Aircraft Dropdown Selector
+          {/* Searchable Aircraft Selector (Input + Dropdown) */}
+          <div className="relative">
+            <label className="block text-xs font-mono font-bold uppercase text-[#0F1420] mb-1.5">
+              Search Aircraft Fleet (Type to Filter)
             </label>
-            <select
-              value={selectedAircraftId}
-              onChange={(e) => {
-                setSelectedAircraftId(e.target.value);
-                const found = fleetData.find((f) => f.id === e.target.value);
-                if (found) {
-                  setAircraftNameOverride(found.name);
-                }
-              }}
-              className="w-full bg-white border border-[#E0DAD0] rounded-xl px-3.5 py-2.5 text-xs font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-            >
-              {fleetData.map((jet) => (
-                <option key={jet.id} value={jet.id}>
-                  {jet.name} — {jet.categoryLabel} ({jet.passengers} Seats, Range: {jet.rangeLabel}, Speed: {jet.cruiseSpeed}, €{jet.pricePerHour.toLocaleString()}/hr)
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Visual Aircraft Cards (Tail Registration Omitted) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {fleetData.map((jet) => {
-              const isSelected = selectedAircraftId === jet.id;
-              return (
-                <div
-                  key={jet.id}
-                  onClick={() => setSelectedAircraftId(jet.id)}
-                  className={`p-3.5 rounded-xl border-2 transition-all cursor-pointer relative ${
-                    isSelected
-                      ? "border-[#C9A052] bg-[#F5F2EC] shadow-sm"
-                      : "border-[#E0DAD0] bg-white hover:border-[#C9A052]/50"
-                  }`}
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Type aircraft name (e.g., Mustang, Phenom, Global, Citation, Falcon, 8 seats)..."
+                value={aircraftSearchQuery}
+                onChange={(e) => {
+                  setAircraftSearchQuery(e.target.value);
+                  setIsAircraftPickerOpen(true);
+                }}
+                onFocus={() => setIsAircraftPickerOpen(true)}
+                className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-4 py-2.5 pl-10 text-xs font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052] shadow-xs"
+              />
+              <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-3" />
+              {isAircraftPickerOpen && (
+                <button
+                  type="button"
+                  onClick={() => setIsAircraftPickerOpen(false)}
+                  className="absolute right-3 top-2.5 text-xs text-gray-400 hover:text-gray-700 font-mono font-bold"
                 >
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="font-extrabold text-xs text-[#0F1420]">{jet.name}</span>
-                    <span className="text-[10px] font-mono font-bold bg-[#C9A052]/15 text-[#9A7A35] border border-[#C9A052]/30 px-1.5 py-0.5 rounded">
-                      {jet.categoryLabel}
-                    </span>
+                  Close ✕
+                </button>
+              )}
+            </div>
+
+            {/* Filtered Dropdown Results List */}
+            {isAircraftPickerOpen && (
+              <div className="absolute top-full left-0 right-0 mt-1 max-h-72 overflow-y-auto bg-white border border-[#E0DAD0] rounded-xl shadow-2xl z-50 divide-y divide-gray-100">
+                {filteredFleet.length === 0 ? (
+                  <div className="p-4 text-center text-xs text-gray-500">
+                    No aircraft found matching "{aircraftSearchQuery}".
                   </div>
-                  <p className="text-[11px] text-gray-500 mb-2">{jet.manufacturer}</p>
-                  <div className="text-[11px] font-mono text-[#0F1420]/80 space-y-0.5">
-                    <p>Seats: <strong>{jet.passengers} Pax</strong></p>
-                    <p>Rate: <strong>€{jet.pricePerHour.toLocaleString()}/hr</strong></p>
-                    <p>Range: <strong>{jet.range} nm</strong></p>
-                  </div>
-                </div>
-              );
-            })}
+                ) : (
+                  filteredFleet.map((jet) => (
+                    <div
+                      key={jet.id}
+                      onClick={() => {
+                        setSelectedAircraftId(jet.id);
+                        setAircraftNameOverride(jet.name);
+                        setPassengerSeatsOverride(jet.passengers);
+                        setYearOfManufactureOverride(String(jet.yearOfManufacture || "2020"));
+                        setYearOfRefurbishmentOverride(String(jet.yearOfRefurbishment || "Recent"));
+                        setExteriorImageOverride(jet.imageExterior || "");
+                        setInteriorImageOverride(jet.imageInterior || "");
+                        setIsAircraftPickerOpen(false);
+                      }}
+                      className={`p-3 flex items-center justify-between hover:bg-[#F5F2EC] cursor-pointer transition-colors ${
+                        selectedAircraftId === jet.id ? "bg-[#F5F2EC] border-l-4 border-[#C9A052]" : ""
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={jet.imageExterior}
+                          alt=""
+                          className="w-12 h-8 rounded object-cover border border-gray-200"
+                        />
+                        <div>
+                          <div className="font-extrabold text-xs text-[#0F1420]">{jet.name}</div>
+                          <div className="text-[11px] text-gray-500">
+                            {jet.manufacturer} • {jet.categoryLabel}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right text-[11px] font-mono">
+                        <span className="font-bold text-[#0F1420]">{jet.passengers} Seats</span>
+                        <div className="text-[#9A7A35] font-bold">€{jet.pricePerHour.toLocaleString()}/hr</div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
           </div>
 
-          {/* Jet Specifications Form Overrides (Tail Registration Removed) */}
+          {/* Clean Selected Aircraft Preview Card (Replaces Busy Grid of All Aircraft) */}
+          <div className="p-4 rounded-xl border border-[#C9A052]/40 bg-[#FAF9F6] shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="w-24 h-16 rounded-lg overflow-hidden border border-[#E0DAD0] shadow-sm relative bg-gray-100 flex-shrink-0">
+                <img
+                  src={effectiveAircraft.imageExterior}
+                  alt={effectiveAircraft.name}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-black text-[#0F1420]">{effectiveAircraft.name}</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-[#C9A052]/15 text-[#9A7A35] border border-[#C9A052]/30">
+                    {effectiveAircraft.categoryLabel}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 mt-0.5">{effectiveAircraft.manufacturer}</p>
+                <div className="flex flex-wrap items-center gap-3 text-[11px] font-mono text-[#0F1420]/80 mt-1">
+                  <span>Capacity: <strong>{effectiveAircraft.passengers} Seats</strong></span>
+                  <span>•</span>
+                  <span>Speed: <strong>{effectiveAircraft.cruiseSpeed}</strong></span>
+                  <span>•</span>
+                  <span>Range: <strong>{effectiveAircraft.range} nm</strong></span>
+                  <span>•</span>
+                  <span>Rate: <strong>€{effectiveAircraft.pricePerHour.toLocaleString()}/hr</strong></span>
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsAircraftPickerOpen(!isAircraftPickerOpen)}
+              className="px-3.5 py-2 rounded-xl border border-[#E0DAD0] bg-white hover:bg-[#F5F2EC] text-xs font-bold text-[#0F1420] transition-colors shadow-xs"
+            >
+              {isAircraftPickerOpen ? "Hide Dropdown" : "Browse / Switch Aircraft"}
+            </button>
+          </div>
+
+          {/* Manual Aircraft Details Overrides (Year of make, refurbishment date, seats, smoking cabin, pictures) */}
           <div className="p-4 bg-[#F5F2EC] rounded-xl border border-[#E0DAD0] space-y-3">
-            <span className="text-[11px] font-mono font-bold uppercase text-[#0F1420]/80">
-              Customize Jet Specifications for Quotation (Optional Overrides)
-            </span>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 text-xs">
+            <div className="flex items-center justify-between border-b border-[#E0DAD0] pb-2">
+              <span className="text-[11px] font-mono font-bold uppercase text-[#0F1420]">
+                Manual Aircraft Overrides (Year of Make, Refurbishment, Seats, Smoking & Photos)
+              </span>
+              <span className="text-[10px] text-gray-500 font-mono">Customizes proposal PDF</span>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 text-xs">
               <div>
                 <label className="block text-[10px] font-mono uppercase text-[#0F1420]/70 mb-1">
                   Model Label
                 </label>
                 <input
                   type="text"
-                  placeholder={currentAircraft.name}
                   value={aircraftNameOverride}
                   onChange={(e) => setAircraftNameOverride(e.target.value)}
                   className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
@@ -938,11 +1019,11 @@ export default function GenerateQuoteView() {
 
               <div>
                 <label className="block text-[10px] font-mono uppercase text-[#0F1420]/70 mb-1">
-                  Year of Manufacture
+                  Year of Make (YOM)
                 </label>
                 <input
                   type="text"
-                  placeholder={String(currentAircraft.yearOfManufacture || "2008 - 2010")}
+                  placeholder="2020"
                   value={yearOfManufactureOverride}
                   onChange={(e) => setYearOfManufactureOverride(e.target.value)}
                   className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 text-xs font-mono text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
@@ -951,11 +1032,11 @@ export default function GenerateQuoteView() {
 
               <div>
                 <label className="block text-[10px] font-mono uppercase text-[#0F1420]/70 mb-1">
-                  Year Refurbished
+                  Refurbishment Date
                 </label>
                 <input
                   type="text"
-                  placeholder="0"
+                  placeholder="2024 / Recent"
                   value={yearOfRefurbishmentOverride}
                   onChange={(e) => setYearOfRefurbishmentOverride(e.target.value)}
                   className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 text-xs font-mono text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
@@ -977,6 +1058,20 @@ export default function GenerateQuoteView() {
 
               <div>
                 <label className="block text-[10px] font-mono uppercase text-[#0F1420]/70 mb-1">
+                  Smoking Cabin
+                </label>
+                <select
+                  value={smokingCabinOverride ? "yes" : "no"}
+                  onChange={(e) => setSmokingCabinOverride(e.target.value === "yes")}
+                  className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1.5 text-xs font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                >
+                  <option value="no">Strictly Non-Smoking</option>
+                  <option value="yes">Smoking Allowed</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-mono uppercase text-[#0F1420]/70 mb-1">
                   Enclosed Lavatory
                 </label>
                 <select
@@ -989,24 +1084,47 @@ export default function GenerateQuoteView() {
                 </select>
               </div>
             </div>
-          </div>
 
-          {/* Operator Source Hiding Notice */}
-          <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-center gap-2.5">
-            <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
-            <p className="leading-snug">
-              <strong>Notice:</strong> ⚠ Operator identity will <strong>NOT</strong> appear on the client-facing quote. All customer proposals present Orbelo Private Jet Management branding.
-            </p>
+            {/* Custom Pictures Input (Exterior & Interior) */}
+            <div className="pt-2 border-t border-[#E0DAD0] grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div>
+                <label className="block text-[10px] font-mono uppercase text-[#0F1420]/70 mb-1 flex items-center gap-1">
+                  <ImageIcon className="w-3 h-3 text-[#C9A052]" />
+                  Custom Exterior Photo URL
+                </label>
+                <input
+                  type="text"
+                  placeholder="https://... (Aircraft exterior photo URL)"
+                  value={exteriorImageOverride}
+                  onChange={(e) => setExteriorImageOverride(e.target.value)}
+                  className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-mono uppercase text-[#0F1420]/70 mb-1 flex items-center gap-1">
+                  <ImageIcon className="w-3 h-3 text-[#C9A052]" />
+                  Custom Interior Photo URL
+                </label>
+                <input
+                  type="text"
+                  placeholder="https://... (Aircraft cabin interior photo URL)"
+                  value={interiorImageOverride}
+                  onChange={(e) => setInteriorImageOverride(e.target.value)}
+                  className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                />
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* SECTION 3: Flight Routing, Per-Leg Schedule & FBO Ground Handling */}
+        {/* SECTION 3: Flight Routing, Airport Names & Respective FBOs */}
         <div className="bg-white border border-[#E0DAD0] rounded-2xl p-6 shadow-sm space-y-4">
           <div className="flex items-center justify-between pb-3 border-b border-[#E0DAD0]">
             <div className="flex items-center gap-2.5">
               <Plane className="w-4 h-4 text-[#C9A052]" />
               <h3 className="text-sm font-bold font-mono uppercase tracking-wider text-[#0F1420]">
-                3. Routing Itinerary & FBO Ground Handling Agents
+                3. Flight Routing, Airport Names & Respective FBO Handling
               </h3>
             </div>
 
@@ -1027,6 +1145,11 @@ export default function GenerateQuoteView() {
                 setActiveLegTabs((prev) => ({ ...prev, [index]: tab }));
               };
 
+              const origAirport = findAirportByCode(leg.originIcao);
+              const destAirport = findAirportByCode(leg.destIcao);
+              const origFbos = getAirportFbos(leg.originIcao);
+              const destFbos = getAirportFbos(leg.destIcao);
+
               return (
                 <div
                   key={index}
@@ -1039,7 +1162,7 @@ export default function GenerateQuoteView() {
                         {index + 1}
                       </span>
                       <span className="text-xs font-mono font-extrabold text-[#0F1420]">
-                        Flight Leg #{index + 1}: {leg.originIcao} → {leg.destIcao}
+                        Flight Leg #{index + 1}: {origAirport.city} ({origAirport.icao}) → {destAirport.city} ({destAirport.icao})
                       </span>
                     </div>
 
@@ -1112,13 +1235,14 @@ export default function GenerateQuoteView() {
                     </div>
                   </div>
 
-                  {/* TAB 1: Routing & Times */}
+                  {/* TAB 1: Routing & Airport Selection with Respective FBOs */}
                   {currentTab === "routing" && (
-                    <div className="space-y-3">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-7 gap-3 text-xs">
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-3 text-xs">
+                        {/* Origin Airport */}
                         <div className="md:col-span-2">
                           <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                            Origin Airport (ICAO Dropdown)
+                            Origin Airport
                           </label>
                           <select
                             value={leg.originIcao}
@@ -1127,15 +1251,19 @@ export default function GenerateQuoteView() {
                           >
                             {airportsData.map((a) => (
                               <option key={a.icao} value={a.icao}>
-                                [{a.icao}] {a.city} - {a.name}
+                                [{a.icao}] {a.city} — {a.name}
                               </option>
                             ))}
                           </select>
+                          <p className="text-[10px] text-gray-500 mt-1 truncate">
+                            {origAirport.name} ({origAirport.country})
+                          </p>
                         </div>
 
+                        {/* Destination Airport */}
                         <div className="md:col-span-2">
                           <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                            Destination Airport (ICAO Dropdown)
+                            Destination Airport
                           </label>
                           <select
                             value={leg.destIcao}
@@ -1144,15 +1272,18 @@ export default function GenerateQuoteView() {
                           >
                             {airportsData.map((a) => (
                               <option key={a.icao} value={a.icao}>
-                                [{a.icao}] {a.city} - {a.name}
+                                [{a.icao}] {a.city} — {a.name}
                               </option>
                             ))}
                           </select>
+                          <p className="text-[10px] text-gray-500 mt-1 truncate">
+                            {destAirport.name} ({destAirport.country})
+                          </p>
                         </div>
 
                         <div>
                           <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                            Date
+                            Flight Date
                           </label>
                           <input
                             type="date"
@@ -1165,7 +1296,25 @@ export default function GenerateQuoteView() {
 
                         <div>
                           <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                            Departure (LT)
+                            Passengers (Pax)
+                          </label>
+                          <input
+                            type="number"
+                            min={1}
+                            max={19}
+                            value={leg.paxCount}
+                            onChange={(e) => handleLegChange(index, "paxCount", Number(e.target.value))}
+                            required
+                            className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1.5 text-xs text-[#0F1420] font-mono font-bold focus:outline-none focus:border-[#C9A052]"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Station Times and Respective FBO Dropdowns */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs bg-white/70 p-3.5 rounded-xl border border-[#E0DAD0]">
+                        <div>
+                          <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
+                            Departure Time (LT)
                           </label>
                           <input
                             type="text"
@@ -1179,7 +1328,7 @@ export default function GenerateQuoteView() {
 
                         <div>
                           <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                            Arrival (LT)
+                            Arrival Time (LT)
                           </label>
                           <input
                             type="text"
@@ -1190,42 +1339,67 @@ export default function GenerateQuoteView() {
                             className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1.5 text-xs text-[#0F1420] font-mono font-bold focus:outline-none focus:border-[#C9A052]"
                           />
                         </div>
-                      </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs bg-white/70 p-3 rounded-lg border border-[#E0DAD0]">
+                        {/* Departure FBO Dropdown for Origin Airport */}
                         <div>
-                          <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                            Passengers (# Pax)
+                          <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1 flex items-center gap-1">
+                            <Building className="w-3 h-3 text-[#C9A052]" />
+                            Departure Station FBO
                           </label>
-                          <input
-                            type="number"
-                            min={1}
-                            max={19}
-                            value={leg.paxCount}
-                            onChange={(e) => handleLegChange(index, "paxCount", Number(e.target.value))}
-                            required
-                            className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                          />
+                          <select
+                            value={leg.depHandlerName}
+                            onChange={(e) => {
+                              const selectedFbo = origFbos.find((f) => f.name === e.target.value);
+                              if (selectedFbo) {
+                                handleLegChange(index, "depHandlerName", selectedFbo.name);
+                                handleLegChange(index, "depHandlerPhone", selectedFbo.phone);
+                                handleLegChange(index, "depHandlerEmail", selectedFbo.email);
+                              } else {
+                                handleLegChange(index, "depHandlerName", e.target.value);
+                              }
+                            }}
+                            className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1.5 text-xs text-[#0F1420] font-bold focus:outline-none focus:border-[#C9A052]"
+                          >
+                            {origFbos.map((fbo) => (
+                              <option key={fbo.id} value={fbo.name}>
+                                {fbo.name}
+                              </option>
+                            ))}
+                          </select>
                         </div>
 
+                        {/* Arrival FBO Dropdown for Destination Airport */}
                         <div>
-                          <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                            Flight # / Callsign
+                          <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1 flex items-center gap-1">
+                            <Building className="w-3 h-3 text-[#C9A052]" />
+                            Arrival Station FBO
                           </label>
-                          <input
-                            type="text"
-                            placeholder="PEU842"
-                            value={leg.flightNumber}
-                            onChange={(e) => handleLegChange(index, "flightNumber", e.target.value)}
-                            required
-                            className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                          />
+                          <select
+                            value={leg.arrHandlerName}
+                            onChange={(e) => {
+                              const selectedFbo = destFbos.find((f) => f.name === e.target.value);
+                              if (selectedFbo) {
+                                handleLegChange(index, "arrHandlerName", selectedFbo.name);
+                                handleLegChange(index, "arrHandlerPhone", selectedFbo.phone);
+                                handleLegChange(index, "arrHandlerEmail", selectedFbo.email);
+                              } else {
+                                handleLegChange(index, "arrHandlerName", e.target.value);
+                              }
+                            }}
+                            className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1.5 text-xs text-[#0F1420] font-bold focus:outline-none focus:border-[#C9A052]"
+                          >
+                            {destFbos.map((fbo) => (
+                              <option key={fbo.id} value={fbo.name}>
+                                {fbo.name}
+                              </option>
+                            ))}
+                          </select>
                         </div>
                       </div>
                     </div>
                   )}
 
-                  {/* TAB 2: Pets (Count & Weight) */}
+                  {/* TAB 2: Pets */}
                   {currentTab === "pets" && (
                     <div className="p-4 bg-white rounded-xl border border-[#E0DAD0] space-y-3 text-xs">
                       <div className="flex items-center justify-between pb-2 border-b border-gray-100">
@@ -1252,8 +1426,8 @@ export default function GenerateQuoteView() {
                         </label>
                       </div>
 
-                      {leg.pets?.hasPets ? (
-                        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-1">
+                      {leg.pets?.hasPets && (
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
                           <div>
                             <label className="block text-[10px] font-mono uppercase text-gray-500 mb-1">Pet Count</label>
                             <input
@@ -1287,10 +1461,9 @@ export default function GenerateQuoteView() {
                           </div>
 
                           <div>
-                            <label className="block text-[10px] font-mono uppercase text-gray-500 mb-1">Pet Breed / Animal Type</label>
+                            <label className="block text-[10px] font-mono uppercase text-gray-500 mb-1">Breed / Type</label>
                             <input
                               type="text"
-                              placeholder="e.g. French Bulldog"
                               value={leg.pets.petType || ""}
                               onChange={(e) =>
                                 handleLegChange(index, "pets", {
@@ -1301,44 +1474,25 @@ export default function GenerateQuoteView() {
                               className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 outline-none"
                             />
                           </div>
-
-                          <div>
-                            <label className="block text-[10px] font-mono uppercase text-gray-500 mb-1">Veterinary / Handling Notes</label>
-                            <input
-                              type="text"
-                              placeholder="Passport & rabies vaccine verified"
-                              value={leg.pets.notes || ""}
-                              onChange={(e) =>
-                                handleLegChange(index, "pets", {
-                                  ...leg.pets,
-                                  notes: e.target.value
-                                })
-                              }
-                              className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 outline-none"
-                            />
-                          </div>
                         </div>
-                      ) : (
-                        <p className="text-gray-500 text-[11px] italic">No pet carriage specified for this leg.</p>
                       )}
                     </div>
                   )}
 
-                  {/* TAB 3: Luggage Estimates */}
+                  {/* TAB 3: Luggage */}
                   {currentTab === "luggage" && (
                     <div className="p-4 bg-white rounded-xl border border-[#E0DAD0] space-y-3 text-xs">
                       <span className="font-bold font-mono text-[#0F1420] uppercase flex items-center gap-1.5 pb-2 border-b border-gray-100">
                         <Briefcase className="w-4 h-4 text-[#C9A052]" />
-                        Luggage Estimates, Piece Count & Dimensions for Leg #{index + 1}
+                        Luggage Estimates & Dimensions for Leg #{index + 1}
                       </span>
 
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div>
-                          <label className="block text-[10px] font-mono uppercase text-gray-500 mb-1">Standard Suitcases</label>
+                          <label className="block text-[10px] font-mono uppercase text-gray-500 mb-1">Suitcases</label>
                           <input
                             type="number"
                             min={0}
-                            placeholder="e.g. 4"
                             value={leg.luggage?.standardSuitcases ?? 2}
                             onChange={(e) =>
                               handleLegChange(index, "luggage", {
@@ -1355,7 +1509,6 @@ export default function GenerateQuoteView() {
                           <input
                             type="number"
                             min={0}
-                            placeholder="e.g. 4"
                             value={leg.luggage?.pieceCount ?? 4}
                             onChange={(e) =>
                               handleLegChange(index, "luggage", {
@@ -1368,11 +1521,10 @@ export default function GenerateQuoteView() {
                         </div>
 
                         <div>
-                          <label className="block text-[10px] font-mono uppercase text-gray-500 mb-1">Estimated Total Weight (kg)</label>
+                          <label className="block text-[10px] font-mono uppercase text-gray-500 mb-1">Weight (kg)</label>
                           <input
                             type="number"
                             min={0}
-                            placeholder="e.g. 65"
                             value={leg.luggage?.totalWeightKg ?? 50}
                             onChange={(e) =>
                               handleLegChange(index, "luggage", {
@@ -1384,108 +1536,68 @@ export default function GenerateQuoteView() {
                           />
                         </div>
                       </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                        <div>
-                          <label className="block text-[10px] font-mono uppercase text-gray-500 mb-1">Dimensions Description</label>
-                          <input
-                            type="text"
-                            placeholder="e.g. Max 75 x 50 x 30 cm per suitcase"
-                            value={leg.luggage?.dimensionsDescription ?? "Standard Hold 75x50x30 cm max"}
-                            onChange={(e) =>
-                              handleLegChange(index, "luggage", {
-                                ...leg.luggage,
-                                dimensionsDescription: e.target.value
-                              })
-                            }
-                            className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 outline-none"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-[10px] font-mono uppercase text-gray-500 mb-1">Special / Oversized Luggage</label>
-                          <input
-                            type="text"
-                            placeholder="e.g. 2x Golf Bags, Skis, Instruments"
-                            value={leg.luggage?.specialLuggageDescription ?? ""}
-                            onChange={(e) =>
-                              handleLegChange(index, "luggage", {
-                                ...leg.luggage,
-                                specialLuggageDescription: e.target.value
-                              })
-                            }
-                            className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 outline-none"
-                          />
-                        </div>
-                      </div>
                     </div>
                   )}
 
-                  {/* TAB 4: Ground Handling */}
+                  {/* TAB 4: Ground Handling Agent Details */}
                   {currentTab === "handling" && (
-                    <div className="bg-white p-3.5 rounded-lg border border-[#E0DAD0] space-y-2.5">
+                    <div className="bg-white p-4 rounded-xl border border-[#E0DAD0] space-y-3">
                       <div className="flex items-center gap-1.5 text-[11px] font-mono font-bold uppercase text-[#0F1420]">
                         <Building className="w-3.5 h-3.5 text-[#C9A052]" />
-                        <span>FBO Handling Agents for Leg #{index + 1} (Printed in Quotation Table)</span>
+                        <span>FBO Ground Handling Contact Details for Leg #{index + 1}</span>
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
                         {/* Departure Handler */}
-                        <div className="p-2.5 bg-[#F9F8F5] rounded-lg border border-[#E0DAD0] space-y-2">
+                        <div className="p-3 bg-[#F9F8F5] rounded-xl border border-[#E0DAD0] space-y-2">
                           <span className="text-[10px] font-mono font-bold uppercase text-[#9A7A35]">
-                            Departure Handler ({leg.originIcao})
+                            Departure FBO ({origAirport.name})
                           </span>
                           <input
                             type="text"
-                            placeholder="e.g. Jet Aviation"
                             value={leg.depHandlerName}
                             onChange={(e) => handleLegChange(index, "depHandlerName", e.target.value)}
-                            className="w-full bg-white border border-[#E0DAD0] rounded-md px-2 py-1 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                            className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1 text-xs text-[#0F1420] font-bold"
                           />
                           <div className="grid grid-cols-2 gap-2">
                             <input
                               type="tel"
-                              placeholder="+41 58 158 1811"
                               value={leg.depHandlerPhone}
                               onChange={(e) => handleLegChange(index, "depHandlerPhone", e.target.value)}
-                              className="w-full bg-white border border-[#E0DAD0] rounded-md px-2 py-1 text-xs font-mono text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                              className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1 text-xs font-mono"
                             />
                             <input
                               type="email"
-                              placeholder="gvafbo@jetaviation.com"
                               value={leg.depHandlerEmail}
                               onChange={(e) => handleLegChange(index, "depHandlerEmail", e.target.value)}
-                              className="w-full bg-white border border-[#E0DAD0] rounded-md px-2 py-1 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                              className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1 text-xs"
                             />
                           </div>
                         </div>
 
                         {/* Arrival Handler */}
-                        <div className="p-2.5 bg-[#F9F8F5] rounded-lg border border-[#E0DAD0] space-y-2">
-                          <span className="text-[10px] font-mono font-bold uppercase text-[#9A7A35]">
-                            Arrival Handler ({leg.destIcao})
+                        <div className="p-3 bg-[#F9F8F5] rounded-xl border border-[#E0DAD0] space-y-2">
+                          <span className="text-[10px] font-mono font-bold uppercase text-emerald-800">
+                            Arrival FBO ({destAirport.name})
                           </span>
                           <input
                             type="text"
-                            placeholder="e.g. Ags Ops"
                             value={leg.arrHandlerName}
                             onChange={(e) => handleLegChange(index, "arrHandlerName", e.target.value)}
-                            className="w-full bg-white border border-[#E0DAD0] rounded-md px-2 py-1 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                            className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1 text-xs text-[#0F1420] font-bold"
                           />
                           <div className="grid grid-cols-2 gap-2">
                             <input
                               type="tel"
-                              placeholder="+39 010 601 5412"
                               value={leg.arrHandlerPhone}
                               onChange={(e) => handleLegChange(index, "arrHandlerPhone", e.target.value)}
-                              className="w-full bg-white border border-[#E0DAD0] rounded-md px-2 py-1 text-xs font-mono text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                              className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1 text-xs font-mono"
                             />
                             <input
                               type="email"
-                              placeholder="dutymanager@airport.genova.it"
                               value={leg.arrHandlerEmail}
                               onChange={(e) => handleLegChange(index, "arrHandlerEmail", e.target.value)}
-                              className="w-full bg-white border border-[#E0DAD0] rounded-md px-2 py-1 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                              className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1 text-xs"
                             />
                           </div>
                         </div>
@@ -1498,41 +1610,19 @@ export default function GenerateQuoteView() {
           </div>
         </div>
 
-        {/* SECTION 4: Additional Services, De-Icing & Carbon Offset (Pages 2 & 3 of PDF) */}
+        {/* SECTION 4: Concierge & Additional Services (De-Icing Options Removed as Requested) */}
         <div className="bg-white border border-[#E0DAD0] rounded-2xl p-6 shadow-sm space-y-5">
           <div className="flex items-center gap-2.5 pb-3 border-b border-[#E0DAD0]">
             <Shield className="w-4 h-4 text-[#C9A052]" />
             <h3 className="text-sm font-bold font-mono uppercase tracking-wider text-[#0F1420]">
-              4. Additional Services, De-Icing, Cancellation Insurance & Carbon Offset (Pages 2 & 3)
+              4. Concierge Services, Ground Transportation & Cancellation Policy
             </h3>
           </div>
 
-          {/* Last-Minute Trip Cancellation Insurance (Page 2) */}
-          <div className="p-4 rounded-xl bg-[#C9A052]/10 border border-[#C9A052]/30 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-wider text-[#0F1420]">
-                Last - Minute Trip Cancellation Insurance (Quotation Page 2)
-              </span>
-              <span className="text-xs font-mono font-bold text-[#9A7A35]">€ 1 000.- / leg</span>
-            </div>
-            <p className="text-xs text-[#0F1420]/75">
-              Client can cancel free of charge up to 24 hours before confirmed departure time.
-            </p>
-            <label className="flex items-center gap-2.5 text-xs font-bold text-[#0F1420] pt-1 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={!!services.cancellationInsurance}
-                onChange={(e) => setServices({ ...services, cancellationInsurance: e.target.checked })}
-                className="rounded text-[#C9A052] focus:ring-[#C9A052] h-4 w-4"
-              />
-              <span>Opt-in: Include free of charge trip cancellation up to 24h before departure</span>
-            </label>
-          </div>
-
-          {/* Ground Transfers & Helicopter (Page 3) */}
+          {/* Ground Transfers & Helicopter */}
           <div className="space-y-3">
             <span className="text-xs font-mono font-bold uppercase text-[#0F1420]">
-              Additional Ground & Air Services (Quotation Page 3)
+              VIP Ground Transfers & Concierge Options
             </span>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
               <label className="flex items-center gap-2 p-3 rounded-xl border border-[#E0DAD0] bg-[#FDFCFA] hover:bg-[#F5F2EC] cursor-pointer transition-all">
@@ -1562,260 +1652,34 @@ export default function GenerateQuoteView() {
                   onChange={(e) => setServices({ ...services, helicopterService: e.target.checked })}
                   className="rounded text-[#C9A052] focus:ring-[#C9A052]"
                 />
-                <span className="font-medium text-[#0F1420]">Helicopter Transfer</span>
+                <span className="font-medium text-[#0F1420]">Helicopter Connection</span>
               </label>
             </div>
           </div>
 
-          {/* De-Icing Protection Insurance (Page 3) - Subject to Operator */}
-          <div className="space-y-2">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-              <span className="text-xs font-mono font-bold uppercase text-[#0F1420]">
-                De-Icing Protection Options (Quotation Page 3)
+          {/* Cancellation Policy Placeholder (User Request: "Cancellation Policy: Will be updated later") */}
+          <div className="p-4 rounded-xl bg-gray-50 border border-gray-200 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-[#0F1420] font-mono">
+                Cancellation Policy
               </span>
-              <span className="text-[10px] font-mono text-[#9A7A35] font-semibold bg-[#C9A052]/10 border border-[#C9A052]/30 px-2 py-0.5 rounded">
-                Subject to Operating Carrier Terms & Station Tariff
+              <span className="text-[10px] font-mono font-bold text-gray-500 bg-gray-200 px-2 py-0.5 rounded">
+                Will be updated later
               </span>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-              <label className={`p-3 rounded-xl border cursor-pointer transition-all ${services.deicingInsurance === "none" ? "border-[#C9A052] bg-[#C9A052]/10" : "border-[#E0DAD0] bg-white"}`}>
-                <div className="flex items-center gap-2 mb-1">
-                  <input
-                    type="radio"
-                    name="deicing"
-                    checked={services.deicingInsurance === "none"}
-                    onChange={() => setServices({ ...services, deicingInsurance: "none", deicingCostPerLeg: 0 })}
-                  />
-                  <span className="font-bold text-[#0F1420]">Uninsured</span>
-                </div>
-                <p className="text-[11px] text-gray-500 pl-5">Billed post-flight if incurred per operator actuals (&gt;€2,500)</p>
-              </label>
-
-              <label className={`p-3 rounded-xl border cursor-pointer transition-all ${services.deicingInsurance === "at_reservation" ? "border-[#C9A052] bg-[#C9A052]/10" : "border-[#E0DAD0] bg-white"}`}>
-                <div className="flex items-center justify-between mb-1">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name="deicing"
-                      checked={services.deicingInsurance === "at_reservation"}
-                      onChange={() => setServices({ ...services, deicingInsurance: "at_reservation", deicingCostPerLeg: 400 })}
-                    />
-                    <span className="font-bold text-[#0F1420]">Option 1: At Reservation</span>
-                  </div>
-                  <span className="font-mono font-bold text-[#9A7A35]">€400/leg</span>
-                </div>
-                <p className="text-[11px] text-gray-500 pl-5">Secure upon signing agreement (operator rate)</p>
-              </label>
-
-              <label className={`p-3 rounded-xl border cursor-pointer transition-all ${services.deicingInsurance === "within_48h" ? "border-[#C9A052] bg-[#C9A052]/10" : "border-[#E0DAD0] bg-white"}`}>
-                <div className="flex items-center justify-between mb-1">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name="deicing"
-                      checked={services.deicingInsurance === "within_48h"}
-                      onChange={() => setServices({ ...services, deicingInsurance: "within_48h", deicingCostPerLeg: 800 })}
-                    />
-                    <span className="font-bold text-[#0F1420]">Option 2: Book Later</span>
-                  </div>
-                  <span className="font-mono font-bold text-gray-700">€800/leg</span>
-                </div>
-                <p className="text-[11px] text-gray-500 pl-5">Book up to 48h before flight (operator rate)</p>
-              </label>
-            </div>
-          </div>
-
-          {/* Carbon Offset Program (Page 3) */}
-          <div className="space-y-2">
-            <span className="text-xs font-mono font-bold uppercase text-[#0F1420]">
-              Carbon Offset Program (Quotation Page 3)
-            </span>
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
-              <label className={`p-3 rounded-xl border cursor-pointer transition-all ${services.carbonOffset === "none" ? "border-[#C9A052] bg-[#C9A052]/10" : "border-[#E0DAD0] bg-white"}`}>
-                <div className="flex items-center gap-2 mb-1">
-                  <input
-                    type="radio"
-                    name="carbon"
-                    checked={services.carbonOffset === "none"}
-                    onChange={() => setServices({ ...services, carbonOffset: "none", carbonOffsetRatePerHour: 0 })}
-                  />
-                  <span className="font-bold text-[#0F1420]">None</span>
-                </div>
-                <p className="text-[11px] text-gray-500 pl-5">Standard emissions</p>
-              </label>
-
-              <label className={`p-3 rounded-xl border cursor-pointer transition-all ${services.carbonOffset === "neutral" ? "border-[#C9A052] bg-[#C9A052]/10" : "border-[#E0DAD0] bg-white"}`}>
-                <div className="flex items-center justify-between mb-1">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name="carbon"
-                      checked={services.carbonOffset === "neutral"}
-                      onChange={() => setServices({ ...services, carbonOffset: "neutral", carbonOffsetRatePerHour: 33 })}
-                    />
-                    <span className="font-bold text-[#0F1420]">Fly Neutral</span>
-                  </div>
-                  <span className="font-mono text-[11px] text-gray-600">€33/hr</span>
-                </div>
-                <p className="text-[11px] text-gray-500 pl-5">Compensate 100%</p>
-              </label>
-
-              <label className={`p-3 rounded-xl border cursor-pointer transition-all ${services.carbonOffset === "positive" ? "border-[#C9A052] bg-[#C9A052]/10" : "border-[#E0DAD0] bg-white"}`}>
-                <div className="flex items-center justify-between mb-1">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name="carbon"
-                      checked={services.carbonOffset === "positive"}
-                      onChange={() => setServices({ ...services, carbonOffset: "positive", carbonOffsetRatePerHour: 50 })}
-                    />
-                    <span className="font-bold text-[#0F1420]">Fly Positive</span>
-                  </div>
-                  <span className="font-mono text-[11px] text-gray-600">€50/hr</span>
-                </div>
-                <p className="text-[11px] text-gray-500 pl-5">+50% extra offset</p>
-              </label>
-
-              <label className={`p-3 rounded-xl border cursor-pointer transition-all ${services.carbonOffset === "double_neutral" ? "border-[#C9A052] bg-[#C9A052]/10" : "border-[#E0DAD0] bg-white"}`}>
-                <div className="flex items-center justify-between mb-1">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name="carbon"
-                      checked={services.carbonOffset === "double_neutral"}
-                      onChange={() => setServices({ ...services, carbonOffset: "double_neutral", carbonOffsetRatePerHour: 66 })}
-                    />
-                    <span className="font-bold text-[#0F1420]">Fly Double</span>
-                  </div>
-                  <span className="font-mono text-[11px] text-gray-600">€66/hr</span>
-                </div>
-                <p className="text-[11px] text-gray-500 pl-5">200% carbon offset</p>
-              </label>
-            </div>
+            <p className="text-xs text-gray-600 leading-relaxed">
+              Cancellation Policy: Will be updated later. Standard private aviation charter terms apply. Final cancellation policy terms will be confirmed in the contract.
+            </p>
           </div>
         </div>
 
-        {/* SECTION: Commercial Margin Rules & Broker Commission */}
+        {/* SECTION 5: Commercial Pricing Breakdown & Remittance */}
         <div className="bg-white border border-[#E0DAD0] rounded-2xl p-6 shadow-sm space-y-4">
           <div className="flex items-center justify-between pb-3 border-b border-[#E0DAD0]">
             <div className="flex items-center gap-2.5">
-              <Percent className="w-4 h-4 text-[#C9A052]" />
+              <Landmark className="w-4 h-4 text-[#C9A052]" />
               <h3 className="text-sm font-bold font-mono uppercase tracking-wider text-[#0F1420]">
-                Commercial Margin Rules & Broker Commission
-              </h3>
-            </div>
-            <button
-              type="button"
-              onClick={() => setIsMarginPanelOpen(!isMarginPanelOpen)}
-              className="flex items-center gap-1.5 text-xs font-mono font-bold text-[#9A7A35] hover:text-[#0F1420] transition-colors"
-            >
-              <span>{isMarginPanelOpen ? "Collapse Rules" : "Expand Rules"}</span>
-              {isMarginPanelOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-            </button>
-          </div>
-
-          {isMarginPanelOpen && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 text-xs">
-                {/* Margin Type */}
-                <div>
-                  <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                    Company Margin Type
-                  </label>
-                  <select
-                    value={marginType}
-                    onChange={(e) => setMarginType(e.target.value as "percentage" | "fixed")}
-                    className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                  >
-                    <option value="percentage">Percentage (%)</option>
-                    <option value="fixed">Fixed Amount ({currency})</option>
-                  </select>
-                </div>
-
-                {/* Margin Value */}
-                <div>
-                  <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                    Company Margin {marginType === "percentage" ? "(%)" : `(${currency})`}
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    step={marginType === "percentage" ? 0.5 : 100}
-                    value={marginValue}
-                    onChange={(e) => setMarginValue(Number(e.target.value))}
-                    className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                  />
-                  <div className="mt-1 text-[11px] font-mono text-[#9A7A35]">
-                    Company Margin: <strong>{formatCurrency(marginType === "percentage" ? Math.round(effectivePricing.flightPrice * (marginValue / 100)) : marginValue, currency)}</strong>
-                  </div>
-                </div>
-
-                {/* Agent Commission % */}
-                <div>
-                  <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                    Agent Commission (%)
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    step={0.5}
-                    value={commissionPct}
-                    onChange={(e) => setCommissionPct(Number(e.target.value))}
-                    className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                  />
-                  <div className="mt-1 text-[11px] font-mono text-emerald-700">
-                    Agent Commission: <strong>{formatCurrency(Math.round(effectivePricing.totalFlightPrice * (commissionPct / 100)), currency)}</strong>
-                  </div>
-                </div>
-
-                {/* Status indicator */}
-                <div>
-                  <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                    Quote Workflow Status
-                  </label>
-                  <select
-                    value={quoteStatus}
-                    onChange={(e) => setQuoteStatus(e.target.value as any)}
-                    className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                  >
-                    <option value="Draft">Draft (Internal)</option>
-                    <option value="Sent">Sent to Client</option>
-                    <option value="Pending">Pending Review</option>
-                    <option value="Undecided">Undecided / Open</option>
-                  </select>
-                  <div className="mt-1 text-[10px] text-gray-500">
-                    Default 12% margin / 8% agent comm.
-                  </div>
-                </div>
-              </div>
-
-              {/* Margin Override Reason if modified from default 12% */}
-              {(marginValue !== 12 || marginType !== "percentage") && (
-                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-1.5">
-                  <label className="block text-[10px] font-mono font-bold uppercase text-amber-900">
-                    Margin Override Justification (Audited)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Provide justification for non-standard margin (e.g. VIP client loyalty discount, competitive tender)"
-                    value={marginOverrideReason}
-                    onChange={(e) => setMarginOverrideReason(e.target.value)}
-                    className="w-full bg-white border border-amber-300 rounded-lg px-3 py-1.5 text-xs text-amber-950 focus:outline-none focus:border-[#C9A052]"
-                  />
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* SECTION 5: Detailed Pricing Itemization & Overrides */}
-        <div className="bg-white border border-[#E0DAD0] rounded-2xl p-6 shadow-sm space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-[#E0DAD0]">
-            <div className="flex items-center gap-2.5">
-              <Receipt className="w-4 h-4 text-[#C9A052]" />
-              <h3 className="text-sm font-bold font-mono uppercase tracking-wider text-[#0F1420]">
-                5. Pricing Breakdown Line Items (Quotation Page 1)
+                5. Commercial Pricing & Remittance Details
               </h3>
             </div>
 
@@ -1826,179 +1690,56 @@ export default function GenerateQuoteView() {
                 onChange={(e) => setOverridePricing(e.target.checked)}
                 className="rounded text-[#C9A052] focus:ring-[#C9A052]"
               />
-              <span>Manual Line-Item Overrides</span>
+              <span>Manual Price Override</span>
             </label>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs font-mono">
             <div>
-              <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                Flight Price
-              </label>
+              <label className="block text-[10px] text-gray-500 mb-1">Base Flight Price</label>
               <input
                 type="number"
                 value={effectivePricing.flightPrice}
                 onChange={(e) => setCustomFlightPrice(Number(e.target.value))}
                 disabled={!overridePricing}
-                className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-mono font-bold text-[#0F1420] disabled:bg-[#F5F2EC] disabled:opacity-80 focus:outline-none focus:border-[#C9A052]"
+                className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-bold text-[#0F1420] disabled:bg-[#F5F2EC]"
               />
             </div>
 
             <div>
-              <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                - Airport Fees
-              </label>
+              <label className="block text-[10px] text-gray-500 mb-1">Airport & Handling Fees</label>
               <input
                 type="number"
                 value={effectivePricing.airportFees}
                 onChange={(e) => setCustomAirportFees(Number(e.target.value))}
                 disabled={!overridePricing}
-                className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-mono text-[#0F1420] disabled:bg-[#F5F2EC] disabled:opacity-80 focus:outline-none focus:border-[#C9A052]"
+                className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-bold text-[#0F1420] disabled:bg-[#F5F2EC]"
               />
             </div>
 
             <div>
-              <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                - Passenger Fees
-              </label>
+              <label className="block text-[10px] text-gray-500 mb-1">Passenger Surcharges</label>
               <input
                 type="number"
                 value={effectivePricing.passengerFees}
                 onChange={(e) => setCustomPassengerFees(Number(e.target.value))}
                 disabled={!overridePricing}
-                className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-mono text-[#0F1420] disabled:bg-[#F5F2EC] disabled:opacity-80 focus:outline-none focus:border-[#C9A052]"
+                className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-bold text-[#0F1420] disabled:bg-[#F5F2EC]"
               />
             </div>
 
             <div>
-              <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                - Day of Week Discount
-              </label>
-              <input
-                type="number"
-                value={effectivePricing.dayOfWeekDiscount}
-                onChange={(e) => setCustomDayOfWeekDiscount(Number(e.target.value))}
-                disabled={!overridePricing}
-                className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-mono text-emerald-700 font-bold disabled:bg-[#F5F2EC] disabled:opacity-80 focus:outline-none focus:border-[#C9A052]"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                - Inbound Passenger Tax
-              </label>
-              <input
-                type="number"
-                value={effectivePricing.inboundPassengerTax}
-                onChange={(e) => setCustomInboundTax(Number(e.target.value))}
-                disabled={!overridePricing}
-                className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-mono text-[#0F1420] disabled:bg-[#F5F2EC] disabled:opacity-80 focus:outline-none focus:border-[#C9A052]"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                - Outbound Passenger Tax
-              </label>
-              <input
-                type="number"
-                value={effectivePricing.outboundPassengerTax}
-                onChange={(e) => setCustomOutboundTax(Number(e.target.value))}
-                disabled={!overridePricing}
-                className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-mono text-[#0F1420] disabled:bg-[#F5F2EC] disabled:opacity-80 focus:outline-none focus:border-[#C9A052]"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                Additional Services Total
-              </label>
-              <input
-                type="number"
-                value={effectivePricing.additionalServicesTotal}
-                onChange={(e) => setCustomAdditionalServices(Number(e.target.value))}
-                disabled={!overridePricing}
-                className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-mono text-[#0F1420] disabled:bg-[#F5F2EC] disabled:opacity-80 focus:outline-none focus:border-[#C9A052]"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                European VAT Rate (0%)
-              </label>
-              <input
-                type="text"
-                value="0% (§6 Abs. 1 Zif. 3)"
-                disabled
-                className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-mono text-emerald-800 font-bold opacity-80"
-              />
+              <label className="block text-[10px] text-gray-500 mb-1">Total Charter Flight Price</label>
+              <div className="w-full bg-[#FAF9F6] border border-[#C9A052]/40 rounded-xl px-3 py-2 text-xs font-black text-[#9A7A35]">
+                {formatCurrency(effectivePricing.totalFlightPrice, currency)}
+              </div>
             </div>
           </div>
         </div>
 
-        {/* SECTION 6: Payment Conditions & Bank References (Page 1 Footer) */}
-        <div className="bg-white border border-[#E0DAD0] rounded-2xl p-6 shadow-sm space-y-4">
-          <div className="flex items-center gap-2 pb-2 border-b border-[#E0DAD0]">
-            <Landmark className="w-4 h-4 text-[#C9A052]" />
-            <h3 className="text-xs font-bold font-mono uppercase tracking-wider text-[#0F1420]">
-              6. Payment Terms & Wire References (Quotation Page 1 Footer)
-            </h3>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 text-xs">
-            <div>
-              <label className="block text-[11px] font-bold text-[#0F1420]/80 uppercase font-mono mb-1">
-                Bank Name
-              </label>
-              <input
-                type="text"
-                value={bankName}
-                onChange={(e) => setBankName(e.target.value)}
-                className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[11px] font-bold text-[#0F1420]/80 uppercase font-mono mb-1">
-                IBAN Number
-              </label>
-              <input
-                type="text"
-                value={iban}
-                onChange={(e) => setIban(e.target.value)}
-                className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[11px] font-bold text-[#0F1420]/80 uppercase font-mono mb-1">
-                BIC / SWIFT
-              </label>
-              <input
-                type="text"
-                value={bic}
-                onChange={(e) => setBic(e.target.value)}
-                className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[11px] font-bold text-[#0F1420]/80 uppercase font-mono mb-1">
-                Account Holder
-              </label>
-              <input
-                type="text"
-                value={accountHolder}
-                onChange={(e) => setAccountHolder(e.target.value)}
-                className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* SECTION 7: Live Pricing Total & Action Submission */}
+        {/* SECTION 6: Submission & Action Flow Buttons */}
         <div className="bg-[#0F1420] text-white border border-[#1C2436] rounded-2xl p-6 shadow-xl space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#1C2436]">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-[#1C2436]">
             <div>
               <span className="text-xs uppercase font-mono tracking-wider text-[#C9A052] font-bold">
                 FINAL TOTAL CHARTER FLIGHT PRICE
@@ -2007,28 +1748,43 @@ export default function GenerateQuoteView() {
                 {formatCurrency(effectivePricing.totalFlightPrice, currency)}
               </h3>
               <p className="text-xs text-gray-400 mt-1">
-                Subtotal: {formatCurrency(effectivePricing.subtotal, currency)} • International Aviation VAT Exempt 0% (§6 Abs. 1 Zif. 3)
+                Subtotal: {formatCurrency(effectivePricing.subtotal, currency)} • International Aviation VAT Exempt 0%
               </p>
             </div>
 
-            {/* Primary Action Buttons */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+            {/* End-to-End Action Buttons: Quote -> Contract -> Booked Contract */}
+            <div className="flex flex-wrap items-center gap-2.5">
+              {/* Action 1: Generate Quote PDF */}
               <button
                 type="submit"
-                className="py-3.5 px-6 rounded-xl bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] font-black text-xs uppercase tracking-wider transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+                className="py-3 px-4 rounded-xl bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] font-black text-xs uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+                title="Save Quotation and Open Official PDF Document"
               >
                 <FileText className="w-4 h-4" />
-                <span>Generate Official Quotation PDF</span>
+                <span>Generate Quote PDF</span>
               </button>
 
+              {/* Action 2: Advance Quote -> Contract */}
+              <button
+                type="button"
+                onClick={handleProceedToContract}
+                className="py-3 px-4 rounded-xl bg-[#1C2436] hover:bg-[#28324a] text-white border border-gray-600 font-bold text-xs uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+                title="Save Quote and Advance to Contract Generation"
+              >
+                <ScrollText className="w-4 h-4 text-[#C9A052]" />
+                <span>Proceed to Contract</span>
+                <ArrowRight className="w-3.5 h-3.5 text-[#C9A052]" />
+              </button>
+
+              {/* Action 3: Contract -> Booked Contract (Assigns Call Sign & Trip ID) */}
               <button
                 type="button"
                 onClick={handleConfirmAndBookFlight}
-                className="py-3.5 px-6 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs uppercase tracking-wider transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+                className="py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs uppercase tracking-wider transition-all shadow-lg flex items-center justify-center gap-1.5 cursor-pointer"
+                title="Lock in Confirmed Booking with Assigned Call Sign & Trip ID"
               >
                 <CheckCircle2 className="w-4 h-4" />
                 <span>Confirm & Book Flight</span>
-                <ArrowRight className="w-4 h-4" />
               </button>
             </div>
           </div>
@@ -2047,11 +1803,11 @@ export default function GenerateQuoteView() {
               <p className="font-bold text-gray-200">{formatCurrency(effectivePricing.passengerFees, currency)}</p>
             </div>
             <div>
-              <span className="text-gray-400 text-[10px]">SERVICES & INS.</span>
+              <span className="text-gray-400 text-[10px]">SERVICES</span>
               <p className="font-bold text-gray-200">{formatCurrency(effectivePricing.additionalServicesTotal, currency)}</p>
             </div>
             <div>
-              <span className="text-[#C9A052] text-[10px]">FINAL TOTAL</span>
+              <span className="text-[#C9A052] text-[10px]">ALL-INCLUSIVE TOTAL</span>
               <p className="font-black text-[#C9A052] text-sm">{formatCurrency(effectivePricing.totalFlightPrice, currency)}</p>
             </div>
           </div>

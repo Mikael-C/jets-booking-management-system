@@ -187,8 +187,8 @@ export default function PassengerManifestDoc({ booking }: PassengerManifestDocPr
         {/* Footer */}
         <div className="mt-8 pt-4 border-t border-gray-200 text-[10px] text-gray-500 flex justify-between items-end">
           <div>
-            <p className="font-semibold text-gray-800">Orbelo GmbH • Flight Dispatch Command</p>
-            <p>Flughafenstraße 3 / Objekt 10 • 4063 Hörsching • Austria</p>
+            <p className="font-semibold text-gray-800">Orbelo Jet Management • Flight Operations Center</p>
+            <p>London Biggin Hill Airport (EGKB) & Geneva International (LSGG) • OCC: {operator.supportPhone}</p>
           </div>
           <div className="text-right">
             <p>Document: Manifest</p>

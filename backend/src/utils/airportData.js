@@ -212,19 +212,99 @@ const searchAirports = (query, limit = 20) => {
   return results.slice(0, limit);
 };
 
+const FBO_DIRECTORY = {
+  LSGG: [
+    { id: 'lsgg-jet-aviation', name: 'Jet Aviation Geneva', phone: '+41 58 158 1811', email: 'gvafbo@jetaviation.com', vhfFrequency: '130.65 MHz' },
+    { id: 'lsgg-tag-aviation', name: 'TAG Aviation Geneva', phone: '+41 22 717 0123', email: 'handling.geneva@tagaviation.com', vhfFrequency: '130.30 MHz' },
+    { id: 'lsgg-signature', name: 'Signature Flight Support Geneva', phone: '+41 22 717 8400', email: 'gva@signatureflight.com', vhfFrequency: '131.75 MHz' },
+    { id: 'lsgg-dassault', name: 'Dassault Aviation Business Services', phone: '+41 22 799 0300', email: 'handling.geneva@dassault-aviation.com' }
+  ],
+  LIMJ: [
+    { id: 'limj-ags-ops', name: 'Ags Ops Executive Handling', phone: '+39 010 601 5412', email: 'dutymanager@airport.genova.it', vhfFrequency: '131.75 MHz' },
+    { id: 'limj-sky-services', name: 'Sky Services FBO Genoa', phone: '+39 010 601 5459', email: 'genoa@skyservices.it', vhfFrequency: '131.85 MHz' }
+  ],
+  LFMN: [
+    { id: 'lfmn-signature', name: 'Signature Flight Support Nice', phone: '+33 4 93 21 37 37', email: 'nce@signatureflight.com', vhfFrequency: '131.60 MHz' },
+    { id: 'lfmn-aviapartner', name: 'Aviapartner Executive Nice', phone: '+33 4 93 21 44 94', email: 'nce.executive@aviapartner.aero', vhfFrequency: '131.75 MHz' }
+  ],
+  LFPB: [
+    { id: 'lfpb-jet-aviation', name: 'Jet Aviation Paris Le Bourget', phone: '+33 1 48 62 00 00', email: 'lbgfbo@jetaviation.com', vhfFrequency: '130.40 MHz' },
+    { id: 'lfpb-signature', name: 'Signature Flight Support Paris T1', phone: '+33 1 49 92 75 00', email: 'lbg@signatureflight.com', vhfFrequency: '131.55 MHz' },
+    { id: 'lfpb-sky-valet', name: 'Sky Valet Paris Le Bourget', phone: '+33 1 48 35 97 97', email: 'ops.lbg@skyvalet.com' }
+  ],
+  EGLF: [
+    { id: 'eglf-farnborough', name: 'Farnborough Airport Executive Handling', phone: '+44 1252 379 002', email: 'ops@farnboroughairport.com', vhfFrequency: '131.80 MHz' }
+  ],
+  EGKB: [
+    { id: 'egkb-biggin-handling', name: 'Biggin Hill Executive Handling', phone: '+44 1959 578 500', email: 'handling@bigginhillairport.com', vhfFrequency: '130.675 MHz' },
+    { id: 'egkb-signature', name: 'Signature Flight Support Biggin Hill', phone: '+44 1959 570 000', email: 'bqh@signatureflight.com' }
+  ],
+  EGGW: [
+    { id: 'eggw-harrods', name: 'Harrods Aviation Luton', phone: '+44 1582 589 350', email: 'luton@harrodsaviation.com', vhfFrequency: '131.75 MHz' },
+    { id: 'eggw-signature', name: 'Signature Flight Support Luton T1', phone: '+44 1582 724 455', email: 'ltn@signatureflight.com' }
+  ],
+  LSZH: [
+    { id: 'lszh-execujet', name: 'ExecuJet Zurich FBO', phone: '+41 44 804 1611', email: 'zurich@execujet.com', vhfFrequency: '131.725 MHz' },
+    { id: 'lszh-jet-aviation', name: 'Jet Aviation Zurich', phone: '+41 58 158 8111', email: 'zrhfbo@jetaviation.com' }
+  ],
+  LIML: [
+    { id: 'liml-milano-prime', name: 'Milano Prime Executive Handling', phone: '+39 02 7020 0300', email: 'operations@milanoprime.com', vhfFrequency: '131.85 MHz' },
+    { id: 'liml-signature', name: 'Signature Flight Support Milan Linate', phone: '+39 02 7486 4300', email: 'lin@signatureflight.com' }
+  ],
+  LEIB: [
+    { id: 'leib-sky-valet', name: 'Sky Valet Ibiza VIP Terminal', phone: '+34 971 395 385', email: 'ops.ibz@skyvalet.com', vhfFrequency: '131.90 MHz' },
+    { id: 'leib-gestair', name: 'Gestair FBO Ibiza', phone: '+34 971 809 234', email: 'fbo.ibz@gestair.com' }
+  ],
+  LEPA: [
+    { id: 'lepa-mallorcan', name: 'Mallorcan Executive Aviation FBO', phone: '+34 971 789 266', email: 'handling.pmi@generalaviation.es', vhfFrequency: '131.65 MHz' }
+  ],
+  LSZR: [
+    { id: 'lszr-peoples', name: 'Peoples Business Aviation Altenrhein', phone: '+41 71 858 5165', email: 'c-office@peoples.ch', vhfFrequency: '122.85 MHz' }
+  ],
+  LOWW: [
+    { id: 'loww-vienna-vip', name: 'Vienna Airport VIP & General Aviation Center', phone: '+43 1 7007 22233', email: 'gac@viennaairport.com', vhfFrequency: '131.70 MHz' }
+  ],
+  KTEB: [
+    { id: 'kteb-signature', name: 'Signature Flight Support Teterboro', phone: '+1 201 288 1880', email: 'teb@signatureflight.com', vhfFrequency: '122.95 MHz' },
+    { id: 'kteb-jet-aviation', name: 'Jet Aviation Teterboro', phone: '+1 201 462 4000', email: 'tebfbo@jetaviation.com' }
+  ],
+  KOPF: [
+    { id: 'kopf-fontainebleau', name: 'Fontainebleau Aviation', phone: '+1 305 685 4646', email: 'info@fontainebleauaviation.com', vhfFrequency: '130.60 MHz' }
+  ],
+  OMDW: [
+    { id: 'omdw-jetex', name: 'Jetex VIP Terminal Dubai South', phone: '+971 4 212 4900', email: 'fbo-dwc@jetex.com', vhfFrequency: '131.75 MHz' }
+  ]
+};
+
+const attachFbos = (airport) => {
+  if (!airport) return null;
+  const fbos = FBO_DIRECTORY[airport.icao] || [
+    {
+      id: `${airport.icao.toLowerCase()}-fbo`,
+      name: `${airport.name} Executive FBO`,
+      phone: '+44 20 7946 0000',
+      email: `ops@${airport.icao.toLowerCase()}.handling.aero`,
+      vhfFrequency: '131.80 MHz'
+    }
+  ];
+  return { ...airport, fbos };
+};
+
 const getAirportByCode = (code) => {
   if (!code) return null;
   const upper = code.toUpperCase().trim();
-  return AIRPORTS.find((a) => a.icao === upper || a.iata === upper) || null;
+  const raw = AIRPORTS.find((a) => a.icao === upper || a.iata === upper) || null;
+  return attachFbos(raw);
 };
 
 const findAirportByCode = getAirportByCode;
-const airportsList = AIRPORTS;
+const airportsList = AIRPORTS.map(attachFbos);
 
 module.exports = {
   AIRPORTS,
   airportsList,
-  searchAirports,
+  searchAirports: (query, limit = 20) => searchAirports(query, limit).map(attachFbos),
   getAirportByCode,
   findAirportByCode,
+  FBO_DIRECTORY
 };

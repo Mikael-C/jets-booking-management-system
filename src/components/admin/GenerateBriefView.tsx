@@ -3,8 +3,9 @@
 import React, { useState, useEffect } from "react";
 import { useAviation } from "@/lib/aviationContext";
 import { Booking, FlightLeg, CrewMember, HandlingAgent, PassengerManifestItem } from "@/types/aviation";
-import { airportsData, findAirportByCode } from "@/data/airports";
+import { airportsData, findAirportByCode, getAirportFbos } from "@/data/airports";
 import { fleetData } from "@/data/fleet";
+import { defaultOperator } from "@/data/initialBookings";
 import {
   Compass,
   Plane,
@@ -23,7 +24,8 @@ import {
   Calendar,
   Users,
   Sparkles,
-  ChevronRight
+  ChevronRight,
+  Search
 } from "lucide-react";
 
 interface EditableLegBrief {
@@ -55,30 +57,34 @@ interface EditableLegBrief {
 export default function GenerateBriefView() {
   const { bookings, openDocument } = useAviation();
 
+  // Search input: live filter by Trip ID or Client's Name
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+
   const [selectedBookingId, setSelectedBookingId] = useState<string>(bookings[0]?.id || "");
   const selectedBooking = bookings.find((b) => b.id === selectedBookingId) || bookings[0];
 
   // Document Identifiers (Flight Brief DETAILS box)
   const [contractDate, setContractDate] = useState("30/06/2026");
-  const [tripNumber, setTripNumber] = useState("ZFL433");
-  const [accountNumber, setAccountNumber] = useState("284169");
+  const [tripNumber, setTripNumber] = useState("PEU842-001");
+  const [accountNumber, setAccountNumber] = useState("ACC-21737");
   const [quoteExpirationDate, setQuoteExpirationDate] = useState("1/07/2026");
 
   // TO Section (Client details)
-  const [clientName, setClientName] = useState("Somaco SAM");
-  const [streetAddress, setStreetAddress] = useState("5, av. Princesse Grace - MC98000");
-  const [cityCountry, setCityCountry] = useState("Monaco, Monaco");
+  const [clientName, setClientName] = useState("Edward Brinkmann");
+  const [streetAddress, setStreetAddress] = useState("3606 Enterprise Ave");
+  const [cityCountry, setCityCountry] = useState("FL-34104 Naples, United States");
 
   // FROM Section (Operator details)
-  const [operatorName, setOperatorName] = useState("GlobeAir AG");
-  const [repName, setRepName] = useState("Ezeokeke, Obiefuna");
-  const [operatorEmail, setOperatorEmail] = useState("customercare@globeair.com");
-  const [operatorPhone, setOperatorPhone] = useState("+43 7221727400");
-  const [operatorVat, setOperatorVat] = useState("ATU 63357619");
+  const [operatorName, setOperatorName] = useState(defaultOperator.companyName);
+  const [repName, setRepName] = useState(defaultOperator.representativeName);
+  const [operatorEmail, setOperatorEmail] = useState(defaultOperator.supportEmail);
+  const [operatorPhone, setOperatorPhone] = useState(defaultOperator.supportPhone);
+  const [operatorVat, setOperatorVat] = useState(defaultOperator.vatNumber);
 
   // JET DETAILS Section
-  const [aircraftName, setAircraftName] = useState("Embraer Phenom 100");
-  const [aircraftRegistration, setAircraftRegistration] = useState("F-HSBL");
+  const [aircraftName, setAircraftName] = useState("Cessna Citation Mustang");
+  const [aircraftRegistration, setAircraftRegistration] = useState("OE-FFB");
   const [yearOfManufacture, setYearOfManufacture] = useState("2015");
   const [yearOfRefurbishment, setYearOfRefurbishment] = useState("0");
   const [passengerSeats, setPassengerSeats] = useState(5);
@@ -145,6 +151,25 @@ export default function GenerateBriefView() {
 
   const [success, setSuccess] = useState(false);
 
+  // Filter bookings by Trip ID or Client's Name
+  const matchingBookings = bookings.filter((b) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    const tripMatch = (b.tripNumber || "").toLowerCase().includes(q);
+    const quoteMatch = (b.quoteReference || "").toLowerCase().includes(q);
+    const clientMatch = (b.client?.fullName || "").toLowerCase().includes(q);
+    const companyMatch = (b.client?.companyName || "").toLowerCase().includes(q);
+    const aircraftMatch = (b.aircraft?.name || "").toLowerCase().includes(q);
+    const routeMatch = (b.legs || []).some(
+      (l) =>
+        (l.origin?.icao || "").toLowerCase().includes(q) ||
+        (l.destination?.icao || "").toLowerCase().includes(q) ||
+        (l.origin?.city || "").toLowerCase().includes(q) ||
+        (l.destination?.city || "").toLowerCase().includes(q)
+    );
+    return tripMatch || quoteMatch || clientMatch || companyMatch || aircraftMatch || routeMatch;
+  });
+
   // Sync state when picking a booking
   const handleBookingChange = (id: string) => {
     setSelectedBookingId(id);
@@ -159,48 +184,53 @@ export default function GenerateBriefView() {
       setStreetAddress(b.client.streetAddress);
       setCityCountry(b.client.cityPostalCountry);
 
-      setOperatorName(b.operator.companyName);
-      setRepName(b.operator.representativeName);
-      setOperatorEmail(b.operator.supportEmail);
-      setOperatorPhone(b.operator.supportPhone);
-      setOperatorVat(b.operator.vatNumber);
+      setOperatorName(b.operator?.companyName || defaultOperator.companyName);
+      setRepName(b.operator?.representativeName || defaultOperator.representativeName);
+      setOperatorEmail(b.operator?.supportEmail || defaultOperator.supportEmail);
+      setOperatorPhone(b.operator?.supportPhone || defaultOperator.supportPhone);
+      setOperatorVat(b.operator?.vatNumber || defaultOperator.vatNumber);
 
-      setAircraftName(b.aircraft.name);
-      setAircraftRegistration(b.aircraft.registration || "F-HSBL");
-      setYearOfManufacture(String(b.aircraft.yearOfManufacture || "2015"));
-      setYearOfRefurbishment(String(b.aircraft.yearOfRefurbishment || "0"));
-      setPassengerSeats(b.aircraft.passengers || 5);
-      setSmokingCabin(b.aircraft.smokingCabin || false);
-      setToilette(b.aircraft.toilette !== false);
+      setAircraftName(b.aircraft?.name || "Cessna Citation Mustang");
+      setAircraftRegistration(b.aircraft?.registration || "OE-FFB");
+      setYearOfManufacture(String(b.aircraft?.yearOfManufacture || "2015"));
+      setYearOfRefurbishment(String(b.aircraft?.yearOfRefurbishment || "0"));
+      setPassengerSeats(b.aircraft?.passengers || 5);
+      setSmokingCabin(b.aircraft?.smokingCabin || false);
+      setToilette(b.aircraft?.toilette !== false);
 
       if (b.legs && b.legs.length > 0) {
         setLegs(
           b.legs.map((leg, idx) => {
-            const cmdr = leg.crew.find((c) => c.role === "CMDR") || {
-              name: "Steffen AZAM",
-              phone: "+33 6 61 39 47 63"
+            const cmdr = leg.crew?.find((c) => c.role === "CMDR") || {
+              name: "Capt. Alexander Vance",
+              phone: "+44 7700 900842"
             };
-            const fo = leg.crew.find((c) => c.role === "F/O") || {
-              name: "Franklin BONNIVEAU",
-              phone: "+33 6 61 39 47 00"
+            const fo = leg.crew?.find((c) => c.role === "F/O") || {
+              name: "Marcus Lindqvist",
+              phone: "+44 7700 900890"
             };
-            const fa = leg.crew.find((c) => c.role === "Cabin Attendant") || {
+            const fa = leg.crew?.find((c) => c.role === "Cabin Attendant") || {
               name: "Claire Dupont",
               phone: "+33 6 44 19 88 03"
             };
-            const pNames = leg.passengers.map((p) => p.fullName).join(", ") || b.client.fullName;
+            const pNames = leg.passengers?.map((p) => p.fullName).join(", ") || b.client?.fullName || "VIP Passenger";
+
+            const originIcao = leg.origin?.icao || (leg as any).fromIcao || "LSGG";
+            const destIcao = leg.destination?.icao || (leg as any).toIcao || "LIMJ";
+            const depFbos = getAirportFbos(originIcao);
+            const arrFbos = getAirportFbos(destIcao);
 
             return {
               legNumber: idx + 1,
-              flightDate: leg.flightDate,
-              originIcao: leg.origin.icao,
-              destIcao: leg.destination.icao,
-              departureTime: leg.departureTimeLocal.replace(" h", "").trim(),
-              arrivalTime: leg.arrivalTimeLocal.replace(" h", "").trim(),
-              flightTimeFormatted: leg.flightTimeFormatted,
+              flightDate: leg.flightDate || "03/07/2026",
+              originIcao,
+              destIcao,
+              departureTime: (leg.departureTimeLocal || "10:00").replace(" h", "").trim(),
+              arrivalTime: (leg.arrivalTimeLocal || "11:00").replace(" h", "").trim(),
+              flightTimeFormatted: leg.flightTimeFormatted || "1h 00m",
               paxCount: leg.paxCount || 2,
-              flightNumber: leg.flightNumber || "PEA501",
-              aircraftRegistration: leg.aircraftRegistration || b.aircraft.registration || "F-HSBL",
+              flightNumber: leg.flightNumber || b.tripNumber || "ORB842",
+              aircraftRegistration: leg.aircraftRegistration || b.aircraft?.registration || "OE-FFB",
               cmdrName: cmdr.name,
               cmdrPhone: cmdr.phone,
               foName: fo.name,
@@ -208,18 +238,25 @@ export default function GenerateBriefView() {
               faName: fa.name,
               faPhone: fa.phone || "",
               passengerNames: pNames,
-              depHandlerName: leg.departureHandling.name || "Aviavip",
-              depHandlerPhone: leg.departureHandling.phone || "+33 493 213737",
-              depHandlerEmail: leg.departureHandling.email || "ops@handling.aero",
-              arrHandlerName: leg.arrivalHandling.name || "Airport Altenrhein",
-              arrHandlerPhone: leg.arrivalHandling.phone || "+41 71 858 5165",
-              arrHandlerEmail: leg.arrivalHandling.email || "ops@handling.aero"
+              depHandlerName: leg.departureHandling?.name || depFbos[0]?.name || "VIP Handling",
+              depHandlerPhone: leg.departureHandling?.phone || depFbos[0]?.phone || "+41 22 717 8400",
+              depHandlerEmail: leg.departureHandling?.email || depFbos[0]?.email || "gva@fbo.aero",
+              arrHandlerName: leg.arrivalHandling?.name || arrFbos[0]?.name || "VIP Handling",
+              arrHandlerPhone: leg.arrivalHandling?.phone || arrFbos[0]?.phone || "+39 010 601 5459",
+              arrHandlerEmail: leg.arrivalHandling?.email || arrFbos[0]?.email || "ops@fbo.aero"
             };
           })
         );
       }
     }
   };
+
+  // Mount effect: load initial booking
+  useEffect(() => {
+    if (selectedBookingId) {
+      handleBookingChange(selectedBookingId);
+    }
+  }, []);
 
   const handleLegChange = (idx: number, field: keyof EditableLegBrief, value: any) => {
     const updated = [...legs];
@@ -363,9 +400,9 @@ export default function GenerateBriefView() {
           </p>
         </div>
 
-        {/* Trip Selector */}
+        {/* Quick Trip Selector Fallback */}
         <div className="flex items-center gap-2">
-          <span className="text-xs font-mono font-bold text-[#0F1420]/70">Trip:</span>
+          <span className="text-xs font-mono font-bold text-[#0F1420]/70">Active Trip:</span>
           <select
             value={selectedBookingId}
             onChange={(e) => handleBookingChange(e.target.value)}
@@ -373,10 +410,119 @@ export default function GenerateBriefView() {
           >
             {bookings.map((b) => (
               <option key={b.id} value={b.id}>
-                {b.tripNumber} ({b.client.fullName} • {b.aircraft.name})
+                {b.tripNumber} ({b.client?.fullName} • {b.aircraft?.name})
               </option>
             ))}
           </select>
+        </div>
+      </div>
+
+      {/* Primary Search Bar: Search by Trip ID or Client's Name */}
+      <div className="bg-white border border-[#E0DAD0] rounded-2xl p-5 shadow-sm space-y-3 relative">
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-mono font-bold uppercase tracking-wider text-[#0F1420] flex items-center gap-2">
+            <Search className="w-4 h-4 text-[#C9A052]" />
+            Search Flights by Trip ID or Client's Name
+          </label>
+          <span className="text-[11px] text-gray-500 font-mono">
+            {matchingBookings.length} matching missions
+          </span>
+        </div>
+
+        <div className="relative">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setIsSearchOpen(true);
+            }}
+            onFocus={() => setIsSearchOpen(true)}
+            placeholder="Type Trip ID (e.g. PEU842, ZFL433) or Client Name (e.g. Edward Brinkmann, Somaco)..."
+            className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl pl-10 pr-20 py-3 text-xs text-[#0F1420] font-medium focus:outline-none focus:border-[#C9A052] transition-all shadow-inner"
+          />
+          <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchQuery("");
+                setIsSearchOpen(false);
+              }}
+              className="absolute right-3 top-1/2 -translate-y-1/2 px-2 py-1 text-[10px] font-mono text-gray-500 hover:text-gray-900 bg-gray-200 hover:bg-gray-300 rounded"
+            >
+              Clear
+            </button>
+          )}
+
+          {/* Floating Live Results Dropdown */}
+          {isSearchOpen && (
+            <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-[#E0DAD0] rounded-xl shadow-2xl z-40 max-h-72 overflow-y-auto divide-y divide-[#E0DAD0]">
+              {matchingBookings.length === 0 ? (
+                <div className="p-4 text-center text-xs text-gray-500">
+                  No flights found matching "{searchQuery}".
+                </div>
+              ) : (
+                matchingBookings.map((b) => {
+                  const firstLeg = b.legs?.[0];
+                  return (
+                    <div
+                      key={b.id}
+                      onClick={() => {
+                        handleBookingChange(b.id);
+                        setIsSearchOpen(false);
+                        setSearchQuery("");
+                      }}
+                      className={`p-3.5 hover:bg-[#F5F2EC] cursor-pointer transition-colors flex items-center justify-between text-xs ${
+                        b.id === selectedBookingId ? "bg-[#C9A052]/10 border-l-4 border-[#C9A052]" : ""
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="flex flex-col">
+                          <span className="font-mono font-black text-[#0F1420] text-sm">
+                            {b.tripNumber}
+                          </span>
+                          <span className="text-[10px] text-gray-400 font-mono">
+                            {b.quoteReference || b.id}
+                          </span>
+                        </div>
+                        <div className="border-l border-gray-300 pl-3">
+                          <p className="font-bold text-[#0F1420]">{b.client?.fullName}</p>
+                          {b.client?.companyName && (
+                            <p className="text-[10px] text-gray-500">{b.client.companyName}</p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="text-right">
+                        <div className="font-mono font-bold text-[#C9A052] text-xs">
+                          {firstLeg?.origin?.icao || (firstLeg as any)?.fromIcao || "---"} → {firstLeg?.destination?.icao || (firstLeg as any)?.toIcao || "---"}
+                        </div>
+                        <div className="text-[10px] text-gray-500 font-mono">
+                          {b.aircraft?.name} • {firstLeg?.flightDate || b.contractDate}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Active Loaded Summary Bar */}
+        <div className="flex items-center justify-between text-xs bg-[#F5F2EC] px-3.5 py-2 rounded-xl border border-[#E0DAD0]">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[10px] uppercase font-mono text-gray-500 font-bold">Selected Trip:</span>
+            <span className="font-mono font-bold text-[#0F1420] bg-white px-2 py-0.5 rounded border border-[#E0DAD0]">{tripNumber}</span>
+            <span className="text-gray-400">•</span>
+            <span className="font-bold text-[#0F1420]">{clientName}</span>
+            <span className="text-gray-400">•</span>
+            <span className="font-mono text-gray-600">{aircraftName} ({aircraftRegistration})</span>
+          </div>
+          <span className="text-[10px] font-mono font-bold text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded-full border border-emerald-300">
+            Loaded for Flight Brief
+          </span>
         </div>
       </div>
 
@@ -753,12 +899,23 @@ export default function GenerateBriefView() {
                     </label>
                     <select
                       value={leg.originIcao}
-                      onChange={(e) => handleLegChange(index, "originIcao", e.target.value)}
+                      onChange={(e) => {
+                        const newIcao = e.target.value;
+                        const fbos = getAirportFbos(newIcao);
+                        const updated = [...legs];
+                        updated[index].originIcao = newIcao;
+                        if (fbos.length > 0) {
+                          updated[index].depHandlerName = fbos[0].name;
+                          updated[index].depHandlerPhone = fbos[0].phone || "";
+                          updated[index].depHandlerEmail = fbos[0].email || "";
+                        }
+                        setLegs(updated);
+                      }}
                       className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1.5 text-xs font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
                     >
                       {airportsData.map((a) => (
                         <option key={a.icao} value={a.icao}>
-                          {a.icao} — {a.city} ({a.iata})
+                          [{a.icao}] {a.city} — {a.name}
                         </option>
                       ))}
                     </select>
@@ -770,12 +927,23 @@ export default function GenerateBriefView() {
                     </label>
                     <select
                       value={leg.destIcao}
-                      onChange={(e) => handleLegChange(index, "destIcao", e.target.value)}
+                      onChange={(e) => {
+                        const newIcao = e.target.value;
+                        const fbos = getAirportFbos(newIcao);
+                        const updated = [...legs];
+                        updated[index].destIcao = newIcao;
+                        if (fbos.length > 0) {
+                          updated[index].arrHandlerName = fbos[0].name;
+                          updated[index].arrHandlerPhone = fbos[0].phone || "";
+                          updated[index].arrHandlerEmail = fbos[0].email || "";
+                        }
+                        setLegs(updated);
+                      }}
                       className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1.5 text-xs font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
                     >
                       {airportsData.map((a) => (
                         <option key={a.icao} value={a.icao}>
-                          {a.icao} — {a.city} ({a.iata})
+                          [{a.icao}] {a.city} — {a.name}
                         </option>
                       ))}
                     </select>
@@ -969,12 +1137,44 @@ export default function GenerateBriefView() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
                     {/* Departure Handler */}
                     <div className="p-3 bg-[#F9F8F5] rounded-xl border border-[#E0DAD0] space-y-2">
-                      <span className="text-[10px] font-mono font-bold uppercase text-[#9A7A35]">
-                        Departure Handler: {leg.originIcao}
-                      </span>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-mono font-bold uppercase text-[#9A7A35]">
+                          Departure Handler: {leg.originIcao}
+                        </span>
+                        {getAirportFbos(leg.originIcao).length > 0 && (
+                          <span className="text-[9px] text-gray-500 font-mono">
+                            {getAirportFbos(leg.originIcao).length} FBOs available
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Airport FBO Directory Picker */}
+                      {getAirportFbos(leg.originIcao).length > 0 && (
+                        <select
+                          onChange={(e) => {
+                            const found = getAirportFbos(leg.originIcao).find((f) => f.id === e.target.value);
+                            if (found) {
+                              const updated = [...legs];
+                              updated[index].depHandlerName = found.name;
+                              updated[index].depHandlerPhone = found.phone || "";
+                              updated[index].depHandlerEmail = found.email || "";
+                              setLegs(updated);
+                            }
+                          }}
+                          className="w-full bg-white border border-[#C9A052]/50 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                        >
+                          <option value="">-- Quick Select from Airport FBO Directory --</option>
+                          {getAirportFbos(leg.originIcao).map((f) => (
+                            <option key={f.id} value={f.id}>
+                              {f.name} {f.phone ? `• ${f.phone}` : ""}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+
                       <input
                         type="text"
-                        placeholder="Agent Name (e.g. Aviavip)"
+                        placeholder="Agent Name (e.g. Jet Aviation)"
                         value={leg.depHandlerName}
                         onChange={(e) => handleLegChange(index, "depHandlerName", e.target.value)}
                         className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
@@ -982,14 +1182,14 @@ export default function GenerateBriefView() {
                       <div className="grid grid-cols-2 gap-2">
                         <input
                           type="tel"
-                          placeholder="Phone: +33 493 213737"
+                          placeholder="Phone: +41 22 717 8400"
                           value={leg.depHandlerPhone}
                           onChange={(e) => handleLegChange(index, "depHandlerPhone", e.target.value)}
                           className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1 text-xs font-mono text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
                         />
                         <input
                           type="email"
-                          placeholder="Email: nce.executive@aviapartner.aero"
+                          placeholder="Email: gva@jetaviation.com"
                           value={leg.depHandlerEmail}
                           onChange={(e) => handleLegChange(index, "depHandlerEmail", e.target.value)}
                           className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
@@ -999,12 +1199,44 @@ export default function GenerateBriefView() {
 
                     {/* Arrival Handler */}
                     <div className="p-3 bg-[#F9F8F5] rounded-xl border border-[#E0DAD0] space-y-2">
-                      <span className="text-[10px] font-mono font-bold uppercase text-[#9A7A35]">
-                        Arrival Handler: {leg.destIcao}
-                      </span>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-mono font-bold uppercase text-[#9A7A35]">
+                          Arrival Handler: {leg.destIcao}
+                        </span>
+                        {getAirportFbos(leg.destIcao).length > 0 && (
+                          <span className="text-[9px] text-gray-500 font-mono">
+                            {getAirportFbos(leg.destIcao).length} FBOs available
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Airport FBO Directory Picker */}
+                      {getAirportFbos(leg.destIcao).length > 0 && (
+                        <select
+                          onChange={(e) => {
+                            const found = getAirportFbos(leg.destIcao).find((f) => f.id === e.target.value);
+                            if (found) {
+                              const updated = [...legs];
+                              updated[index].arrHandlerName = found.name;
+                              updated[index].arrHandlerPhone = found.phone || "";
+                              updated[index].arrHandlerEmail = found.email || "";
+                              setLegs(updated);
+                            }
+                          }}
+                          className="w-full bg-white border border-[#C9A052]/50 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                        >
+                          <option value="">-- Quick Select from Airport FBO Directory --</option>
+                          {getAirportFbos(leg.destIcao).map((f) => (
+                            <option key={f.id} value={f.id}>
+                              {f.name} {f.phone ? `• ${f.phone}` : ""}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+
                       <input
                         type="text"
-                        placeholder="Agent Name (e.g. Airport Altenrhein)"
+                        placeholder="Agent Name (e.g. Genoa Aviation Services)"
                         value={leg.arrHandlerName}
                         onChange={(e) => handleLegChange(index, "arrHandlerName", e.target.value)}
                         className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
@@ -1012,14 +1244,14 @@ export default function GenerateBriefView() {
                       <div className="grid grid-cols-2 gap-2">
                         <input
                           type="tel"
-                          placeholder="Phone: +41 71 858 5165"
+                          placeholder="Phone: +39 010 601 5459"
                           value={leg.arrHandlerPhone}
                           onChange={(e) => handleLegChange(index, "arrHandlerPhone", e.target.value)}
                           className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1 text-xs font-mono text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
                         />
                         <input
                           type="email"
-                          placeholder="Email: c-office@peoples.ch"
+                          placeholder="Email: ops@genoa-aviation.it"
                           value={leg.arrHandlerEmail}
                           onChange={(e) => handleLegChange(index, "arrHandlerEmail", e.target.value)}
                           className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
