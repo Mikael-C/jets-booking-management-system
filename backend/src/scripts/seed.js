@@ -31,9 +31,22 @@ const seedDatabase = async (force = false) => {
   const existingUsers = await User.countDocuments();
   const existingClients = await Client.countDocuments();
   const existingOperators = await Operator.countDocuments();
+  const existingBookings = await Booking.countDocuments();
 
   if (existingUsers > 0 && existingClients > 0 && existingOperators > 0 && !forceSeed) {
-    console.log(`ℹ️ Database already contains data (${existingUsers} users, ${existingClients} clients, ${existingOperators} operators).`);
+    console.log(`ℹ️ Database already contains data (${existingUsers} users, ${existingClients} clients, ${existingOperators} operators, ${existingBookings} bookings).`);
+
+    // Ensure bookings collection is seeded if empty
+    if (existingBookings === 0) {
+      console.log('✈️ Existing database has 0 bookings. Seeding initial flight bookings...');
+      try {
+        const bookingsData = require('../seed/initialBookingsData.json');
+        await Booking.insertMany(bookingsData);
+        console.log(`✅ Seeded ${bookingsData.length} flight bookings into database!`);
+      } catch (err) {
+        console.warn('Booking seeding error:', err.message);
+      }
+    }
     
     // Check if aircraft collection needs updating with verified authentic images
     const oldAircraftCount = await Aircraft.countDocuments({
@@ -144,6 +157,11 @@ const seedDatabase = async (force = false) => {
     }
   ]);
   console.log(`🏢 Created ${operators.length} operators`);
+
+  // ─── Flight Bookings ─────────────────────────────────────
+  const bookingsData = require('../seed/initialBookingsData.json');
+  const seededBookings = await Booking.insertMany(bookingsData);
+  console.log(`✈️  Created ${seededBookings.length} initial flight bookings`);
 
   // ─── Sample Notifications ──────────────────────────────
   await Notification.insertMany([

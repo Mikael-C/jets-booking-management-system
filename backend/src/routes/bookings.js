@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const Joi = require('joi');
 const Booking = require('../models/Booking');
 const { authorize } = require('../middleware/auth');
@@ -9,6 +10,14 @@ const { generateInvoiceNumber } = require('../utils/generateId');
 const { logBookingAction, logStatusChange } = require('../services/auditService');
 const { createNotification } = require('../services/notificationService');
 const { sendStatusUpdateEmail } = require('../services/emailService');
+
+// Helper to look up bookings by Mongo _id, custom id, or tripNumber
+const getBookingFilter = (id) => {
+  if (mongoose.Types.ObjectId.isValid(id)) {
+    return { $or: [{ _id: id }, { id: id }, { tripNumber: id }], isDeleted: false };
+  }
+  return { $or: [{ id: id }, { tripNumber: id }], isDeleted: false };
+};
 
 // Valid booking status transitions
 const VALID_TRANSITIONS = {
@@ -90,16 +99,21 @@ router.get('/', async (req, res) => {
     Booking.countDocuments(filter),
   ]);
 
+  const mappedBookings = bookings.map((b) => ({
+    ...b,
+    id: b.id || (b._id ? b._id.toString() : ''),
+  }));
+
   res.json({
     success: true,
-    data: bookings,
+    data: mappedBookings,
     pagination: { page: pageNum, limit: limitNum, total, totalPages: Math.ceil(total / limitNum) },
   });
 });
 
 // GET /api/bookings/:id
 router.get('/:id', async (req, res) => {
-  const booking = await Booking.findOne({ _id: req.params.id, isDeleted: false });
+  const booking = await Booking.findOne(getBookingFilter(req.params.id));
   if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
 
   // Agent can only see own bookings
@@ -140,7 +154,7 @@ router.put('/:id', async (req, res) => {
     return res.status(403).json({ success: false, message: 'Finance role cannot update bookings' });
   }
 
-  const booking = await Booking.findOne({ _id: req.params.id, isDeleted: false });
+  const booking = await Booking.findOne(getBookingFilter(req.params.id));
   if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
 
   if (req.userRole === 'agent' && booking.agentEmail !== req.user.email) {
@@ -161,7 +175,7 @@ router.put('/:id', async (req, res) => {
 
 // DELETE /api/bookings/:id (soft delete, super_admin only)
 router.delete('/:id', authorize('super_admin'), async (req, res) => {
-  const booking = await Booking.findOne({ _id: req.params.id, isDeleted: false });
+  const booking = await Booking.findOne(getBookingFilter(req.params.id));
   if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
 
   booking.isDeleted = true;
@@ -183,7 +197,7 @@ router.patch('/:id/status', async (req, res) => {
   const { status } = req.body;
   if (!status) return res.status(400).json({ success: false, message: 'status is required' });
 
-  const booking = await Booking.findOne({ _id: req.params.id, isDeleted: false });
+  const booking = await Booking.findOne(getBookingFilter(req.params.id));
   if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
 
   const allowedTransitions = VALID_TRANSITIONS[booking.status] || [];
@@ -213,19 +227,19 @@ router.patch('/:id/payment-status', authorize('super_admin', 'admin', 'finance')
   const { paymentStatus, paymentMethodChoice } = req.body;
   if (!paymentStatus) return res.status(400).json({ success: false, message: 'paymentStatus is required' });
 
-  const validPaymentStatuses = ['unpaid', 'partial', 'paid', 'refunded', 'credited'];
+  const validPaymentStatuses = ['unpaid', 'partial', 'paid', 'refunded', 'credited', 'deposit_paid', 'fully_paid', 'overdue'];
   if (!validPaymentStatuses.includes(paymentStatus)) {
     return res.status(400).json({ success: false, message: `Invalid paymentStatus. Valid: ${validPaymentStatuses.join(', ')}` });
   }
 
-  const booking = await Booking.findOne({ _id: req.params.id, isDeleted: false });
+  const booking = await Booking.findOne(getBookingFilter(req.params.id));
   if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
 
   booking.paymentStatus = paymentStatus;
   if (paymentMethodChoice) booking.paymentMethodChoice = paymentMethodChoice;
 
   // Auto-advance status to 'paid' if payment is complete
-  if (paymentStatus === 'paid' && booking.status === 'accepted') {
+  if (['paid', 'fully_paid'].includes(paymentStatus) && booking.status === 'accepted') {
     booking.status = 'paid';
   }
 
@@ -237,7 +251,7 @@ router.patch('/:id/payment-status', authorize('super_admin', 'admin', 'finance')
 
 // POST /api/bookings/:id/convert-to-confirmed
 router.post('/:id/convert-to-confirmed', authorize('super_admin', 'admin', 'operations'), async (req, res) => {
-  const booking = await Booking.findOne({ _id: req.params.id, isDeleted: false });
+  const booking = await Booking.findOne(getBookingFilter(req.params.id));
   if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
 
   if (!['accepted', 'paid'].includes(booking.status)) {
@@ -260,11 +274,11 @@ router.post('/:id/convert-to-confirmed', authorize('super_admin', 'admin', 'oper
 
 // GET /api/bookings/:id/checklist
 router.get('/:id/checklist', async (req, res) => {
-  const booking = await Booking.findOne({ _id: req.params.id, isDeleted: false }).select('checklist tripNumber');
+  const booking = await Booking.findOne(getBookingFilter(req.params.id)).select('checklist tripNumber');
   if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
 
-  const completed = booking.checklist.filter((s) => s.completed).length;
-  const total = booking.checklist.length;
+  const completed = (booking.checklist || []).filter((s) => s.completed || s.isCompleted).length;
+  const total = (booking.checklist || []).length;
 
   res.json({
     success: true,
@@ -280,13 +294,14 @@ router.patch('/:id/checklist/:stepId', authorize('super_admin', 'admin', 'operat
   const { completed } = req.body;
   if (completed === undefined) return res.status(400).json({ success: false, message: 'completed field is required' });
 
-  const booking = await Booking.findOne({ _id: req.params.id, isDeleted: false });
+  const booking = await Booking.findOne(getBookingFilter(req.params.id));
   if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
 
-  const step = booking.checklist.find((s) => s.id === req.params.stepId);
+  const step = (booking.checklist || []).find((s) => s.id === req.params.stepId);
   if (!step) return res.status(404).json({ success: false, message: 'Checklist step not found' });
 
   step.completed = Boolean(completed);
+  step.isCompleted = Boolean(completed);
   step.completedAt = completed ? new Date() : null;
   step.completedBy = completed ? req.user.name : '';
   await booking.save();

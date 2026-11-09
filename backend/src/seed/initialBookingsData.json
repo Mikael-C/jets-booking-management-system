@@ -1,0 +1,2341 @@
+[
+  {
+    "id": "booking-peu842",
+    "tripNumber": "PEU842-001",
+    "quoteReference": "QTE-2026-842",
+    "invoiceNumber": "00106020",
+    "accountNumber": "ACC-21737",
+    "contractDate": "01.10.2026",
+    "quoteExpirationDate": "02.10.2026, 19:53z",
+    "paymentDueDate": "03.10.2026",
+    "status": "confirmed",
+    "quoteStatus": "accepted",
+    "paymentStatus": "fully_paid",
+    "paymentReason": "100% Full Charter Flight & Concierge Services",
+    "paymentMethodChoice": "wire",
+    "cardFeePercentage": 3.5,
+    "cardFeeAmount": 450.45,
+    "totalWithCardFee": 13320.45,
+    "tripType": "round_trip",
+    "aircraft": {
+      "id": "cessna-citation-mustang",
+      "name": "Cessna Citation Mustang",
+      "manufacturer": "Cessna",
+      "category": "entry-level",
+      "categoryLabel": "Entry Level",
+      "registration": "OE-FFB",
+      "tagline": "The quintessential European private air taxi.",
+      "description": "Compact, whisper-quiet cabin with 4 club-arranged leather seats, forward mini-bar, and high-efficiency Pratt & Whitney turbofans.",
+      "passengers": 4,
+      "passengersLabel": "4 passengers",
+      "range": 1200,
+      "rangeLabel": "1,200 nm",
+      "cabinHeight": "1.37 m",
+      "cabinWidth": "1.40 m",
+      "baggageVolume": "57 cu ft",
+      "cruiseSpeed": "340 ktas",
+      "yearOfManufacture": "2008 - 2010",
+      "yearOfRefurbishment": 2024,
+      "pricePerHour": 2450,
+      "toilette": true,
+      "smokingCabin": false,
+      "imageExterior": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/55/VH-PNM_Embraer_500_Phenom_100_%286485946457%29.jpg/1280px-VH-PNM_Embraer_500_Phenom_100_%286485946457%29.jpg",
+      "imageInterior": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/5a/Citation_Mustang_Int.jpg/1280px-Citation_Mustang_Int.jpg",
+      "images": [
+        {
+          "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/55/VH-PNM_Embraer_500_Phenom_100_%286485946457%29.jpg/1280px-VH-PNM_Embraer_500_Phenom_100_%286485946457%29.jpg",
+          "thumb": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/55/VH-PNM_Embraer_500_Phenom_100_%286485946457%29.jpg/1280px-VH-PNM_Embraer_500_Phenom_100_%286485946457%29.jpg",
+          "alt": "Cessna Citation Mustang exterior ramp view",
+          "type": "exterior",
+          "source": "aviation-verified",
+          "credit": "Aviation Photography Archives (EBACE / Paris Air Show)",
+          "creditUrl": "https://commons.wikimedia.org"
+        },
+        {
+          "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/5a/Citation_Mustang_Int.jpg/1280px-Citation_Mustang_Int.jpg",
+          "thumb": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/5a/Citation_Mustang_Int.jpg/1280px-Citation_Mustang_Int.jpg",
+          "alt": "Cessna Citation Mustang executive private cabin interior",
+          "type": "interior",
+          "source": "aviation-verified",
+          "credit": "Aviation Photography Archives (EBACE / Paris Air Show)",
+          "creditUrl": "https://commons.wikimedia.org"
+        },
+        {
+          "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/98/Bombardier_Global_6000_lavatory_with_shower.JPG/1280px-Bombardier_Global_6000_lavatory_with_shower.JPG",
+          "thumb": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/98/Bombardier_Global_6000_lavatory_with_shower.JPG/1280px-Bombardier_Global_6000_lavatory_with_shower.JPG",
+          "alt": "Cessna Citation Mustang private enclosed aircraft lavatory",
+          "type": "bathroom",
+          "source": "aviation-verified",
+          "credit": "Aviation Photography Archives (EBACE / Paris Air Show)",
+          "creditUrl": "https://commons.wikimedia.org"
+        },
+        {
+          "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/a5/Embraer_Phenom_100_cockpit_%2845_%28R%29_Squadron%29.jpg/1280px-Embraer_Phenom_100_cockpit_%2845_%28R%29_Squadron%29.jpg",
+          "thumb": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/a5/Embraer_Phenom_100_cockpit_%2845_%28R%29_Squadron%29.jpg/1280px-Embraer_Phenom_100_cockpit_%2845_%28R%29_Squadron%29.jpg",
+          "alt": "Cessna Citation Mustang glass cockpit flight deck avionics",
+          "type": "cockpit",
+          "source": "aviation-verified",
+          "credit": "Aviation Photography Archives (EBACE / Paris Air Show)",
+          "creditUrl": "https://commons.wikimedia.org"
+        }
+      ],
+      "additionalImages": [
+        "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/5a/Citation_Mustang_Int.jpg/1280px-Citation_Mustang_Int.jpg",
+        "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/98/Bombardier_Global_6000_lavatory_with_shower.JPG/1280px-Bombardier_Global_6000_lavatory_with_shower.JPG",
+        "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/a5/Embraer_Phenom_100_cockpit_%2845_%28R%29_Squadron%29.jpg/1280px-Embraer_Phenom_100_cockpit_%2845_%28R%29_Squadron%29.jpg"
+      ]
+    },
+    "client": {
+      "fullName": "Edward Brinkmann",
+      "companyName": "Brinkmann Global Capital",
+      "streetAddress": "3606 Enterprise Ave",
+      "cityPostalCountry": "FL-34104 Naples, United States",
+      "phone": "+1 239 555 0192",
+      "email": "ebrinkmann@bgcapital.com",
+      "vatNumber": "US-8492041",
+      "accountNumber": "ACC-21737"
+    },
+    "operator": {
+      "companyName": "Orbelo GmbH",
+      "legalEntity": "Orbelo Private Aviation & Charter Services GmbH",
+      "representativeName": "Ezeokeke, Obiefuna",
+      "supportEmail": "customercare@orbelo.com",
+      "supportPhone": "+43 7221 727 400",
+      "vatNumber": "ATU 6335 7619",
+      "additionalVatNumbers": [
+        "IT00268829991",
+        "DE286551690",
+        "GB303612155",
+        "FR66830821799",
+        "NL823480926B01",
+        "NO382321H"
+      ],
+      "bankName": "Raiffeisenlandesbank Oberösterreich AG",
+      "iban": "AT32 3400 0000 0266 7483",
+      "bic": "RZOOAT2LXXX",
+      "accountHolder": "Orbelo GmbH",
+      "commercialRegistry": "Handelsgericht Linz • FN293097a",
+      "courtOfJurisdiction": "Austrian law & Linz court applicable"
+    },
+    "legs": [
+      {
+        "legNumber": 1,
+        "flightDate": "2026-10-03",
+        "origin": {
+          "id": "geneva",
+          "name": "Geneva Airport",
+          "city": "Geneva",
+          "country": "Switzerland",
+          "iata": "GVA",
+          "icao": "LSGG",
+          "type": "dedicated",
+          "typeLabel": "Executive Business Terminal",
+          "popular": true,
+          "region": "europe",
+          "coordinates": {
+            "lat": 46.2381,
+            "lng": 6.1089
+          }
+        },
+        "destination": {
+          "id": "genoa",
+          "name": "Genoa Cristoforo Colombo Airport",
+          "city": "Genoa",
+          "country": "Italy",
+          "iata": "GOA",
+          "icao": "LIMJ",
+          "type": "fbo",
+          "typeLabel": "Ags Ops Executive Handling",
+          "popular": true,
+          "region": "europe",
+          "coordinates": {
+            "lat": 44.4133,
+            "lng": 8.8375
+          }
+        },
+        "departureTimeLocal": "11:20 h",
+        "arrivalTimeLocal": "12:02 h",
+        "flightTimeFormatted": "0h 42m",
+        "paxCount": 2,
+        "flightNumber": "GAC842U",
+        "aircraftRegistration": "OE-FFB",
+        "distanceNm": 155,
+        "crew": [
+          {
+            "role": "CMDR",
+            "name": "Audrain, Emmanuel",
+            "phone": "+43 664 8489 904"
+          },
+          {
+            "role": "F/O",
+            "name": "El Hassani Amrani, Hajar",
+            "phone": "+43 664 8489 928"
+          },
+          {
+            "role": "Cabin Attendant",
+            "name": "Claire Dupont",
+            "phone": "+33 6 44 19 88 03"
+          }
+        ],
+        "passengers": [
+          {
+            "id": "p1",
+            "fullName": "Edward Brinkmann",
+            "isLeadPassenger": true,
+            "passportNumber": "P99201482",
+            "nationality": "USA"
+          },
+          {
+            "id": "p2",
+            "fullName": "Aysel Nail Qizi Aliyeva",
+            "passportNumber": "AZ8819201",
+            "nationality": "AZE"
+          }
+        ],
+        "pets": {
+          "hasPets": true,
+          "petCount": 1,
+          "totalWeightKg": 8,
+          "petType": "Small Dog (Toy Poodle)",
+          "notes": "Pet travel crate approved, EU pet passport verified"
+        },
+        "luggage": {
+          "pieceCount": 3,
+          "totalWeightKg": 46,
+          "standardSuitcases": 2,
+          "dimensionsDescription": "2x Large 75x50x30cm, 1x Cabin 55x40x20cm",
+          "specialLuggageDescription": "1x Designer garment bag"
+        },
+        "departureHandling": {
+          "name": "Jet Aviation",
+          "airportCode": "LSGG",
+          "phone": "+41 58 158 1811",
+          "email": "gvafbo@jetaviation.com"
+        },
+        "arrivalHandling": {
+          "name": "Ags Ops",
+          "airportCode": "LIMJ",
+          "phone": "+39 010 601 5412",
+          "email": "dutymanager@airport.genova.it"
+        },
+        "from": "Geneva Airport",
+        "fromIcao": "LSGG",
+        "to": "Genoa Cristoforo Colombo Airport",
+        "toIcao": "LIMJ",
+        "departureDate": "2026-10-03",
+        "departureTime": "11:20 h",
+        "flightTimeMinutes": 60
+      },
+      {
+        "legNumber": 2,
+        "flightDate": "2026-10-06",
+        "origin": {
+          "id": "genoa",
+          "name": "Genoa Cristoforo Colombo Airport",
+          "city": "Genoa",
+          "country": "Italy",
+          "iata": "GOA",
+          "icao": "LIMJ",
+          "type": "fbo",
+          "typeLabel": "Ags Ops Executive Handling",
+          "popular": true,
+          "region": "europe",
+          "coordinates": {
+            "lat": 44.4133,
+            "lng": 8.8375
+          }
+        },
+        "destination": {
+          "id": "geneva",
+          "name": "Geneva Airport",
+          "city": "Geneva",
+          "country": "Switzerland",
+          "iata": "GVA",
+          "icao": "LSGG",
+          "type": "dedicated",
+          "typeLabel": "Executive Business Terminal",
+          "popular": true,
+          "region": "europe",
+          "coordinates": {
+            "lat": 46.2381,
+            "lng": 6.1089
+          }
+        },
+        "departureTimeLocal": "15:00 h",
+        "arrivalTimeLocal": "15:51 h",
+        "flightTimeFormatted": "0h 51m",
+        "paxCount": 2,
+        "flightNumber": "GAC842V",
+        "aircraftRegistration": "OE-FDT",
+        "distanceNm": 155,
+        "crew": [
+          {
+            "role": "CMDR",
+            "name": "Buchegger, Walter",
+            "phone": "+43 664 887 14 555"
+          },
+          {
+            "role": "F/O",
+            "name": "Franklin BONNIVEAU",
+            "phone": "+43 664 772 10 991"
+          },
+          {
+            "role": "Cabin Attendant",
+            "name": "Claire Dupont",
+            "phone": "+33 6 44 19 88 03"
+          }
+        ],
+        "passengers": [
+          {
+            "id": "p1",
+            "fullName": "Edward Brinkmann",
+            "isLeadPassenger": true,
+            "passportNumber": "P99201482",
+            "nationality": "USA"
+          },
+          {
+            "id": "p2",
+            "fullName": "Aysel Nail Qizi Aliyeva",
+            "passportNumber": "AZ8819201",
+            "nationality": "AZE"
+          }
+        ],
+        "pets": {
+          "hasPets": true,
+          "petCount": 1,
+          "totalWeightKg": 8,
+          "petType": "Small Dog (Toy Poodle)",
+          "notes": "Return leg cabin travel"
+        },
+        "luggage": {
+          "pieceCount": 3,
+          "totalWeightKg": 46,
+          "standardSuitcases": 2,
+          "dimensionsDescription": "2x Large 75x50x30cm, 1x Cabin 55x40x20cm",
+          "specialLuggageDescription": "1x Designer garment bag"
+        },
+        "departureHandling": {
+          "name": "Ags Ops",
+          "airportCode": "LIMJ",
+          "phone": "+39 010 601 5412",
+          "email": "dutymanager@airport.genova.it"
+        },
+        "arrivalHandling": {
+          "name": "Jet Aviation",
+          "airportCode": "LSGG",
+          "phone": "+41 58 158 1811",
+          "email": "gvafbo@jetaviation.com"
+        },
+        "from": "Genoa Cristoforo Colombo Airport",
+        "fromIcao": "LIMJ",
+        "to": "Geneva Airport",
+        "toIcao": "LSGG",
+        "departureDate": "2026-10-06",
+        "departureTime": "15:00 h",
+        "flightTimeMinutes": 60
+      }
+    ],
+    "pricing": {
+      "flightPrice": 11500,
+      "airportFees": 1140,
+      "passengerFees": 80,
+      "dayOfWeekDiscount": -250,
+      "inboundPassengerTax": 200,
+      "outboundPassengerTax": 200,
+      "additionalServicesTotal": 0,
+      "subtotal": 12870,
+      "vatRate": 0,
+      "vatAmount": 0,
+      "totalFlightPrice": 12870,
+      "currency": "EUR",
+      "totalAmount": 12870,
+      "grandTotal": 12870,
+      "baseCharterCost": 11500
+    },
+    "services": {
+      "limousineService": false,
+      "luxuryCarRental": false,
+      "helicopterService": false,
+      "vipCateringDetails": "Taittinger Champagne and artisan snacks",
+      "deicingInsurance": "none",
+      "deicingCostPerLeg": 0,
+      "carbonOffset": "neutral",
+      "carbonOffsetRatePerHour": 33,
+      "customRequests": "High-speed Wi-Fi active throughout"
+    },
+    "checklist": [
+      {
+        "id": "c1",
+        "label": "Aircraft Maintenance Release & Airworthiness Signoff",
+        "category": "aircraft",
+        "isCompleted": true,
+        "completedAt": "02.10.2026 09:30",
+        "completedBy": "Chief Inspector",
+        "requiredForDispatch": true,
+        "completed": true
+      },
+      {
+        "id": "c2",
+        "label": "Overflight & Landing Slots / PPR Confirmed",
+        "category": "permits",
+        "isCompleted": true,
+        "completedAt": "02.10.2026 11:15",
+        "completedBy": "Eurocontrol Dispatch",
+        "requiredForDispatch": true,
+        "completed": true
+      },
+      {
+        "id": "c3",
+        "label": "Crew Assignment & FTL Legality Confirmed",
+        "category": "crew",
+        "isCompleted": true,
+        "completedAt": "02.10.2026 12:00",
+        "completedBy": "Crew Ops",
+        "requiredForDispatch": true,
+        "completed": true
+      },
+      {
+        "id": "c4",
+        "label": "Departure FBO Handling Confirmed (Jet Aviation GVA)",
+        "category": "ground",
+        "isCompleted": true,
+        "completedAt": "02.10.2026 14:00",
+        "completedBy": "Handling Coordinator",
+        "requiredForDispatch": true,
+        "completed": true
+      },
+      {
+        "id": "c5",
+        "label": "Arrival FBO Handling Confirmed (Ags Ops Genoa)",
+        "category": "ground",
+        "isCompleted": true,
+        "completedAt": "02.10.2026 14:15",
+        "completedBy": "Handling Coordinator",
+        "requiredForDispatch": true,
+        "completed": true
+      },
+      {
+        "id": "c6",
+        "label": "Passenger Passport & APIS Data Validated",
+        "category": "passengers",
+        "isCompleted": true,
+        "completedAt": "02.10.2026 15:00",
+        "completedBy": "Border Security Liaison",
+        "requiredForDispatch": true,
+        "completed": true
+      },
+      {
+        "id": "c7",
+        "label": "VIP Catering Ordered & Confirmed",
+        "category": "ground",
+        "isCompleted": true,
+        "completedAt": "02.10.2026 15:00",
+        "completedBy": "Concierge",
+        "requiredForDispatch": false,
+        "completed": true
+      },
+      {
+        "id": "c8",
+        "label": "De-icing Status Evaluated (Subject to Operator)",
+        "category": "safety",
+        "isCompleted": true,
+        "completedAt": "03.10.2026 06:00",
+        "completedBy": "Captain on duty",
+        "requiredForDispatch": true,
+        "completed": true
+      },
+      {
+        "id": "c9",
+        "label": "Flight Brief Issued & Sent to Crew",
+        "category": "crew",
+        "isCompleted": true,
+        "completedAt": "02.10.2026 17:00",
+        "completedBy": "OCC Lead",
+        "requiredForDispatch": true,
+        "completed": true
+      },
+      {
+        "id": "c10",
+        "label": "Escrow Payment Received / Invoice Cleared",
+        "category": "finance",
+        "isCompleted": true,
+        "completedAt": "02.10.2026 16:30",
+        "completedBy": "Finance Director",
+        "requiredForDispatch": true,
+        "completed": true
+      }
+    ],
+    "agentName": "Ezeokeke, Obiefuna",
+    "agentEmail": "customercare@orbelo.com",
+    "commissionPercentage": 8,
+    "createdAt": "2026-10-01T10:00:00Z",
+    "updatedAt": "2026-10-02T18:00:00Z",
+    "_id": "booking-peu842",
+    "isDeleted": false
+  },
+  {
+    "id": "booking-zfl433",
+    "tripNumber": "ZFL433",
+    "quoteReference": "QTE-2026-433",
+    "invoiceNumber": "00105892",
+    "accountNumber": "ACC-48392",
+    "contractDate": "30.06.2026",
+    "quoteExpirationDate": "01.07.2026, 18:00z",
+    "paymentDueDate": "02.07.2026",
+    "status": "dispatched",
+    "quoteStatus": "accepted",
+    "paymentStatus": "fully_paid",
+    "paymentReason": "Private Jet Charter Flight & Helipad Transfer",
+    "paymentMethodChoice": "wire",
+    "cardFeePercentage": 3.5,
+    "cardFeeAmount": 434.7,
+    "totalWithCardFee": 12854.7,
+    "tripType": "round_trip",
+    "aircraft": {
+      "id": "pilatus-pc-12-ngx",
+      "name": "Pilatus PC-12 NGX",
+      "manufacturer": "Pilatus Aircraft",
+      "category": "turboprop",
+      "categoryLabel": "Turboprop",
+      "registration": "F-HSBL",
+      "tagline": "The undisputed Swiss army knife of executive private aviation.",
+      "description": "Featuring BMW Designworks leather club seating, Pratt & Whitney PT6E-67XP FADEC engine, and quiet pressurized cabin.",
+      "passengers": 8,
+      "passengersLabel": "8 passengers",
+      "range": 1803,
+      "rangeLabel": "1,803 nm",
+      "cabinHeight": "1.47 m",
+      "cabinWidth": "1.52 m",
+      "baggageVolume": "40 cu ft",
+      "cruiseSpeed": "290 ktas",
+      "yearOfManufacture": 2015,
+      "yearOfRefurbishment": 2025,
+      "pricePerHour": 1850,
+      "toilette": true,
+      "smokingCabin": false,
+      "imageExterior": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/90/Piaggio_P-180_Avanti_Rennes_2010.jpg/1280px-Piaggio_P-180_Avanti_Rennes_2010.jpg",
+      "imageInterior": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/db/Pilatus_PC-12_cabin_interior.jpg/1280px-Pilatus_PC-12_cabin_interior.jpg",
+      "images": [
+        {
+          "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/90/Piaggio_P-180_Avanti_Rennes_2010.jpg/1280px-Piaggio_P-180_Avanti_Rennes_2010.jpg",
+          "thumb": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/90/Piaggio_P-180_Avanti_Rennes_2010.jpg/1280px-Piaggio_P-180_Avanti_Rennes_2010.jpg",
+          "alt": "Pilatus PC-12 NGX exterior ramp view",
+          "type": "exterior",
+          "source": "aviation-verified",
+          "credit": "Aviation Photography Archives (EBACE / Paris Air Show)",
+          "creditUrl": "https://commons.wikimedia.org"
+        },
+        {
+          "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/db/Pilatus_PC-12_cabin_interior.jpg/1280px-Pilatus_PC-12_cabin_interior.jpg",
+          "thumb": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/db/Pilatus_PC-12_cabin_interior.jpg/1280px-Pilatus_PC-12_cabin_interior.jpg",
+          "alt": "Pilatus PC-12 NGX executive private cabin interior",
+          "type": "interior",
+          "source": "aviation-verified",
+          "credit": "Aviation Photography Archives (EBACE / Paris Air Show)",
+          "creditUrl": "https://commons.wikimedia.org"
+        },
+        {
+          "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/98/Bombardier_Global_6000_lavatory_with_shower.JPG/1280px-Bombardier_Global_6000_lavatory_with_shower.JPG",
+          "thumb": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/98/Bombardier_Global_6000_lavatory_with_shower.JPG/1280px-Bombardier_Global_6000_lavatory_with_shower.JPG",
+          "alt": "Pilatus PC-12 NGX private enclosed aircraft lavatory",
+          "type": "bathroom",
+          "source": "aviation-verified",
+          "credit": "Aviation Photography Archives (EBACE / Paris Air Show)",
+          "creditUrl": "https://commons.wikimedia.org"
+        },
+        {
+          "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/17/Cockpit_PC-12_linke_Seite.JPG/1280px-Cockpit_PC-12_linke_Seite.JPG",
+          "thumb": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/17/Cockpit_PC-12_linke_Seite.JPG/1280px-Cockpit_PC-12_linke_Seite.JPG",
+          "alt": "Pilatus PC-12 NGX glass cockpit flight deck avionics",
+          "type": "cockpit",
+          "source": "aviation-verified",
+          "credit": "Aviation Photography Archives (EBACE / Paris Air Show)",
+          "creditUrl": "https://commons.wikimedia.org"
+        }
+      ],
+      "additionalImages": [
+        "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/db/Pilatus_PC-12_cabin_interior.jpg/1280px-Pilatus_PC-12_cabin_interior.jpg",
+        "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/98/Bombardier_Global_6000_lavatory_with_shower.JPG/1280px-Bombardier_Global_6000_lavatory_with_shower.JPG",
+        "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/17/Cockpit_PC-12_linke_Seite.JPG/1280px-Cockpit_PC-12_linke_Seite.JPG"
+      ]
+    },
+    "client": {
+      "fullName": "Alexander Moretti",
+      "companyName": "Moretti Luxury Yachts S.r.l.",
+      "streetAddress": "7 Boulevard Albert 1er",
+      "cityPostalCountry": "MC-98000 Monaco",
+      "phone": "+377 97 97 12 00",
+      "email": "alex@morettiyachts.mc",
+      "vatNumber": "FR 48 392 849 102",
+      "accountNumber": "ACC-48392"
+    },
+    "operator": {
+      "companyName": "Orbelo GmbH",
+      "legalEntity": "Orbelo Private Aviation & Charter Services GmbH",
+      "representativeName": "Ezeokeke, Obiefuna",
+      "supportEmail": "customercare@orbelo.com",
+      "supportPhone": "+43 7221 727 400",
+      "vatNumber": "ATU 6335 7619",
+      "additionalVatNumbers": [
+        "IT00268829991",
+        "DE286551690",
+        "GB303612155",
+        "FR66830821799",
+        "NL823480926B01",
+        "NO382321H"
+      ],
+      "bankName": "Raiffeisenlandesbank Oberösterreich AG",
+      "iban": "AT32 3400 0000 0266 7483",
+      "bic": "RZOOAT2LXXX",
+      "accountHolder": "Orbelo GmbH",
+      "commercialRegistry": "Handelsgericht Linz • FN293097a",
+      "courtOfJurisdiction": "Austrian law & Linz court applicable"
+    },
+    "legs": [
+      {
+        "legNumber": 1,
+        "flightDate": "2026-07-03",
+        "origin": {
+          "id": "nice",
+          "name": "Nice Côte d'Azur Airport",
+          "city": "Nice / Cannes / Monaco",
+          "country": "France",
+          "iata": "NCE",
+          "icao": "LFMN",
+          "type": "dedicated",
+          "typeLabel": "General Aviation Terminal",
+          "popular": true,
+          "region": "europe",
+          "coordinates": {
+            "lat": 43.6584,
+            "lng": 7.2159
+          }
+        },
+        "destination": {
+          "id": "altenrhein",
+          "name": "Altenrhein / St. Gallen Airport",
+          "city": "Altenrhein / St. Gallen",
+          "country": "Switzerland",
+          "iata": "ACH",
+          "icao": "LSZR",
+          "type": "fbo",
+          "typeLabel": "Peoples Business Aviation",
+          "popular": true,
+          "region": "europe",
+          "coordinates": {
+            "lat": 47.485,
+            "lng": 9.5608
+          }
+        },
+        "departureTimeLocal": "08:00",
+        "arrivalTimeLocal": "09:15",
+        "flightTimeFormatted": "1h 15m",
+        "paxCount": 2,
+        "flightNumber": "PEA501",
+        "aircraftRegistration": "F-HSBL",
+        "distanceNm": 275,
+        "crew": [
+          {
+            "role": "CMDR",
+            "name": "Steffen AZAM",
+            "phone": "+33 6 61 39 47 63"
+          },
+          {
+            "role": "F/O",
+            "name": "Franklin BONNIVEAU",
+            "phone": "+33 6 92 14 00 22"
+          },
+          {
+            "role": "Cabin Attendant",
+            "name": "Sophie Lemaitre",
+            "phone": "+33 6 78 90 12 44"
+          }
+        ],
+        "passengers": [
+          {
+            "id": "p1",
+            "fullName": "Alexander Moretti",
+            "isLeadPassenger": true,
+            "passportNumber": "IT-992140A",
+            "nationality": "ITA"
+          },
+          {
+            "id": "p2",
+            "fullName": "Marc Edouard Dwek",
+            "passportNumber": "FR-4821033",
+            "nationality": "FRA"
+          }
+        ],
+        "pets": {
+          "hasPets": false,
+          "petCount": 0,
+          "totalWeightKg": 0
+        },
+        "luggage": {
+          "pieceCount": 2,
+          "totalWeightKg": 35,
+          "standardSuitcases": 2,
+          "dimensionsDescription": "2x Medium 65x45x25cm",
+          "specialLuggageDescription": "Briefcases and documents"
+        },
+        "departureHandling": {
+          "name": "Aviavip LFMN",
+          "airportCode": "LFMN",
+          "phone": "+33 493 213737",
+          "email": "nce.executive@aviapartner.aero"
+        },
+        "arrivalHandling": {
+          "name": "Airport Altenrhein LSZR",
+          "airportCode": "LSZR",
+          "phone": "+41 71 858 5165",
+          "email": "c-office@peoples.ch"
+        },
+        "from": "Nice Côte d'Azur Airport",
+        "fromIcao": "LFMN",
+        "to": "Altenrhein / St. Gallen Airport",
+        "toIcao": "LSZR",
+        "departureDate": "2026-07-03",
+        "departureTime": "08:00",
+        "flightTimeMinutes": 60
+      },
+      {
+        "legNumber": 2,
+        "flightDate": "2026-07-03",
+        "origin": {
+          "id": "altenrhein",
+          "name": "Altenrhein / St. Gallen Airport",
+          "city": "Altenrhein / St. Gallen",
+          "country": "Switzerland",
+          "iata": "ACH",
+          "icao": "LSZR",
+          "type": "fbo",
+          "typeLabel": "Peoples Business Aviation",
+          "popular": true,
+          "region": "europe",
+          "coordinates": {
+            "lat": 47.485,
+            "lng": 9.5608
+          }
+        },
+        "destination": {
+          "id": "nice",
+          "name": "Nice Côte d'Azur Airport",
+          "city": "Nice / Cannes / Monaco",
+          "country": "France",
+          "iata": "NCE",
+          "icao": "LFMN",
+          "type": "dedicated",
+          "typeLabel": "General Aviation Terminal",
+          "popular": true,
+          "region": "europe",
+          "coordinates": {
+            "lat": 43.6584,
+            "lng": 7.2159
+          }
+        },
+        "departureTimeLocal": "16:00",
+        "arrivalTimeLocal": "17:15",
+        "flightTimeFormatted": "1h 15m",
+        "paxCount": 2,
+        "flightNumber": "PEA501",
+        "aircraftRegistration": "F-HSBL",
+        "distanceNm": 275,
+        "crew": [
+          {
+            "role": "CMDR",
+            "name": "Steffen AZAM",
+            "phone": "+33 6 61 39 47 63"
+          },
+          {
+            "role": "F/O",
+            "name": "Franklin BONNIVEAU",
+            "phone": "+33 6 92 14 00 22"
+          },
+          {
+            "role": "Cabin Attendant",
+            "name": "Sophie Lemaitre",
+            "phone": "+33 6 78 90 12 44"
+          }
+        ],
+        "passengers": [
+          {
+            "id": "p1",
+            "fullName": "Alexander Moretti",
+            "isLeadPassenger": true,
+            "passportNumber": "IT-992140A",
+            "nationality": "ITA"
+          },
+          {
+            "id": "p2",
+            "fullName": "Marc Edouard Dwek",
+            "passportNumber": "FR-4821033",
+            "nationality": "FRA"
+          }
+        ],
+        "departureHandling": {
+          "name": "Airport Altenrhein LSZR",
+          "airportCode": "LSZR",
+          "phone": "+41 71 858 5165",
+          "email": "c-office@peoples.ch"
+        },
+        "arrivalHandling": {
+          "name": "Aviavip LFMN",
+          "airportCode": "LFMN",
+          "phone": "+33 493 213737",
+          "email": "nce.executive@aviapartner.aero"
+        },
+        "from": "Altenrhein / St. Gallen Airport",
+        "fromIcao": "LSZR",
+        "to": "Nice Côte d'Azur Airport",
+        "toIcao": "LFMN",
+        "departureDate": "2026-07-03",
+        "departureTime": "16:00",
+        "flightTimeMinutes": 60
+      }
+    ],
+    "pricing": {
+      "flightPrice": 11000,
+      "airportFees": 1120,
+      "passengerFees": 80,
+      "dayOfWeekDiscount": 0,
+      "inboundPassengerTax": 110,
+      "outboundPassengerTax": 110,
+      "additionalServicesTotal": 0,
+      "subtotal": 12420,
+      "vatRate": 0,
+      "vatAmount": 0,
+      "totalFlightPrice": 12420,
+      "currency": "EUR",
+      "totalAmount": 12420,
+      "grandTotal": 12420,
+      "baseCharterCost": 11000
+    },
+    "services": {
+      "limousineService": false,
+      "luxuryCarRental": false,
+      "helicopterService": false,
+      "vipCateringDetails": "Chilled Bollinger & French patisserie selection on departure",
+      "deicingInsurance": "none",
+      "deicingCostPerLeg": 0,
+      "carbonOffset": "neutral",
+      "carbonOffsetRatePerHour": 33
+    },
+    "checklist": [
+      {
+        "id": "c1",
+        "label": "Aircraft Maintenance Release & Airworthiness Signoff",
+        "category": "aircraft",
+        "isCompleted": true,
+        "completedAt": "01.07.2026 09:00",
+        "completedBy": "GlobeAir Tech",
+        "requiredForDispatch": true,
+        "completed": true
+      },
+      {
+        "id": "c2",
+        "label": "Overflight & Landing Slots / PPR Confirmed",
+        "category": "permits",
+        "isCompleted": true,
+        "completedAt": "01.07.2026 10:30",
+        "completedBy": "Dispatch",
+        "requiredForDispatch": true,
+        "completed": true
+      },
+      {
+        "id": "c3",
+        "label": "Crew Assignment & FTL Legality Confirmed",
+        "category": "crew",
+        "isCompleted": true,
+        "completedAt": "01.07.2026 11:45",
+        "completedBy": "Roster",
+        "requiredForDispatch": true,
+        "completed": true
+      },
+      {
+        "id": "c4",
+        "label": "Departure FBO Handling Confirmed",
+        "category": "ground",
+        "isCompleted": true,
+        "completedAt": "01.07.2026 14:00",
+        "completedBy": "Ops",
+        "requiredForDispatch": true,
+        "completed": true
+      },
+      {
+        "id": "c5",
+        "label": "Arrival FBO Handling Confirmed",
+        "category": "ground",
+        "isCompleted": true,
+        "completedAt": "01.07.2026 14:10",
+        "completedBy": "Ops",
+        "requiredForDispatch": true,
+        "completed": true
+      },
+      {
+        "id": "c6",
+        "label": "Passenger Passport & APIS Data Validated",
+        "category": "passengers",
+        "isCompleted": true,
+        "completedAt": "01.07.2026 15:00",
+        "completedBy": "Border Security",
+        "requiredForDispatch": true,
+        "completed": true
+      },
+      {
+        "id": "c7",
+        "label": "VIP Catering Ordered & Confirmed",
+        "category": "ground",
+        "isCompleted": true,
+        "completedAt": "01.07.2026 15:20",
+        "completedBy": "VIP Service",
+        "requiredForDispatch": false,
+        "completed": true
+      },
+      {
+        "id": "c8",
+        "label": "De-icing Status Evaluated (Summer VMC)",
+        "category": "safety",
+        "isCompleted": true,
+        "completedAt": "03.07.2026 06:30",
+        "completedBy": "Commander",
+        "requiredForDispatch": true,
+        "completed": true
+      },
+      {
+        "id": "c9",
+        "label": "Flight Brief Issued & Sent to Crew",
+        "category": "crew",
+        "isCompleted": true,
+        "completedAt": "01.07.2026 16:00",
+        "completedBy": "OCC",
+        "requiredForDispatch": true,
+        "completed": true
+      },
+      {
+        "id": "c10",
+        "label": "Escrow Payment Received / Invoice Cleared",
+        "category": "finance",
+        "isCompleted": true,
+        "completedAt": "01.07.2026 14:30",
+        "completedBy": "Finance",
+        "requiredForDispatch": true,
+        "completed": true
+      }
+    ],
+    "agentName": "Ezeokeke, Obiefuna",
+    "agentEmail": "customercare@orbelo.com",
+    "commissionPercentage": 10,
+    "createdAt": "2026-06-30T11:00:00Z",
+    "updatedAt": "2026-07-01T18:00:00Z",
+    "_id": "booking-zfl433",
+    "isDeleted": false
+  },
+  {
+    "id": "booking-orb914",
+    "tripNumber": "ORB-914",
+    "quoteReference": "QTE-2026-914",
+    "invoiceNumber": "00106045",
+    "accountNumber": "ACC-88210",
+    "contractDate": "10.10.2026",
+    "quoteExpirationDate": "12.10.2026, 12:00z",
+    "paymentDueDate": "14.10.2026",
+    "status": "confirmed",
+    "quoteStatus": "accepted",
+    "paymentStatus": "deposit_paid",
+    "paymentReason": "25% Charter Booking Deposit & Chauffeur Transfer",
+    "paymentMethodChoice": "card",
+    "cardFeePercentage": 3.5,
+    "cardFeeAmount": 426.65,
+    "totalWithCardFee": 12616.65,
+    "tripType": "one_way",
+    "aircraft": {
+      "id": "pilatus-pc-12-ngx",
+      "name": "Pilatus PC-12 NGX",
+      "manufacturer": "Pilatus Aircraft",
+      "category": "turboprop",
+      "categoryLabel": "Turboprop",
+      "registration": "G-ORBL",
+      "tagline": "The undisputed Swiss army knife of executive private aviation.",
+      "description": "Featuring BMW Designworks leather club seating, Pratt & Whitney PT6E-67XP FADEC engine, and quiet pressurized cabin.",
+      "passengers": 8,
+      "passengersLabel": "8 passengers",
+      "range": 1803,
+      "rangeLabel": "1,803 nm",
+      "cabinHeight": "1.47 m",
+      "cabinWidth": "1.52 m",
+      "baggageVolume": "40 cu ft",
+      "cruiseSpeed": "290 ktas",
+      "yearOfManufacture": 2021,
+      "yearOfRefurbishment": 2025,
+      "pricePerHour": 1850,
+      "toilette": true,
+      "smokingCabin": false,
+      "imageExterior": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/90/Piaggio_P-180_Avanti_Rennes_2010.jpg/1280px-Piaggio_P-180_Avanti_Rennes_2010.jpg",
+      "imageInterior": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/db/Pilatus_PC-12_cabin_interior.jpg/1280px-Pilatus_PC-12_cabin_interior.jpg",
+      "images": [
+        {
+          "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/90/Piaggio_P-180_Avanti_Rennes_2010.jpg/1280px-Piaggio_P-180_Avanti_Rennes_2010.jpg",
+          "thumb": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/90/Piaggio_P-180_Avanti_Rennes_2010.jpg/1280px-Piaggio_P-180_Avanti_Rennes_2010.jpg",
+          "alt": "Pilatus PC-12 NGX exterior ramp view",
+          "type": "exterior",
+          "source": "aviation-verified",
+          "credit": "Aviation Photography Archives (EBACE / Paris Air Show)",
+          "creditUrl": "https://commons.wikimedia.org"
+        },
+        {
+          "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/db/Pilatus_PC-12_cabin_interior.jpg/1280px-Pilatus_PC-12_cabin_interior.jpg",
+          "thumb": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/db/Pilatus_PC-12_cabin_interior.jpg/1280px-Pilatus_PC-12_cabin_interior.jpg",
+          "alt": "Pilatus PC-12 NGX executive private cabin interior",
+          "type": "interior",
+          "source": "aviation-verified",
+          "credit": "Aviation Photography Archives (EBACE / Paris Air Show)",
+          "creditUrl": "https://commons.wikimedia.org"
+        },
+        {
+          "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/98/Bombardier_Global_6000_lavatory_with_shower.JPG/1280px-Bombardier_Global_6000_lavatory_with_shower.JPG",
+          "thumb": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/98/Bombardier_Global_6000_lavatory_with_shower.JPG/1280px-Bombardier_Global_6000_lavatory_with_shower.JPG",
+          "alt": "Pilatus PC-12 NGX private enclosed aircraft lavatory",
+          "type": "bathroom",
+          "source": "aviation-verified",
+          "credit": "Aviation Photography Archives (EBACE / Paris Air Show)",
+          "creditUrl": "https://commons.wikimedia.org"
+        },
+        {
+          "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/17/Cockpit_PC-12_linke_Seite.JPG/1280px-Cockpit_PC-12_linke_Seite.JPG",
+          "thumb": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/17/Cockpit_PC-12_linke_Seite.JPG/1280px-Cockpit_PC-12_linke_Seite.JPG",
+          "alt": "Pilatus PC-12 NGX glass cockpit flight deck avionics",
+          "type": "cockpit",
+          "source": "aviation-verified",
+          "credit": "Aviation Photography Archives (EBACE / Paris Air Show)",
+          "creditUrl": "https://commons.wikimedia.org"
+        }
+      ],
+      "additionalImages": [
+        "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/db/Pilatus_PC-12_cabin_interior.jpg/1280px-Pilatus_PC-12_cabin_interior.jpg",
+        "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/98/Bombardier_Global_6000_lavatory_with_shower.JPG/1280px-Bombardier_Global_6000_lavatory_with_shower.JPG",
+        "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/17/Cockpit_PC-12_linke_Seite.JPG/1280px-Cockpit_PC-12_linke_Seite.JPG"
+      ]
+    },
+    "client": {
+      "fullName": "Lord Julian Sterling",
+      "companyName": "Sterling Equities Partners",
+      "streetAddress": "14 Berkeley Square, Mayfair",
+      "cityPostalCountry": "London W1J 6BL, United Kingdom",
+      "phone": "+44 20 7946 0883",
+      "email": "j.sterling@sterlingequities.co.uk",
+      "vatNumber": "GB 882 1094 33",
+      "accountNumber": "ACC-88210"
+    },
+    "operator": {
+      "companyName": "Orbelo GmbH",
+      "legalEntity": "Orbelo Private Aviation & Charter Services GmbH",
+      "representativeName": "Ezeokeke, Obiefuna",
+      "supportEmail": "customercare@orbelo.com",
+      "supportPhone": "+43 7221 727 400",
+      "vatNumber": "ATU 6335 7619",
+      "additionalVatNumbers": [
+        "IT00268829991",
+        "DE286551690",
+        "GB303612155",
+        "FR66830821799",
+        "NL823480926B01",
+        "NO382321H"
+      ],
+      "bankName": "Raiffeisenlandesbank Oberösterreich AG",
+      "iban": "AT32 3400 0000 0266 7483",
+      "bic": "RZOOAT2LXXX",
+      "accountHolder": "Orbelo GmbH",
+      "commercialRegistry": "Handelsgericht Linz • FN293097a",
+      "courtOfJurisdiction": "Austrian law & Linz court applicable"
+    },
+    "legs": [
+      {
+        "legNumber": 1,
+        "flightDate": "2026-10-22",
+        "origin": {
+          "id": "london-farnborough",
+          "name": "Farnborough Executive Airport",
+          "city": "London",
+          "country": "United Kingdom",
+          "iata": "FAB",
+          "icao": "EGLF",
+          "type": "dedicated",
+          "typeLabel": "Dedicated VIP Private Jet Airport",
+          "popular": true,
+          "region": "europe",
+          "coordinates": {
+            "lat": 51.2758,
+            "lng": -0.7763
+          }
+        },
+        "destination": {
+          "id": "paris-le-bourget",
+          "name": "Paris Le Bourget Airport",
+          "city": "Paris",
+          "country": "France",
+          "iata": "LBG",
+          "icao": "LFPB",
+          "type": "dedicated",
+          "typeLabel": "Europe's Leading Business Airport",
+          "popular": true,
+          "region": "europe",
+          "coordinates": {
+            "lat": 48.9694,
+            "lng": 2.4414
+          }
+        },
+        "departureTimeLocal": "10:30 h",
+        "arrivalTimeLocal": "12:45 h",
+        "flightTimeFormatted": "1h 15m",
+        "paxCount": 4,
+        "flightNumber": "ORB914A",
+        "aircraftRegistration": "G-ORBL",
+        "distanceNm": 215,
+        "crew": [
+          {
+            "role": "CMDR",
+            "name": "Capt. Alistair Vance",
+            "phone": "+44 7700 900481"
+          },
+          {
+            "role": "F/O",
+            "name": "David Sterling",
+            "phone": "+44 7700 900512"
+          },
+          {
+            "role": "Cabin Attendant",
+            "name": "Beatrice Dubois",
+            "phone": "+44 7700 900620"
+          }
+        ],
+        "passengers": [
+          {
+            "id": "p1",
+            "fullName": "Lord Julian Sterling",
+            "isLeadPassenger": true,
+            "passportNumber": "UK-55829102",
+            "nationality": "GBR"
+          },
+          {
+            "id": "p2",
+            "fullName": "Lady Catherine Sterling",
+            "passportNumber": "UK-55829103",
+            "nationality": "GBR"
+          },
+          {
+            "id": "p3",
+            "fullName": "Julian Vance-Moreau",
+            "passportNumber": "UK-10924018",
+            "nationality": "GBR"
+          },
+          {
+            "id": "p4",
+            "fullName": "Eleanor Vance-Moreau",
+            "passportNumber": "UK-10924019",
+            "nationality": "GBR"
+          }
+        ],
+        "pets": {
+          "hasPets": true,
+          "petCount": 1,
+          "totalWeightKg": 12,
+          "petType": "Cocker Spaniel",
+          "notes": "Approved carrier, UK DEFRA microchip certificate provided"
+        },
+        "luggage": {
+          "pieceCount": 5,
+          "totalWeightKg": 85,
+          "standardSuitcases": 4,
+          "dimensionsDescription": "3x Large 75x50x30cm, 1x Medium 65x45x25cm",
+          "specialLuggageDescription": "1x Full set of golf clubs"
+        },
+        "departureHandling": {
+          "name": "TAG Farnborough Aviation FBO",
+          "airportCode": "EGLF",
+          "phone": "+44 1252 379000",
+          "email": "fbo@tagfarnborough.com"
+        },
+        "arrivalHandling": {
+          "name": "Signature Flight Support LFPB",
+          "airportCode": "LFPB",
+          "phone": "+33 1 49 92 75 00",
+          "email": "lbg@signatureflight.fr"
+        },
+        "from": "Farnborough Executive Airport",
+        "fromIcao": "EGLF",
+        "to": "Paris Le Bourget Airport",
+        "toIcao": "LFPB",
+        "departureDate": "2026-10-22",
+        "departureTime": "10:30 h",
+        "flightTimeMinutes": 60
+      }
+    ],
+    "pricing": {
+      "flightPrice": 9500,
+      "airportFees": 1250,
+      "passengerFees": 160,
+      "dayOfWeekDiscount": 0,
+      "inboundPassengerTax": 240,
+      "outboundPassengerTax": 240,
+      "additionalServicesTotal": 800,
+      "subtotal": 12190,
+      "vatRate": 0,
+      "vatAmount": 0,
+      "totalFlightPrice": 12190,
+      "currency": "EUR",
+      "totalAmount": 12190,
+      "grandTotal": 12190,
+      "baseCharterCost": 9500
+    },
+    "services": {
+      "limousineService": true,
+      "luxuryCarRental": false,
+      "helicopterService": false,
+      "vipCateringDetails": "Caviar service and chilled champagne",
+      "deicingInsurance": "at_reservation",
+      "deicingCostPerLeg": 400,
+      "carbonOffset": "double_neutral",
+      "carbonOffsetRatePerHour": 66,
+      "customRequests": "Chauffeur S-Class waiting at aircraft steps in Paris Le Bourget"
+    },
+    "checklist": [
+      {
+        "id": "c1",
+        "label": "Aircraft Maintenance Release & Airworthiness Signoff",
+        "category": "aircraft",
+        "isCompleted": true,
+        "completedAt": "11.10.2026 10:00",
+        "completedBy": "TAG Maintenance",
+        "requiredForDispatch": true,
+        "completed": true
+      },
+      {
+        "id": "c2",
+        "label": "Overflight & Landing Slots / PPR Confirmed",
+        "category": "permits",
+        "isCompleted": true,
+        "completedAt": "11.10.2026 12:00",
+        "completedBy": "Dispatch",
+        "requiredForDispatch": true,
+        "completed": true
+      },
+      {
+        "id": "c3",
+        "label": "Crew Assignment & FTL Legality Confirmed",
+        "category": "crew",
+        "isCompleted": true,
+        "completedAt": "11.10.2026 14:00",
+        "completedBy": "Crew Rostering",
+        "requiredForDispatch": true,
+        "completed": true
+      },
+      {
+        "id": "c4",
+        "label": "Departure FBO Handling Confirmed (TAG Farnborough)",
+        "category": "ground",
+        "isCompleted": true,
+        "completedAt": "11.10.2026 14:30",
+        "completedBy": "Ops",
+        "requiredForDispatch": true,
+        "completed": true
+      },
+      {
+        "id": "c5",
+        "label": "Arrival FBO Handling Confirmed (Signature LBG)",
+        "category": "ground",
+        "isCompleted": true,
+        "completedAt": "11.10.2026 14:35",
+        "completedBy": "Ops",
+        "requiredForDispatch": true,
+        "completed": true
+      },
+      {
+        "id": "c6",
+        "label": "Passenger Passport & APIS Data Validated",
+        "category": "passengers",
+        "isCompleted": true,
+        "completedAt": "11.10.2026 16:00",
+        "completedBy": "Border Force Ops",
+        "requiredForDispatch": true,
+        "completed": true
+      },
+      {
+        "id": "c7",
+        "label": "VIP Catering Ordered & Confirmed",
+        "category": "ground",
+        "isCompleted": true,
+        "completedAt": "11.10.2026 16:45",
+        "completedBy": "VIP Catering",
+        "requiredForDispatch": false,
+        "completed": true
+      },
+      {
+        "id": "c8",
+        "label": "De-icing Status Evaluated (Subject to Operator)",
+        "category": "safety",
+        "isCompleted": false,
+        "notes": "Awaiting morning METAR/TAF on 22nd",
+        "requiredForDispatch": true,
+        "completed": false
+      },
+      {
+        "id": "c9",
+        "label": "Flight Brief Issued & Sent to Crew",
+        "category": "crew",
+        "isCompleted": false,
+        "requiredForDispatch": true,
+        "completed": false
+      },
+      {
+        "id": "c10",
+        "label": "Escrow Payment Received / Invoice Cleared",
+        "category": "finance",
+        "isCompleted": true,
+        "completedAt": "12.10.2026 09:30",
+        "completedBy": "Finance",
+        "requiredForDispatch": true,
+        "completed": true
+      }
+    ],
+    "agentName": "Sarah Jenkins",
+    "agentEmail": "s.jenkins@orbelo.com",
+    "commissionPercentage": 7.5,
+    "createdAt": "2026-10-10T09:00:00Z",
+    "updatedAt": "2026-10-12T09:30:00Z",
+    "_id": "booking-orb914",
+    "isDeleted": false
+  },
+  {
+    "id": "booking-orb582",
+    "tripNumber": "",
+    "quoteReference": "QTE-2026-582",
+    "invoiceNumber": "00106098",
+    "accountNumber": "ACC-10984",
+    "contractDate": "16.10.2026",
+    "quoteExpirationDate": "19.10.2026, 17:00z",
+    "paymentDueDate": "20.10.2026",
+    "status": "client_review",
+    "quoteStatus": "undecided",
+    "paymentStatus": "unpaid",
+    "paymentReason": "Corporate Executive Charter Proposal",
+    "paymentMethodChoice": "wire",
+    "cardFeePercentage": 3.5,
+    "cardFeeAmount": 676.9,
+    "totalWithCardFee": 20016.9,
+    "tripType": "one_way",
+    "aircraft": {
+      "id": "pilatus-pc-12-ngx",
+      "name": "Pilatus PC-12 NGX",
+      "manufacturer": "Pilatus Aircraft",
+      "category": "turboprop",
+      "categoryLabel": "Turboprop",
+      "registration": "9H-VJB",
+      "tagline": "The undisputed Swiss army knife of executive private aviation.",
+      "description": "Featuring BMW Designworks leather club seating, Pratt & Whitney PT6E-67XP FADEC engine, and quiet pressurized cabin.",
+      "passengers": 8,
+      "passengersLabel": "8 passengers",
+      "range": 1803,
+      "rangeLabel": "1,803 nm",
+      "cabinHeight": "1.47 m",
+      "cabinWidth": "1.52 m",
+      "baggageVolume": "40 cu ft",
+      "cruiseSpeed": "290 ktas",
+      "yearOfManufacture": 2020,
+      "yearOfRefurbishment": 2025,
+      "pricePerHour": 1850,
+      "toilette": true,
+      "smokingCabin": false,
+      "imageExterior": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/90/Piaggio_P-180_Avanti_Rennes_2010.jpg/1280px-Piaggio_P-180_Avanti_Rennes_2010.jpg",
+      "imageInterior": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/db/Pilatus_PC-12_cabin_interior.jpg/1280px-Pilatus_PC-12_cabin_interior.jpg",
+      "images": [
+        {
+          "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/90/Piaggio_P-180_Avanti_Rennes_2010.jpg/1280px-Piaggio_P-180_Avanti_Rennes_2010.jpg",
+          "thumb": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/90/Piaggio_P-180_Avanti_Rennes_2010.jpg/1280px-Piaggio_P-180_Avanti_Rennes_2010.jpg",
+          "alt": "Pilatus PC-12 NGX exterior ramp view",
+          "type": "exterior",
+          "source": "aviation-verified",
+          "credit": "Aviation Photography Archives (EBACE / Paris Air Show)",
+          "creditUrl": "https://commons.wikimedia.org"
+        },
+        {
+          "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/db/Pilatus_PC-12_cabin_interior.jpg/1280px-Pilatus_PC-12_cabin_interior.jpg",
+          "thumb": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/db/Pilatus_PC-12_cabin_interior.jpg/1280px-Pilatus_PC-12_cabin_interior.jpg",
+          "alt": "Pilatus PC-12 NGX executive private cabin interior",
+          "type": "interior",
+          "source": "aviation-verified",
+          "credit": "Aviation Photography Archives (EBACE / Paris Air Show)",
+          "creditUrl": "https://commons.wikimedia.org"
+        },
+        {
+          "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/98/Bombardier_Global_6000_lavatory_with_shower.JPG/1280px-Bombardier_Global_6000_lavatory_with_shower.JPG",
+          "thumb": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/98/Bombardier_Global_6000_lavatory_with_shower.JPG/1280px-Bombardier_Global_6000_lavatory_with_shower.JPG",
+          "alt": "Pilatus PC-12 NGX private enclosed aircraft lavatory",
+          "type": "bathroom",
+          "source": "aviation-verified",
+          "credit": "Aviation Photography Archives (EBACE / Paris Air Show)",
+          "creditUrl": "https://commons.wikimedia.org"
+        },
+        {
+          "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/17/Cockpit_PC-12_linke_Seite.JPG/1280px-Cockpit_PC-12_linke_Seite.JPG",
+          "thumb": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/17/Cockpit_PC-12_linke_Seite.JPG/1280px-Cockpit_PC-12_linke_Seite.JPG",
+          "alt": "Pilatus PC-12 NGX glass cockpit flight deck avionics",
+          "type": "cockpit",
+          "source": "aviation-verified",
+          "credit": "Aviation Photography Archives (EBACE / Paris Air Show)",
+          "creditUrl": "https://commons.wikimedia.org"
+        }
+      ],
+      "additionalImages": [
+        "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/db/Pilatus_PC-12_cabin_interior.jpg/1280px-Pilatus_PC-12_cabin_interior.jpg",
+        "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/98/Bombardier_Global_6000_lavatory_with_shower.JPG/1280px-Bombardier_Global_6000_lavatory_with_shower.JPG",
+        "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/17/Cockpit_PC-12_linke_Seite.JPG/1280px-Cockpit_PC-12_linke_Seite.JPG"
+      ]
+    },
+    "client": {
+      "fullName": "Dr. Aris Thorne",
+      "companyName": "BioPharma Global Therapeutics",
+      "streetAddress": "Bahnhofstrasse 45",
+      "cityPostalCountry": "CH-8001 Zurich, Switzerland",
+      "phone": "+44 20 7946 0912",
+      "email": "a.thorne@biopharmaglobal.ch",
+      "vatNumber": "CHE-109.842.115",
+      "accountNumber": "ACC-10984"
+    },
+    "operator": {
+      "companyName": "Orbelo GmbH",
+      "legalEntity": "Orbelo Private Aviation & Charter Services GmbH",
+      "representativeName": "Ezeokeke, Obiefuna",
+      "supportEmail": "customercare@orbelo.com",
+      "supportPhone": "+43 7221 727 400",
+      "vatNumber": "ATU 6335 7619",
+      "additionalVatNumbers": [
+        "IT00268829991",
+        "DE286551690",
+        "GB303612155",
+        "FR66830821799",
+        "NL823480926B01",
+        "NO382321H"
+      ],
+      "bankName": "Raiffeisenlandesbank Oberösterreich AG",
+      "iban": "AT32 3400 0000 0266 7483",
+      "bic": "RZOOAT2LXXX",
+      "accountHolder": "Orbelo GmbH",
+      "commercialRegistry": "Handelsgericht Linz • FN293097a",
+      "courtOfJurisdiction": "Austrian law & Linz court applicable"
+    },
+    "legs": [
+      {
+        "legNumber": 1,
+        "flightDate": "2026-10-25",
+        "origin": {
+          "id": "ibiza",
+          "name": "Ibiza Airport (Executive Aviation)",
+          "city": "Ibiza",
+          "country": "Spain",
+          "iata": "IBZ",
+          "icao": "LEIB",
+          "type": "fbo",
+          "typeLabel": "Ibiza VIP FBO Terminal",
+          "popular": true,
+          "region": "europe",
+          "coordinates": {
+            "lat": 38.8729,
+            "lng": 1.3731
+          }
+        },
+        "destination": {
+          "id": "milan-linate",
+          "name": "Milan Linate Prime",
+          "city": "Milan",
+          "country": "Italy",
+          "iata": "LIN",
+          "icao": "LIML",
+          "type": "dedicated",
+          "typeLabel": "Milano Prime Business Terminal",
+          "popular": true,
+          "region": "europe",
+          "coordinates": {
+            "lat": 45.4451,
+            "lng": 9.2767
+          }
+        },
+        "departureTimeLocal": "18:00 h",
+        "arrivalTimeLocal": "19:40 h",
+        "flightTimeFormatted": "1h 40m",
+        "paxCount": 6,
+        "flightNumber": "ORB582C",
+        "aircraftRegistration": "9H-VJB",
+        "distanceNm": 520,
+        "crew": [
+          {
+            "role": "CMDR",
+            "name": "Capt. Marco Bellini",
+            "phone": "+39 348 991 2004"
+          },
+          {
+            "role": "F/O",
+            "name": "Giulia Rossi",
+            "phone": "+39 348 991 2005"
+          },
+          {
+            "role": "Cabin Attendant",
+            "name": "Elena Conti",
+            "phone": "+39 348 991 2006"
+          }
+        ],
+        "passengers": [
+          {
+            "id": "p1",
+            "fullName": "Dr. Aris Thorne",
+            "isLeadPassenger": true,
+            "passportNumber": "YA882910",
+            "nationality": "CHE"
+          },
+          {
+            "id": "p2",
+            "fullName": "Francesca Moretti",
+            "passportNumber": "YA882911",
+            "nationality": "ITA"
+          }
+        ],
+        "pets": {
+          "hasPets": false,
+          "petCount": 0,
+          "totalWeightKg": 0
+        },
+        "luggage": {
+          "pieceCount": 6,
+          "totalWeightKg": 95,
+          "standardSuitcases": 6,
+          "dimensionsDescription": "4x Large 75x50x30cm, 2x Cabin 55x40x20cm",
+          "specialLuggageDescription": "Medical presentation containers"
+        },
+        "departureHandling": {
+          "name": "Ibiza Executive FBO",
+          "airportCode": "LEIB",
+          "phone": "+34 971 809 100",
+          "email": "ibiza@executivefbo.es"
+        },
+        "arrivalHandling": {
+          "name": "Milano Prime FBO",
+          "airportCode": "LIML",
+          "phone": "+39 02 7486 2100",
+          "email": "ops@milanoprime.it"
+        },
+        "from": "Ibiza Airport (Executive Aviation)",
+        "fromIcao": "LEIB",
+        "to": "Milan Linate Prime",
+        "toIcao": "LIML",
+        "departureDate": "2026-10-25",
+        "departureTime": "18:00 h",
+        "flightTimeMinutes": 60
+      }
+    ],
+    "pricing": {
+      "flightPrice": 17200,
+      "airportFees": 1800,
+      "passengerFees": 240,
+      "dayOfWeekDiscount": -500,
+      "inboundPassengerTax": 300,
+      "outboundPassengerTax": 300,
+      "additionalServicesTotal": 0,
+      "subtotal": 19340,
+      "vatRate": 0,
+      "vatAmount": 0,
+      "totalFlightPrice": 19340,
+      "currency": "EUR",
+      "totalAmount": 19340,
+      "grandTotal": 19340,
+      "baseCharterCost": 17200
+    },
+    "services": {
+      "limousineService": false,
+      "luxuryCarRental": false,
+      "helicopterService": false,
+      "vipCateringDetails": "Italian antipasti and seasonal fresh fruit",
+      "deicingInsurance": "none",
+      "deicingCostPerLeg": 0,
+      "carbonOffset": "neutral",
+      "carbonOffsetRatePerHour": 33,
+      "customRequests": "Direct tarmac luggage transfer"
+    },
+    "checklist": [
+      {
+        "id": "c1",
+        "label": "Aircraft Maintenance Release & Airworthiness Signoff",
+        "category": "aircraft",
+        "isCompleted": true,
+        "completedAt": "16.10.2026 14:00",
+        "completedBy": "Ops",
+        "requiredForDispatch": true,
+        "completed": true
+      },
+      {
+        "id": "c2",
+        "label": "Overflight & Landing Slots / PPR Confirmed",
+        "category": "permits",
+        "isCompleted": false,
+        "notes": "Requested slot at Milan Linate",
+        "requiredForDispatch": true,
+        "completed": false
+      },
+      {
+        "id": "c3",
+        "label": "Crew Assignment & FTL Legality Confirmed",
+        "category": "crew",
+        "isCompleted": true,
+        "completedAt": "16.10.2026 15:30",
+        "completedBy": "Roster",
+        "requiredForDispatch": true,
+        "completed": true
+      },
+      {
+        "id": "c4",
+        "label": "Departure FBO Handling Confirmed (Ibiza)",
+        "category": "ground",
+        "isCompleted": false,
+        "requiredForDispatch": true,
+        "completed": false
+      },
+      {
+        "id": "c5",
+        "label": "Arrival FBO Handling Confirmed (Milano Prime)",
+        "category": "ground",
+        "isCompleted": false,
+        "requiredForDispatch": true,
+        "completed": false
+      },
+      {
+        "id": "c6",
+        "label": "Passenger Passport & APIS Data Validated",
+        "category": "passengers",
+        "isCompleted": false,
+        "requiredForDispatch": true,
+        "completed": false
+      },
+      {
+        "id": "c7",
+        "label": "VIP Catering Ordered & Confirmed",
+        "category": "ground",
+        "isCompleted": false,
+        "requiredForDispatch": false,
+        "completed": false
+      },
+      {
+        "id": "c8",
+        "label": "De-icing Status Evaluated (Subject to Operator)",
+        "category": "safety",
+        "isCompleted": false,
+        "requiredForDispatch": true,
+        "completed": false
+      },
+      {
+        "id": "c9",
+        "label": "Flight Brief Issued & Sent to Crew",
+        "category": "crew",
+        "isCompleted": false,
+        "requiredForDispatch": true,
+        "completed": false
+      },
+      {
+        "id": "c10",
+        "label": "Escrow Payment Received / Invoice Cleared",
+        "category": "finance",
+        "isCompleted": false,
+        "notes": "Awaiting client contract signature",
+        "requiredForDispatch": true,
+        "completed": false
+      }
+    ],
+    "agentName": "Ezeokeke, Obiefuna",
+    "agentEmail": "customercare@orbelo.com",
+    "commissionPercentage": 10,
+    "createdAt": "2026-10-16T12:00:00Z",
+    "updatedAt": "2026-10-16T16:00:00Z",
+    "_id": "booking-orb582",
+    "isDeleted": false
+  },
+  {
+    "id": "booking-orb309",
+    "tripNumber": "",
+    "quoteReference": "QTE-2026-309",
+    "invoiceNumber": "00106110",
+    "accountNumber": "ACC-10029",
+    "contractDate": "17.10.2026",
+    "quoteExpirationDate": "19.10.2026, 20:00z",
+    "paymentDueDate": "21.10.2026",
+    "status": "quote_sent",
+    "quoteStatus": "sent",
+    "paymentStatus": "unpaid",
+    "paymentReason": "Swiss - French Riviera Executive Transit",
+    "paymentMethodChoice": "wire",
+    "cardFeePercentage": 3.5,
+    "cardFeeAmount": 290.85,
+    "totalWithCardFee": 8600.85,
+    "tripType": "one_way",
+    "aircraft": {
+      "id": "pilatus-pc-12-ngx",
+      "name": "Pilatus PC-12 NGX",
+      "manufacturer": "Pilatus Aircraft",
+      "category": "turboprop",
+      "categoryLabel": "Turboprop",
+      "registration": "OE-FDT",
+      "tagline": "The undisputed Swiss army knife of executive private aviation.",
+      "description": "Featuring BMW Designworks leather club seating, Pratt & Whitney PT6E-67XP FADEC engine, and quiet pressurized cabin.",
+      "passengers": 8,
+      "passengersLabel": "8 passengers",
+      "range": 1803,
+      "rangeLabel": "1,803 nm",
+      "cabinHeight": "1.47 m",
+      "cabinWidth": "1.52 m",
+      "baggageVolume": "40 cu ft",
+      "cruiseSpeed": "290 ktas",
+      "yearOfManufacture": 2019,
+      "yearOfRefurbishment": 2025,
+      "pricePerHour": 1850,
+      "toilette": true,
+      "smokingCabin": false,
+      "imageExterior": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/90/Piaggio_P-180_Avanti_Rennes_2010.jpg/1280px-Piaggio_P-180_Avanti_Rennes_2010.jpg",
+      "imageInterior": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/db/Pilatus_PC-12_cabin_interior.jpg/1280px-Pilatus_PC-12_cabin_interior.jpg",
+      "images": [
+        {
+          "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/90/Piaggio_P-180_Avanti_Rennes_2010.jpg/1280px-Piaggio_P-180_Avanti_Rennes_2010.jpg",
+          "thumb": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/90/Piaggio_P-180_Avanti_Rennes_2010.jpg/1280px-Piaggio_P-180_Avanti_Rennes_2010.jpg",
+          "alt": "Pilatus PC-12 NGX exterior ramp view",
+          "type": "exterior",
+          "source": "aviation-verified",
+          "credit": "Aviation Photography Archives (EBACE / Paris Air Show)",
+          "creditUrl": "https://commons.wikimedia.org"
+        },
+        {
+          "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/db/Pilatus_PC-12_cabin_interior.jpg/1280px-Pilatus_PC-12_cabin_interior.jpg",
+          "thumb": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/db/Pilatus_PC-12_cabin_interior.jpg/1280px-Pilatus_PC-12_cabin_interior.jpg",
+          "alt": "Pilatus PC-12 NGX executive private cabin interior",
+          "type": "interior",
+          "source": "aviation-verified",
+          "credit": "Aviation Photography Archives (EBACE / Paris Air Show)",
+          "creditUrl": "https://commons.wikimedia.org"
+        },
+        {
+          "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/98/Bombardier_Global_6000_lavatory_with_shower.JPG/1280px-Bombardier_Global_6000_lavatory_with_shower.JPG",
+          "thumb": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/98/Bombardier_Global_6000_lavatory_with_shower.JPG/1280px-Bombardier_Global_6000_lavatory_with_shower.JPG",
+          "alt": "Pilatus PC-12 NGX private enclosed aircraft lavatory",
+          "type": "bathroom",
+          "source": "aviation-verified",
+          "credit": "Aviation Photography Archives (EBACE / Paris Air Show)",
+          "creditUrl": "https://commons.wikimedia.org"
+        },
+        {
+          "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/17/Cockpit_PC-12_linke_Seite.JPG/1280px-Cockpit_PC-12_linke_Seite.JPG",
+          "thumb": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/17/Cockpit_PC-12_linke_Seite.JPG/1280px-Cockpit_PC-12_linke_Seite.JPG",
+          "alt": "Pilatus PC-12 NGX glass cockpit flight deck avionics",
+          "type": "cockpit",
+          "source": "aviation-verified",
+          "credit": "Aviation Photography Archives (EBACE / Paris Air Show)",
+          "creditUrl": "https://commons.wikimedia.org"
+        }
+      ],
+      "additionalImages": [
+        "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/db/Pilatus_PC-12_cabin_interior.jpg/1280px-Pilatus_PC-12_cabin_interior.jpg",
+        "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/98/Bombardier_Global_6000_lavatory_with_shower.JPG/1280px-Bombardier_Global_6000_lavatory_with_shower.JPG",
+        "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/17/Cockpit_PC-12_linke_Seite.JPG/1280px-Cockpit_PC-12_linke_Seite.JPG"
+      ]
+    },
+    "client": {
+      "fullName": "Elena Rostova",
+      "companyName": "Rostova Prime Family Office",
+      "streetAddress": "DIFC Gate Precinct 4, Level 5",
+      "cityPostalCountry": "Dubai, United Arab Emirates",
+      "phone": "+971 4 312 8840",
+      "email": "e.rostova@rostovaprime.ae",
+      "vatNumber": "AE 1002 9481 00003",
+      "accountNumber": "ACC-10029"
+    },
+    "operator": {
+      "companyName": "Orbelo GmbH",
+      "legalEntity": "Orbelo Private Aviation & Charter Services GmbH",
+      "representativeName": "Ezeokeke, Obiefuna",
+      "supportEmail": "customercare@orbelo.com",
+      "supportPhone": "+43 7221 727 400",
+      "vatNumber": "ATU 6335 7619",
+      "additionalVatNumbers": [
+        "IT00268829991",
+        "DE286551690",
+        "GB303612155",
+        "FR66830821799",
+        "NL823480926B01",
+        "NO382321H"
+      ],
+      "bankName": "Raiffeisenlandesbank Oberösterreich AG",
+      "iban": "AT32 3400 0000 0266 7483",
+      "bic": "RZOOAT2LXXX",
+      "accountHolder": "Orbelo GmbH",
+      "commercialRegistry": "Handelsgericht Linz • FN293097a",
+      "courtOfJurisdiction": "Austrian law & Linz court applicable"
+    },
+    "legs": [
+      {
+        "legNumber": 1,
+        "flightDate": "2026-10-28",
+        "origin": {
+          "id": "zurich",
+          "name": "Zurich International Airport (Cat A FBO)",
+          "city": "Zurich",
+          "country": "Switzerland",
+          "iata": "ZRH",
+          "icao": "LSZH",
+          "type": "fbo",
+          "typeLabel": "ExecuJet / Jet Aviation Hub",
+          "popular": true,
+          "region": "europe",
+          "coordinates": {
+            "lat": 47.4582,
+            "lng": 8.5555
+          }
+        },
+        "destination": {
+          "id": "cannes-mandelieu",
+          "name": "Cannes Mandelieu Airport",
+          "city": "Cannes",
+          "country": "France",
+          "iata": "CEQ",
+          "icao": "LFMD",
+          "type": "dedicated",
+          "typeLabel": "VIP Riviera Airport",
+          "popular": true,
+          "region": "europe",
+          "coordinates": {
+            "lat": 43.5422,
+            "lng": 6.9531
+          }
+        },
+        "departureTimeLocal": "14:00 h",
+        "arrivalTimeLocal": "15:10 h",
+        "flightTimeFormatted": "1h 10m",
+        "paxCount": 3,
+        "flightNumber": "ORB309Z",
+        "aircraftRegistration": "OE-FDT",
+        "distanceNm": 240,
+        "crew": [
+          {
+            "role": "CMDR",
+            "name": "Capt. Philippe Laurent",
+            "phone": "+33 6 44 19 88 02"
+          },
+          {
+            "role": "F/O",
+            "name": "Claire Dupont",
+            "phone": "+33 6 44 19 88 03"
+          },
+          {
+            "role": "Cabin Attendant",
+            "name": "Marcelle Renoir",
+            "phone": "+33 6 44 19 88 04"
+          }
+        ],
+        "passengers": [
+          {
+            "id": "p1",
+            "fullName": "Elena Rostova",
+            "isLeadPassenger": true,
+            "passportNumber": "AE-882190",
+            "nationality": "ARE"
+          }
+        ],
+        "pets": {
+          "hasPets": false,
+          "petCount": 0,
+          "totalWeightKg": 0
+        },
+        "luggage": {
+          "pieceCount": 3,
+          "totalWeightKg": 40,
+          "standardSuitcases": 2,
+          "dimensionsDescription": "2x Cabin 55x40x20cm, 1x Vanity Case"
+        },
+        "departureHandling": {
+          "name": "ExecuJet Zurich FBO",
+          "airportCode": "LSZH",
+          "phone": "+41 44 876 5656",
+          "email": "handling.zurich@execujet.com"
+        },
+        "arrivalHandling": {
+          "name": "Cannes Mandelieu FBO",
+          "airportCode": "LFMD",
+          "phone": "+33 4 93 90 40 40",
+          "email": "aeroport.cannes@cote-azur.aeroport.fr"
+        },
+        "from": "Zurich International Airport (Cat A FBO)",
+        "fromIcao": "LSZH",
+        "to": "Cannes Mandelieu Airport",
+        "toIcao": "LFMD",
+        "departureDate": "2026-10-28",
+        "departureTime": "14:00 h",
+        "flightTimeMinutes": 60
+      }
+    ],
+    "pricing": {
+      "flightPrice": 7200,
+      "airportFees": 850,
+      "passengerFees": 60,
+      "dayOfWeekDiscount": 0,
+      "inboundPassengerTax": 100,
+      "outboundPassengerTax": 100,
+      "additionalServicesTotal": 0,
+      "subtotal": 8310,
+      "vatRate": 0,
+      "vatAmount": 0,
+      "totalFlightPrice": 8310,
+      "currency": "EUR",
+      "totalAmount": 8310,
+      "grandTotal": 8310,
+      "baseCharterCost": 7200
+    },
+    "services": {
+      "limousineService": false,
+      "luxuryCarRental": false,
+      "helicopterService": false,
+      "vipCateringDetails": "Swiss organic chocolates and San Pellegrino",
+      "deicingInsurance": "none",
+      "deicingCostPerLeg": 0,
+      "carbonOffset": "neutral",
+      "carbonOffsetRatePerHour": 33
+    },
+    "checklist": [
+      {
+        "id": "c1",
+        "label": "Aircraft Maintenance Release & Airworthiness Signoff",
+        "category": "aircraft",
+        "isCompleted": true,
+        "completedAt": "17.10.2026 10:00",
+        "completedBy": "ExecuJet Tech",
+        "requiredForDispatch": true,
+        "completed": true
+      },
+      {
+        "id": "c2",
+        "label": "Overflight & Landing Slots / PPR Confirmed",
+        "category": "permits",
+        "isCompleted": false,
+        "requiredForDispatch": true,
+        "completed": false
+      },
+      {
+        "id": "c3",
+        "label": "Crew Assignment & FTL Legality Confirmed",
+        "category": "crew",
+        "isCompleted": true,
+        "completedAt": "17.10.2026 11:30",
+        "completedBy": "Crew Ops",
+        "requiredForDispatch": true,
+        "completed": true
+      },
+      {
+        "id": "c4",
+        "label": "Departure FBO Handling Confirmed (ExecuJet)",
+        "category": "ground",
+        "isCompleted": false,
+        "requiredForDispatch": true,
+        "completed": false
+      },
+      {
+        "id": "c5",
+        "label": "Arrival FBO Handling Confirmed (Cannes)",
+        "category": "ground",
+        "isCompleted": false,
+        "requiredForDispatch": true,
+        "completed": false
+      },
+      {
+        "id": "c6",
+        "label": "Passenger Passport & APIS Data Validated",
+        "category": "passengers",
+        "isCompleted": false,
+        "requiredForDispatch": true,
+        "completed": false
+      },
+      {
+        "id": "c7",
+        "label": "VIP Catering Ordered & Confirmed",
+        "category": "ground",
+        "isCompleted": false,
+        "requiredForDispatch": false,
+        "completed": false
+      },
+      {
+        "id": "c8",
+        "label": "De-icing Status Evaluated (Subject to Operator)",
+        "category": "safety",
+        "isCompleted": false,
+        "requiredForDispatch": true,
+        "completed": false
+      },
+      {
+        "id": "c9",
+        "label": "Flight Brief Issued & Sent to Crew",
+        "category": "crew",
+        "isCompleted": false,
+        "requiredForDispatch": true,
+        "completed": false
+      },
+      {
+        "id": "c10",
+        "label": "Escrow Payment Received / Invoice Cleared",
+        "category": "finance",
+        "isCompleted": false,
+        "requiredForDispatch": true,
+        "completed": false
+      }
+    ],
+    "agentName": "Ezeokeke, Obiefuna",
+    "agentEmail": "customercare@orbelo.com",
+    "commissionPercentage": 10,
+    "createdAt": "2026-10-17T09:30:00Z",
+    "updatedAt": "2026-10-17T11:00:00Z",
+    "_id": "booking-orb309",
+    "isDeleted": false
+  },
+  {
+    "id": "booking-qte101",
+    "tripNumber": "",
+    "quoteReference": "QTE-2026-101",
+    "invoiceNumber": "00106115",
+    "accountNumber": "ACC-99482",
+    "contractDate": "20.10.2026",
+    "quoteExpirationDate": "24.10.2026, 18:00z",
+    "paymentDueDate": "25.10.2026",
+    "status": "draft",
+    "quoteStatus": "pending",
+    "paymentStatus": "unpaid",
+    "paymentReason": "Vienna - Geneva Alpine Leisure Charter",
+    "paymentMethodChoice": "wire",
+    "cardFeePercentage": 3.5,
+    "cardFeeAmount": 322,
+    "totalWithCardFee": 9522,
+    "tripType": "one_way",
+    "aircraft": {
+      "id": "cessna-citation-mustang",
+      "name": "Cessna Citation Mustang",
+      "manufacturer": "Cessna",
+      "category": "entry-level",
+      "categoryLabel": "Entry Level",
+      "registration": "OE-FFB",
+      "tagline": "The quintessential European private air taxi.",
+      "description": "Compact, whisper-quiet cabin with 4 club-arranged leather seats, forward mini-bar, and high-efficiency Pratt & Whitney turbofans.",
+      "passengers": 4,
+      "passengersLabel": "4 passengers",
+      "range": 1200,
+      "rangeLabel": "1,200 nm",
+      "cabinHeight": "1.37 m",
+      "cabinWidth": "1.40 m",
+      "baggageVolume": "57 cu ft",
+      "cruiseSpeed": "340 ktas",
+      "yearOfManufacture": "2008 - 2010",
+      "yearOfRefurbishment": 2024,
+      "pricePerHour": 2450,
+      "toilette": true,
+      "smokingCabin": false,
+      "imageExterior": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/55/VH-PNM_Embraer_500_Phenom_100_%286485946457%29.jpg/1280px-VH-PNM_Embraer_500_Phenom_100_%286485946457%29.jpg",
+      "imageInterior": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/5a/Citation_Mustang_Int.jpg/1280px-Citation_Mustang_Int.jpg",
+      "images": [
+        {
+          "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/55/VH-PNM_Embraer_500_Phenom_100_%286485946457%29.jpg/1280px-VH-PNM_Embraer_500_Phenom_100_%286485946457%29.jpg",
+          "thumb": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/55/VH-PNM_Embraer_500_Phenom_100_%286485946457%29.jpg/1280px-VH-PNM_Embraer_500_Phenom_100_%286485946457%29.jpg",
+          "alt": "Cessna Citation Mustang exterior ramp view",
+          "type": "exterior",
+          "source": "aviation-verified",
+          "credit": "Aviation Photography Archives (EBACE / Paris Air Show)",
+          "creditUrl": "https://commons.wikimedia.org"
+        },
+        {
+          "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/5a/Citation_Mustang_Int.jpg/1280px-Citation_Mustang_Int.jpg",
+          "thumb": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/5a/Citation_Mustang_Int.jpg/1280px-Citation_Mustang_Int.jpg",
+          "alt": "Cessna Citation Mustang executive private cabin interior",
+          "type": "interior",
+          "source": "aviation-verified",
+          "credit": "Aviation Photography Archives (EBACE / Paris Air Show)",
+          "creditUrl": "https://commons.wikimedia.org"
+        },
+        {
+          "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/98/Bombardier_Global_6000_lavatory_with_shower.JPG/1280px-Bombardier_Global_6000_lavatory_with_shower.JPG",
+          "thumb": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/98/Bombardier_Global_6000_lavatory_with_shower.JPG/1280px-Bombardier_Global_6000_lavatory_with_shower.JPG",
+          "alt": "Cessna Citation Mustang private enclosed aircraft lavatory",
+          "type": "bathroom",
+          "source": "aviation-verified",
+          "credit": "Aviation Photography Archives (EBACE / Paris Air Show)",
+          "creditUrl": "https://commons.wikimedia.org"
+        },
+        {
+          "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/a5/Embraer_Phenom_100_cockpit_%2845_%28R%29_Squadron%29.jpg/1280px-Embraer_Phenom_100_cockpit_%2845_%28R%29_Squadron%29.jpg",
+          "thumb": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/a5/Embraer_Phenom_100_cockpit_%2845_%28R%29_Squadron%29.jpg/1280px-Embraer_Phenom_100_cockpit_%2845_%28R%29_Squadron%29.jpg",
+          "alt": "Cessna Citation Mustang glass cockpit flight deck avionics",
+          "type": "cockpit",
+          "source": "aviation-verified",
+          "credit": "Aviation Photography Archives (EBACE / Paris Air Show)",
+          "creditUrl": "https://commons.wikimedia.org"
+        }
+      ],
+      "additionalImages": [
+        "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/5a/Citation_Mustang_Int.jpg/1280px-Citation_Mustang_Int.jpg",
+        "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/98/Bombardier_Global_6000_lavatory_with_shower.JPG/1280px-Bombardier_Global_6000_lavatory_with_shower.JPG",
+        "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/a5/Embraer_Phenom_100_cockpit_%2845_%28R%29_Squadron%29.jpg/1280px-Embraer_Phenom_100_cockpit_%2845_%28R%29_Squadron%29.jpg"
+      ]
+    },
+    "client": {
+      "fullName": "Countess Sophie von Habsburg",
+      "companyName": "Habsburg Heritage Foundation",
+      "streetAddress": "Herrengasse 14",
+      "cityPostalCountry": "A-1010 Vienna, Austria",
+      "phone": "+43 1 512 8901",
+      "email": "sophie.habsburg@heritage.at",
+      "vatNumber": "ATU 9948 2104",
+      "accountNumber": "ACC-99482"
+    },
+    "operator": {
+      "companyName": "Orbelo GmbH",
+      "legalEntity": "Orbelo Private Aviation & Charter Services GmbH",
+      "representativeName": "Ezeokeke, Obiefuna",
+      "supportEmail": "customercare@orbelo.com",
+      "supportPhone": "+43 7221 727 400",
+      "vatNumber": "ATU 6335 7619",
+      "additionalVatNumbers": [
+        "IT00268829991",
+        "DE286551690",
+        "GB303612155",
+        "FR66830821799",
+        "NL823480926B01",
+        "NO382321H"
+      ],
+      "bankName": "Raiffeisenlandesbank Oberösterreich AG",
+      "iban": "AT32 3400 0000 0266 7483",
+      "bic": "RZOOAT2LXXX",
+      "accountHolder": "Orbelo GmbH",
+      "commercialRegistry": "Handelsgericht Linz • FN293097a",
+      "courtOfJurisdiction": "Austrian law & Linz court applicable"
+    },
+    "legs": [
+      {
+        "legNumber": 1,
+        "flightDate": "2026-11-02",
+        "origin": {
+          "id": "vienna",
+          "name": "Vienna International VIP Terminal",
+          "city": "Vienna",
+          "country": "Austria",
+          "iata": "VIE",
+          "icao": "LOWW",
+          "type": "dedicated",
+          "typeLabel": "Vienna General Aviation Terminal",
+          "popular": true,
+          "region": "europe",
+          "coordinates": {
+            "lat": 48.1103,
+            "lng": 16.5697
+          }
+        },
+        "destination": {
+          "id": "geneva",
+          "name": "Geneva Airport",
+          "city": "Geneva",
+          "country": "Switzerland",
+          "iata": "GVA",
+          "icao": "LSGG",
+          "type": "dedicated",
+          "typeLabel": "Executive Business Terminal",
+          "popular": true,
+          "region": "europe",
+          "coordinates": {
+            "lat": 46.2381,
+            "lng": 6.1089
+          }
+        },
+        "departureTimeLocal": "10:00 h",
+        "arrivalTimeLocal": "11:25 h",
+        "flightTimeFormatted": "1h 25m",
+        "paxCount": 2,
+        "flightNumber": "ORB101H",
+        "aircraftRegistration": "OE-FFB",
+        "distanceNm": 360,
+        "crew": [
+          {
+            "role": "CMDR",
+            "name": "Capt. Bernhard Mayr",
+            "phone": "+43 664 882 10 11"
+          },
+          {
+            "role": "F/O",
+            "name": "Karin Gruber",
+            "phone": "+43 664 882 10 12"
+          },
+          {
+            "role": "Cabin Attendant",
+            "name": "Anna Schmidt",
+            "phone": "+43 664 882 10 15"
+          }
+        ],
+        "passengers": [
+          {
+            "id": "p1",
+            "fullName": "Countess Sophie von Habsburg",
+            "isLeadPassenger": true,
+            "passportNumber": "AT-994821",
+            "nationality": "AUT"
+          }
+        ],
+        "pets": {
+          "hasPets": true,
+          "petCount": 1,
+          "totalWeightKg": 5,
+          "petType": "Miniature Dachshund",
+          "notes": "Pet friendly cabin required, valid EU pet passport verified"
+        },
+        "luggage": {
+          "pieceCount": 3,
+          "totalWeightKg": 40,
+          "standardSuitcases": 2,
+          "dimensionsDescription": "2x Medium 65x45x25cm",
+          "specialLuggageDescription": "1x Antique violin case"
+        },
+        "departureHandling": {
+          "name": "Vienna Aircraft Handling (VAH)",
+          "airportCode": "LOWW",
+          "phone": "+43 1 7007 22203",
+          "email": "vah@viennaairport.com"
+        },
+        "arrivalHandling": {
+          "name": "Jet Aviation Geneva",
+          "airportCode": "LSGG",
+          "phone": "+41 58 158 1811",
+          "email": "gvafbo@jetaviation.com"
+        },
+        "from": "Vienna International VIP Terminal",
+        "fromIcao": "LOWW",
+        "to": "Geneva Airport",
+        "toIcao": "LSGG",
+        "departureDate": "2026-11-02",
+        "departureTime": "10:00 h",
+        "flightTimeMinutes": 60
+      }
+    ],
+    "pricing": {
+      "flightPrice": 7800,
+      "airportFees": 950,
+      "passengerFees": 80,
+      "dayOfWeekDiscount": 0,
+      "inboundPassengerTax": 185,
+      "outboundPassengerTax": 185,
+      "additionalServicesTotal": 0,
+      "subtotal": 9200,
+      "vatRate": 0,
+      "vatAmount": 0,
+      "totalFlightPrice": 9200,
+      "currency": "EUR",
+      "totalAmount": 9200,
+      "grandTotal": 9200,
+      "baseCharterCost": 7800
+    },
+    "services": {
+      "limousineService": false,
+      "luxuryCarRental": false,
+      "helicopterService": false,
+      "vipCateringDetails": "Organic Viennese pastry & sparkling water",
+      "deicingInsurance": "none",
+      "deicingCostPerLeg": 0,
+      "carbonOffset": "neutral",
+      "carbonOffsetRatePerHour": 33
+    },
+    "checklist": [
+      {
+        "id": "c1",
+        "label": "Aircraft Maintenance Release & Airworthiness Signoff",
+        "category": "aircraft",
+        "isCompleted": true,
+        "completedAt": "20.10.2026 10:00",
+        "completedBy": "GlobeAir Tech",
+        "requiredForDispatch": true,
+        "completed": true
+      },
+      {
+        "id": "c2",
+        "label": "Overflight & Landing Slots / PPR Confirmed",
+        "category": "permits",
+        "isCompleted": false,
+        "requiredForDispatch": true,
+        "completed": false
+      },
+      {
+        "id": "c3",
+        "label": "Crew Assignment & FTL Legality Confirmed",
+        "category": "crew",
+        "isCompleted": true,
+        "completedAt": "20.10.2026 11:30",
+        "completedBy": "Crew Ops",
+        "requiredForDispatch": true,
+        "completed": true
+      },
+      {
+        "id": "c4",
+        "label": "Departure FBO Handling Confirmed (VAH)",
+        "category": "ground",
+        "isCompleted": false,
+        "requiredForDispatch": true,
+        "completed": false
+      },
+      {
+        "id": "c5",
+        "label": "Arrival FBO Handling Confirmed (Geneva)",
+        "category": "ground",
+        "isCompleted": false,
+        "requiredForDispatch": true,
+        "completed": false
+      },
+      {
+        "id": "c6",
+        "label": "Passenger Passport & APIS Data Validated",
+        "category": "passengers",
+        "isCompleted": false,
+        "requiredForDispatch": true,
+        "completed": false
+      },
+      {
+        "id": "c7",
+        "label": "VIP Catering Ordered & Confirmed",
+        "category": "ground",
+        "isCompleted": false,
+        "requiredForDispatch": false,
+        "completed": false
+      },
+      {
+        "id": "c8",
+        "label": "De-icing Status Evaluated (Subject to Operator)",
+        "category": "safety",
+        "isCompleted": false,
+        "requiredForDispatch": true,
+        "completed": false
+      },
+      {
+        "id": "c9",
+        "label": "Flight Brief Issued & Sent to Crew",
+        "category": "crew",
+        "isCompleted": false,
+        "requiredForDispatch": true,
+        "completed": false
+      },
+      {
+        "id": "c10",
+        "label": "Escrow Payment Received / Invoice Cleared",
+        "category": "finance",
+        "isCompleted": false,
+        "requiredForDispatch": true,
+        "completed": false
+      }
+    ],
+    "agentName": "Ezeokeke, Obiefuna",
+    "agentEmail": "customercare@orbelo.com",
+    "commissionPercentage": 10,
+    "createdAt": "2026-10-20T09:30:00Z",
+    "updatedAt": "2026-10-20T11:00:00Z",
+    "_id": "booking-qte101",
+    "isDeleted": false
+  }
+]

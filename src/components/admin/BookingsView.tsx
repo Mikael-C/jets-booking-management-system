@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useAviation } from "@/lib/aviationContext";
 import { formatCurrency } from "@/lib/pricingCalculator";
 import { Booking } from "@/types/aviation";
@@ -16,7 +16,8 @@ import {
   ArrowRight,
   Clock,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  RefreshCw
 } from "lucide-react";
 
 export default function BookingsView() {
@@ -25,8 +26,16 @@ export default function BookingsView() {
     searchQuery,
     openDocument,
     setSelectedBookingForDetail,
-    convertQuoteToBooked
+    convertQuoteToBooked,
+    refreshBookings,
+    isBookingsLoading,
+    bookingsSource,
   } = useAviation();
+
+  // Fetch live bookings from backend database on mount
+  useEffect(() => {
+    refreshBookings();
+  }, []);
 
   const [activeTab, setActiveTab] = useState<
     "all" | "confirmed" | "quotes_sent" | "quotes_pending" | "quotes_undecided" | "completed"
@@ -56,17 +65,17 @@ export default function BookingsView() {
     // Search query
     if (searchQuery.trim() !== "") {
       const q = searchQuery.toLowerCase();
-      const matchTrip = b.tripNumber.toLowerCase().includes(q);
+      const matchTrip = (b.tripNumber || "").toLowerCase().includes(q);
       const matchQuoteRef = (b.quoteReference || "").toLowerCase().includes(q);
-      const matchClient = b.client.fullName.toLowerCase().includes(q);
-      const matchCompany = b.client.companyName?.toLowerCase().includes(q) ?? false;
-      const matchAircraft = b.aircraft.name.toLowerCase().includes(q) || (b.aircraft.registration?.toLowerCase().includes(q) ?? false);
-      const matchRoute = b.legs.some(
+      const matchClient = (b.client?.fullName || "").toLowerCase().includes(q);
+      const matchCompany = (b.client?.companyName || "").toLowerCase().includes(q);
+      const matchAircraft = (b.aircraft?.name || "").toLowerCase().includes(q) || ((b.aircraft?.registration || "").toLowerCase().includes(q));
+      const matchRoute = (b.legs || []).some(
         (l) =>
-          l.origin.icao.toLowerCase().includes(q) ||
-          l.destination.icao.toLowerCase().includes(q) ||
-          l.origin.city.toLowerCase().includes(q) ||
-          l.destination.city.toLowerCase().includes(q)
+          (l.origin?.icao || "").toLowerCase().includes(q) ||
+          (l.destination?.icao || "").toLowerCase().includes(q) ||
+          (l.origin?.city || "").toLowerCase().includes(q) ||
+          (l.destination?.city || "").toLowerCase().includes(q)
       );
       if (!matchTrip && !matchQuoteRef && !matchClient && !matchCompany && !matchAircraft && !matchRoute) return false;
     }
@@ -252,16 +261,36 @@ export default function BookingsView() {
       {/* Main Bookings Table Card */}
       <div className="bg-white border border-[#E0DAD0] rounded-2xl shadow-sm overflow-hidden">
         
-        <div className="p-4 bg-[#F5F2EC]/80 border-b border-[#E0DAD0] flex items-center justify-between">
-          <div className="flex items-center gap-2">
+        <div className="p-4 bg-[#F5F2EC]/80 border-b border-[#E0DAD0] flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="font-extrabold text-xs font-mono uppercase tracking-wider text-[#0F1420]">
               Flight Operations Register
             </span>
             <span className="text-xs text-gray-500">({filteredBookings.length} results)</span>
+            <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono border ${
+              bookingsSource === "backend"
+                ? "bg-emerald-50 text-emerald-800 border-emerald-300"
+                : "bg-amber-50 text-amber-800 border-amber-300"
+            }`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${bookingsSource === "backend" ? "bg-emerald-600 animate-pulse" : "bg-amber-600"}`} />
+              {bookingsSource === "backend" ? "Live Backend Synced" : "Local Database"}
+            </span>
           </div>
-          <span className="text-xs text-[#0F1420]/60 font-mono">
-            EASA Part-CAT & Austrian Law Applicable
-          </span>
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => refreshBookings()}
+              disabled={isBookingsLoading}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#E0DAD0] bg-white hover:bg-gray-50 text-[#0F1420] text-xs font-bold transition-all shadow-xs disabled:opacity-50"
+              title="Refresh live bookings from backend database"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isBookingsLoading ? "animate-spin text-[#C9A052]" : "text-gray-600"}`} />
+              <span>{isBookingsLoading ? "Refreshing..." : "Refresh Live"}</span>
+            </button>
+            <span className="text-xs text-[#0F1420]/60 font-mono hidden md:inline">
+              EASA Part-CAT & Austrian Law Applicable
+            </span>
+          </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -286,9 +315,9 @@ export default function BookingsView() {
                 </tr>
               ) : (
                 filteredBookings.map((booking) => {
-                  const totalChecklist = booking.checklist.length;
-                  const completedChecklist = booking.checklist.filter((c) => c.isCompleted).length;
-                  const isAllReady = completedChecklist === totalChecklist;
+                  const totalChecklist = (booking.checklist || []).length;
+                  const completedChecklist = (booking.checklist || []).filter((c) => c.isCompleted || (c as any).completed).length;
+                  const isAllReady = totalChecklist > 0 && completedChecklist === totalChecklist;
                   const isInProgress = ["draft", "quote_sent", "client_review"].includes(booking.status);
 
                   return (
@@ -326,23 +355,23 @@ export default function BookingsView() {
                       {/* Client / Account */}
                       <td className="py-4 px-4">
                         <div className="flex flex-col">
-                          <span className="font-bold text-[#0F1420] text-xs">{booking.client.fullName}</span>
-                          {booking.client.companyName && (
+                          <span className="font-bold text-[#0F1420] text-xs">{booking.client?.fullName || "Private Client"}</span>
+                          {booking.client?.companyName && (
                             <span className="text-[11px] text-gray-600">{booking.client.companyName}</span>
                           )}
-                          <span className="text-[10px] text-gray-400 font-mono">Acc: {booking.accountNumber}</span>
+                          <span className="text-[10px] text-gray-400 font-mono">Acc: {booking.accountNumber || booking.client?.accountNumber || "ACC-001"}</span>
                         </div>
                       </td>
 
                       {/* Aircraft & Tail */}
                       <td className="py-4 px-4">
                         <div className="flex flex-col">
-                          <span className="font-bold text-[#0F1420]">{booking.aircraft.name}</span>
+                          <span className="font-bold text-[#0F1420]">{booking.aircraft?.name || "Jet"}</span>
                           <span className="text-[11px] font-mono font-bold text-[#C9A052]">
-                            Tail: {booking.aircraft.registration || "OE-FFB"}
+                            Tail: {booking.aircraft?.registration || "OE-FFB"}
                           </span>
                           <span className="text-[10px] text-gray-500">
-                            {booking.aircraft.passengers} Seats • {booking.aircraft.categoryLabel}
+                            {booking.aircraft?.passengers || 4} Seats • {booking.aircraft?.categoryLabel || "Jet"}
                           </span>
                         </div>
                       </td>
@@ -350,20 +379,20 @@ export default function BookingsView() {
                       {/* Routing & Schedule */}
                       <td className="py-4 px-4">
                         <div className="flex flex-col gap-1 max-w-[210px]">
-                          {booking.legs.map((leg) => (
-                            <div key={leg.legNumber} className="text-[11px] flex items-center justify-between gap-2">
+                          {(booking.legs || []).map((leg, lIdx) => (
+                            <div key={leg.legNumber || lIdx} className="text-[11px] flex items-center justify-between gap-2">
                               <span className="font-extrabold text-[#0F1420] font-mono flex items-center gap-1">
-                                <span>{leg.origin.icao}</span>
+                                <span>{leg.origin?.icao || "---"}</span>
                                 <span className="text-[#C9A052]">→</span>
-                                <span>{leg.destination.icao}</span>
+                                <span>{leg.destination?.icao || "---"}</span>
                               </span>
                               <span className="text-[10px] text-gray-500 font-mono">
-                                {leg.flightDate.slice(5)} • {leg.departureTimeLocal}
+                                {leg.flightDate ? leg.flightDate.slice(5) : "---"} • {leg.departureTimeLocal || "10:00"}
                               </span>
                             </div>
                           ))}
                           <span className="text-[10px] text-gray-500">
-                            {booking.legs.length} {booking.legs.length > 1 ? "legs" : "leg"} • {booking.legs[0]?.paxCount || 2} Pax
+                            {(booking.legs || []).length} {(booking.legs || []).length > 1 ? "legs" : "leg"} • {(booking.legs || [])[0]?.paxCount || 2} Pax
                           </span>
                         </div>
                       </td>

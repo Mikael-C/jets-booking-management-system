@@ -1,55 +1,88 @@
 const mongoose = require('mongoose');
 
 const flightLegSchema = new mongoose.Schema({
-  from: { type: String, required: true },
-  fromIcao: { type: String, required: true, uppercase: true },
+  legNumber: { type: Number, default: 1 },
+  from: { type: String, default: '' },
+  fromIcao: { type: String, default: '', uppercase: true },
   fromCoords: {
     lat: Number,
     lng: Number,
   },
-  to: { type: String, required: true },
-  toIcao: { type: String, required: true, uppercase: true },
+  to: { type: String, default: '' },
+  toIcao: { type: String, default: '', uppercase: true },
   toCoords: {
     lat: Number,
     lng: Number,
   },
-  departureDate: { type: String, required: true },
+  origin: { type: mongoose.Schema.Types.Mixed, default: null },
+  destination: { type: mongoose.Schema.Types.Mixed, default: null },
+  departureDate: { type: String, default: '' },
+  flightDate: { type: String, default: '' },
   departureTime: { type: String, default: '' },
-  paxCount: { type: Number, required: true, min: 1 },
+  departureTimeLocal: { type: String, default: '' },
+  arrivalTimeLocal: { type: String, default: '' },
+  flightTimeFormatted: { type: String, default: '' },
+  flightNumber: { type: String, default: '' },
+  aircraftRegistration: { type: String, default: '' },
+  crew: { type: [mongoose.Schema.Types.Mixed], default: [] },
+  passengers: { type: [mongoose.Schema.Types.Mixed], default: [] },
+  departureHandling: { type: mongoose.Schema.Types.Mixed, default: null },
+  arrivalHandling: { type: mongoose.Schema.Types.Mixed, default: null },
+  paxCount: { type: Number, default: 2 },
   flightTimeMinutes: { type: Number, default: 0 },
   distanceNm: { type: Number, default: 0 },
   notes: { type: String, default: '' },
-}, { _id: true });
+  pets: { type: mongoose.Schema.Types.Mixed, default: null },
+  luggage: { type: mongoose.Schema.Types.Mixed, default: null },
+}, { _id: true, strict: false });
 
 const clientDetailsSchema = new mongoose.Schema({
-  fullName: { type: String, required: true },
+  fullName: { type: String, default: 'Private Client' },
   companyName: { type: String, default: '' },
-  email: { type: String, required: true },
+  email: { type: String, default: '' },
   phone: { type: String, default: '' },
   address: { type: String, default: '' },
+  streetAddress: { type: String, default: '' },
+  cityPostalCountry: { type: String, default: '' },
   vatNumber: { type: String, default: '' },
   accountNumber: { type: String, default: '' },
-}, { _id: false });
+}, { _id: false, strict: false });
 
 const operatorDetailsSchema = new mongoose.Schema({
+  companyName: { type: String, default: '' },
+  legalEntity: { type: String, default: '' },
   legalName: { type: String, default: '' },
   tradingName: { type: String, default: '' },
+  representativeName: { type: String, default: '' },
   aocNumber: { type: String, default: '' },
   salesEmail: { type: String, default: '' },
+  supportEmail: { type: String, default: '' },
   opsPhone: { type: String, default: '' },
+  supportPhone: { type: String, default: '' },
   baseIcao: { type: String, default: '' },
-}, { _id: false });
+  vatNumber: { type: String, default: '' },
+  iban: { type: String, default: '' },
+  bic: { type: String, default: '' },
+  bankName: { type: String, default: '' },
+}, { _id: false, strict: false });
 
 const pricingBreakdownSchema = new mongoose.Schema({
-  currency: { type: String, default: 'USD' },
+  currency: { type: String, default: 'EUR' },
   baseCharterCost: { type: Number, default: 0 },
+  flightPrice: { type: Number, default: 0 },
   fuelSurcharge: { type: Number, default: 0 },
   landingFees: { type: Number, default: 0 },
+  airportFees: { type: Number, default: 0 },
   handlingFees: { type: Number, default: 0 },
   cateringCost: { type: Number, default: 0 },
   crewCost: { type: Number, default: 0 },
   repositioningFee: { type: Number, default: 0 },
+  passengerFees: { type: Number, default: 0 },
+  dayOfWeekDiscount: { type: Number, default: 0 },
+  inboundPassengerTax: { type: Number, default: 0 },
+  outboundPassengerTax: { type: Number, default: 0 },
   additionalServicesCost: { type: Number, default: 0 },
+  additionalServicesTotal: { type: Number, default: 0 },
   subtotal: { type: Number, default: 0 },
   adminMargin: { type: Number, default: 0 },
   adminMarginPercentage: { type: Number, default: 0 },
@@ -59,96 +92,104 @@ const pricingBreakdownSchema = new mongoose.Schema({
   vatRate: { type: Number, default: 0 },
   vatAmount: { type: Number, default: 0 },
   totalAmount: { type: Number, default: 0 },
+  totalFlightPrice: { type: Number, default: 0 },
   cardFee: { type: Number, default: 0 },
+  cardFeePercentage: { type: Number, default: 0 },
+  cardFeeAmount: { type: Number, default: 0 },
+  totalWithCardFee: { type: Number, default: 0 },
   grandTotal: { type: Number, default: 0 },
-}, { _id: false });
+}, { _id: false, strict: false });
 
 const additionalServicesSchema = new mongoose.Schema({
   catering: { type: Boolean, default: false },
   cateringDetails: { type: String, default: '' },
+  vipCateringDetails: { type: String, default: '' },
   groundTransport: { type: Boolean, default: false },
   groundTransportDetails: { type: String, default: '' },
+  limousineService: { type: Boolean, default: false },
+  luxuryCarRental: { type: Boolean, default: false },
+  helicopterService: { type: Boolean, default: false },
   flightAttendant: { type: Boolean, default: false },
   wifiOnboard: { type: Boolean, default: false },
   customSecurity: { type: Boolean, default: false },
   flowerArrangement: { type: Boolean, default: false },
   concierge: { type: Boolean, default: false },
+  deicingInsurance: { type: String, default: 'none' },
+  deicingCostPerLeg: { type: Number, default: 0 },
+  carbonOffset: { type: String, default: 'neutral' },
+  carbonOffsetRatePerHour: { type: Number, default: 33 },
+  cancellationInsurance: { type: Boolean, default: false },
+  customRequests: { type: String, default: '' },
   otherServices: { type: String, default: '' },
-}, { _id: false });
+}, { _id: false, strict: false });
 
 const checklistStepSchema = new mongoose.Schema({
   id: { type: String, required: true },
   label: { type: String, required: true },
   completed: { type: Boolean, default: false },
-  completedAt: { type: Date, default: null },
+  isCompleted: { type: Boolean, default: false },
+  completedAt: { type: mongoose.Schema.Types.Mixed, default: null },
   completedBy: { type: String, default: '' },
+  notes: { type: String, default: '' },
+  requiredForDispatch: { type: Boolean, default: true },
   category: {
     type: String,
-    enum: ['pre_flight', 'documentation', 'passenger', 'crew', 'payment', 'post_flight'],
     default: 'pre_flight',
   },
-}, { _id: false });
+}, { _id: false, strict: false });
 
 const sourcingOptionSchema = new mongoose.Schema({
   id: { type: String },
   aircraftType: { type: String },
   registration: { type: String },
+  aircraftRegistration: { type: String },
   operatorName: { type: String },
   operatorEmail: { type: String },
+  baseAirport: { type: String, default: '' },
   priceQuoted: { type: Number },
-  currency: { type: String, default: 'USD' },
+  price: { type: Number },
+  currency: { type: String, default: 'EUR' },
   flightTime: { type: String },
+  taxesIncluded: { type: Boolean, default: true },
+  validUntil: { type: String, default: '' },
   notes: { type: String, default: '' },
-  source: { type: String, enum: ['avinode', 'manual', 'direct'], default: 'manual' },
+  source: { type: String, default: 'manual' },
   avinodeId: { type: String, default: '' },
+  avInodeTripId: { type: String, default: '' },
   selected: { type: Boolean, default: false },
-}, { _id: true });
+}, { _id: true, strict: false });
 
 const manualServiceSchema = new mongoose.Schema({
-  description: { type: String, required: true },
-  amount: { type: Number, required: true },
-  currency: { type: String, default: 'USD' },
-}, { _id: true });
+  id: { type: String },
+  name: { type: String },
+  description: { type: String },
+  price: { type: Number },
+  amount: { type: Number },
+  currency: { type: String, default: 'EUR' },
+}, { _id: true, strict: false });
 
 const bookingSchema = new mongoose.Schema(
   {
-    tripNumber: { type: String, required: true, unique: true, index: true },
+    tripNumber: { type: String, default: '', index: true },
     invoiceNumber: { type: String, default: '' },
     accountNumber: { type: String, default: '' },
+    quoteReference: { type: String, default: '' },
     contractDate: { type: String, default: '' },
     quoteExpirationDate: { type: String, default: '' },
     paymentDueDate: { type: String, default: '' },
     status: {
       type: String,
-      enum: [
-        'draft', 'submitted', 'in_sourcing', 'quoted', 'quote_sent', 'client_review',
-        'accepted', 'paid', 'confirmed', 'dispatched', 'in_flight', 'flown',
-        'completed', 'cancelled', 'expired',
-      ],
       default: 'draft',
       index: true,
     },
     tripType: {
       type: String,
-      enum: ['one_way', 'round_trip', 'multi_leg'],
-      required: true,
+      default: 'one_way',
     },
-    aircraft: {
-      id: String,
-      name: String,
-      manufacturer: String,
-      category: { type: String, enum: ['light', 'midsize', 'super-midsize', 'large', 'ultra-long-range'] },
-      registration: String,
-      passengers: Number,
-      range: Number,
-      pricePerHour: Number,
-      cruiseSpeedKtas: Number,
-      imageExterior: String,
-      imageInterior: String,
-    },
-    client: { type: clientDetailsSchema, required: true },
+    aircraft: { type: mongoose.Schema.Types.Mixed, default: {} },
+    client: { type: clientDetailsSchema, default: {} },
     operator: { type: operatorDetailsSchema, default: {} },
-    legs: { type: [flightLegSchema], required: true, validate: v => v.length > 0 },
+    legs: { type: [flightLegSchema], default: [] },
     pricing: { type: pricingBreakdownSchema, default: {} },
     services: { type: additionalServicesSchema, default: {} },
     checklist: { type: [checklistStepSchema], default: [] },
@@ -158,22 +199,23 @@ const bookingSchema = new mongoose.Schema(
     quoteVersion: { type: Number, default: 1 },
     quoteStatus: {
       type: String,
-      enum: ['draft', 'sent', 'accepted', 'declined', 'expired'],
       default: 'draft',
     },
     paymentStatus: {
       type: String,
-      enum: ['unpaid', 'partial', 'paid', 'refunded', 'credited'],
       default: 'unpaid',
     },
+    paymentReason: { type: String, default: '' },
     paymentMethodChoice: {
       type: String,
-      enum: ['bank_transfer', 'credit_card', 'crypto', 'other'],
-      default: 'bank_transfer',
+      default: 'wire',
     },
-    adminMarginType: { type: String, enum: ['percentage', 'fixed'], default: 'percentage' },
+    cardFeePercentage: { type: Number, default: 3.5 },
+    cardFeeAmount: { type: Number, default: 0 },
+    totalWithCardFee: { type: Number, default: 0 },
+    adminMarginType: { type: String, default: 'percentage' },
     adminMarginValue: { type: Number, default: 0 },
-    agentMarginType: { type: String, enum: ['percentage', 'fixed'], default: 'percentage' },
+    agentMarginType: { type: String, default: 'percentage' },
     agentMarginValue: { type: Number, default: 0 },
     manualServices: { type: [manualServiceSchema], default: [] },
     sourcingOptions: { type: [sourcingOptionSchema], default: [] },
@@ -192,6 +234,7 @@ const bookingSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
+    strict: false,
     toJSON: { virtuals: true },
     toObject: { virtuals: true },
   }
@@ -201,21 +244,11 @@ bookingSchema.index({ status: 1, isDeleted: 1 });
 bookingSchema.index({ agentEmail: 1, isDeleted: 1 });
 bookingSchema.index({ 'client.email': 1 });
 bookingSchema.index({ createdAt: -1 });
-bookingSchema.index({ 'legs.departureDate': 1 });
 
 // Virtual: total pax across all legs
 bookingSchema.virtual('totalPax').get(function () {
   if (!this.legs || this.legs.length === 0) return 0;
-  return Math.max(...this.legs.map((l) => l.paxCount));
-});
-
-// Auto-generate trip number before validation
-bookingSchema.pre('validate', async function (next) {
-  if (this.isNew && !this.tripNumber) {
-    const { generateTripNumber } = require('../utils/generateId');
-    this.tripNumber = await generateTripNumber();
-  }
-  next();
+  return Math.max(...this.legs.map((l) => l.paxCount || 1));
 });
 
 const Booking = mongoose.model('Booking', bookingSchema);

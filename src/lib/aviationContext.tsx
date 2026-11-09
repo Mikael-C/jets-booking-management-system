@@ -14,7 +14,15 @@ import {
   AuditLogEntry,
   Notification,
   SourcingOption,
-  RequestMessage
+  RequestMessage,
+  TripType,
+  Aircraft,
+  Airport,
+  OperatorDetails,
+  ClientDetails,
+  PricingBreakdown,
+  AdditionalServices,
+  DispatchChecklistStep
 } from "@/types/aviation";
 import { initialBookings, defaultOperator } from "@/data/initialBookings";
 import { initialClients } from "@/data/clients";
@@ -386,6 +394,265 @@ export const getRoleDefaultNav = (targetRole: UserRole): string => {
   }
 };
 
+export const resolveAircraft = (rawAircraft: any): Aircraft => {
+  const defaultJet = fleetData[0];
+  if (!rawAircraft || typeof rawAircraft !== "object") return defaultJet;
+  const match = fleetData.find(
+    (f) =>
+      f.id === rawAircraft.id ||
+      f.name?.toLowerCase() === rawAircraft.name?.toLowerCase()
+  );
+  return {
+    ...(match || defaultJet),
+    ...rawAircraft,
+    registration: rawAircraft.registration || match?.registration || "OE-FFB",
+    categoryLabel: rawAircraft.categoryLabel || match?.categoryLabel || (rawAircraft.category ? String(rawAircraft.category).toUpperCase() : "Entry Level"),
+    passengers: Number(rawAircraft.passengers || match?.passengers || 4),
+    range: Number(rawAircraft.range || match?.range || 1200),
+    pricePerHour: Number(rawAircraft.pricePerHour || match?.pricePerHour || 2450),
+    toilette: rawAircraft.toilette !== undefined ? Boolean(rawAircraft.toilette) : (match?.toilette ?? true),
+    smokingCabin: rawAircraft.smokingCabin !== undefined ? Boolean(rawAircraft.smokingCabin) : (match?.smokingCabin ?? false),
+    imageExterior: rawAircraft.imageExterior || match?.imageExterior || defaultJet.imageExterior,
+    imageInterior: rawAircraft.imageInterior || match?.imageInterior || defaultJet.imageInterior,
+    images: Array.isArray(rawAircraft.images) && rawAircraft.images.length > 0 ? rawAircraft.images : (match?.images || defaultJet.images || []),
+  };
+};
+
+export const normalizeBooking = (b: any): Booking => {
+  const id = String(b?.id || b?._id || `booking-${Date.now()}`);
+  const tripNumber = String(b?.tripNumber || `PEU${Math.floor(100 + Math.random() * 899)}-001`);
+  
+  // Resolve aircraft
+  const aircraft = resolveAircraft(b?.aircraft);
+
+  // Resolve client
+  const client: ClientDetails = {
+    fullName: String(b?.client?.fullName || "Private Client"),
+    companyName: b?.client?.companyName ? String(b.client.companyName) : undefined,
+    streetAddress: String(b?.client?.streetAddress || b?.client?.address || "Flughafenstraße 1"),
+    cityPostalCountry: String(b?.client?.cityPostalCountry || "A-4063 Linz-Hörsching, Austria"),
+    phone: String(b?.client?.phone || "+43 7221 727 400"),
+    email: String(b?.client?.email || "client@orbelo.com"),
+    vatNumber: b?.client?.vatNumber ? String(b.client.vatNumber) : undefined,
+    accountNumber: String(b?.client?.accountNumber || b?.accountNumber || "ACC-21737"),
+  };
+
+  // Resolve operator
+  const operator: OperatorDetails = {
+    ...defaultOperator,
+    ...(b?.operator || {}),
+  };
+
+  // Resolve legs
+  let legs: FlightLeg[] = [];
+  if (Array.isArray(b?.legs) && b.legs.length > 0) {
+    legs = b.legs.map((leg: any, idx: number): FlightLeg => {
+      const fromCode = leg?.origin?.icao || leg?.fromIcao || leg?.from || "LSGG";
+      const toCode = leg?.destination?.icao || leg?.toIcao || leg?.to || "LIMJ";
+      
+      const originAirport: Airport = (leg?.origin && leg.origin.icao && leg.origin.id)
+        ? leg.origin
+        : (findAirportByCode(fromCode) || {
+            id: `apt-${fromCode.toLowerCase()}`,
+            icao: String(leg?.origin?.icao || fromCode).toUpperCase(),
+            iata: leg?.origin?.iata || fromCode.slice(-3).toUpperCase(),
+            name: leg?.origin?.name || leg?.from || `${fromCode} Airport`,
+            city: leg?.origin?.city || leg?.from || fromCode,
+            country: leg?.origin?.country || "Europe",
+            coordinates: { lat: 46.2381, lng: 6.1089 }
+          });
+
+      const destAirport: Airport = (leg?.destination && leg.destination.icao && leg.destination.id)
+        ? leg.destination
+        : (findAirportByCode(toCode) || {
+            id: `apt-${toCode.toLowerCase()}`,
+            icao: String(leg?.destination?.icao || toCode).toUpperCase(),
+            iata: leg?.destination?.iata || toCode.slice(-3).toUpperCase(),
+            name: leg?.destination?.name || leg?.to || `${toCode} Airport`,
+            city: leg?.destination?.city || leg?.to || toCode,
+            country: leg?.destination?.country || "Europe",
+            coordinates: { lat: 44.4133, lng: 8.8375 }
+          });
+
+      return {
+        legNumber: Number(leg?.legNumber || idx + 1),
+        flightDate: String(leg?.flightDate || leg?.departureDate || "2026-10-22"),
+        origin: originAirport,
+        destination: destAirport,
+        departureTimeLocal: String(leg?.departureTimeLocal || leg?.departureTime || "10:00"),
+        arrivalTimeLocal: String(leg?.arrivalTimeLocal || "11:15"),
+        flightTimeFormatted: String(
+          leg?.flightTimeFormatted ||
+          (leg?.flightTimeMinutes ? `${Math.floor(leg.flightTimeMinutes / 60)}h ${leg.flightTimeMinutes % 60}m` : "1h 15m")
+        ),
+        paxCount: Number(leg?.paxCount || 2),
+        flightNumber: String(leg?.flightNumber || "PEA501"),
+        aircraftRegistration: String(leg?.aircraftRegistration || aircraft.registration || "OE-FFB"),
+        crew: Array.isArray(leg?.crew) ? leg.crew : [],
+        passengers: Array.isArray(leg?.passengers) ? leg.passengers : [],
+        departureHandling: leg?.departureHandling || {
+          name: "Jet Aviation Handling",
+          airportCode: originAirport.icao,
+          phone: "+41 22 929 7272",
+          email: "dispatch@jetaviation.com"
+        },
+        arrivalHandling: leg?.arrivalHandling || {
+          name: "Signature Flight Support",
+          airportCode: destAirport.icao,
+          phone: "+39 010 601 5401",
+          email: "dispatch@signatureflight.com"
+        },
+        distanceNm: leg?.distanceNm,
+        pets: leg?.pets,
+        luggage: leg?.luggage,
+      };
+    });
+  } else {
+    // Default fallback leg
+    const origin = findAirportByCode("LSGG") || {
+      icao: "LSGG",
+      iata: "GVA",
+      name: "Geneva Airport",
+      city: "Geneva",
+      country: "Switzerland",
+      coordinates: [46.2381, 6.1089]
+    };
+    const destination = findAirportByCode("LIMJ") || {
+      icao: "LIMJ",
+      iata: "GOA",
+      name: "Genoa Cristoforo Colombo",
+      city: "Genoa",
+      country: "Italy",
+      coordinates: [44.4133, 8.8375]
+    };
+    legs = [
+      {
+        legNumber: 1,
+        flightDate: "2026-10-22",
+        origin,
+        destination,
+        departureTimeLocal: "10:00",
+        arrivalTimeLocal: "11:15",
+        flightTimeFormatted: "1h 15m",
+        paxCount: 2,
+        flightNumber: "PEA501",
+        aircraftRegistration: aircraft.registration || "OE-FFB",
+        crew: [],
+        passengers: [],
+        departureHandling: {
+          name: "Jet Aviation Handling",
+          airportCode: "LSGG",
+          phone: "+41 22 929 7272",
+          email: "dispatch@jetaviation.com"
+        },
+        arrivalHandling: {
+          name: "Signature Flight Support",
+          airportCode: "LIMJ",
+          phone: "+39 010 601 5401",
+          email: "dispatch@signatureflight.com"
+        }
+      }
+    ];
+  }
+
+  // Resolve pricing
+  const pricing: PricingBreakdown = {
+    flightPrice: Number(b?.pricing?.flightPrice ?? b?.pricing?.baseCharterCost ?? 12500),
+    airportFees: Number(b?.pricing?.airportFees ?? b?.pricing?.landingFees ?? 850),
+    passengerFees: Number(b?.pricing?.passengerFees ?? 220),
+    dayOfWeekDiscount: Number(b?.pricing?.dayOfWeekDiscount ?? 0),
+    inboundPassengerTax: Number(b?.pricing?.inboundPassengerTax ?? 0),
+    outboundPassengerTax: Number(b?.pricing?.outboundPassengerTax ?? 0),
+    additionalServicesTotal: Number(b?.pricing?.additionalServicesTotal ?? b?.pricing?.additionalServicesCost ?? 0),
+    subtotal: Number(b?.pricing?.subtotal ?? b?.pricing?.totalBeforeTax ?? 13570),
+    vatRate: Number(b?.pricing?.vatRate ?? 0),
+    vatAmount: Number(b?.pricing?.vatAmount ?? 0),
+    totalFlightPrice: Number(b?.pricing?.totalFlightPrice ?? b?.pricing?.totalAmount ?? b?.pricing?.grandTotal ?? 13570),
+    currency: (b?.pricing?.currency || "EUR") as any,
+  };
+
+  // Resolve services
+  const services: AdditionalServices = {
+    limousineService: Boolean(b?.services?.limousineService),
+    luxuryCarRental: Boolean(b?.services?.luxuryCarRental),
+    helicopterService: Boolean(b?.services?.helicopterService),
+    vipCateringDetails: b?.services?.vipCateringDetails || b?.services?.cateringDetails || "",
+    deicingInsurance: b?.services?.deicingInsurance || "none",
+    deicingCostPerLeg: Number(b?.services?.deicingCostPerLeg || 0),
+    carbonOffset: b?.services?.carbonOffset || "neutral",
+    carbonOffsetRatePerHour: Number(b?.services?.carbonOffsetRatePerHour || 33),
+    cancellationInsurance: Boolean(b?.services?.cancellationInsurance),
+    customRequests: b?.services?.customRequests || ""
+  };
+
+  // Resolve checklist
+  let checklist: DispatchChecklistStep[] = [];
+  if (Array.isArray(b?.checklist) && b.checklist.length > 0) {
+    checklist = b.checklist.map((c: any, idx: number): DispatchChecklistStep => ({
+      id: String(c.id || `cl-${idx + 1}`),
+      label: String(c.label || "Checklist step"),
+      category: c.category || "pre_flight",
+      isCompleted: c.isCompleted !== undefined ? Boolean(c.isCompleted) : Boolean(c.completed),
+      completedAt: c.completedAt ? String(c.completedAt) : undefined,
+      completedBy: c.completedBy ? String(c.completedBy) : undefined,
+      notes: c.notes || "",
+      requiredForDispatch: c.requiredForDispatch !== undefined ? Boolean(c.requiredForDispatch) : true
+    }));
+  } else {
+    checklist = [
+      { id: "cl-1", label: "Client passport / ID verified", category: "passengers", isCompleted: true, requiredForDispatch: true },
+      { id: "cl-2", label: "Passenger manifest submitted", category: "passengers", isCompleted: true, requiredForDispatch: true },
+      { id: "cl-3", label: "Flight plan filed with ATC", category: "aircraft", isCompleted: true, requiredForDispatch: true },
+      { id: "cl-4", label: "Handling agents confirmed at origin", category: "ground", isCompleted: true, requiredForDispatch: true },
+      { id: "cl-5", label: "Handling agents confirmed at destination", category: "ground", isCompleted: true, requiredForDispatch: true },
+      { id: "cl-6", label: "Charter agreement signed", category: "permits", isCompleted: true, requiredForDispatch: true },
+      { id: "cl-7", label: "Payment verified by Finance", category: "finance", isCompleted: true, requiredForDispatch: true },
+      { id: "cl-8", label: "Crew briefing completed", category: "crew", isCompleted: true, requiredForDispatch: true },
+      { id: "cl-9", label: "Operator AOC checked & valid", category: "safety", isCompleted: true, requiredForDispatch: true }
+    ];
+  }
+
+  return {
+    id,
+    tripNumber,
+    invoiceNumber: String(b?.invoiceNumber || ""),
+    accountNumber: String(b?.accountNumber || client.accountNumber || "ACC-21737"),
+    contractDate: String(b?.contractDate || "01.10.2026"),
+    quoteExpirationDate: String(b?.quoteExpirationDate || "02.10.2026, 19:53z"),
+    paymentDueDate: String(b?.paymentDueDate || "03.10.2026"),
+    status: (b?.status || "confirmed") as BookingStatus,
+    tripType: (b?.tripType || "round_trip") as TripType,
+    aircraft,
+    client,
+    operator,
+    legs,
+    pricing,
+    services,
+    checklist,
+    agentName: b?.agentName,
+    agentEmail: b?.agentEmail,
+    commissionPercentage: b?.commissionPercentage,
+    quoteVersion: b?.quoteVersion,
+    quoteStatus: b?.quoteStatus,
+    quoteReference: b?.quoteReference,
+    paymentStatus: b?.paymentStatus,
+    paymentReason: b?.paymentReason,
+    paymentMethodChoice: b?.paymentMethodChoice,
+    cardFeePercentage: b?.cardFeePercentage,
+    cardFeeAmount: b?.cardFeeAmount,
+    totalWithCardFee: b?.totalWithCardFee,
+    adminMarginType: b?.adminMarginType,
+    adminMarginValue: b?.adminMarginValue,
+    agentMarginType: b?.agentMarginType,
+    agentMarginValue: b?.agentMarginValue,
+    manualServices: b?.manualServices,
+    avInodeTripId: b?.avInodeTripId,
+    sourcingOptions: b?.sourcingOptions,
+    createdAt: String(b?.createdAt || new Date().toISOString()),
+    updatedAt: String(b?.updatedAt || new Date().toISOString()),
+  };
+};
+
 interface AviationContextType {
   // Auth state
   isAuthenticated: boolean;
@@ -416,6 +683,9 @@ interface AviationContextType {
   isNewQuoteModalOpen: boolean;
   selectedBookingForDetail: Booking | null;
   setSelectedBookingForDetail: (b: Booking | null) => void;
+  refreshBookings: () => Promise<Booking[]>;
+  isBookingsLoading: boolean;
+  bookingsSource: "backend" | "local";
 
   // Search & Filter
   searchQuery: string;
@@ -483,6 +753,8 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
   // Core Data
   const [users, setUsers] = useState<UserRecord[]>(initialUsers);
   const [bookings, setBookings] = useState<Booking[]>(initialBookings);
+  const [isBookingsLoading, setIsBookingsLoading] = useState<boolean>(false);
+  const [bookingsSource, setBookingsSource] = useState<"backend" | "local">("local");
   const [clients, setClients] = useState<ClientRecord[]>(initialClients);
   const [agentRequests, setAgentRequests] = useState<AgentRequest[]>(initialAgentRequests);
   const [operators, setOperators] = useState<OperatorRecord[]>(initialOperators);
@@ -514,7 +786,14 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       }
       const savedBookings = localStorage.getItem("orbelo_bookings_v2");
       if (savedBookings) {
-        setBookings(JSON.parse(savedBookings));
+        try {
+          const parsed = JSON.parse(savedBookings);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setBookings(parsed.map(normalizeBooking));
+          }
+        } catch {
+          // ignore
+        }
       }
       const savedRequests = localStorage.getItem("orbelo_requests_v2");
       if (savedRequests) {
@@ -553,13 +832,21 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
         })
         .catch(() => {});
 
+      setIsBookingsLoading(true);
       api.bookings.list({ limit: 100 })
         .then((res) => {
-          if (res?.data && res.data.length > 0) {
-            setBookings(res.data.map((b: any) => ({ ...b, id: b.id || b._id })));
+          if (res?.data && Array.isArray(res.data) && res.data.length > 0) {
+            const normalized = res.data.map(normalizeBooking);
+            setBookings(normalized);
+            setBookingsSource("backend");
           }
         })
-        .catch(() => {});
+        .catch((err) => {
+          console.warn("Backend bookings sync notice:", err?.message);
+        })
+        .finally(() => {
+          setIsBookingsLoading(false);
+        });
 
       api.clients.list({ limit: 100 })
         .then((res) => {
@@ -1033,12 +1320,20 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
   };
 
   const toggleChecklistItem = (bookingId: string, stepId: string) => {
+    const targetBooking = bookings.find((b) => b.id === bookingId);
+    const targetStep = targetBooking?.checklist.find((item) => item.id === stepId);
+    const nextCompleted = targetStep ? !targetStep.isCompleted : true;
+
+    // Sync to backend in background
+    api.bookings.toggleChecklist(bookingId, stepId, nextCompleted).catch((err) => {
+      console.warn("Backend checklist sync notice:", err?.message);
+    });
+
     setBookings((prev) =>
       prev.map((b) => {
         if (b.id !== bookingId) return b;
         const updatedChecklist = b.checklist.map((item) => {
           if (item.id !== stepId) return item;
-          const nextCompleted = !item.isCompleted;
           return {
             ...item,
             isCompleted: nextCompleted,
@@ -1065,7 +1360,6 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
           ...prev,
           checklist: prev.checklist.map((item) => {
             if (item.id !== stepId) return item;
-            const nextCompleted = !item.isCompleted;
             return {
               ...item,
               isCompleted: nextCompleted,
@@ -1092,7 +1386,6 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
           ...prev,
           checklist: prev.checklist.map((item) => {
             if (item.id !== stepId) return item;
-            const nextCompleted = !item.isCompleted;
             return {
               ...item,
               isCompleted: nextCompleted,
@@ -1129,6 +1422,24 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     );
     api.bookings.confirm(bookingId).catch((err) => console.log("Backend sync note:", err.message));
     setActiveNav("bookings");
+  };
+
+  const refreshBookings = async (): Promise<Booking[]> => {
+    setIsBookingsLoading(true);
+    try {
+      const res = await api.bookings.list({ limit: 100 });
+      if (res?.data && Array.isArray(res.data) && res.data.length > 0) {
+        const normalized = res.data.map(normalizeBooking);
+        setBookings(normalized);
+        setBookingsSource("backend");
+        return normalized;
+      }
+    } catch (err: any) {
+      console.warn("Backend bookings fetch notice:", err?.message);
+    } finally {
+      setIsBookingsLoading(false);
+    }
+    return bookings;
   };
 
   const addAgentRequest = (reqData: Omit<AgentRequest, "id" | "createdAt" | "status">): AgentRequest => {
@@ -1587,6 +1898,9 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
         isNewQuoteModalOpen,
         selectedBookingForDetail,
         setSelectedBookingForDetail,
+        refreshBookings,
+        isBookingsLoading,
+        bookingsSource,
         searchQuery,
         setSearchQuery,
         statusFilter,
