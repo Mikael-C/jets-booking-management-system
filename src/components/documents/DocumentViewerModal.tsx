@@ -113,72 +113,36 @@ export default function DocumentViewerModal() {
     const docName = docNameMap[currentDoc] || "Charter_Document";
     const fileName = `Orbelo_${docName}_${activeBooking.tripNumber}.pdf`;
 
-    // 1. Attempt official backend PDFKit generation endpoint with safety
     try {
-      if (currentDoc === "quotation") {
-        await api.documents.downloadQuotation(activeBooking.id, fileName, activeBooking);
+      // 1. High-fidelity DOM capture directly from the live preview (ensures 100% exact visual parity with preview)
+      const success = await downloadDocumentAsPdf(documentContentRef.current, {
+        fileName,
+        scale: 2.5,
+        quality: 0.98,
+      });
+
+      if (success) {
         setDownloadSuccess(true);
         setTimeout(() => setDownloadSuccess(false), 2500);
-        setIsDownloadingPdf(false);
-        return;
-      } else if (currentDoc === "invoice") {
-        await api.documents.downloadInvoice(activeBooking.id, fileName, activeBooking);
-        setDownloadSuccess(true);
-        setTimeout(() => setDownloadSuccess(false), 2500);
-        setIsDownloadingPdf(false);
-        return;
-      } else if (currentDoc === "flight_brief") {
-        await api.documents.downloadFlightBrief(activeBooking.id, fileName, activeBooking);
-        setDownloadSuccess(true);
-        setTimeout(() => setDownloadSuccess(false), 2500);
-        setIsDownloadingPdf(false);
-        return;
-      } else if (currentDoc === "charter_agreement") {
-        await api.documents.downloadCharterAgreement(activeBooking.id, fileName, activeBooking);
-        setDownloadSuccess(true);
-        setTimeout(() => setDownloadSuccess(false), 2500);
-        setIsDownloadingPdf(false);
-        return;
-      } else if (currentDoc === "passenger_manifest") {
-        await api.documents.downloadPassengerManifest(activeBooking.id, fileName, activeBooking);
-        setDownloadSuccess(true);
-        setTimeout(() => setDownloadSuccess(false), 2500);
-        setIsDownloadingPdf(false);
-        return;
-      } else if (currentDoc === "credit_note") {
-        await api.documents.downloadCreditNote(activeBooking.id, fileName, activeBooking);
-        setDownloadSuccess(true);
-        setTimeout(() => setDownloadSuccess(false), 2500);
-        setIsDownloadingPdf(false);
+
+        addAuditEntry({
+          userEmail: currentUser?.email || "admin@orbelo.com",
+          userName: currentUser?.name || "Admin",
+          action: "DOCUMENT_DOWNLOADED",
+          entityType: "Document",
+          entityId: activeBooking.tripNumber,
+          details: `Downloaded official ${docName} PDF for trip ${activeBooking.tripNumber}`,
+        });
         return;
       }
-    } catch (backendErr) {
-      console.warn("Backend PDF generation notice, falling back to high-res client canvas renderer:", backendErr);
-    }
 
-    // 2. High-res client canvas exporter fallback (ensures never corrupt or unsupported)
-    const success = await downloadDocumentAsPdf(documentContentRef.current, {
-      fileName,
-      scale: 2,
-      quality: 0.98,
-    });
-
-    setIsDownloadingPdf(false);
-
-    if (success) {
-      setDownloadSuccess(true);
-      setTimeout(() => setDownloadSuccess(false), 2500);
-
-      addAuditEntry({
-        userEmail: currentUser?.email || "admin@orbelo.com",
-        userName: currentUser?.name || "Admin",
-        action: "DOCUMENT_DOWNLOADED",
-        entityType: "Document",
-        entityId: activeBooking.tripNumber,
-        details: `Successfully downloaded PDF: ${fileName}`
-      });
-    } else {
+      // Fallback to browser print if canvas rendering is restricted
       window.print();
+    } catch (err) {
+      console.error("[DocumentViewerModal] PDF generation error:", err);
+      window.print();
+    } finally {
+      setIsDownloadingPdf(false);
     }
   };
 
