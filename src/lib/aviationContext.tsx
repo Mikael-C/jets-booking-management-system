@@ -25,10 +25,14 @@ import {
   DispatchChecklistStep,
   TokenTransaction,
   AppMessage,
-  MessageAttachment
+  MessageAttachment,
+  AccountRecord,
+  ContactRecord
 } from "@/types/aviation";
 import { initialBookings, defaultOperator } from "@/data/initialBookings";
 import { initialClients } from "@/data/clients";
+import { initialAccounts } from "@/data/accounts";
+import { initialContacts } from "@/data/contacts";
 import { initialAgentRequests } from "@/data/initialRequests";
 import { initialMessages } from "@/data/initialMessages";
 import { fleetData } from "@/data/fleet";
@@ -757,6 +761,50 @@ interface AviationContextType {
   prefillClientForQuote: ClientRecord | null;
   setPrefillClientForQuote: (c: ClientRecord | null) => void;
 
+  // Accounts Directory
+  accounts: AccountRecord[];
+  addAccount: (acc: AccountRecord) => void;
+  updateAccount: (id: string, updates: Partial<AccountRecord>) => void;
+  deleteAccount: (id: string) => void;
+
+  // Contacts Directory
+  contacts: ContactRecord[];
+  addContact: (cnt: ContactRecord) => void;
+  updateContact: (id: string, updates: Partial<ContactRecord>) => void;
+  deleteContact: (id: string) => void;
+
+  // Trip revisions & Route alterations
+  reviseBookingRoute: (
+    bookingId: string,
+    newLegs: FlightLeg[],
+    reason: string,
+    pricingOverrides?: Partial<PricingBreakdown>
+  ) => void;
+
+  // Credit Notes
+  issueCreditNote: (
+    bookingId: string,
+    note: {
+      amount?: number;
+      reason: string;
+      clientOwes: number;
+      weOweClient: number;
+      netBalance: number;
+      originalTotal?: number;
+      newTotal?: number;
+      cancellationFee?: number;
+      complementaryDeductions?: number;
+      complementaryDeduction?: number;
+    }
+  ) => void;
+
+  // Agent Quote confirmation & Super Admin Approval
+  agentConfirmQuote: (bookingId: string) => void;
+  superAdminConfirmQuote: (bookingId: string) => void;
+  signCharterContract: (bookingId: string, signatoryName?: string) => void;
+  bookingToRevise: Booking | null;
+  setBookingToRevise: (b: Booking | null) => void;
+
   // Operators
   operators: OperatorRecord[];
   addOperator: (op: OperatorRecord) => void;
@@ -826,6 +874,9 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
   const [isBookingsLoading, setIsBookingsLoading] = useState<boolean>(false);
   const [bookingsSource, setBookingsSource] = useState<"backend" | "local">("local");
   const [clients, setClients] = useState<ClientRecord[]>(initialClients);
+  const [accounts, setAccounts] = useState<AccountRecord[]>(initialAccounts);
+  const [contacts, setContacts] = useState<ContactRecord[]>(initialContacts);
+  const [bookingToRevise, setBookingToRevise] = useState<Booking | null>(null);
   const [agentRequests, setAgentRequests] = useState<AgentRequest[]>(initialAgentRequests);
   const [operators, setOperators] = useState<OperatorRecord[]>(initialOperators);
   const [auditLog, setAuditLog] = useState<AuditLogEntry[]>(initialAuditLog);
@@ -894,6 +945,20 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       const savedClients = localStorage.getItem("orbelo_clients_v2");
       if (savedClients) {
         setClients(JSON.parse(savedClients));
+      }
+      const savedAccounts = localStorage.getItem("orbelo_accounts_v2");
+      if (savedAccounts) {
+        try {
+          const parsed = JSON.parse(savedAccounts);
+          if (Array.isArray(parsed) && parsed.length > 0) setAccounts(parsed);
+        } catch {}
+      }
+      const savedContacts = localStorage.getItem("orbelo_contacts_v2");
+      if (savedContacts) {
+        try {
+          const parsed = JSON.parse(savedContacts);
+          if (Array.isArray(parsed) && parsed.length > 0) setContacts(parsed);
+        } catch {}
       }
       const savedOperators = localStorage.getItem("orbelo_operators_v2");
       if (savedOperators) {
@@ -2065,6 +2130,338 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const addAccount = (acc: AccountRecord) => {
+    setAccounts((prev) => {
+      const next = [acc, ...prev];
+      try { localStorage.setItem("orbelo_accounts_v2", JSON.stringify(next)); } catch {}
+      return next;
+    });
+    addAuditEntry({
+      userEmail: currentUser?.email || "admin@orbelo.com",
+      userName: currentUser?.name || "System Admin",
+      action: "ACCOUNT_CREATED",
+      entityType: "Account",
+      entityId: acc.accountNumber || acc.id,
+      details: `Created new account "${acc.name}" (${acc.accountType}) in ${acc.country}${acc.isAgent ? " [Designated Agent Account]" : ""}`
+    });
+  };
+
+  const updateAccount = (id: string, updates: Partial<AccountRecord>) => {
+    setAccounts((prev) => {
+      const next = prev.map((a) => (a.id === id ? { ...a, ...updates } : a));
+      try { localStorage.setItem("orbelo_accounts_v2", JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+
+  const deleteAccount = (id: string) => {
+    setAccounts((prev) => {
+      const next = prev.filter((a) => a.id !== id);
+      try { localStorage.setItem("orbelo_accounts_v2", JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+
+  const addContact = (contact: ContactRecord) => {
+    setContacts((prev) => {
+      const next = [contact, ...prev].sort((a, b) => a.lastName.localeCompare(b.lastName));
+      try { localStorage.setItem("orbelo_contacts_v2", JSON.stringify(next)); } catch {}
+      return next;
+    });
+    addAuditEntry({
+      userEmail: currentUser?.email || "admin@orbelo.com",
+      userName: currentUser?.name || "System Admin",
+      action: "CONTACT_CREATED",
+      entityType: "Contact",
+      entityId: contact.id,
+      details: `Created contact profile for ${contact.firstName} ${contact.lastName} (${contact.country})${contact.isAgent ? " [Agent Contact]" : ""}`
+    });
+  };
+
+  const updateContact = (id: string, updates: Partial<ContactRecord>) => {
+    setContacts((prev) => {
+      const next = prev.map((c) => (c.id === id ? { ...c, ...updates } : c)).sort((a, b) => a.lastName.localeCompare(b.lastName));
+      try { localStorage.setItem("orbelo_contacts_v2", JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+
+  const deleteContact = (id: string) => {
+    setContacts((prev) => {
+      const next = prev.filter((c) => c.id !== id);
+      try { localStorage.setItem("orbelo_contacts_v2", JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+
+  const reviseBookingRoute = (
+    bookingId: string,
+    newLegs: FlightLeg[],
+    reason: string,
+    pricingOverrides?: Partial<PricingBreakdown>
+  ) => {
+    let targetBooking: Booking | null = null;
+    setBookings((prev) =>
+      prev.map((b) => {
+        if (b.id !== bookingId) return b;
+        const currentActiveLegs = b.legs.filter((l) => !l.isCancelled);
+        const cancelledOldLegs: FlightLeg[] = currentActiveLegs.map((l) => ({
+          ...l,
+          isCancelled: true,
+          cancellationReason: reason,
+          cancelledAt: new Date().toISOString()
+        }));
+
+        const recalculatedPricing: PricingBreakdown = pricingOverrides
+          ? { ...b.pricing, ...pricingOverrides }
+          : calculatePricing(b.aircraft, newLegs, b.services, b.pricing.currency || "EUR");
+
+        const revisionId = `REV-${Date.now()}`;
+        const revisionRecord = {
+          id: revisionId,
+          date: new Date().toISOString().split("T")[0],
+          author: currentUser?.name || "Operations Desk",
+          reason,
+          supersededLegs: cancelledOldLegs,
+          newLegs,
+          previousPrice: b.pricing.totalFlightPrice,
+          newPrice: recalculatedPricing.totalFlightPrice,
+          docRef: `REV-${b.quoteReference || b.tripNumber}`
+        };
+
+        const updatedAudit = [
+          {
+            id: `act-${Date.now()}`,
+            action: "ROUTE_REVISED",
+            details: `Trip itinerary altered: ${reason}. Superseded ${currentActiveLegs.length} leg(s). New flight price recognized: €${recalculatedPricing.totalFlightPrice.toLocaleString()}.`,
+            timestamp: new Date().toLocaleString(),
+            author: currentUser?.name || "Operations Team",
+            docType: "quotation"
+          },
+          ...(b.tripActionAudit || [])
+        ];
+
+        const updated: Booking = {
+          ...b,
+          legs: [...newLegs, ...cancelledOldLegs, ...b.legs.filter((l) => l.isCancelled)],
+          pricing: recalculatedPricing,
+          quoteVersion: (b.quoteVersion || 1) + 1,
+          routeRevisions: [revisionRecord, ...(b.routeRevisions || [])],
+          tripActionAudit: updatedAudit,
+          updatedAt: new Date().toISOString()
+        };
+        targetBooking = updated;
+        return updated;
+      })
+    );
+
+    if (targetBooking) {
+      if (selectedBookingForDetail?.id === bookingId) setSelectedBookingForDetail(targetBooking);
+      if (activeBooking?.id === bookingId) setActiveBooking(targetBooking);
+    }
+
+    addAuditEntry({
+      userEmail: currentUser?.email || "ops@orbelo.com",
+      userName: currentUser?.name || "Flight Operations",
+      action: "TRIP_ROUTE_REVISED",
+      entityType: "Booking",
+      entityId: bookingId,
+      details: `Altered trip route for ${bookingId}: ${reason}. Accounting adjusted to recognize only the revised route revenue.`
+    });
+  };
+
+  const issueCreditNote = (
+    bookingId: string,
+    note: {
+      amount?: number;
+      reason: string;
+      clientOwes: number;
+      weOweClient: number;
+      netBalance: number;
+      originalTotal?: number;
+      newTotal?: number;
+      cancellationFee?: number;
+      complementaryDeductions?: number;
+      complementaryDeduction?: number;
+    }
+  ) => {
+    const creditNoteNumber = `CR-${Math.floor(100000 + Math.random() * 900000)}`;
+    const todayFormatted = new Date().toLocaleDateString("de-DE");
+    const creditRecord = {
+      id: `cn-${Date.now()}`,
+      number: creditNoteNumber,
+      creditNoteNumber,
+      date: todayFormatted,
+      issueDate: todayFormatted,
+      amount: note.amount ?? Math.abs(note.netBalance),
+      ...note
+    };
+
+    let targetBooking: Booking | null = null;
+    setBookings((prev) =>
+      prev.map((b) => {
+        if (b.id !== bookingId) return b;
+        const updatedAudit = [
+          {
+            id: `act-${Date.now()}`,
+            action: "CREDIT_NOTE_ISSUED",
+            details: `Official Credit Note ${creditNoteNumber} issued. Amount: €${creditRecord.amount.toLocaleString()}. Balance: Client owes €${note.clientOwes}, We owe €${note.weOweClient}, Net Balance: €${note.netBalance}.`,
+            timestamp: new Date().toLocaleString(),
+            author: currentUser?.name || "Finance Operations",
+            docType: "credit_note"
+          },
+          ...(b.tripActionAudit || [])
+        ];
+        const updated: Booking = {
+          ...b,
+          creditNotes: [creditRecord, ...(b.creditNotes || [])],
+          tripActionAudit: updatedAudit,
+          updatedAt: new Date().toISOString()
+        };
+        targetBooking = updated;
+        return updated;
+      })
+    );
+
+    if (targetBooking) {
+      if (selectedBookingForDetail?.id === bookingId) setSelectedBookingForDetail(targetBooking);
+      if (activeBooking?.id === bookingId) setActiveBooking(targetBooking);
+    }
+
+    addAuditEntry({
+      userEmail: currentUser?.email || "finance@orbelo.com",
+      userName: currentUser?.name || "Finance Operations",
+      action: "CREDIT_NOTE_CREATED",
+      entityType: "CreditNote",
+      entityId: creditNoteNumber,
+      details: `Issued credit note ${creditNoteNumber} for booking ${bookingId}. Reason: "${note.reason}". Net balance: €${note.netBalance}`
+    });
+  };
+
+  const agentConfirmQuote = (bookingId: string) => {
+    let targetBooking: Booking | null = null;
+    setBookings((prev) =>
+      prev.map((b) => {
+        if (b.id !== bookingId) return b;
+        const updatedAudit = [
+          {
+            id: `act-${Date.now()}`,
+            action: "AGENT_QUOTE_CONFIRMED",
+            details: `Charter agent ${currentUser?.name || "Agent"} confirmed quote. Awaiting Super Admin final confirmation & payment verification.`,
+            timestamp: new Date().toLocaleString(),
+            author: currentUser?.name || "Charter Agent",
+            docType: "quotation"
+          },
+          ...(b.tripActionAudit || [])
+        ];
+        const updated: Booking = {
+          ...b,
+          agentConfirmedPendingSuperAdmin: true,
+          quoteStatus: "pending",
+          tripActionAudit: updatedAudit,
+          updatedAt: new Date().toISOString()
+        };
+        targetBooking = updated;
+        return updated;
+      })
+    );
+
+    if (targetBooking) {
+      if (selectedBookingForDetail?.id === bookingId) setSelectedBookingForDetail(targetBooking);
+      if (activeBooking?.id === bookingId) setActiveBooking(targetBooking);
+    }
+
+    setNotifications((prev) => [
+      {
+        id: `notif-agent-conf-${Date.now()}`,
+        type: "warning",
+        title: "Agent Confirmed Quote - Super Admin Approval Required",
+        message: `Agent ${currentUser?.name || "Marcus Vance"} confirmed quote ${targetBooking?.quoteReference || bookingId}. Pending Super Admin confirmation and payment clearing.`,
+        timestamp: "Just now",
+        read: false,
+        entityId: bookingId,
+        entityType: "booking"
+      },
+      ...prev
+    ]);
+  };
+
+  const superAdminConfirmQuote = (bookingId: string) => {
+    let targetBooking: Booking | null = null;
+    setBookings((prev) =>
+      prev.map((b) => {
+        if (b.id !== bookingId) return b;
+        const officialTripNumber = b.tripNumber && b.tripNumber.trim() !== "" ? b.tripNumber : `PEU${Math.floor(100 + Math.random() * 899)}-001`;
+        const updatedAudit = [
+          {
+            id: `act-${Date.now()}`,
+            action: "SUPER_ADMIN_CONFIRMED",
+            details: `Super Admin authorized booking confirmation. Assigned Trip ${officialTripNumber}. Flight is booked and contract agreement ready for execution.`,
+            timestamp: new Date().toLocaleString(),
+            author: currentUser?.name || "Super Admin",
+            docType: "charter_agreement"
+          },
+          ...(b.tripActionAudit || [])
+        ];
+        const updated: Booking = {
+          ...b,
+          tripNumber: officialTripNumber,
+          isSuperAdminConfirmed: true,
+          agentConfirmedPendingSuperAdmin: false,
+          status: "confirmed",
+          quoteStatus: "accepted",
+          tripActionAudit: updatedAudit,
+          updatedAt: new Date().toISOString()
+        };
+        targetBooking = updated;
+        return updated;
+      })
+    );
+
+    if (targetBooking) {
+      if (selectedBookingForDetail?.id === bookingId) setSelectedBookingForDetail(targetBooking);
+      if (activeBooking?.id === bookingId) setActiveBooking(targetBooking);
+    }
+  };
+
+  const signCharterContract = (bookingId: string, signatoryName?: string) => {
+    let targetBooking: Booking | null = null;
+    setBookings((prev) =>
+      prev.map((b) => {
+        if (b.id !== bookingId) return b;
+        const signatory = signatoryName || b.client.fullName;
+        const updatedAudit = [
+          {
+            id: `act-${Date.now()}`,
+            action: "CONTRACT_SIGNED",
+            details: `Master Charter Agreement officially signed and executed by ${signatory}. Booking is fully confirmed and moved to active operations.`,
+            timestamp: new Date().toLocaleString(),
+            author: signatory,
+            docType: "charter_agreement"
+          },
+          ...(b.tripActionAudit || [])
+        ];
+        const updated: Booking = {
+          ...b,
+          isContractSigned: true,
+          contractSignedDate: new Date().toLocaleDateString("de-DE"),
+          contractSignedBy: signatory,
+          status: "confirmed",
+          quoteStatus: "accepted",
+          tripActionAudit: updatedAudit,
+          updatedAt: new Date().toISOString()
+        };
+        targetBooking = updated;
+        return updated;
+      })
+    );
+
+    if (targetBooking) {
+      if (selectedBookingForDetail?.id === bookingId) setSelectedBookingForDetail(targetBooking);
+      if (activeBooking?.id === bookingId) setActiveBooking(targetBooking);
+    }
+  };
+
   const addOperator = (op: OperatorRecord) => {
     setOperators((prev) => [op, ...prev]);
     api.operators.create(op).catch((err) => console.log("Backend sync note:", err.message));
@@ -2522,6 +2919,21 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
         addClient,
         prefillClientForQuote,
         setPrefillClientForQuote,
+        accounts,
+        addAccount,
+        updateAccount,
+        deleteAccount,
+        contacts,
+        addContact,
+        updateContact,
+        deleteContact,
+        reviseBookingRoute,
+        issueCreditNote,
+        agentConfirmQuote,
+        superAdminConfirmQuote,
+        signCharterContract,
+        bookingToRevise,
+        setBookingToRevise,
         operators,
         addOperator,
         updateOperatorStatus,

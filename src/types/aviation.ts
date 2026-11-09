@@ -65,6 +65,11 @@ export interface FboOption {
   email: string;
   vhfFrequency?: string;
   address?: string;
+  operatingHours?: string;
+  languages?: string[];
+  amenities?: string[];
+  airportIcao?: string;
+  airportName?: string;
   notes?: string;
 }
 
@@ -75,7 +80,7 @@ export interface Airport {
   country: string;
   iata: string;
   icao: string;
-  type?: "fbo" | "dedicated" | "airstrip" | "altiport" | "international";
+  type?: "fbo" | "dedicated" | "airstrip" | "altiport" | "international" | "private";
   typeLabel?: string;
   popular?: boolean;
   region?: string;
@@ -83,6 +88,11 @@ export interface Airport {
     lat: number;
     lng: number;
   };
+  operatingHours?: string;
+  extensionPossibilities?: string;
+  runwayLength?: string;
+  runwaySurface?: string;
+  elevation?: string;
   fbos?: FboOption[];
 }
 
@@ -196,6 +206,9 @@ export interface FlightLeg {
   distanceNm?: number;
   pets?: PetDetails;
   luggage?: LuggageDetails;
+  isCancelled?: boolean;
+  cancellationReason?: string;
+  cancelledAt?: string;
 }
 
 export interface PricingBreakdown {
@@ -384,6 +397,53 @@ export interface Booking {
   manualServices?: { id: string; name: string; price: number }[];
   avInodeTripId?: string;
   sourcingOptions?: SourcingOption[];
+  isSuperAdminConfirmed?: boolean;
+  agentConfirmedPendingSuperAdmin?: boolean;
+  isContractSigned?: boolean;
+  contractSignedDate?: string;
+  contractSignedBy?: string;
+  aircraftCustomImages?: {
+    exterior?: string;
+    interior?: string;
+    cabinViews?: string[];
+  };
+  routeRevisions?: Array<{
+    id: string;
+    date: string;
+    author: string;
+    reason: string;
+    supersededLegs: FlightLeg[];
+    newLegs: FlightLeg[];
+    previousPrice: number;
+    newPrice: number;
+    docRef?: string;
+  }>;
+  tripActionAudit?: Array<{
+    id: string;
+    action: string;
+    details: string;
+    timestamp: string;
+    author: string;
+    performedBy?: string;
+    docType?: string;
+  }>;
+  creditNotes?: Array<{
+    id: string;
+    number: string;
+    creditNoteNumber?: string;
+    date: string;
+    issueDate?: string;
+    amount: number;
+    originalTotal?: number;
+    newTotal?: number;
+    reason: string;
+    clientOwes: number;
+    weOweClient: number;
+    netBalance: number;
+    cancellationFee?: number;
+    complementaryDeductions?: number;
+    complementaryDeduction?: number;
+  }>;
   createdAt: string;
   updatedAt: string;
 }
@@ -502,4 +562,114 @@ export interface AppMessage {
   timestamp: string;
   read?: boolean;
 }
+
+export type BioIdType = "passport" | "id" | "visa";
+
+export interface AuthorizedPerson {
+  id: string;
+  fullName: string;
+  roleTitle?: string;
+  isPrimaryAccountName?: boolean;
+  email: string;
+  phone: string;
+  idDocumentType: BioIdType;
+  passportDetails?: {
+    passportNumber: string;
+    issuingCountry: string;
+    placeOfBirth: string;
+    dateOfBirth: string;
+    expirationDate: string;
+    issueDate?: string;
+  };
+  idDetails?: {
+    idNumber: string;
+    issuingState: string;
+    dateOfBirth: string;
+    expirationDate: string;
+  };
+  visaDetails?: {
+    visaNumber: string;
+    visaCategory: string;
+    issuingCountry: string;
+    validFrom: string;
+    validUntil: string;
+    entryType: "single" | "multiple";
+  };
+}
+
+export interface AccountRecord {
+  id: string;
+  accountNumber: string;
+  accountType: "entity" | "individual";
+  name: string;
+  country: string;
+  email: string;
+  phone: string;
+  billingAddress: string;
+  vatTaxNumber?: string;
+  isAgent: boolean;
+  preferredContactName?: string;
+  preferredContactEmail?: string;
+  preferredContactPhone?: string;
+  autoCommunicationsEnabled?: boolean;
+  authorizedPersons: AuthorizedPerson[];
+  totalBookings?: number;
+  totalSpend?: number;
+  vipTier?: "Ultra HNWI" | "Corporate Executive" | "Family Office" | "Private VIP";
+  notes?: string;
+  createdAt: string;
+}
+
+export interface PetRecord {
+  id: string;
+  petType: string; // "Dog" | "Cat" | "Falcon" | "Other"
+  petName: string;
+  breed: string;
+  weightKg: number;
+  microchipNumber?: string;
+  passportCertificateNumber?: string;
+  vaccinationExpiry?: string;
+  specialCareNotes?: string;
+}
+
+export interface ContactRecord {
+  id: string;
+  firstName: string;
+  middleName?: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  country: string;
+  gender: "Male" | "Female" | "Other";
+  weightKg: number;
+  associatedAccountId?: string;
+  associatedAccountName?: string;
+  isAgent: boolean;
+  bioIdType: BioIdType;
+  passportDetails?: {
+    passportNumber: string;
+    issuingCountry: string;
+    placeOfBirth: string;
+    dateOfBirth: string;
+    expirationDate: string;
+  };
+  idDetails?: {
+    idNumber: string;
+    issuingState: string;
+    dateOfBirth: string;
+    expirationDate: string;
+  };
+  visaDetails?: {
+    visaNumber: string;
+    visaCategory: string;
+    issuingCountry: string;
+    validFrom: string;
+    validUntil: string;
+    entryType: "single" | "multiple";
+  };
+  pets?: PetRecord[];
+  notes?: string;
+  createdAt: string;
+}
+
 

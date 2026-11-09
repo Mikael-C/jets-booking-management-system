@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { useAviation } from "@/lib/aviationContext";
 import { formatCurrency } from "@/lib/pricingCalculator";
 import {
@@ -24,7 +24,12 @@ import {
   Mail,
   Building,
   RotateCcw,
-  ArrowRight
+  ArrowRight,
+  AlertOctagon,
+  PenTool,
+  History,
+  DollarSign,
+  ExternalLink
 } from "lucide-react";
 
 export default function BookingDetailDrawer() {
@@ -35,12 +40,24 @@ export default function BookingDetailDrawer() {
     updateBookingStatus,
     openDocument,
     convertQuoteToBooked,
+    signCharterContract,
+    issueCreditNote,
+    currentUser,
     setActiveNav,
     role
   } = useAviation();
 
   if (!selectedBookingForDetail) return null;
   const booking = selectedBookingForDetail;
+
+  const [showCreditModal, setShowCreditModal] = useState(false);
+  const [creditRevTotal, setCreditRevTotal] = useState<number>(booking.pricing.totalFlightPrice || 15000);
+  const [cancellationFeeInput, setCancellationFeeInput] = useState<number>(0);
+  const [complementaryInput, setComplementaryInput] = useState<number>(0);
+  const [creditReasonInput, setCreditReasonInput] = useState<string>("Route revision & schedule adjustment");
+
+  const [showSignModal, setShowSignModal] = useState(false);
+  const [signerInput, setSignerInput] = useState(booking.client.fullName || "");
 
   const isBooked = ["confirmed", "dispatched", "in_flight", "completed"].includes(booking.status);
   const isContractStage = booking.status === "contract_sent";
@@ -411,52 +428,127 @@ export default function BookingDetailDrawer() {
                 </h3>
               </div>
               <span className="text-xs font-mono font-bold text-[#C9A052]">
-                {booking.legs.length} {booking.legs.length > 1 ? "Flight Legs" : "Flight Leg"}
+                {booking.legs.filter((l) => !l.isCancelled).length} Active {booking.legs.filter((l) => !l.isCancelled).length === 1 ? "Leg" : "Legs"}
+                {booking.legs.some((l) => l.isCancelled) && ` (${booking.legs.filter((l) => l.isCancelled).length} Cancelled)`}
               </span>
             </div>
 
             <div className="space-y-3">
-              {booking.legs.map((leg) => (
-                <div
-                  key={leg.legNumber}
-                  className="p-3.5 rounded-xl bg-[#F5F2EC] border border-[#E0DAD0] flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="h-6 w-6 rounded-full bg-[#C9A052]/20 text-[#9A7A35] border border-[#C9A052]/40 font-mono text-xs font-bold flex items-center justify-center">
-                      {leg.legNumber}
-                    </span>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-extrabold text-sm text-[#0F1420] font-mono">
-                          {leg.origin.icao} ({leg.origin.city})
-                        </span>
-                        <span className="text-[#C9A052] font-bold">→</span>
-                        <span className="font-extrabold text-sm text-[#0F1420] font-mono">
-                          {leg.destination.icao} ({leg.destination.city})
-                        </span>
+              {booking.legs.map((leg) => {
+                const isCancelled = leg.isCancelled;
+                return (
+                  <div
+                    key={leg.legNumber}
+                    className={`p-3.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                      isCancelled
+                        ? "bg-red-50/60 border-red-200 opacity-85"
+                        : "bg-[#F5F2EC] border-[#E0DAD0]"
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span
+                        className={`h-6 w-6 rounded-full font-mono text-xs font-bold flex items-center justify-center ${
+                          isCancelled
+                            ? "bg-red-200 text-red-900 border border-red-300"
+                            : "bg-[#C9A052]/20 text-[#9A7A35] border border-[#C9A052]/40"
+                        }`}
+                      >
+                        {leg.legNumber}
+                      </span>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`font-extrabold text-sm font-mono ${isCancelled ? "line-through text-red-900" : "text-[#0F1420]"}`}>
+                            {leg.origin.icao} ({leg.origin.city})
+                          </span>
+                          <span className={isCancelled ? "text-red-400" : "text-[#C9A052] font-bold"}>→</span>
+                          <span className={`font-extrabold text-sm font-mono ${isCancelled ? "line-through text-red-900" : "text-[#0F1420]"}`}>
+                            {leg.destination.icao} ({leg.destination.city})
+                          </span>
+                          {isCancelled && (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-red-600 text-white shadow-xs">
+                              CANCELLED
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-[#0F1420]/60">
+                          {leg.origin.name} to {leg.destination.name}
+                        </p>
+                        {isCancelled && leg.cancellationReason && (
+                          <p className="text-[10px] text-red-700 font-mono mt-1">
+                            Reason: {leg.cancellationReason} {leg.cancelledAt ? `(${leg.cancelledAt})` : ""}
+                          </p>
+                        )}
                       </div>
-                      <p className="text-[11px] text-[#0F1420]/60">
-                        {leg.origin.name} to {leg.destination.name}
+                    </div>
+
+                    <div className="text-right text-xs font-mono space-y-1">
+                      <p className={`font-bold ${isCancelled ? "text-red-800 line-through" : "text-[#0F1420]"}`}>
+                        {leg.flightDate} • Dep: {leg.departureTimeLocal}
                       </p>
+                      <p className="text-[11px] text-gray-500">
+                        Duration: {leg.flightTimeFormatted} • Call: {leg.flightNumber || "PEU842"}
+                      </p>
+                      {isCancelled && (
+                        <div className="flex items-center justify-end gap-1.5 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => openDocument(booking, "quotation")}
+                            className="text-[10px] px-2 py-0.5 rounded bg-white hover:bg-gray-100 text-gray-700 border border-gray-300 font-bold flex items-center gap-1 cursor-pointer"
+                          >
+                            <ExternalLink className="w-2.5 h-2.5" />
+                            <span>Prior Quote</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openDocument(booking, "invoice")}
+                            className="text-[10px] px-2 py-0.5 rounded bg-white hover:bg-gray-100 text-gray-700 border border-gray-300 font-bold flex items-center gap-1 cursor-pointer"
+                          >
+                            <ExternalLink className="w-2.5 h-2.5" />
+                            <span>Prior Invoice</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
-
-                  <div className="text-right text-xs font-mono space-y-0.5">
-                    <p className="font-bold text-[#0F1420]">
-                      {leg.flightDate} • Dep: {leg.departureTimeLocal}
-                    </p>
-                    <p className="text-[11px] text-gray-500">
-                      Duration: {leg.flightTimeFormatted} •{" "}
-                      {isBooked ? (
-                        <span className="font-mono text-[#0F1420] font-bold">Call: {leg.flightNumber || "PEU842"}</span>
-                      ) : (
-                        <span className="italic text-gray-400">Callsign: Assigned on Booking</span>
-                      )}
-                    </p>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
+
+            {/* Archived Route Revisions History */}
+            {booking.routeRevisions && booking.routeRevisions.length > 0 && (
+              <div className="p-3 bg-[#FAF8F5] rounded-xl border border-[#E0DAD0] space-y-2 mt-3">
+                <div className="flex items-center gap-2">
+                  <AlertOctagon className="w-3.5 h-3.5 text-amber-600" />
+                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#0F1420]">
+                    Superseded Route Revision History ({booking.routeRevisions.length})
+                  </span>
+                </div>
+                {booking.routeRevisions.map((rev, rIdx) => (
+                  <div key={rIdx} className="text-xs p-2 rounded bg-white border border-[#E0DAD0] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <span className="font-bold text-[#0F1420]">Revision #{rIdx + 1}: {rev.reason}</span>
+                      <p className="text-[10px] text-gray-500 font-mono">
+                        Revised on {rev.date} by {rev.author} • Superseded Price: {formatCurrency(rev.previousPrice, booking.pricing.currency)} → New Price: {formatCurrency(rev.newPrice, booking.pricing.currency)}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => openDocument(booking, "quotation")}
+                        className="text-[10px] px-2 py-1 rounded bg-[#F5F2EC] hover:bg-[#EBE5DB] text-[#0F1420] font-bold border border-[#E0DAD0]"
+                      >
+                        Pull Quote
+                      </button>
+                      <button
+                        onClick={() => openDocument(booking, "invoice")}
+                        className="text-[10px] px-2 py-1 rounded bg-[#F5F2EC] hover:bg-[#EBE5DB] text-[#0F1420] font-bold border border-[#E0DAD0]"
+                      >
+                        Pull Invoice
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Pricing Breakdown Card */}
@@ -465,7 +557,7 @@ export default function BookingDetailDrawer() {
               <div className="flex items-center gap-2">
                 <Receipt className="w-4 h-4 text-[#C9A052]" />
                 <h3 className="text-xs font-bold font-mono uppercase tracking-wider text-[#0F1420]">
-                  Financial Breakdown
+                  Financial Breakdown (Active Route Only)
                 </h3>
               </div>
               <span className="text-xs font-mono text-gray-500">
@@ -475,7 +567,7 @@ export default function BookingDetailDrawer() {
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
               <div className="p-2.5 rounded-xl bg-[#F5F2EC] border border-[#E0DAD0]">
-                <span className="text-[10px] text-gray-500 font-mono">FLIGHT CHARTER</span>
+                <span className="text-[10px] text-gray-500 font-mono">BASE FLIGHT CHARTER</span>
                 <p className="font-extrabold font-mono text-sm text-[#0F1420]">
                   {formatCurrency(booking.pricing.flightPrice, booking.pricing.currency)}
                 </p>
@@ -496,11 +588,173 @@ export default function BookingDetailDrawer() {
               </div>
 
               <div className="p-2.5 rounded-xl bg-[#0F1420] text-white">
-                <span className="text-[10px] text-[#C9A052] font-mono">TOTAL FLIGHT PRICE</span>
+                <span className="text-[10px] text-[#C9A052] font-mono">TOTAL REVISED PRICE</span>
                 <p className="font-black font-mono text-base text-white">
                   {formatCurrency(booking.pricing.totalFlightPrice, booking.pricing.currency)}
                 </p>
               </div>
+            </div>
+          </div>
+
+          {/* Charter Contract Execution Status Card */}
+          <div className="p-5 rounded-2xl bg-white border border-[#E0DAD0] shadow-sm space-y-3">
+            <div className="flex items-center justify-between pb-1 border-b border-[#E0DAD0]">
+              <div className="flex items-center gap-2">
+                <ScrollText className="w-4 h-4 text-[#C9A052]" />
+                <h3 className="text-xs font-bold font-mono uppercase tracking-wider text-[#0F1420]">
+                  Charter Contract Agreement Execution
+                </h3>
+              </div>
+              <span className="text-xs font-mono font-bold text-[#C9A052]">
+                {booking.isContractSigned ? "Agreement Signed" : "Pending Signature"}
+              </span>
+            </div>
+
+            {booking.isContractSigned ? (
+              <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-900 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+                  <div>
+                    <h4 className="text-xs font-bold font-mono">CONTRACT FULLY EXECUTED & SIGNED</h4>
+                    <p className="text-[11px] text-emerald-800">
+                      Signed by: <strong className="font-semibold">{booking.contractSignedBy || booking.client.fullName}</strong> • Date: {booking.contractSignedDate || "30/06/2026"}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => openDocument(booking, "charter_agreement")}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold font-mono transition-colors shadow-xs"
+                >
+                  View Contract
+                </button>
+              </div>
+            ) : (
+              <div className="p-4 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <PenTool className="w-5 h-5 text-amber-600 flex-shrink-0" />
+                  <div>
+                    <h4 className="text-xs font-bold font-mono">CONTRACT AWAITING CLIENT EXECUTION</h4>
+                    <p className="text-[11px] text-amber-800">
+                      Signing updates booking state to officially locked charter status.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowSignModal(true)}
+                  className="px-4 py-2 rounded-xl bg-[#0F1420] hover:bg-[#1A2338] text-[#C9A052] font-black text-xs uppercase tracking-wider transition-colors shadow-sm cursor-pointer"
+                >
+                  Sign & Execute Contract
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Credit Notes & Balance Settlement Section */}
+          <div className="p-5 rounded-2xl bg-white border border-[#E0DAD0] shadow-sm space-y-4">
+            <div className="flex items-center justify-between pb-1 border-b border-[#E0DAD0]">
+              <div className="flex items-center gap-2">
+                <RotateCcw className="w-4 h-4 text-red-600" />
+                <h3 className="text-xs font-bold font-mono uppercase tracking-wider text-[#0F1420]">
+                  Credit Notes, Settlements & Balances
+                </h3>
+              </div>
+              <button
+                onClick={() => {
+                  setCreditRevTotal(booking.pricing.totalFlightPrice || 15000);
+                  setShowCreditModal(true);
+                }}
+                className="px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer"
+              >
+                <DollarSign className="w-3.5 h-3.5" />
+                <span>Create Credit Note / Pull Balance</span>
+              </button>
+            </div>
+
+            {/* Issued Credit Notes List */}
+            {booking.creditNotes && booking.creditNotes.length > 0 ? (
+              <div className="space-y-2">
+                {booking.creditNotes.map((cn) => (
+                  <div
+                    key={cn.id}
+                    className="p-3 rounded-xl bg-[#FAF8F5] border border-[#E0DAD0] flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-bold text-xs text-[#0F1420]">{cn.creditNoteNumber}</span>
+                        <span className="text-[10px] text-gray-500 font-mono">Issued {cn.issueDate}</span>
+                      </div>
+                      <p className="text-xs text-gray-700 mt-0.5">{cn.reason}</p>
+                      <div className="flex items-center gap-3 text-[11px] font-mono mt-1 text-gray-600">
+                        {cn.cancellationFee ? <span>Cancellation Fee: €{cn.cancellationFee.toLocaleString()}</span> : null}
+                        {cn.complementaryDeduction ? <span>Comp Services: €{cn.complementaryDeduction.toLocaleString()}</span> : null}
+                      </div>
+                    </div>
+
+                    <div className="text-right">
+                      {cn.weOweClient && cn.weOweClient > 0 ? (
+                        <div className="text-emerald-700 font-bold font-mono text-xs">
+                          We Owe Client: {formatCurrency(cn.weOweClient, booking.pricing.currency)} (Credit / Refund)
+                        </div>
+                      ) : cn.clientOwes && cn.clientOwes > 0 ? (
+                        <div className="text-amber-800 font-bold font-mono text-xs">
+                          Client Owes: {formatCurrency(cn.clientOwes, booking.pricing.currency)}
+                        </div>
+                      ) : null}
+                      <button
+                        onClick={() => openDocument(booking, "credit_note")}
+                        className="mt-1 text-[11px] px-2.5 py-1 rounded bg-[#0F1420] hover:bg-[#1A2338] text-[#C9A052] font-bold transition-colors cursor-pointer"
+                      >
+                        View Credit Note PDF
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-gray-500 italic">
+                No credit note adjustments or balance disputes issued for this mission yet.
+              </p>
+            )}
+          </div>
+
+          {/* Trip Action History & Audit Trail Section */}
+          <div className="p-5 rounded-2xl bg-white border border-[#E0DAD0] shadow-sm space-y-3">
+            <div className="flex items-center justify-between pb-1 border-b border-[#E0DAD0]">
+              <div className="flex items-center gap-2">
+                <History className="w-4 h-4 text-[#C9A052]" />
+                <h3 className="text-xs font-bold font-mono uppercase tracking-wider text-[#0F1420]">
+                  Trip Action History & Audit Log
+                </h3>
+              </div>
+              <span className="text-xs font-mono text-gray-500">
+                {(booking.tripActionAudit || []).length} Actions Logged
+              </span>
+            </div>
+
+            <div className="space-y-2">
+              {(booking.tripActionAudit && booking.tripActionAudit.length > 0) ? (
+                booking.tripActionAudit.map((audit) => (
+                  <div
+                    key={audit.id}
+                    className="p-2.5 rounded-xl bg-[#FAF8F5] border border-[#E0DAD0] flex items-start justify-between gap-3 text-xs"
+                  >
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-[#0F1420]">{audit.action}</span>
+                        <span className="text-[10px] font-mono text-gray-400">• {audit.performedBy || audit.author}</span>
+                      </div>
+                      <p className="text-gray-600">{audit.details}</p>
+                    </div>
+                    <span className="text-[10px] font-mono text-gray-400 whitespace-nowrap">
+                      {audit.timestamp}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <div className="p-3 text-center text-xs text-gray-400 font-mono">
+                  Initial charter creation logged. Subsequent updates will appear here.
+                </div>
+              )}
             </div>
           </div>
 
@@ -620,12 +874,262 @@ export default function BookingDetailDrawer() {
 
             <button
               onClick={() => setSelectedBookingForDetail(null)}
-              className="px-4 py-2 rounded-xl bg-[#0F1420] hover:bg-[#1A2338] text-white text-xs font-bold transition-colors"
+              className="px-4 py-2 rounded-xl bg-[#0F1420] hover:bg-[#1A2338] text-white text-xs font-bold transition-colors cursor-pointer"
             >
               Close
             </button>
           </div>
         </div>
+
+        {/* Credit Note & Settlement Modal */}
+        {showCreditModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fade-in">
+            <div className="bg-white border border-[#E0DAD0] rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-[#E0DAD0]">
+                <div className="flex items-center gap-2">
+                  <RotateCcw className="w-5 h-5 text-red-600" />
+                  <h3 className="font-extrabold text-base text-[#0F1420]">
+                    Create Credit Note & Pull Balances
+                  </h3>
+                </div>
+                <button
+                  onClick={() => setShowCreditModal(false)}
+                  className="p-1 rounded-lg text-gray-400 hover:text-gray-700"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="space-y-3 text-xs">
+                <div className="p-3 rounded-xl bg-[#FAF8F5] border border-[#E0DAD0] grid grid-cols-2 gap-3">
+                  <div>
+                    <span className="text-[10px] font-mono uppercase text-gray-500">Trip Reference</span>
+                    <p className="font-bold font-mono text-[#0F1420]">{booking.tripNumber}</p>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-mono uppercase text-gray-500">Client Account</span>
+                    <p className="font-bold text-[#0F1420]">{booking.client.fullName}</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-mono uppercase text-gray-600 mb-1">
+                      Original Invoiced Total (€)
+                    </label>
+                    <input
+                      type="number"
+                      readOnly
+                      value={booking.pricing.totalFlightPrice}
+                      className="w-full bg-gray-100 border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 font-mono font-bold text-gray-700"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-mono uppercase text-gray-600 mb-1">
+                      Revised / New Route Amount (€)
+                    </label>
+                    <input
+                      type="number"
+                      value={creditRevTotal}
+                      onChange={(e) => setCreditRevTotal(Number(e.target.value))}
+                      className="w-full bg-[#FAF8F5] border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-mono uppercase text-gray-600 mb-1">
+                      Cancellation Charges (€)
+                    </label>
+                    <input
+                      type="number"
+                      value={cancellationFeeInput}
+                      onChange={(e) => setCancellationFeeInput(Number(e.target.value))}
+                      placeholder="0"
+                      className="w-full bg-[#FAF8F5] border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 font-mono text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-mono uppercase text-gray-600 mb-1">
+                      Complementary Services / Credit (€)
+                    </label>
+                    <input
+                      type="number"
+                      value={complementaryInput}
+                      onChange={(e) => setComplementaryInput(Number(e.target.value))}
+                      placeholder="0"
+                      className="w-full bg-[#FAF8F5] border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 font-mono text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                    />
+                  </div>
+                </div>
+
+                {/* Pulled Balance Result Box */}
+                {(() => {
+                  const orig = booking.pricing.totalFlightPrice || 15000;
+                  const rev = creditRevTotal;
+                  let clientOwes = 0;
+                  let weOweClient = 0;
+
+                  if (rev > orig) {
+                    clientOwes = rev - orig + cancellationFeeInput - complementaryInput;
+                  } else {
+                    weOweClient = orig - rev - cancellationFeeInput + complementaryInput;
+                  }
+
+                  return (
+                    <div className="p-3.5 rounded-xl bg-[#0F1420] text-white space-y-1">
+                      <span className="text-[10px] font-mono uppercase text-[#C9A052] font-bold">
+                        PULLED BALANCE SETTLEMENT
+                      </span>
+                      {weOweClient > 0 ? (
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-emerald-400 font-bold">Money We Owe Client (Refund / Credit):</span>
+                          <span className="text-base font-black font-mono text-emerald-400">€{weOweClient.toLocaleString()}</span>
+                        </div>
+                      ) : clientOwes > 0 ? (
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-amber-400 font-bold">Money Client Owes Us (Balance Due):</span>
+                          <span className="text-base font-black font-mono text-amber-400">€{clientOwes.toLocaleString()}</span>
+                        </div>
+                      ) : (
+                        <div className="text-xs text-gray-300">Net balance is €0 (Full parity)</div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                <div>
+                  <label className="block text-[10px] font-mono uppercase text-gray-600 mb-1">
+                    Settlement Reason / Notes
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={creditReasonInput}
+                    onChange={(e) => setCreditReasonInput(e.target.value)}
+                    className="w-full bg-[#FAF8F5] border border-[#E0DAD0] rounded-lg p-2 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#E0DAD0]">
+                <button
+                  type="button"
+                  onClick={() => setShowCreditModal(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-gray-600 hover:bg-gray-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const orig = booking.pricing.totalFlightPrice || 15000;
+                    const rev = creditRevTotal;
+                    let clientOwes = 0;
+                    let weOweClient = 0;
+                    if (rev > orig) {
+                      clientOwes = rev - orig + cancellationFeeInput - complementaryInput;
+                    } else {
+                      weOweClient = orig - rev - cancellationFeeInput + complementaryInput;
+                    }
+
+                    const netBalance = weOweClient > 0 ? -weOweClient : clientOwes;
+
+                    issueCreditNote(booking.id, {
+                      amount: Math.abs(orig - rev),
+                      originalTotal: orig,
+                      newTotal: rev,
+                      cancellationFee: cancellationFeeInput,
+                      complementaryDeduction: complementaryInput,
+                      reason: creditReasonInput,
+                      clientOwes: clientOwes > 0 ? clientOwes : 0,
+                      weOweClient: weOweClient > 0 ? weOweClient : 0,
+                      netBalance
+                    });
+                    setShowCreditModal(false);
+                    openDocument(booking, "credit_note");
+                  }}
+                  className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-extrabold text-xs transition-colors shadow-sm cursor-pointer"
+                >
+                  Issue Credit Note & View PDF
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Contract Signing Modal */}
+        {showSignModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fade-in">
+            <div className="bg-white border border-[#E0DAD0] rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-[#E0DAD0]">
+                <div className="flex items-center gap-2">
+                  <PenTool className="w-5 h-5 text-[#C9A052]" />
+                  <h3 className="font-extrabold text-base text-[#0F1420]">
+                    Sign & Execute Charter Contract
+                  </h3>
+                </div>
+                <button
+                  onClick={() => setShowSignModal(false)}
+                  className="p-1 rounded-lg text-gray-400 hover:text-gray-700"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="space-y-3 text-xs">
+                <p className="text-gray-600">
+                  By executing this charter agreement, the contract status transitions to legally binding, and the booking is confirmed on the fleet schedule.
+                </p>
+
+                <div>
+                  <label className="block text-[10px] font-mono uppercase text-gray-600 mb-1">
+                    Signatory Full Legal Name
+                  </label>
+                  <input
+                    type="text"
+                    value={signerInput}
+                    onChange={(e) => setSignerInput(e.target.value)}
+                    placeholder="e.g. Edward Brinkmann"
+                    className="w-full bg-[#FAF8F5] border border-[#E0DAD0] rounded-lg px-3 py-2 text-xs font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                  />
+                </div>
+
+                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-[11px] space-y-1">
+                  <span className="font-bold flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    Immediate System Effect
+                  </span>
+                  <p>
+                    Once signed, bookings automatically transition from Quote/Contract stage into Confirmed Active Bookings.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#E0DAD0]">
+                <button
+                  type="button"
+                  onClick={() => setShowSignModal(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-gray-600 hover:bg-gray-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    signCharterContract(booking.id, signerInput);
+                    setShowSignModal(false);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs uppercase tracking-wider transition-colors shadow-sm cursor-pointer"
+                >
+                  Execute & Sign Agreement
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

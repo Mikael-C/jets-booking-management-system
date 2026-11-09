@@ -55,7 +55,7 @@ interface EditableLegBrief {
 }
 
 export default function GenerateBriefView() {
-  const { bookings, openDocument } = useAviation();
+  const { bookings, openDocument, contacts } = useAviation();
 
   // Search input: live filter by Trip ID or Client's Name
   const [searchQuery, setSearchQuery] = useState("");
@@ -301,9 +301,26 @@ export default function GenerateBriefView() {
     setLegs(legs.filter((_, i) => i !== idx).map((l, i) => ({ ...l, legNumber: i + 1 })));
   };
 
+  // Important fields validation
+  const validationErrors: string[] = [];
+  if (!tripNumber.trim()) validationErrors.push("Trip ID / Number is required");
+  if (!aircraftRegistration.trim()) validationErrors.push("Aircraft Tail Registration is required");
+  if (!clientName.trim()) validationErrors.push("Client Name is required");
+
+  legs.forEach((leg, i) => {
+    if (!leg.flightDate.trim()) validationErrors.push(`Leg #${i + 1}: Flight Date is required`);
+    if (!leg.originIcao.trim()) validationErrors.push(`Leg #${i + 1}: Origin Airport is required`);
+    if (!leg.destIcao.trim()) validationErrors.push(`Leg #${i + 1}: Destination Airport is required`);
+    if (!leg.departureTime.trim()) validationErrors.push(`Leg #${i + 1}: Departure Time is required`);
+    if (!leg.cmdrName.trim()) validationErrors.push(`Leg #${i + 1}: Pilot / Commander Name is required`);
+    if (!leg.passengerNames.trim()) validationErrors.push(`Leg #${i + 1}: At least one Passenger name is required`);
+  });
+
+  const isFormValid = validationErrors.length === 0;
+
   const handleGenerateBrief = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedBooking) return;
+    if (!isFormValid || !selectedBooking) return;
 
     // Build FlightLeg array matching the template
     const compiledLegs: FlightLeg[] = legs.map((leg) => {
@@ -1113,16 +1130,64 @@ export default function GenerateBriefView() {
                     </div>
 
                     <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-[10px] font-mono uppercase text-gray-500">
+                          Select from Contacts Directory
+                        </label>
+                        <span className="text-[10px] text-[#C9A052] font-mono">
+                          {contacts.length} Contacts available
+                        </span>
+                      </div>
+                      <select
+                        onChange={(e) => {
+                          const contactId = e.target.value;
+                          if (!contactId) return;
+                          const found = contacts.find((c) => c.id === contactId);
+                          if (found) {
+                            const fullName = [found.firstName, found.middleName, found.lastName].filter(Boolean).join(" ");
+                            const current = leg.passengerNames.trim();
+                            const updatedNames = current ? `${current}, ${fullName}` : fullName;
+                            handleLegChange(index, "passengerNames", updatedNames);
+                          }
+                          e.target.value = "";
+                        }}
+                        className="w-full bg-white border border-[#C9A052]/50 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-[#0F1420] focus:outline-none focus:border-[#C9A052] mb-2"
+                      >
+                        <option value="">-- Add Passenger From Contacts Directory --</option>
+                        {contacts.map((c) => {
+                          const fullName = [c.firstName, c.middleName, c.lastName].filter(Boolean).join(" ");
+                          const bioDocNumber = c.bioIdType === "passport"
+                            ? c.passportDetails?.passportNumber
+                            : c.bioIdType === "id"
+                            ? c.idDetails?.idNumber
+                            : c.visaDetails?.visaNumber;
+                          const bioInfo = c.bioIdType ? `[${c.bioIdType.toUpperCase()}: ${bioDocNumber || "On File"}]` : "";
+                          const weightInfo = c.weightKg ? `(${c.weightKg} kg)` : "";
+                          return (
+                            <option key={c.id} value={c.id}>
+                              {fullName} {c.country ? `• ${c.country}` : ""} {bioInfo} {weightInfo}
+                            </option>
+                          );
+                        })}
+                      </select>
+
                       <label className="block text-[10px] font-mono uppercase text-gray-500 mb-0.5">
-                        Passenger Names (Comma-separated)
+                        Passenger Names (Or type custom names, comma-separated) *
                       </label>
                       <textarea
                         rows={3}
                         placeholder="e.g. Luca Cesare Armando Ceretti, Marc Edouard Dwek"
                         value={leg.passengerNames}
                         onChange={(e) => handleLegChange(index, "passengerNames", e.target.value)}
-                        className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                        className={`w-full bg-[#FDFCFA] border rounded-lg px-2.5 py-1.5 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052] ${
+                          !leg.passengerNames.trim() ? "border-amber-400 bg-amber-50/20" : "border-[#E0DAD0]"
+                        }`}
                       />
+                      {!leg.passengerNames.trim() && (
+                        <p className="text-[10px] text-amber-700 font-mono mt-0.5">
+                          * Warning: Passenger manifest cannot be empty for flight brief.
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1282,6 +1347,26 @@ export default function GenerateBriefView() {
           />
         </div>
 
+        {/* Warning Validation Alert if important fields are missing */}
+        {!isFormValid && (
+          <div className="p-4 rounded-2xl bg-amber-500/10 border-2 border-amber-500/60 text-amber-900 shadow-sm space-y-2">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0" />
+              <h4 className="text-xs font-mono font-bold uppercase tracking-wider text-amber-900">
+                Submission Blocked — Required Important Operational Fields Missing ({validationErrors.length})
+              </h4>
+            </div>
+            <p className="text-xs text-amber-800">
+              Please complete all critical flight dispatch fields before generating the official Flight Brief PDF:
+            </p>
+            <ul className="list-disc list-inside text-xs font-mono text-amber-900 space-y-0.5 pl-2">
+              {validationErrors.map((err, i) => (
+                <li key={i}>{err}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {/* Submission Action Bar */}
         <div className="bg-[#0F1420] text-white border border-[#1C2436] rounded-2xl p-6 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
@@ -1298,10 +1383,15 @@ export default function GenerateBriefView() {
 
           <button
             type="submit"
-            className="py-3.5 px-8 rounded-xl bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] font-black text-xs uppercase tracking-wider transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+            disabled={!isFormValid}
+            className={`py-3.5 px-8 rounded-xl font-black text-xs uppercase tracking-wider transition-all shadow-lg flex items-center justify-center gap-2 ${
+              isFormValid
+                ? "bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] cursor-pointer"
+                : "bg-gray-800 text-gray-400 border border-gray-700 cursor-not-allowed opacity-75"
+            }`}
           >
             <Compass className="w-4 h-4" />
-            <span>Generate & Open Flight Brief PDF</span>
+            <span>{isFormValid ? "Generate & Open Flight Brief PDF" : "Complete Required Fields to Generate"}</span>
           </button>
         </div>
       </form>

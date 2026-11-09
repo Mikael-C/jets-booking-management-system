@@ -36,6 +36,8 @@ export default function PaymentsView() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [mainTab, setMainTab] = useState<"invoices" | "credit_notes">("invoices");
+  const [showSegmentedFees, setShowSegmentedFees] = useState(true);
   const [selectedBookingForPayment, setSelectedBookingForPayment] = useState<Booking | null>(null);
 
   // Payment Link Generator State
@@ -252,44 +254,170 @@ export default function PaymentsView() {
         </div>
       </div>
 
+      {/* View Switcher: Invoices & Wires Ledger vs Credit Notes & Settlements */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#E0DAD0] pb-2">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setMainTab("invoices")}
+            className={`px-4 py-2 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer ${
+              mainTab === "invoices"
+                ? "bg-[#0F1420] text-[#C9A052] shadow-sm"
+                : "bg-white text-gray-600 hover:text-[#0F1420] border border-[#E0DAD0]"
+            }`}
+          >
+            Invoices & Settlements Ledger
+          </button>
+          <button
+            onClick={() => setMainTab("credit_notes")}
+            className={`px-4 py-2 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer ${
+              mainTab === "credit_notes"
+                ? "bg-[#0F1420] text-[#C9A052] shadow-sm"
+                : "bg-white text-gray-600 hover:text-[#0F1420] border border-[#E0DAD0]"
+            }`}
+          >
+            Credit Notes & Balance Pull-Out ({bookings.reduce((sum, b) => sum + (b.creditNotes?.length || 0), 0)})
+          </button>
+        </div>
+
+        {mainTab === "invoices" && (
+          <button
+            onClick={() => setShowSegmentedFees(!showSegmentedFees)}
+            className={`text-xs font-mono px-3 py-1.5 rounded-lg border font-bold transition-colors cursor-pointer ${
+              showSegmentedFees
+                ? "bg-[#C9A052]/20 border-[#C9A052] text-[#9A7A35]"
+                : "bg-white border-[#E0DAD0] text-gray-600 hover:text-[#0F1420]"
+            }`}
+          >
+            {showSegmentedFees ? "Hide Segmented Fees" : "Show Segmented Fees"}
+          </button>
+        )}
+      </div>
+
       {/* Filter and Search Bar */}
       <div className="bg-white border border-[#E0DAD0] rounded-xl p-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
         <div className="relative w-full sm:w-80">
           <Search className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
           <input
             type="text"
-            placeholder="Search invoice #, trip #, or client name..."
+            placeholder={mainTab === "invoices" ? "Search invoice #, trip #, or client name..." : "Search credit note #, trip #, or client..."}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-lg pl-9 pr-3 py-1.5 text-xs text-[#0F1420] placeholder-gray-400 focus:outline-none focus:border-[#C9A052]"
           />
         </div>
 
-        <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto">
-          {[
-            { id: "all", label: "All Invoices" },
-            { id: "fully_paid", label: "Fully Paid" },
-            { id: "deposit_paid", label: "Deposit Paid" },
-            { id: "unpaid", label: "Unpaid" }
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setStatusFilter(tab.id)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-colors whitespace-nowrap ${
-                statusFilter === tab.id
-                  ? "bg-[#0F1420] text-[#C9A052]"
-                  : "bg-[#F5F2EC] text-[#0F1420]/70 hover:bg-[#EAE6DE]"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
+        {mainTab === "invoices" && (
+          <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto">
+            {[
+              { id: "all", label: "All Invoices" },
+              { id: "fully_paid", label: "Fully Paid" },
+              { id: "deposit_paid", label: "Deposit Paid" },
+              { id: "unpaid", label: "Unpaid" }
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setStatusFilter(tab.id)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-colors whitespace-nowrap ${
+                  statusFilter === tab.id
+                    ? "bg-[#0F1420] text-[#C9A052]"
+                    : "bg-[#F5F2EC] text-[#0F1420]/70 hover:bg-[#EAE6DE]"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Bookings & Payments Table */}
+      {/* Bookings & Payments Table OR Credit Notes Register */}
       <div className="bg-white border border-[#E0DAD0] rounded-2xl shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
+          {mainTab === "credit_notes" ? (
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="bg-[#F5F2EC] border-b border-[#E0DAD0] text-[#0F1420]/80 font-mono text-[10px] uppercase tracking-wider">
+                  <th className="py-3 px-4">Credit Note # & Date</th>
+                  <th className="py-3 px-4">Trip # & Client</th>
+                  <th className="py-3 px-4">Original Invoiced</th>
+                  <th className="py-3 px-4">Revised Charter Total</th>
+                  <th className="py-3 px-4">Cancellation Fee</th>
+                  <th className="py-3 px-4">Comp Services</th>
+                  <th className="py-3 px-4">Net Settlement Balance</th>
+                  <th className="py-3 px-4">Reason / Justification</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#E0DAD0]/60">
+                {bookings.flatMap((b) => (b.creditNotes || []).map((cn) => ({ ...cn, booking: b }))).length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="py-8 text-center text-xs text-gray-500 font-mono">
+                      No credit note adjustments or balance disputes issued yet.
+                    </td>
+                  </tr>
+                ) : (
+                  bookings
+                    .flatMap((b) => (b.creditNotes || []).map((cn) => ({ ...cn, booking: b })))
+                    .filter(
+                      (item) =>
+                        !searchQuery.trim() ||
+                        (item.creditNoteNumber || item.number || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        item.booking.tripNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        item.booking.client.fullName.toLowerCase().includes(searchQuery.toLowerCase())
+                    )
+                    .map((item) => (
+                      <tr key={item.id} className="hover:bg-[#FDFCFA] transition-colors">
+                        <td className="py-3.5 px-4">
+                          <span className="font-mono font-bold text-red-900">{item.creditNoteNumber || item.number}</span>
+                          <p className="text-[10px] text-gray-500 font-mono">{item.issueDate || item.date}</p>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <div className="font-bold text-[#0F1420]">{item.booking.client.fullName}</div>
+                          <span className="text-[10px] text-gray-500 font-mono">Trip: {item.booking.tripNumber}</span>
+                        </td>
+                        <td className="py-3.5 px-4 font-mono text-[#0F1420] font-bold">
+                          {formatCurrency(item.originalTotal ?? item.amount, item.booking.pricing.currency || "EUR")}
+                        </td>
+                        <td className="py-3.5 px-4 font-mono text-[#0F1420] font-extrabold">
+                          {formatCurrency(item.newTotal ?? item.amount, item.booking.pricing.currency || "EUR")}
+                          <span className="block text-[9px] text-gray-400 font-normal">Active Route Only</span>
+                        </td>
+                        <td className="py-3.5 px-4 font-mono text-red-700">
+                          {item.cancellationFee ? `€${item.cancellationFee.toLocaleString()}` : "€0"}
+                        </td>
+                        <td className="py-3.5 px-4 font-mono text-emerald-700">
+                          {item.complementaryDeduction ? `€${item.complementaryDeduction.toLocaleString()}` : "€0"}
+                        </td>
+                        <td className="py-3.5 px-4 font-mono">
+                          {item.weOweClient && item.weOweClient > 0 ? (
+                            <span className="px-2 py-1 rounded bg-emerald-100 text-emerald-900 font-bold border border-emerald-300 block text-center">
+                              We Owe: {formatCurrency(item.weOweClient, item.booking.pricing.currency)}
+                            </span>
+                          ) : item.clientOwes && item.clientOwes > 0 ? (
+                            <span className="px-2 py-1 rounded bg-amber-100 text-amber-900 font-bold border border-amber-300 block text-center">
+                              Client Owes: {formatCurrency(item.clientOwes, item.booking.pricing.currency)}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400">Parity €0</span>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4 text-gray-700 max-w-xs truncate" title={item.reason}>
+                          {item.reason}
+                        </td>
+                        <td className="py-3.5 px-4 text-right">
+                          <button
+                            onClick={() => openDocument(item.booking, "credit_note")}
+                            className="px-2.5 py-1.5 rounded-lg bg-[#0F1420] hover:bg-[#1A2338] text-[#C9A052] font-mono font-bold text-[11px] transition-colors cursor-pointer"
+                          >
+                            View PDF
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                )}
+              </tbody>
+            </table>
+          ) : (
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="bg-[#F5F2EC] border-b border-[#E0DAD0] text-[#0F1420]/80 font-mono text-[10px] uppercase tracking-wider">
@@ -344,6 +472,13 @@ export default function PaymentsView() {
                     {/* Charter Total */}
                     <td className="py-3.5 px-4 font-mono font-black text-sm text-[#0F1420]">
                       {formatCurrency(b.pricing.totalFlightPrice, b.pricing.currency || "EUR")}
+                      {showSegmentedFees && (
+                        <div className="text-[10px] text-gray-500 font-normal space-y-0.5 mt-1 pt-1 border-t border-[#E0DAD0]/60">
+                          <div>Base: {formatCurrency(b.pricing.flightPrice, b.pricing.currency || "EUR")}</div>
+                          <div>Taxes: {formatCurrency(b.pricing.airportFees + b.pricing.passengerFees, b.pricing.currency || "EUR")}</div>
+                          <div>VIP/Extras: {formatCurrency(b.pricing.additionalServicesTotal, b.pricing.currency || "EUR")}</div>
+                        </div>
+                      )}
                     </td>
 
                     {/* Payment Due Date */}
@@ -393,6 +528,7 @@ export default function PaymentsView() {
               )}
             </tbody>
           </table>
+          )}
         </div>
       </div>
 

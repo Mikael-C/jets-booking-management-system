@@ -20,11 +20,24 @@ import {
   CreditCard,
   Building2,
   History,
-  Lock
+  Lock,
+  CheckCircle2,
+  DollarSign,
+  UserCheck
 } from "lucide-react";
 
 export default function OperationsOverview() {
-  const { bookings, agentRequests, clients, operators, auditLog, setActiveNav } = useAviation();
+  const {
+    bookings,
+    agentRequests,
+    clients,
+    operators,
+    auditLog,
+    setActiveNav,
+    superAdminConfirmQuote,
+    setSelectedBookingForDetail,
+    role
+  } = useAviation();
 
   const confirmedBookings = bookings.filter((b) =>
     ["confirmed", "dispatched", "in_flight", "completed"].includes(b.status)
@@ -36,6 +49,17 @@ export default function OperationsOverview() {
   const totalRevenue = confirmedBookings.reduce((sum, b) => sum + b.pricing.totalFlightPrice, 0);
   const pipelineRevenue = inProgressBookings.reduce((sum, b) => sum + b.pricing.totalFlightPrice, 0);
   const pendingRequests = agentRequests.filter((r) => r.status === "pending").length;
+
+  // Pending Super Admin Confirmation Quotes
+  const pendingSuperAdminQuotes = bookings.filter(
+    (b) => b.agentConfirmedPendingSuperAdmin && !b.isSuperAdminConfirmed
+  );
+
+  // Pending Payments vs Payment Confirmations
+  const pendingPaymentsList = bookings.filter(
+    (b) => b.paymentStatus === "unpaid" || b.paymentStatus === "deposit_paid"
+  );
+  const confirmedPaymentsList = bookings.filter((b) => b.paymentStatus === "fully_paid");
 
   // New KPIs
   // 1. Expiring Quotes (<48h)
@@ -54,9 +78,10 @@ export default function OperationsOverview() {
   }).length;
 
   // 3. Payments Due / Pending Settlements
-  const pendingPaymentsAmount = bookings
-    .filter((b) => b.paymentStatus === "unpaid" || b.paymentStatus === "deposit_paid")
-    .reduce((sum, b) => sum + (b.pricing.totalFlightPrice || 0), 0);
+  const pendingPaymentsAmount = pendingPaymentsList.reduce(
+    (sum, b) => sum + (b.pricing.totalFlightPrice || 0),
+    0
+  );
 
   // Recent 5 audit logs
   const recentAuditLogs = auditLog.slice(0, 5);
@@ -220,6 +245,152 @@ export default function OperationsOverview() {
             <span>Reconcile Wires in Payments</span>
             <ArrowRight className="w-3 h-3" />
           </button>
+        </div>
+      </div>
+
+      {/* Super Admin Quote Confirmation Queue */}
+      <div className="bg-white border border-[#E0DAD0] rounded-2xl p-6 shadow-sm space-y-4">
+        <div className="flex items-center justify-between pb-3 border-b border-[#E0DAD0]">
+          <div className="flex items-center gap-2">
+            <UserCheck className="w-4 h-4 text-[#C9A052]" />
+            <h3 className="text-sm font-bold font-mono uppercase tracking-wider text-[#0F1420]">
+              Pending Super Admin Confirmation (Agent-Confirmed Quotes)
+            </h3>
+          </div>
+          <span className="text-xs font-mono font-bold px-2.5 py-0.5 rounded-full bg-[#C9A052]/20 text-[#9A7A35] border border-[#C9A052]/30">
+            {pendingSuperAdminQuotes.length} Awaiting Authorization
+          </span>
+        </div>
+
+        {pendingSuperAdminQuotes.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {pendingSuperAdminQuotes.map((b) => (
+              <div
+                key={b.id}
+                className="p-4 rounded-xl bg-[#FAF8F5] border border-[#E0DAD0] flex flex-col justify-between gap-3 shadow-xs"
+              >
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono font-bold text-xs text-[#0F1420]">
+                      {b.quoteReference || b.tripNumber}
+                    </span>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                      AGENT CONFIRMED
+                    </span>
+                  </div>
+                  <h4 className="text-sm font-extrabold text-[#0F1420] mt-1">{b.client.fullName}</h4>
+                  <p className="text-xs text-gray-600 font-mono">
+                    {b.legs[0]?.origin?.icao} → {b.legs[0]?.destination?.icao} • {b.aircraft?.name}
+                  </p>
+                  <p className="text-sm font-black text-[#0F1420] font-mono mt-1">
+                    {formatCurrency(b.pricing.totalFlightPrice, b.pricing.currency)}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 pt-2 border-t border-[#E0DAD0]">
+                  <button
+                    onClick={() => setSelectedBookingForDetail(b)}
+                    className="flex-1 py-2 px-3 rounded-xl bg-[#F5F2EC] hover:bg-[#EBE5DB] text-[#0F1420] text-xs font-bold transition-colors cursor-pointer text-center"
+                  >
+                    Inspect
+                  </button>
+                  <button
+                    onClick={() => superAdminConfirmQuote(b.id)}
+                    className="flex-1 py-2 px-3 rounded-xl bg-[#0F1420] hover:bg-[#1A2338] text-[#C9A052] text-xs font-black uppercase tracking-wider transition-colors shadow-xs cursor-pointer text-center"
+                  >
+                    Approve Quote
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="p-4 text-center rounded-xl bg-[#FAF8F5] border border-[#E0DAD0] text-xs text-gray-500 font-mono">
+            No agent-confirmed quotes currently waiting for Super Admin authorization.
+          </div>
+        )}
+      </div>
+
+      {/* Financial Reconciliation: Pending Payments & Payment Confirmations */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Pending Payments Queue */}
+        <div className="bg-white border border-[#E0DAD0] rounded-2xl p-5 shadow-sm space-y-3">
+          <div className="flex items-center justify-between pb-2 border-b border-[#E0DAD0]">
+            <div className="flex items-center gap-2">
+              <Clock className="w-4 h-4 text-amber-600" />
+              <h3 className="text-xs font-bold font-mono uppercase tracking-wider text-[#0F1420]">
+                Pending Payments ({pendingPaymentsList.length})
+              </h3>
+            </div>
+            <button
+              onClick={() => setActiveNav("payments")}
+              className="text-[11px] text-[#9A7A35] hover:text-[#0F1420] font-bold flex items-center gap-1 font-mono"
+            >
+              <span>Manage in Payments</span>
+              <ArrowRight className="w-3 h-3" />
+            </button>
+          </div>
+
+          <div className="space-y-2.5">
+            {pendingPaymentsList.slice(0, 4).map((b) => (
+              <div
+                key={b.id}
+                className="p-3 rounded-xl bg-[#FAF8F5] border border-[#E0DAD0] flex items-center justify-between text-xs"
+              >
+                <div>
+                  <span className="font-bold text-[#0F1420]">{b.client.fullName}</span>
+                  <p className="text-[10px] text-gray-500 font-mono">
+                    Trip: {b.tripNumber} • {b.paymentStatus === "deposit_paid" ? "Deposit Cleared" : "Awaiting Wire"}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <span className="font-extrabold font-mono text-[#0F1420]">
+                    {formatCurrency(b.pricing.totalFlightPrice, b.pricing.currency)}
+                  </span>
+                  <p className="text-[10px] text-amber-700 font-mono">Due: {b.paymentDueDate || "Upon Booking"}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Payment Confirmations Queue */}
+        <div className="bg-white border border-[#E0DAD0] rounded-2xl p-5 shadow-sm space-y-3">
+          <div className="flex items-center justify-between pb-2 border-b border-[#E0DAD0]">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              <h3 className="text-xs font-bold font-mono uppercase tracking-wider text-[#0F1420]">
+                Payment Confirmations ({confirmedPaymentsList.length})
+              </h3>
+            </div>
+            <span className="text-[11px] font-mono text-emerald-700 font-bold">
+              Cleared & Reconciled
+            </span>
+          </div>
+
+          <div className="space-y-2.5">
+            {confirmedPaymentsList.slice(0, 4).map((b) => (
+              <div
+                key={b.id}
+                className="p-3 rounded-xl bg-emerald-50/50 border border-emerald-200 flex items-center justify-between text-xs"
+              >
+                <div>
+                  <span className="font-bold text-[#0F1420]">{b.client.fullName}</span>
+                  <p className="text-[10px] text-emerald-800 font-mono">
+                    Inv: {b.invoiceNumber || "INV-ORB"} • Wire Settlement
+                  </p>
+                </div>
+                <div className="text-right">
+                  <span className="font-black font-mono text-emerald-800">
+                    {formatCurrency(b.pricing.totalFlightPrice, b.pricing.currency)}
+                  </span>
+                  <span className="block text-[9px] font-mono font-bold text-emerald-600">
+                    CONFIRMED
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 

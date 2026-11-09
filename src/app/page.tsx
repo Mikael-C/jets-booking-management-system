@@ -13,11 +13,17 @@ import BookingDetailDrawer from "@/components/bookings/BookingDetailDrawer";
 // Admin Views
 import OperationsOverview from "@/components/admin/OperationsOverview";
 import BookingsView from "@/components/admin/BookingsView";
+import QuotesView from "@/components/admin/QuotesView";
 import GenerateQuoteView from "@/components/admin/GenerateQuoteView";
 import GenerateBriefView from "@/components/admin/GenerateBriefView";
 import GenerateInvoiceView from "@/components/admin/GenerateInvoiceView";
 import GenerateContractView from "@/components/admin/GenerateContractView";
 import AgentRequestsQueueView from "@/components/admin/AgentRequestsQueueView";
+import AccountsView from "@/components/admin/AccountsView";
+import ContactsView from "@/components/admin/ContactsView";
+import AgentsView from "@/components/admin/AgentsView";
+import AirportsView from "@/components/admin/AirportsView";
+import FbosView from "@/components/admin/FbosView";
 import ClientsView from "@/components/admin/ClientsView";
 import FleetView from "@/components/admin/FleetView";
 import OperatorsView from "@/components/admin/OperatorsView";
@@ -56,24 +62,37 @@ export default function Home() {
           return <OperationsOverview />;
         case "bookings":
           return <BookingsView />;
-        case "sourcing":
-          return <AgentRequestsQueueView />;
+        case "quotes":
         case "generate_quote":
-          return <GenerateQuoteView />;
+          return <QuotesView />;
+        case "flight_briefs":
         case "generate_brief":
           return <GenerateBriefView />;
+        case "invoices":
         case "generate_invoice":
           return <GenerateInvoiceView />;
+        case "contracts":
         case "generate_contract":
           return <GenerateContractView />;
-        case "agent_requests":
-          return <AgentRequestsQueueView />;
+        case "accounts":
+          return <AccountsView />;
+        case "contacts":
+          return <ContactsView />;
+        case "agents":
+          return <AgentsView />;
         case "operators":
           return <OperatorsView />;
+        case "airports":
+          return <AirportsView />;
+        case "fbos":
+          return <FbosView />;
+        case "agent_requests":
+        case "sourcing":
+          return <AgentRequestsQueueView />;
         case "payments":
           return <PaymentsView />;
         case "clients":
-          return <ClientsView />;
+          return <AccountsView />;
         case "fleet":
           return <FleetView />;
         case "activities":
@@ -106,8 +125,15 @@ export default function Home() {
           return <AgentRequestInvoiceView />;
         case "my_requests":
           return <AgentRequestsListView />;
+        case "accounts":
+          return <AccountsView />;
+        case "contacts":
         case "clients":
-          return <ClientsView />;
+          return <ContactsView />;
+        case "airports":
+          return <AirportsView />;
+        case "fbos":
+          return <FbosView />;
         case "messages":
           return <MessagesView />;
         case "profile":

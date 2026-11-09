@@ -31,7 +31,9 @@ import {
   Coins,
   PlusCircle,
   User,
-  MessageSquare
+  MessageSquare,
+  MapPin,
+  Building
 } from "lucide-react";
 
 export default function Sidebar() {
@@ -44,6 +46,8 @@ export default function Sidebar() {
     agentRequests,
     bookings,
     operators,
+    accounts,
+    contacts,
     tokenBalance,
     openTokenModal,
     unreadMessageCount
@@ -158,22 +162,17 @@ export default function Sidebar() {
             </button>
 
             <button
-              onClick={() => setActiveNav("sourcing")}
+              onClick={() => setActiveNav("payments")}
               className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "sourcing"
+                activeNav === "payments"
                   ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
                   : "text-gray-300 hover:text-white hover:bg-[#141A29]"
               }`}
             >
               <div className="flex items-center gap-2.5">
-                <Layers className={`w-4 h-4 ${activeNav === "sourcing" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Sourcing & Quotes</span>
+                <CreditCard className={`w-4 h-4 ${activeNav === "payments" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
+                <span>Payments</span>
               </div>
-              {inSourcingCount > 0 && (
-                <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold bg-[#C9A052]/20 text-[#C9A052]`}>
-                  {inSourcingCount}
-                </span>
-              )}
             </button>
 
             {/* Direct Document Generators */}
@@ -182,68 +181,172 @@ export default function Sidebar() {
             </div>
 
             <button
-              onClick={() => setActiveNav("generate_quote")}
+              onClick={() => setActiveNav("quotes")}
               className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "generate_quote"
+                activeNav === "quotes" || activeNav === "generate_quote"
                   ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
                   : "text-gray-300 hover:text-white hover:bg-[#141A29]"
               }`}
             >
               <div className="flex items-center gap-2.5">
-                <FilePlus2 className={`w-4 h-4 ${activeNav === "generate_quote" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Generate Quote</span>
+                <FilePlus2 className={`w-4 h-4 ${activeNav === "quotes" || activeNav === "generate_quote" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
+                <span>Quotes</span>
               </div>
-              <ChevronRight className={`w-3.5 h-3.5 ${activeNav === "generate_quote" ? "text-[#0F1420]" : "text-gray-500"}`} />
+              <ChevronRight className={`w-3.5 h-3.5 ${activeNav === "quotes" || activeNav === "generate_quote" ? "text-[#0F1420]" : "text-gray-500"}`} />
             </button>
 
             <button
-              onClick={() => setActiveNav("generate_brief")}
+              onClick={() => setActiveNav("flight_briefs")}
               className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "generate_brief"
+                activeNav === "flight_briefs" || activeNav === "generate_brief"
                   ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
                   : "text-gray-300 hover:text-white hover:bg-[#141A29]"
               }`}
             >
               <div className="flex items-center gap-2.5">
-                <Compass className={`w-4 h-4 ${activeNav === "generate_brief" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Generate Flight Brief</span>
+                <Compass className={`w-4 h-4 ${activeNav === "flight_briefs" || activeNav === "generate_brief" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
+                <span>Flight briefs</span>
               </div>
-              <ChevronRight className={`w-3.5 h-3.5 ${activeNav === "generate_brief" ? "text-[#0F1420]" : "text-gray-500"}`} />
+              <ChevronRight className={`w-3.5 h-3.5 ${activeNav === "flight_briefs" || activeNav === "generate_brief" ? "text-[#0F1420]" : "text-gray-500"}`} />
             </button>
 
             <button
-              onClick={() => setActiveNav("generate_invoice")}
+              onClick={() => setActiveNav("invoices")}
               className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "generate_invoice"
+                activeNav === "invoices" || activeNav === "generate_invoice"
                   ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
                   : "text-gray-300 hover:text-white hover:bg-[#141A29]"
               }`}
             >
               <div className="flex items-center gap-2.5">
-                <Receipt className={`w-4 h-4 ${activeNav === "generate_invoice" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Generate Invoice</span>
+                <Receipt className={`w-4 h-4 ${activeNav === "invoices" || activeNav === "generate_invoice" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
+                <span>Invoices</span>
               </div>
-              <ChevronRight className={`w-3.5 h-3.5 ${activeNav === "generate_invoice" ? "text-[#0F1420]" : "text-gray-500"}`} />
+              <ChevronRight className={`w-3.5 h-3.5 ${activeNav === "invoices" || activeNav === "generate_invoice" ? "text-[#0F1420]" : "text-gray-500"}`} />
             </button>
 
             <button
-              onClick={() => setActiveNav("generate_contract")}
+              onClick={() => setActiveNav("contracts")}
               className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "generate_contract"
+                activeNav === "contracts" || activeNav === "generate_contract"
                   ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
                   : "text-gray-300 hover:text-white hover:bg-[#141A29]"
               }`}
             >
               <div className="flex items-center gap-2.5">
-                <ScrollText className={`w-4 h-4 ${activeNav === "generate_contract" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Generate Contract</span>
+                <ScrollText className={`w-4 h-4 ${activeNav === "contracts" || activeNav === "generate_contract" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
+                <span>Contracts</span>
               </div>
-              <ChevronRight className={`w-3.5 h-3.5 ${activeNav === "generate_contract" ? "text-[#0F1420]" : "text-gray-500"}`} />
+              <ChevronRight className={`w-3.5 h-3.5 ${activeNav === "contracts" || activeNav === "generate_contract" ? "text-[#0F1420]" : "text-gray-500"}`} />
             </button>
 
-            {/* Directory & Pipeline */}
+            {/* Directories Section */}
             <div className="pt-4 px-3 pb-2 text-[10px] font-mono uppercase tracking-wider text-gray-400 font-bold">
-              Directory & Pipeline
+              Directories
+            </div>
+
+            <button
+              onClick={() => setActiveNav("accounts")}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeNav === "accounts"
+                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
+                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <Building2 className={`w-4 h-4 ${activeNav === "accounts" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
+                <span>Accounts</span>
+              </div>
+              <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold ${
+                activeNav === "accounts" ? "bg-[#0F1420] text-white" : "bg-[#1C2436] text-gray-300"
+              }`}>
+                {accounts.length}
+              </span>
+            </button>
+
+            <button
+              onClick={() => setActiveNav("contacts")}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeNav === "contacts"
+                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
+                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <Users className={`w-4 h-4 ${activeNav === "contacts" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
+                <span>Contacts</span>
+              </div>
+              <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold ${
+                activeNav === "contacts" ? "bg-[#0F1420] text-white" : "bg-[#1C2436] text-gray-300"
+              }`}>
+                {contacts.length}
+              </span>
+            </button>
+
+            <button
+              onClick={() => setActiveNav("agents")}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeNav === "agents"
+                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
+                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <UserCheck className={`w-4 h-4 ${activeNav === "agents" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
+                <span>Agents</span>
+              </div>
+            </button>
+
+            <button
+              onClick={() => setActiveNav("operators")}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeNav === "operators"
+                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
+                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <ShieldCheck className={`w-4 h-4 ${activeNav === "operators" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
+                <span>Operators</span>
+              </div>
+              <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold ${
+                activeNav === "operators" ? "bg-[#0F1420] text-white" : "bg-[#1C2436] text-gray-300"
+              }`}>
+                {operators.length}
+              </span>
+            </button>
+
+            <button
+              onClick={() => setActiveNav("airports")}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeNav === "airports"
+                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
+                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <MapPin className={`w-4 h-4 ${activeNav === "airports" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
+                <span>Airports</span>
+              </div>
+            </button>
+
+            <button
+              onClick={() => setActiveNav("fbos")}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeNav === "fbos"
+                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
+                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <Building className={`w-4 h-4 ${activeNav === "fbos" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
+                <span>FBO</span>
+              </div>
+            </button>
+
+            {/* Broker Queue */}
+            <div className="pt-4 px-3 pb-2 text-[10px] font-mono uppercase tracking-wider text-gray-400 font-bold">
+              Broker Queue
             </div>
 
             <button
@@ -263,67 +366,6 @@ export default function Sidebar() {
                   {pendingRequestsCount} new
                 </span>
               )}
-            </button>
-
-            <button
-              onClick={() => setActiveNav("operators")}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "operators"
-                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
-                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Building2 className={`w-4 h-4 ${activeNav === "operators" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Operators</span>
-              </div>
-              <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold ${
-                activeNav === "operators" ? "bg-[#0F1420] text-white" : "bg-[#1C2436] text-gray-300"
-              }`}>
-                {operators.length}
-              </span>
-            </button>
-
-            <button
-              onClick={() => setActiveNav("payments")}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "payments"
-                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
-                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <CreditCard className={`w-4 h-4 ${activeNav === "payments" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Payments</span>
-              </div>
-            </button>
-
-            <button
-              onClick={() => setActiveNav("clients")}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "clients"
-                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
-                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Users className={`w-4 h-4 ${activeNav === "clients" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Clients</span>
-              </div>
-            </button>
-
-            <button
-              onClick={() => setActiveNav("fleet")}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "fleet"
-                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
-                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Shield className={`w-4 h-4 ${activeNav === "fleet" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Fleet Roster</span>
-              </div>
             </button>
 
             {/* Client Portal & Notifications */}
