@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const { authorize } = require('../middleware/auth');
 const avInodeService = require('../services/avInodeService');
 const { createAuditEntry } = require('../services/auditService');
@@ -42,10 +43,19 @@ router.post('/rfq', authorize('super_admin', 'admin', 'operations'), async (req,
   const result = await avInodeService.sendRfq({ originIcao, destinationIcao, departureDate, paxCount, notes, operatorIds });
 
   if (agentRequestId) {
-    await AgentRequest.findByIdAndUpdate(agentRequestId, {
-      avInodeId: result.rfqId,
-      status: 'in_sourcing'
-    });
+    const isObjectId = mongoose.Types.ObjectId.isValid(agentRequestId) && String(new mongoose.Types.ObjectId(agentRequestId)) === String(agentRequestId);
+    const filter = isObjectId
+      ? { $or: [{ _id: agentRequestId }, { id: agentRequestId }, { requestNumber: agentRequestId }] }
+      : { $or: [{ id: agentRequestId }, { requestNumber: agentRequestId }] };
+
+    try {
+      await AgentRequest.findOneAndUpdate(filter, {
+        avInodeId: result.rfqId,
+        status: 'in_sourcing'
+      });
+    } catch (dbErr) {
+      console.warn('Avinode RFQ AgentRequest status update notice:', dbErr.message);
+    }
   }
 
   await createAuditEntry({ user: req.user,
@@ -70,7 +80,16 @@ router.post('/book-trip', authorize('super_admin', 'admin'), async (req, res) =>
   const result = await avInodeService.bookTrip({ tripId, paymentMethod });
 
   if (bookingId) {
-    await Booking.findByIdAndUpdate(bookingId, { avInodeTripId: tripId, status: 'confirmed' });
+    const isObjectId = mongoose.Types.ObjectId.isValid(bookingId) && String(new mongoose.Types.ObjectId(bookingId)) === String(bookingId);
+    const filter = isObjectId
+      ? { $or: [{ _id: bookingId }, { id: bookingId }, { tripNumber: bookingId }] }
+      : { $or: [{ id: bookingId }, { tripNumber: bookingId }] };
+
+    try {
+      await Booking.findOneAndUpdate(filter, { avInodeTripId: tripId, status: 'confirmed' });
+    } catch (dbErr) {
+      console.warn('Avinode trip booking status update notice:', dbErr.message);
+    }
   }
 
   await createAuditEntry({ user: req.user,

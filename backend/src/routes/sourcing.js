@@ -1,12 +1,31 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const AgentRequest = require('../models/AgentRequest');
 const { authorize } = require('../middleware/auth');
 const { createAuditEntry } = require('../services/auditService');
 
+// Safe AgentRequest finder supporting ObjectId, custom id, and requestNumber
+const findAgentRequest = async (id) => {
+  if (!id) return null;
+  const isObjectId = mongoose.Types.ObjectId.isValid(id) && String(new mongoose.Types.ObjectId(id)) === String(id);
+  if (isObjectId) {
+    try {
+      const doc = await AgentRequest.findById(id);
+      if (doc) return doc;
+    } catch {
+      // fallback to custom id
+    }
+  }
+  return await AgentRequest.findOne({
+    $or: [{ id: id }, { requestNumber: id }],
+    isDeleted: false,
+  });
+};
+
 // GET /api/sourcing/:requestId/options
 router.get('/:requestId/options', authorize('super_admin', 'admin', 'operations'), async (req, res) => {
-  const request = await AgentRequest.findById(req.params.requestId);
+  const request = await findAgentRequest(req.params.requestId);
   if (!request) return res.status(404).json({ message: 'Agent request not found' });
   res.json(request.sourcingOptions || []);
 });
@@ -16,7 +35,7 @@ router.post('/:requestId/options', authorize('super_admin', 'admin', 'operations
   const { operatorName, aircraftType, aircraftRegistration, baseAirport, price, currency = 'EUR', taxesIncluded = false, validUntil, notes, avInodeTripId } = req.body;
   if (!operatorName || !price) return res.status(400).json({ message: 'operatorName and price are required' });
 
-  const request = await AgentRequest.findById(req.params.requestId);
+  const request = await findAgentRequest(req.params.requestId);
   if (!request) return res.status(404).json({ message: 'Agent request not found' });
 
   const option = {
@@ -32,8 +51,8 @@ router.post('/:requestId/options', authorize('super_admin', 'admin', 'operations
   await request.save();
 
   await createAuditEntry({ user: req.user,
-    action: 'SOURCING_OPTION_ADDED', entityType: 'AgentRequest', entityId: request._id.toString(),
-    details: `Added sourcing option from ${operatorName} at ${currency} ${price} for request ${request._id}`
+    action: 'SOURCING_OPTION_ADDED', entityType: 'AgentRequest', entityId: (request._id || request.id).toString(),
+    details: `Added sourcing option from ${operatorName} at ${currency} ${price} for request ${request.requestNumber || request.id}`
   });
 
   res.status(201).json(option);
@@ -41,7 +60,7 @@ router.post('/:requestId/options', authorize('super_admin', 'admin', 'operations
 
 // DELETE /api/sourcing/:requestId/options/:optionId
 router.delete('/:requestId/options/:optionId', authorize('super_admin', 'admin', 'operations'), async (req, res) => {
-  const request = await AgentRequest.findById(req.params.requestId);
+  const request = await findAgentRequest(req.params.requestId);
   if (!request) return res.status(404).json({ message: 'Agent request not found' });
 
   const before = (request.sourcingOptions || []).length;

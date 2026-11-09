@@ -107,6 +107,7 @@ export default function AgentRequestsQueueView() {
 
   const handleSendAvinodeRfq = async (req: AgentRequest) => {
     try {
+      setAvinodeError(null);
       const parts = req.route.split(" ");
       const originIcao = req.originIcao || parts[0] || "LSGG";
       const destIcao = req.destIcao || parts[parts.length - 1] || "LIMJ";
@@ -871,9 +872,10 @@ Special Requests: ${req.specialRequests || "None"}`;
 
       {/* SOURCING OPTION MODAL FORM */}
       {sourcingModalReq && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-white border border-[#E0DAD0] rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-[#E0DAD0]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-sm p-3 sm:p-5 overflow-y-auto">
+          <div className="bg-white border border-[#E0DAD0] rounded-2xl max-w-lg w-full shadow-2xl flex flex-col max-h-[92vh] sm:max-h-[88vh] my-auto overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Pinned Header */}
+            <div className="px-5 py-4 border-b border-[#E0DAD0] flex items-center justify-between shrink-0 bg-white">
               <div className="flex items-center gap-2">
                 <Layers className="w-5 h-5 text-[#C9A052]" />
                 <h3 className="text-base font-extrabold text-[#0F1420]">
@@ -882,142 +884,147 @@ Special Requests: ${req.specialRequests || "None"}`;
               </div>
               <button
                 onClick={() => setSourcingModalReq(null)}
-                className="text-gray-400 hover:text-gray-600 font-bold text-sm"
+                className="text-gray-400 hover:text-gray-700 font-bold text-base p-1 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
+                aria-label="Close"
               >
                 ✕
               </button>
             </div>
 
-            <form onSubmit={handleSaveSourcingOption} className="space-y-3.5 text-xs">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="col-span-2">
-                  <label className="block text-[11px] font-bold text-[#0F1420] uppercase font-mono mb-1">
-                    Operator Legal Name *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. GlobeAir AG, VistaJet, Luxaviation"
-                    value={sourcingOperator}
-                    onChange={(e) => setSourcingOperator(e.target.value)}
-                    className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold text-[#0F1420] uppercase font-mono mb-1">
-                    Aircraft Model *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Citation Mustang, Challenger 350"
-                    value={sourcingAircraft}
-                    onChange={(e) => setSourcingAircraft(e.target.value)}
-                    className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold text-[#0F1420] uppercase font-mono mb-1">
-                    Tail Registration (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="OE-FFB, 9H-VJC"
-                    value={sourcingRegistration}
-                    onChange={(e) => setSourcingRegistration(e.target.value)}
-                    className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-mono uppercase text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold text-[#0F1420] uppercase font-mono mb-1">
-                    Base Airport (ICAO) *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="LSGG, LOWL, LFMN"
-                    value={sourcingBaseAirport}
-                    onChange={(e) => setSourcingBaseAirport(e.target.value)}
-                    className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-mono uppercase text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold text-[#0F1420] uppercase font-mono mb-1">
-                    Quoted Operator Price *
-                  </label>
-                  <div className="flex gap-2">
-                    <select
-                      value={sourcingCurrency}
-                      onChange={(e) => setSourcingCurrency(e.target.value as any)}
-                      className="bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-2 py-2 text-xs font-mono font-bold"
-                    >
-                      <option value="EUR">EUR</option>
-                      <option value="USD">USD</option>
-                      <option value="GBP">GBP</option>
-                      <option value="CHF">CHF</option>
-                    </select>
+            {/* Scrollable Form Body */}
+            <form onSubmit={handleSaveSourcingOption} className="flex-1 flex flex-col overflow-hidden">
+              <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3.5 text-xs">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="col-span-2">
+                    <label className="block text-[11px] font-bold text-[#0F1420] uppercase font-mono mb-1">
+                      Operator Legal Name *
+                    </label>
                     <input
-                      type="number"
+                      type="text"
                       required
-                      min={0}
-                      value={sourcingPrice}
-                      onChange={(e) => setSourcingPrice(Number(e.target.value))}
-                      className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                      placeholder="e.g. GlobeAir AG, VistaJet, Luxaviation"
+                      value={sourcingOperator}
+                      onChange={(e) => setSourcingOperator(e.target.value)}
+                      className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
                     />
                   </div>
-                </div>
 
-                <div className="col-span-2 flex items-center justify-between p-2.5 bg-[#F5F2EC] rounded-xl border border-[#E0DAD0]">
-                  <label className="flex items-center gap-2 cursor-pointer font-bold text-[#0F1420]">
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#0F1420] uppercase font-mono mb-1">
+                      Aircraft Model *
+                    </label>
                     <input
-                      type="checkbox"
-                      checked={sourcingTaxesIncluded}
-                      onChange={(e) => setSourcingTaxesIncluded(e.target.checked)}
-                      className="rounded text-[#C9A052] focus:ring-[#C9A052]"
-                    />
-                    <span>All Airport Taxes & Fees Included in Rate</span>
-                  </label>
-
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-mono text-gray-500">Valid Until:</span>
-                    <input
-                      type="date"
-                      value={sourcingValidUntil}
-                      onChange={(e) => setSourcingValidUntil(e.target.value)}
-                      className="bg-white border border-[#E0DAD0] rounded-lg px-2 py-1 text-xs font-mono"
+                      type="text"
+                      required
+                      placeholder="Citation Mustang, Challenger 350"
+                      value={sourcingAircraft}
+                      onChange={(e) => setSourcingAircraft(e.target.value)}
+                      className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
                     />
                   </div>
-                </div>
 
-                <div className="col-span-2">
-                  <label className="block text-[11px] font-bold text-[#0F1420] uppercase font-mono mb-1">
-                    Internal Operator Notes / Terms
-                  </label>
-                  <textarea
-                    rows={2}
-                    placeholder="e.g. Owner approval required, de-icing billed at cost, catering included."
-                    value={sourcingNotes}
-                    onChange={(e) => setSourcingNotes(e.target.value)}
-                    className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl p-2.5 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                  />
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#0F1420] uppercase font-mono mb-1">
+                      Tail Registration (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="OE-FFB, 9H-VJC"
+                      value={sourcingRegistration}
+                      onChange={(e) => setSourcingRegistration(e.target.value)}
+                      className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-mono uppercase text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#0F1420] uppercase font-mono mb-1">
+                      Base Airport (ICAO) *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="LSGG, LOWL, LFMN"
+                      value={sourcingBaseAirport}
+                      onChange={(e) => setSourcingBaseAirport(e.target.value)}
+                      className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-mono uppercase text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#0F1420] uppercase font-mono mb-1">
+                      Quoted Operator Price *
+                    </label>
+                    <div className="flex gap-2">
+                      <select
+                        value={sourcingCurrency}
+                        onChange={(e) => setSourcingCurrency(e.target.value as any)}
+                        className="bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-2 py-2 text-xs font-mono font-bold"
+                      >
+                        <option value="EUR">EUR</option>
+                        <option value="USD">USD</option>
+                        <option value="GBP">GBP</option>
+                        <option value="CHF">CHF</option>
+                      </select>
+                      <input
+                        type="number"
+                        required
+                        min={0}
+                        value={sourcingPrice}
+                        onChange={(e) => setSourcingPrice(Number(e.target.value))}
+                        className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="col-span-2 flex items-center justify-between p-2.5 bg-[#F5F2EC] rounded-xl border border-[#E0DAD0]">
+                    <label className="flex items-center gap-2 cursor-pointer font-bold text-[#0F1420]">
+                      <input
+                        type="checkbox"
+                        checked={sourcingTaxesIncluded}
+                        onChange={(e) => setSourcingTaxesIncluded(e.target.checked)}
+                        className="rounded text-[#C9A052] focus:ring-[#C9A052]"
+                      />
+                      <span>All Airport Taxes & Fees Included in Rate</span>
+                    </label>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-mono text-gray-500">Valid Until:</span>
+                      <input
+                        type="date"
+                        value={sourcingValidUntil}
+                        onChange={(e) => setSourcingValidUntil(e.target.value)}
+                        className="bg-white border border-[#E0DAD0] rounded-lg px-2 py-1 text-xs font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="col-span-2">
+                    <label className="block text-[11px] font-bold text-[#0F1420] uppercase font-mono mb-1">
+                      Internal Operator Notes / Terms
+                    </label>
+                    <textarea
+                      rows={2}
+                      placeholder="e.g. Owner approval required, de-icing billed at cost, catering included."
+                      value={sourcingNotes}
+                      onChange={(e) => setSourcingNotes(e.target.value)}
+                      className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl p-2.5 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div className="pt-3 border-t border-[#E0DAD0] flex justify-end gap-2">
+              {/* Pinned Footer */}
+              <div className="px-5 py-3 border-t border-[#E0DAD0] flex justify-end gap-2 shrink-0 bg-[#FAF8F5]">
                 <button
                   type="button"
                   onClick={() => setSourcingModalReq(null)}
-                  className="px-4 py-2 rounded-xl bg-gray-200 text-gray-800 text-xs font-bold"
+                  className="px-4 py-2 rounded-xl bg-gray-200 hover:bg-gray-300 text-gray-800 text-xs font-bold transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] text-xs font-black uppercase tracking-wider shadow-md"
+                  className="px-5 py-2 rounded-xl bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] text-xs font-black uppercase tracking-wider shadow-md transition-all cursor-pointer"
                 >
                   Save Sourcing Response
                 </button>
@@ -1029,9 +1036,10 @@ Special Requests: ${req.specialRequests || "None"}`;
 
       {/* FULL DETAILS MODAL */}
       {selectedReqForModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-white border border-[#E0DAD0] rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-[#E0DAD0]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-sm p-3 sm:p-5 overflow-y-auto">
+          <div className="bg-white border border-[#E0DAD0] rounded-2xl max-w-lg w-full shadow-2xl flex flex-col max-h-[92vh] sm:max-h-[88vh] my-auto overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Pinned Header */}
+            <div className="px-5 py-4 border-b border-[#E0DAD0] flex items-center justify-between shrink-0 bg-white">
               <div className="flex items-center gap-2">
                 <Plane className="w-5 h-5 text-[#C9A052]" />
                 <h3 className="text-base font-extrabold text-[#0F1420]">
@@ -1040,13 +1048,15 @@ Special Requests: ${req.specialRequests || "None"}`;
               </div>
               <button
                 onClick={() => setSelectedReqForModal(null)}
-                className="text-gray-400 hover:text-gray-600 font-bold"
+                className="text-gray-400 hover:text-gray-700 font-bold text-base p-1 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
+                aria-label="Close"
               >
                 ✕
               </button>
             </div>
 
-            <div className="space-y-2 text-xs text-[#0F1420]/80">
+            {/* Scrollable Body */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-2.5 text-xs text-[#0F1420]/80">
               <p><strong>Submitting Agent:</strong> {selectedReqForModal.agentName} ({selectedReqForModal.agentEmail})</p>
               <p><strong>Client:</strong> {selectedReqForModal.clientName} ({selectedReqForModal.clientEmail}, {selectedReqForModal.clientPhone})</p>
               <p><strong>Company:</strong> {selectedReqForModal.companyName || "N/A"}</p>
@@ -1076,10 +1086,11 @@ Special Requests: ${req.specialRequests || "None"}`;
               )}
             </div>
 
-            <div className="pt-3 border-t border-[#E0DAD0] flex justify-end gap-2">
+            {/* Pinned Footer */}
+            <div className="px-5 py-3 border-t border-[#E0DAD0] flex justify-end gap-2 shrink-0 bg-[#FAF8F5]">
               <button
                 onClick={() => setSelectedReqForModal(null)}
-                className="px-4 py-2 rounded-xl bg-gray-200 text-gray-800 text-xs font-bold"
+                className="px-4 py-2 rounded-xl bg-gray-200 hover:bg-gray-300 text-gray-800 text-xs font-bold transition-colors cursor-pointer"
               >
                 Close
               </button>
@@ -1088,7 +1099,7 @@ Special Requests: ${req.specialRequests || "None"}`;
                   fulfillRequest(selectedReqForModal);
                   setSelectedReqForModal(null);
                 }}
-                className="px-4 py-2 rounded-xl bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] text-xs font-black uppercase tracking-wider"
+                className="px-4 py-2 rounded-xl bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] text-xs font-black uppercase tracking-wider transition-all cursor-pointer shadow-sm"
               >
                 Generate Document Now
               </button>
@@ -1099,132 +1110,140 @@ Special Requests: ${req.specialRequests || "None"}`;
 
       {/* ── AVINODE MARKETPLACE RESULTS MODAL ── */}
       {avinodeModalReq && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="bg-white border border-[#E0DAD0] rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-[#E0DAD0]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-sm p-3 sm:p-5 overflow-y-auto">
+          <div className="bg-white border border-[#E0DAD0] rounded-2xl max-w-2xl w-full shadow-2xl flex flex-col max-h-[92vh] sm:max-h-[88vh] my-auto overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Pinned Header */}
+            <div className="px-5 py-4 border-b border-[#E0DAD0] flex items-center justify-between shrink-0 bg-white">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-[#0F1420] flex items-center justify-center">
+                <div className="w-8 h-8 rounded-xl bg-[#0F1420] flex items-center justify-center shrink-0">
                   <Zap className="w-4 h-4 text-[#C9A052]" />
                 </div>
                 <div>
-                  <h3 className="text-base font-extrabold text-[#0F1420]">
+                  <h3 className="text-sm sm:text-base font-extrabold text-[#0F1420]">
                     Avinode Marketplace Live Sourcing
                   </h3>
-                  <p className="text-xs text-gray-500 font-mono">
+                  <p className="text-[11px] text-gray-500 font-mono">
                     Route: {avinodeModalReq.route} • {avinodeModalReq.flightDate} • {avinodeModalReq.paxCount} Pax
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => setAvinodeModalReq(null)}
-                className="text-gray-400 hover:text-gray-700 text-sm font-bold p-1 rounded-lg"
+                className="text-gray-400 hover:text-gray-700 text-base font-bold p-1 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
+                aria-label="Close"
               >
                 ✕
               </button>
             </div>
 
-            {/* Broadcast RFQ Action Banner */}
-            <div className="bg-[#0F1420] text-white p-3.5 rounded-xl flex items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-bold text-[#C9A052] flex items-center gap-1.5">
-                  <Globe className="w-3.5 h-3.5" />
-                  Avinode Operator Network Broadcast
-                </p>
-                <p className="text-[11px] text-gray-300 mt-0.5">
-                  Broadcast this RFQ directly to certified European & global charter operators.
-                </p>
+            {/* Scrollable Body Viewport */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3.5">
+              {/* Broadcast RFQ Action Banner */}
+              <div className="bg-[#0F1420] text-white p-3.5 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-bold text-[#C9A052] flex items-center gap-1.5">
+                    <Globe className="w-3.5 h-3.5" />
+                    Avinode Operator Network Broadcast
+                  </p>
+                  <p className="text-[11px] text-gray-300 mt-0.5">
+                    Broadcast this RFQ directly to certified European & global charter operators.
+                  </p>
+                </div>
+                <button
+                  onClick={() => handleSendAvinodeRfq(avinodeModalReq)}
+                  disabled={avinodeRfqSuccess}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap self-start sm:self-auto cursor-pointer ${
+                    avinodeRfqSuccess
+                      ? "bg-emerald-500 text-white"
+                      : "bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420]"
+                  }`}
+                >
+                  {avinodeRfqSuccess ? "✓ RFQ Broadcasted!" : "Send Avinode RFQ"}
+                </button>
               </div>
-              <button
-                onClick={() => handleSendAvinodeRfq(avinodeModalReq)}
-                disabled={avinodeRfqSuccess}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
-                  avinodeRfqSuccess
-                    ? "bg-emerald-500 text-white"
-                    : "bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420]"
-                }`}
-              >
-                {avinodeRfqSuccess ? "✓ RFQ Broadcasted!" : "Send Avinode RFQ"}
-              </button>
+
+              {/* Loading state */}
+              {isLoadingAvinode && (
+                <div className="py-10 text-center space-y-3">
+                  <Loader2 className="w-7 h-7 text-[#C9A052] animate-spin mx-auto" />
+                  <p className="text-xs font-mono text-gray-600">
+                    Querying live operator fleet availability and empty legs across Avinode...
+                  </p>
+                </div>
+              )}
+
+              {/* Error notice */}
+              {!isLoadingAvinode && avinodeError && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-start justify-between gap-2">
+                  <span>{avinodeError}</span>
+                  <button onClick={() => setAvinodeError(null)} className="text-amber-500 hover:text-amber-800 font-bold cursor-pointer">×</button>
+                </div>
+              )}
+
+              {/* Results list */}
+              {!isLoadingAvinode && avinodeResults.length > 0 && (
+                <div className="space-y-2.5">
+                  <p className="text-[11px] font-mono font-bold text-gray-500 uppercase tracking-wider">
+                    Available Market Options ({avinodeResults.length})
+                  </p>
+                  {avinodeResults.map((opt, i) => (
+                    <div
+                      key={opt.id || i}
+                      className="p-3 bg-[#F5F2EC] border border-[#E0DAD0] hover:border-[#C9A052] rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-all"
+                    >
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-extrabold text-xs text-[#0F1420]">
+                            {opt.aircraft?.name || "Private Jet"}
+                          </span>
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white text-gray-700 border border-[#E0DAD0]">
+                            {opt.aircraft?.category || "Light"}
+                          </span>
+                          {opt.aircraft?.registration && (
+                            <span className="text-[10px] font-mono text-gray-500">
+                              {opt.aircraft.registration}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-gray-600">
+                          Operator: <strong className="text-[#0F1420]">{opt.operator?.name || "Charter Operator"}</strong> ({opt.operator?.country || "Europe"})
+                          {opt.flightTime && ` • Est. ${opt.flightTime}`}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-[#E0DAD0]/60">
+                        <div className="text-left sm:text-right">
+                          <span className="text-xs font-mono font-extrabold text-[#0F1420]">
+                            €{(opt.priceUSD || 15000).toLocaleString()}
+                          </span>
+                          <span className="block text-[9px] font-mono text-emerald-700 font-bold">
+                            Avinode Direct
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => handleAcceptAvinodeOption(avinodeModalReq, opt)}
+                          className="px-2.5 py-1.5 rounded-lg bg-[#0F1420] hover:bg-[#1E2538] text-[#C9A052] text-xs font-bold transition-all shadow-sm whitespace-nowrap cursor-pointer"
+                        >
+                          + Import Option
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {!isLoadingAvinode && avinodeResults.length === 0 && !avinodeError && (
+                <div className="py-8 text-center text-xs text-gray-500">
+                  No immediate marketplace direct quotes found. Click "Send Avinode RFQ" above to broadcast to operators.
+                </div>
+              )}
             </div>
 
-            {/* Loading state */}
-            {isLoadingAvinode && (
-              <div className="py-12 text-center space-y-3">
-                <Loader2 className="w-8 h-8 text-[#C9A052] animate-spin mx-auto" />
-                <p className="text-xs font-mono text-gray-600">
-                  Querying live operator fleet availability and empty legs across Avinode...
-                </p>
-              </div>
-            )}
-
-            {/* Error or results */}
-            {!isLoadingAvinode && avinodeError && (
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
-                {avinodeError}
-              </div>
-            )}
-
-            {!isLoadingAvinode && avinodeResults.length > 0 && (
-              <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
-                <p className="text-[11px] font-mono font-bold text-gray-500 uppercase tracking-wider">
-                  Available Market Options ({avinodeResults.length})
-                </p>
-                {avinodeResults.map((opt, i) => (
-                  <div
-                    key={opt.id || i}
-                    className="p-3 bg-[#F5F2EC] border border-[#E0DAD0] hover:border-[#C9A052] rounded-xl flex items-center justify-between gap-3 transition-all"
-                  >
-                    <div className="space-y-0.5">
-                      <div className="flex items-center gap-2">
-                        <span className="font-extrabold text-xs text-[#0F1420]">
-                          {opt.aircraft?.name || "Private Jet"}
-                        </span>
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white text-gray-700 border border-[#E0DAD0]">
-                          {opt.aircraft?.category || "Light"}
-                        </span>
-                        {opt.aircraft?.registration && (
-                          <span className="text-[10px] font-mono text-gray-500">
-                            {opt.aircraft.registration}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-gray-600">
-                        Operator: <strong className="text-[#0F1420]">{opt.operator?.name || "Charter Operator"}</strong> ({opt.operator?.country || "Europe"})
-                        {opt.flightTime && ` • Est. ${opt.flightTime}`}
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      <div className="text-right">
-                        <span className="text-xs font-mono font-extrabold text-[#0F1420]">
-                          €{(opt.priceUSD || 15000).toLocaleString()}
-                        </span>
-                        <span className="block text-[9px] font-mono text-emerald-700 font-bold">
-                          Avinode Direct
-                        </span>
-                      </div>
-                      <button
-                        onClick={() => handleAcceptAvinodeOption(avinodeModalReq, opt)}
-                        className="px-2.5 py-1.5 rounded-lg bg-[#0F1420] hover:bg-[#1E2538] text-[#C9A052] text-xs font-bold transition-all shadow-sm whitespace-nowrap cursor-pointer"
-                      >
-                        + Import Option
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {!isLoadingAvinode && avinodeResults.length === 0 && !avinodeError && (
-              <div className="py-8 text-center text-xs text-gray-500">
-                No immediate marketplace direct quotes found. Click "Send Avinode RFQ" above to broadcast to operators.
-              </div>
-            )}
-
-            <div className="pt-3 border-t border-[#E0DAD0] flex justify-end">
+            {/* Pinned Footer */}
+            <div className="px-5 py-3 border-t border-[#E0DAD0] flex justify-end shrink-0 bg-[#FAF8F5]">
               <button
                 onClick={() => setAvinodeModalReq(null)}
-                className="px-4 py-2 rounded-xl bg-gray-200 text-gray-800 text-xs font-bold"
+                className="px-4 py-2 rounded-xl bg-gray-200 hover:bg-gray-300 text-gray-800 text-xs font-bold transition-colors cursor-pointer"
               >
                 Close
               </button>

@@ -1,10 +1,31 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const Booking = require('../models/Booking');
 const { authorize } = require('../middleware/auth');
 const { createAuditEntry } = require('../services/auditService');
 const { createNotification } = require('../services/notificationService');
 const { sendPaymentReceivedEmail } = require('../services/emailService');
+
+// Safe Booking finder supporting ObjectId and custom ID strings
+const findBooking = async (id, select = '') => {
+  if (!id) return null;
+  const isObjectId = mongoose.Types.ObjectId.isValid(id) && String(new mongoose.Types.ObjectId(id)) === String(id);
+  if (isObjectId) {
+    try {
+      const q = Booking.findById(id);
+      if (select) q.select(select);
+      const doc = await q;
+      if (doc) return doc;
+    } catch {}
+  }
+  const q = Booking.findOne({
+    $or: [{ id: id }, { tripNumber: id }, { quoteReference: id }, { invoiceNumber: id }],
+    isDeleted: false,
+  });
+  if (select) q.select(select);
+  return await q;
+};
 
 // GET /api/payments — list all payment-related bookings
 router.get('/', authorize('super_admin', 'admin', 'finance'), async (req, res) => {
@@ -26,8 +47,10 @@ router.get('/', authorize('super_admin', 'admin', 'finance'), async (req, res) =
 
 // GET /api/payments/booking/:bookingId
 router.get('/booking/:bookingId', authorize('super_admin', 'admin', 'finance', 'operations'), async (req, res) => {
-  const booking = await Booking.findById(req.params.bookingId)
-    .select('tripNumber invoiceNumber client pricing paymentStatus paymentMethodChoice paymentReason cardFeePercentage cardFeeAmount totalWithCardFee createdAt updatedAt');
+  const booking = await findBooking(
+    req.params.bookingId,
+    'tripNumber invoiceNumber client pricing paymentStatus paymentMethodChoice paymentReason cardFeePercentage cardFeeAmount totalWithCardFee createdAt updatedAt'
+  );
   if (!booking) return res.status(404).json({ message: 'Booking not found' });
   res.json(booking);
 });
@@ -40,7 +63,7 @@ router.post('/record', authorize('super_admin', 'admin', 'finance'), async (req,
   const validStatuses = ['unpaid', 'deposit_paid', 'fully_paid', 'overdue', 'refunded'];
   if (!validStatuses.includes(paymentStatus)) return res.status(400).json({ message: 'Invalid paymentStatus' });
 
-  const booking = await Booking.findById(bookingId);
+  const booking = await findBooking(bookingId);
   if (!booking) return res.status(404).json({ message: 'Booking not found' });
 
   const prevStatus = booking.paymentStatus;
