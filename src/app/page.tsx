@@ -34,6 +34,10 @@ import AgentRequestBriefView from "@/components/agent/AgentRequestBriefView";
 import AgentRequestInvoiceView from "@/components/agent/AgentRequestInvoiceView";
 import AgentRequestsListView from "@/components/agent/AgentRequestsListView";
 
+// Profile & Tokenomics
+import ProfileView from "@/components/profile/ProfileView";
+import TokenSubscriptionModal from "@/components/tokens/TokenSubscriptionModal";
+
 export default function Home() {
   const { isAuthenticated, role, activeNav } = useAviation();
 
@@ -81,6 +85,8 @@ export default function Home() {
           return <ClientPortalView />;
         case "notifications":
           return <NotificationSettingsView />;
+        case "profile":
+          return <ProfileView />;
         default:
           return role === "finance" ? <PaymentsView /> : <OperationsOverview />;
       }
@@ -99,6 +105,8 @@ export default function Home() {
           return <AgentRequestsListView />;
         case "clients":
           return <ClientsView />;
+        case "profile":
+          return <ProfileView />;
         default:
           return <AgentOverviewView />;
       }
@@ -149,6 +157,7 @@ export default function Home() {
       <BookingDetailDrawer />
       <ChecklistDrawer />
       <NewQuoteModal />
+      <TokenSubscriptionModal />
     </div>
   );
 }

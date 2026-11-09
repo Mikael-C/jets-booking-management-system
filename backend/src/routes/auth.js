@@ -113,14 +113,17 @@ router.get('/me', authenticate, async (req, res) => {
 
 // PUT /api/auth/me — update own profile
 router.put('/me', authenticate, async (req, res) => {
-  const allowedFields = ['name', 'phone', 'avatar'];
+  const allowedFields = ['name', 'phone', 'avatar', 'title', 'company', 'location', 'bio', 'notificationPreferences'];
   const updates = {};
   allowedFields.forEach((f) => {
     if (req.body[f] !== undefined) updates[f] = req.body[f];
   });
 
   const user = await User.findByIdAndUpdate(req.userId, updates, { new: true, runValidators: true });
-  res.json({ success: true, data: user.toSafeObject() });
+  if (!user) {
+    return res.status(404).json({ success: false, message: 'User not found' });
+  }
+  res.json({ success: true, message: 'Profile updated successfully', data: user.toSafeObject() });
 });
 
 // PUT /api/auth/change-password

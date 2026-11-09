@@ -46,6 +46,65 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    title: {
+      type: String,
+      default: '',
+    },
+    company: {
+      type: String,
+      default: '',
+    },
+    location: {
+      type: String,
+      default: '',
+    },
+    bio: {
+      type: String,
+      default: '',
+    },
+    tokens: {
+      type: Number,
+      default: 0,
+      min: 0,
+      index: true,
+    },
+    tokenTier: {
+      type: String,
+      enum: ['free', 'standard', 'pro', 'enterprise'],
+      default: 'free',
+    },
+    subscriptionStatus: {
+      type: String,
+      enum: ['none', 'active', 'expired'],
+      default: 'none',
+      index: true,
+    },
+    subscriptionExpiresAt: {
+      type: Date,
+      default: null,
+    },
+    tokenTransactions: {
+      type: [
+        {
+          id: { type: String, default: () => `tx-${Date.now()}-${Math.floor(Math.random() * 1000)}` },
+          type: { type: String, enum: ['credit', 'debit'], required: true },
+          amount: { type: Number, required: true },
+          balanceAfter: { type: Number, required: true },
+          action: { type: String, required: true },
+          description: { type: String, default: '' },
+          currency: { type: String, default: 'GBP' },
+          pricePaid: { type: Number, default: 0 },
+          createdAt: { type: Date, default: Date.now },
+        },
+      ],
+      default: [],
+    },
+    notificationPreferences: {
+      emailAlerts: { type: Boolean, default: true },
+      flightUpdates: { type: Boolean, default: true },
+      tokenAlerts: { type: Boolean, default: true },
+      marketing: { type: Boolean, default: false },
+    },
     refreshTokens: {
       type: [String],
       select: false,

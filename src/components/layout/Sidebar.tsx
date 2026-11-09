@@ -27,7 +27,10 @@ import {
   Layers,
   ScrollText,
   Activity,
-  UserCheck
+  UserCheck,
+  Coins,
+  PlusCircle,
+  User
 } from "lucide-react";
 
 export default function Sidebar() {
@@ -39,7 +42,9 @@ export default function Sidebar() {
     currentUser,
     agentRequests,
     bookings,
-    operators
+    operators,
+    tokenBalance,
+    openTokenModal
   } = useAviation();
 
   const pendingRequestsCount = agentRequests.filter((r) => r.status === "pending").length;
@@ -393,12 +398,52 @@ export default function Sidebar() {
                 )}
               </button>
             )}
+
+            <button
+              onClick={() => setActiveNav("profile")}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeNav === "profile"
+                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
+                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <User className={`w-4 h-4 ${activeNav === "profile" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
+                <span>Profile & Settings</span>
+              </div>
+              <ChevronRight className={`w-3.5 h-3.5 ${activeNav === "profile" ? "text-[#0F1420]" : "text-gray-500"}`} />
+            </button>
           </div>
         )}
 
         {/* Navigation for CHARTER AGENT */}
         {role === "agent" && (
           <div className="space-y-1">
+            {/* Agent Token Balance Card */}
+            <div className="mx-1 mb-3 p-3 rounded-xl bg-gradient-to-br from-[#141A29] to-[#0B101A] border border-[#C9A052]/40 shadow-md">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#C9A052] flex items-center gap-1">
+                  <Coins className="w-3.5 h-3.5" /> Token Balance
+                </span>
+                <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30">
+                  Active
+                </span>
+              </div>
+              <div className="text-xl font-black font-mono text-white">
+                {tokenBalance.toLocaleString()}{" "}
+                <span className="text-xs font-normal text-gray-400 font-sans">Tokens</span>
+              </div>
+              <p className="text-[10px] text-gray-400 mt-0.5">100 tokens / core action</p>
+              <button
+                type="button"
+                onClick={() => openTokenModal("Refill your agent tokens")}
+                className="w-full mt-2.5 py-1.5 px-2 rounded-lg bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1 shadow-sm cursor-pointer"
+              >
+                <PlusCircle className="w-3.5 h-3.5" />
+                <span>Refill / Subscribe</span>
+              </button>
+            </div>
+
             <div className="px-3 pb-2 text-[10px] font-mono uppercase tracking-wider text-gray-400 font-bold">
               Agent Quoting Desk
             </div>
@@ -502,6 +547,21 @@ export default function Sidebar() {
                 <span>Clients</span>
               </div>
             </button>
+
+            <button
+              onClick={() => setActiveNav("profile")}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeNav === "profile"
+                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
+                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <User className={`w-4 h-4 ${activeNav === "profile" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
+                <span>Profile & Settings</span>
+              </div>
+              <ChevronRight className={`w-3.5 h-3.5 ${activeNav === "profile" ? "text-[#0F1420]" : "text-gray-500"}`} />
+            </button>
           </div>
         )}
       </div>
@@ -511,19 +571,27 @@ export default function Sidebar() {
 
         {/* User Card with Logout */}
         <div className="flex items-center justify-between pt-1">
-          <div className="flex items-center gap-2.5 overflow-hidden">
-            <div className="h-8 w-8 rounded-full bg-[#C9A052] text-[#0F1420] font-black text-xs flex items-center justify-center flex-shrink-0">
-              {currentUser?.name ? currentUser.name.charAt(0) : "A"}
+          <button
+            onClick={() => setActiveNav("profile")}
+            className="flex items-center gap-2.5 overflow-hidden text-left hover:opacity-90 transition-opacity flex-1 group"
+            title="Click to view and edit profile"
+          >
+            <div className={`h-8 w-8 rounded-full text-xs font-black flex items-center justify-center flex-shrink-0 transition-transform group-hover:scale-105 ${
+              activeNav === "profile" ? "bg-white text-[#0F1420] ring-2 ring-[#C9A052]" : "bg-[#C9A052] text-[#0F1420]"
+            }`}>
+              {currentUser?.name ? currentUser.name.charAt(0).toUpperCase() : "U"}
             </div>
             <div className="overflow-hidden">
-              <p className="text-xs font-bold text-white truncate">{currentUser?.name || "User"}</p>
+              <p className={`text-xs font-bold truncate ${activeNav === "profile" ? "text-[#C9A052]" : "text-white"}`}>
+                {currentUser?.name || "User"}
+              </p>
               <p className="text-[10px] text-gray-400 font-mono truncate">{currentUser?.email || ""}</p>
             </div>
-          </div>
+          </button>
 
           <button
             onClick={logout}
-            className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-[#141A29] transition-colors"
+            className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-[#141A29] transition-colors ml-2"
             title="Log out and return to Login Screen"
           >
             <LogOut className="w-4 h-4 text-red-400" />

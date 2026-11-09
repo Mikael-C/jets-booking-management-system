@@ -1,5 +1,17 @@
 export type UserRole = "super_admin" | "admin" | "finance" | "operations" | "agent";
 
+export interface TokenTransaction {
+  id: string;
+  type: "credit" | "debit";
+  amount: number;
+  balanceAfter: number;
+  action: string;
+  description?: string;
+  currency?: "GBP" | "USD" | string;
+  pricePaid?: number;
+  createdAt: string;
+}
+
 export interface UserRecord {
   id: string;
   name: string;
@@ -8,6 +20,20 @@ export interface UserRecord {
   isActive: boolean;
   phone?: string;
   title?: string;
+  company?: string;
+  location?: string;
+  bio?: string;
+  tokens?: number;
+  tokenTier?: "free" | "standard" | "pro" | "enterprise";
+  subscriptionStatus?: "none" | "active" | "expired";
+  subscriptionExpiresAt?: string;
+  notificationPreferences?: {
+    emailAlerts?: boolean;
+    flightUpdates?: boolean;
+    tokenAlerts?: boolean;
+    marketing?: boolean;
+  };
+  tokenTransactions?: TokenTransaction[];
   lastLogin?: string;
   createdAt?: string;
 }

@@ -62,6 +62,88 @@ router.get('/', authorize('super_admin', 'admin'), async (req, res) => {
 });
 
 /**
+ * GET /api/users/profile
+ * Get current authenticated user's profile
+ */
+router.get('/profile', async (req, res) => {
+  const user = await User.findById(req.userId);
+  if (!user) {
+    return res.status(404).json({ success: false, message: 'User not found' });
+  }
+  res.json({ success: true, data: user.toSafeObject() });
+});
+
+/**
+ * PUT /api/users/profile
+ * Update current authenticated user's profile
+ */
+router.put('/profile', async (req, res) => {
+  const allowedFields = ['name', 'phone', 'avatar', 'title', 'company', 'location', 'bio', 'notificationPreferences'];
+  const updates = {};
+  allowedFields.forEach((f) => {
+    if (req.body[f] !== undefined) updates[f] = req.body[f];
+  });
+
+  const user = await User.findByIdAndUpdate(req.userId, updates, { new: true, runValidators: true });
+  if (!user) {
+    return res.status(404).json({ success: false, message: 'User not found' });
+  }
+
+  createAuditEntry({
+    user,
+    action: 'USER_PROFILE_UPDATED',
+    entityType: 'User',
+    entityId: user._id.toString(),
+    details: `Updated personal profile: ${Object.keys(updates).join(', ')}`,
+    req,
+  }).catch(() => {});
+
+  res.json({ success: true, message: 'Profile updated successfully', data: user.toSafeObject() });
+});
+
+/**
+ * POST /api/users/change-password
+ * Change password for current authenticated user
+ */
+const handlePasswordChange = async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword || !newPassword || newPassword.length < 6) {
+    return res.status(400).json({
+      success: false,
+      message: 'New password must be at least 6 characters long',
+    });
+  }
+
+  const user = await User.findById(req.userId).select('+passwordHash');
+  if (!user) {
+    return res.status(404).json({ success: false, message: 'User not found' });
+  }
+
+  const isMatch = await user.comparePassword(currentPassword);
+  if (!isMatch) {
+    return res.status(401).json({ success: false, message: 'Current password is incorrect' });
+  }
+
+  user.passwordHash = await User.hashPassword(newPassword);
+  user.refreshTokens = [];
+  await user.save();
+
+  createAuditEntry({
+    user,
+    action: 'USER_PASSWORD_CHANGED',
+    entityType: 'User',
+    entityId: user._id.toString(),
+    details: 'User updated their password',
+    req,
+  }).catch(() => {});
+
+  res.json({ success: true, message: 'Password updated successfully' });
+};
+
+router.post('/change-password', handlePasswordChange);
+router.put('/change-password', handlePasswordChange);
+
+/**
  * GET /api/users/:id
  * Restricted to super_admin and admin
  */

@@ -333,4 +333,76 @@ export const api = {
         body: JSON.stringify(entry),
       }),
   },
+
+  // Tokenomics & Subscription (Agent role)
+  tokens: {
+    getBalance: () =>
+      request<{
+        success: boolean;
+        data: {
+          tokens: number;
+          isStaff: boolean;
+          tokenTier: string;
+          subscriptionStatus: string;
+          subscriptionExpiresAt?: string;
+          recentTransactions: any[];
+        };
+      }>("/tokens/balance"),
+    subscribe: (data: { currency?: "GBP" | "USD"; paymentMethod?: string }) =>
+      request<{
+        success: boolean;
+        message: string;
+        data: {
+          tokens: number;
+          tokenTier: string;
+          subscriptionStatus: string;
+          subscriptionExpiresAt: string;
+          transaction: any;
+        };
+      }>("/tokens/subscribe", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    deduct: (data: { amount?: number; action: string; description?: string }) =>
+      request<{
+        success: boolean;
+        message: string;
+        balance: number;
+        transaction?: any;
+        bypassed?: boolean;
+      }>("/tokens/deduct", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    getTransactions: () =>
+      request<{
+        success: boolean;
+        data: any[];
+        total: number;
+      }>("/tokens/transactions"),
+    grant: (data: { targetUserId: string; amount: number; reason?: string }) =>
+      request<{
+        success: boolean;
+        message: string;
+        data: { targetUserId: string; newBalance: number; transaction: any };
+      }>("/tokens/grant", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+  },
+
+  // User Profile & Account Settings
+  profile: {
+    get: () => request<{ success: boolean; data: any }>("/users/profile"),
+    update: (updates: Record<string, any>) =>
+      request<{ success: boolean; message: string; data: any }>("/users/profile", {
+        method: "PUT",
+        body: JSON.stringify(updates),
+      }),
+    changePassword: (data: { currentPassword: string; newPassword: string }) =>
+      request<{ success: boolean; message: string }>("/users/change-password", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+  },
 };

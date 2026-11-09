@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { useAviation } from "@/lib/aviationContext";
-import { Search, Plus, RotateCcw, Clock, Shield, Plane, Sparkles, Bell, Check, X, AlertTriangle, Info, CheckCircle2 } from "lucide-react";
+import { Search, Plus, RotateCcw, Clock, Shield, Plane, Sparkles, Bell, Check, X, AlertTriangle, Info, CheckCircle2, Coins, User } from "lucide-react";
 
 export default function TopHeader() {
   const {
@@ -14,7 +14,9 @@ export default function TopHeader() {
     openNewQuoteModal,
     resetToDefaultData,
     notifications,
-    markNotificationRead
+    markNotificationRead,
+    tokenBalance,
+    openTokenModal
   } = useAviation();
 
   const [utcTime, setUtcTime] = useState("");
@@ -92,6 +94,8 @@ export default function TopHeader() {
         return { section: "Client Portal", title: "Client Portal Preview — Quote, Signature, Passengers & Payment" };
       case "notifications":
         return { section: "Communications", title: "Notification Settings & Email Templates" };
+      case "profile":
+        return { section: "User Account", title: "User Profile & Security Settings" };
       default:
         return { section: "Portal", title: "Private Jet Booking Management" };
     }
@@ -242,6 +246,31 @@ export default function TopHeader() {
             </div>
           )}
         </div>
+
+        {/* Agent Token Balance Pill */}
+        {role === "agent" && (
+          <button
+            onClick={() => openTokenModal("Refill your agent tokens")}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-[#C9A052]/40 text-[#0F1420] hover:bg-amber-500/20 transition-all text-xs font-mono font-bold shadow-sm cursor-pointer"
+            title="Agent Token Balance - Click to refill or view details"
+          >
+            <Coins className="w-3.5 h-3.5 text-[#C9A052]" />
+            <span>{tokenBalance.toLocaleString()} Tokens</span>
+          </button>
+        )}
+
+        {/* Profile & Account Quick Button */}
+        <button
+          onClick={() => setActiveNav("profile")}
+          className={`p-2 rounded-xl border transition-colors shadow-sm cursor-pointer ${
+            activeNav === "profile"
+              ? "bg-[#0F1420] text-white border-[#0F1420]"
+              : "bg-white border-[#E0DAD0] text-[#0F1420]/70 hover:text-[#0F1420] hover:border-[#C9A052]"
+          }`}
+          title="User Profile & Account Settings"
+        >
+          <User className="w-4 h-4" />
+        </button>
 
         {/* Reset Demo State Button */}
         <button

@@ -2,10 +2,18 @@
 
 import React, { useState } from "react";
 import { useAviation } from "@/lib/aviationContext";
-import { Receipt, Plane, User, Calendar, Send, CheckCircle2, Building, DollarSign } from "lucide-react";
+import { Receipt, Plane, User, Calendar, Send, CheckCircle2, Building, DollarSign, Coins } from "lucide-react";
 
 export default function AgentRequestInvoiceView() {
-  const { addAgentRequest, currentUser, setActiveNav, bookings } = useAviation();
+  const {
+    addAgentRequest,
+    currentUser,
+    setActiveNav,
+    bookings,
+    checkAndSpendTokens,
+    tokenBalance,
+    openTokenModal
+  } = useAviation();
 
   const [selectedBookingId, setSelectedBookingId] = useState(bookings[0]?.id || "");
   const selectedBooking = bookings.find((b) => b.id === selectedBookingId) || bookings[0];
@@ -24,8 +32,15 @@ export default function AgentRequestInvoiceView() {
 
   const [submitted, setSubmitted] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    const hasTokens = await checkAndSpendTokens(
+      "Submit Invoice Request",
+      100,
+      `Invoice Request for ${selectedBooking?.tripNumber || "Flight Charter"} (${clientName})`
+    );
+    if (!hasTokens) return;
 
     const title = `Invoice Request: ${selectedBooking?.tripNumber || "Flight Charter"} (${clientName})`;
 
@@ -69,6 +84,28 @@ export default function AgentRequestInvoiceView() {
           <p className="text-xs text-[#0F1420]/65 mt-0.5">
             Submit charter contract details, billing entity information, and settlement instructions to Admin Finance.
           </p>
+        </div>
+
+        {/* Token Balance & Cost Badge */}
+        <div className="flex items-center gap-3 p-3 rounded-xl bg-[#F5F2EC] border border-[#E0DAD0]">
+          <div>
+            <div className="flex items-center gap-1 text-[10px] font-mono font-bold uppercase text-[#0F1420]/60">
+              <Coins className="w-3.5 h-3.5 text-[#C9A052]" /> Action Cost
+            </div>
+            <div className="text-xs font-black font-mono text-emerald-800">
+              100 Tokens
+            </div>
+            <p className="text-[10px] text-gray-500 font-mono">
+              Balance: {tokenBalance.toLocaleString()}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => openTokenModal("Top up tokens for invoice generation")}
+            className="px-2.5 py-1.5 rounded-lg bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] text-[10px] font-black uppercase tracking-wider transition-all shadow-sm"
+          >
+            Refill
+          </button>
         </div>
       </div>
 

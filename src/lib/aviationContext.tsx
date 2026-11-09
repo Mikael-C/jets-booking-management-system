@@ -22,7 +22,8 @@ import {
   ClientDetails,
   PricingBreakdown,
   AdditionalServices,
-  DispatchChecklistStep
+  DispatchChecklistStep,
+  TokenTransaction
 } from "@/types/aviation";
 import { initialBookings, defaultOperator } from "@/data/initialBookings";
 import { initialClients } from "@/data/clients";
@@ -35,10 +36,26 @@ import { api } from "@/lib/api";
 export type DocumentType = "quotation" | "invoice" | "flight_brief" | "charter_agreement" | "passenger_manifest" | "credit_note";
 
 export interface UserProfile {
+  id?: string;
   name: string;
   email: string;
   role: UserRole;
   title: string;
+  phone?: string;
+  company?: string;
+  location?: string;
+  bio?: string;
+  tokens?: number;
+  tokenTier?: "free" | "standard" | "pro" | "enterprise";
+  subscriptionStatus?: "none" | "active" | "expired";
+  subscriptionExpiresAt?: string;
+  notificationPreferences?: {
+    emailAlerts?: boolean;
+    flightUpdates?: boolean;
+    tokenAlerts?: boolean;
+    marketing?: boolean;
+  };
+  tokenTransactions?: TokenTransaction[];
 }
 
 export const initialUsers: UserRecord[] = [
@@ -89,6 +106,14 @@ export const initialUsers: UserRecord[] = [
     role: "agent",
     isActive: true,
     title: "Executive Charter Broker",
+    phone: "+44 20 7946 0912",
+    company: "Vance Luxury Charters Ltd",
+    location: "London, Mayfair, United Kingdom",
+    bio: "Senior Charter Broker with 12+ years experience in VIP executive aviation, heavy jets, and transatlantic routing.",
+    tokens: 2000,
+    tokenTier: "standard",
+    subscriptionStatus: "active",
+    subscriptionExpiresAt: "2026-12-31T23:59:59Z",
     lastLogin: "1 hour ago",
     createdAt: "2026-02-01T00:00:00Z"
   },
@@ -99,6 +124,14 @@ export const initialUsers: UserRecord[] = [
     role: "agent",
     isActive: true,
     title: "Senior Charter Broker",
+    phone: "+33 4 93 39 00 00",
+    company: "Laurent Aviation Advisory",
+    location: "Geneva / Monaco",
+    bio: "Specializing in seasonal Mediterranean & Alpine ski charter logistics for family offices and HNWI clientele.",
+    tokens: 2000,
+    tokenTier: "standard",
+    subscriptionStatus: "active",
+    subscriptionExpiresAt: "2026-12-31T23:59:59Z",
     lastLogin: "4 days ago",
     createdAt: "2026-02-15T00:00:00Z"
   }
@@ -735,6 +768,24 @@ interface AviationContextType {
   notifications: Notification[];
   markNotificationRead: (id: string) => void;
 
+  // Tokenomics (Agent role)
+  tokenBalance: number;
+  tokenTier: "free" | "standard" | "pro" | "enterprise";
+  subscriptionStatus: "none" | "active" | "expired";
+  subscriptionExpiresAt?: string;
+  tokenTransactions: TokenTransaction[];
+  isTokenModalOpen: boolean;
+  tokenModalPrompt: string;
+  openTokenModal: (prompt?: string) => void;
+  closeTokenModal: () => void;
+  subscribeOrRefillTokens: (currency?: "GBP" | "USD", paymentMethod?: string) => Promise<{ success: boolean; tokens: number }>;
+  deductTokens: (amount?: number, action?: string, description?: string) => Promise<{ success: boolean; remaining: number }>;
+  checkAndSpendTokens: (actionName: string, cost?: number, description?: string) => Promise<boolean>;
+
+  // User Profile & Settings
+  updateUserProfile: (updates: Partial<UserProfile>) => Promise<boolean>;
+  changeUserPassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; message: string }>;
+
   // Reset
   resetToDefaultData: () => void;
 }
@@ -760,6 +811,27 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
   const [operators, setOperators] = useState<OperatorRecord[]>(initialOperators);
   const [auditLog, setAuditLog] = useState<AuditLogEntry[]>(initialAuditLog);
   const [notifications, setNotifications] = useState<Notification[]>(initialNotifications);
+
+  // Tokenomics State (Agent role)
+  const [tokenBalance, setTokenBalance] = useState<number>(2000);
+  const [tokenTier, setTokenTier] = useState<"free" | "standard" | "pro" | "enterprise">("standard");
+  const [subscriptionStatus, setSubscriptionStatus] = useState<"none" | "active" | "expired">("active");
+  const [subscriptionExpiresAt, setSubscriptionExpiresAt] = useState<string | undefined>("2026-12-31T23:59:59Z");
+  const [tokenTransactions, setTokenTransactions] = useState<TokenTransaction[]>([
+    {
+      id: "tx-init-welcome",
+      type: "credit",
+      amount: 2000,
+      balanceAfter: 2000,
+      action: "SUBSCRIPTION_PURCHASE",
+      description: "Welcome Charter Broker Package (2,000 Tokens) - Standard Allocation",
+      currency: "GBP",
+      pricePaid: 500,
+      createdAt: "2026-03-01T09:00:00Z"
+    }
+  ]);
+  const [isTokenModalOpen, setIsTokenModalOpen] = useState<boolean>(false);
+  const [tokenModalPrompt, setTokenModalPrompt] = useState<string>("");
 
   // Modals & Active Selections
   const [activeBooking, setActiveBooking] = useState<Booking | null>(null);
@@ -1000,6 +1072,18 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
         }
         targetRole = matched.role;
         targetName = matched.name;
+        if (matched.tokens !== undefined) {
+          setTokenBalance(matched.tokens);
+        }
+        if (matched.tokenTier) {
+          setTokenTier(matched.tokenTier as any);
+        }
+        if (matched.subscriptionStatus) {
+          setSubscriptionStatus(matched.subscriptionStatus as any);
+        }
+        if (matched.subscriptionExpiresAt) {
+          setSubscriptionExpiresAt(matched.subscriptionExpiresAt);
+        }
       } else {
         // Fallback role inference from corporate address
         if (targetEmail.includes("superadmin") || targetEmail.includes("ceo") || targetEmail.includes("maximilian")) {
@@ -1024,7 +1108,10 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       role: targetRole,
       name: finalName,
       email: finalEmail,
-      title: details.title
+      title: details.title,
+      tokens: targetRole === "agent" ? tokenBalance : 999999,
+      tokenTier: targetRole === "agent" ? tokenTier : "enterprise",
+      subscriptionStatus: "active"
     };
 
     setCurrentUser(user);
@@ -1049,15 +1136,59 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
         const bUser = res.data.user;
         const bRole: UserRole = bUser.role || targetRole;
         setCurrentUser({
+          id: bUser.id || bUser._id,
           role: bRole,
           name: bUser.name || finalName,
           email: bUser.email || finalEmail,
-          title: bUser.title || details.title
+          title: bUser.title || details.title,
+          phone: bUser.phone,
+          company: bUser.company,
+          location: bUser.location,
+          bio: bUser.bio,
+          tokens: bUser.tokens,
+          tokenTier: bUser.tokenTier,
+          subscriptionStatus: bUser.subscriptionStatus,
+          subscriptionExpiresAt: bUser.subscriptionExpiresAt,
+          notificationPreferences: bUser.notificationPreferences,
+          tokenTransactions: bUser.tokenTransactions
         });
+
+        if (typeof bUser.tokens === "number") {
+          setTokenBalance(bUser.tokens);
+          localStorage.setItem("orbelo_agent_tokens", String(bUser.tokens));
+        }
+        if (bUser.tokenTier) {
+          setTokenTier(bUser.tokenTier);
+        }
+        if (bUser.subscriptionStatus) {
+          setSubscriptionStatus(bUser.subscriptionStatus);
+        }
+        if (bUser.subscriptionExpiresAt) {
+          setSubscriptionExpiresAt(bUser.subscriptionExpiresAt);
+        }
+        if (Array.isArray(bUser.tokenTransactions) && bUser.tokenTransactions.length > 0) {
+          setTokenTransactions(bUser.tokenTransactions.slice().reverse());
+        }
+
         if (bRole !== targetRole) {
           setRoleState(bRole);
           setActiveNav(getRoleDefaultNav(bRole));
         }
+      }
+
+      // Sync backend token balance for agent role
+      if (targetRole === "agent") {
+        api.tokens.getBalance().then((tb) => {
+          if (tb?.data && typeof tb.data.tokens === "number") {
+            setTokenBalance(tb.data.tokens);
+            if (tb.data.tokenTier) setTokenTier(tb.data.tokenTier as any);
+            if (tb.data.subscriptionStatus) setSubscriptionStatus(tb.data.subscriptionStatus as any);
+            if (tb.data.subscriptionExpiresAt) setSubscriptionExpiresAt(tb.data.subscriptionExpiresAt);
+            if (Array.isArray(tb.data.recentTransactions) && tb.data.recentTransactions.length > 0) {
+              setTokenTransactions(tb.data.recentTransactions);
+            }
+          }
+        }).catch(() => {});
       }
     } catch (err: any) {
       console.warn("Backend auth offline (operating in local resilience mode):", err?.message);
@@ -1855,6 +1986,216 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     api.notifications.markRead(id).catch((err) => console.log("Backend sync note:", err.message));
   };
 
+  // ─── Tokenomics & Subscription Methods ──────────────────────────────────────
+  const openTokenModal = (prompt?: string) => {
+    setTokenModalPrompt(prompt || "");
+    setIsTokenModalOpen(true);
+  };
+
+  const closeTokenModal = () => {
+    setIsTokenModalOpen(false);
+    setTokenModalPrompt("");
+  };
+
+  const subscribeOrRefillTokens = async (
+    currency: "GBP" | "USD" = "GBP",
+    paymentMethod: string = "card"
+  ): Promise<{ success: boolean; tokens: number }> => {
+    const pricePaid = currency === "USD" ? 600 : 500;
+    try {
+      const res = await api.tokens.subscribe({ currency, paymentMethod });
+      if (res?.data) {
+        setTokenBalance(res.data.tokens);
+        setTokenTier((res.data.tokenTier as any) || "standard");
+        setSubscriptionStatus((res.data.subscriptionStatus as any) || "active");
+        if (res.data.subscriptionExpiresAt) {
+          setSubscriptionExpiresAt(res.data.subscriptionExpiresAt);
+        }
+        if (res.data.transaction) {
+          setTokenTransactions((prev) => [res.data.transaction, ...prev]);
+        }
+        localStorage.setItem("orbelo_agent_tokens", String(res.data.tokens));
+
+        const notif: Notification = {
+          id: `notif-${Date.now()}`,
+          type: "success",
+          title: "Tokens Credited",
+          message: `Successfully topped up 2,000 tokens (${currency === "USD" ? "$600" : "£500"}). New balance: ${res.data.tokens.toLocaleString()} tokens.`,
+          timestamp: "Just now",
+          read: false
+        };
+        setNotifications((prev) => [notif, ...prev]);
+
+        addAuditEntry({
+          userEmail: currentUser?.email || "agent@orbelo.com",
+          userName: currentUser?.name || "Marcus Vance",
+          action: "TOKEN_SUBSCRIPTION_PURCHASE",
+          entityType: "Tokens",
+          entityId: res.data.transaction?.id || `TX-${Date.now()}`,
+          details: `Subscribed to 2,000 tokens for ${currency === "USD" ? "$600 USD" : "£500 GBP"} via ${paymentMethod}`
+        });
+
+        return { success: true, tokens: res.data.tokens };
+      }
+    } catch (err: any) {
+      console.warn("Backend token subscription offline, applying local credit:", err?.message);
+    }
+
+    // Local resilience mode
+    const newBal = tokenBalance + 2000;
+    const newTx: TokenTransaction = {
+      id: `tx-${Date.now()}`,
+      type: "credit",
+      amount: 2000,
+      balanceAfter: newBal,
+      action: "SUBSCRIPTION_PURCHASE",
+      description: `Subscribed to 2,000 Token Package (${currency === "USD" ? "$600 USD" : "£500 GBP"}) via ${paymentMethod}`,
+      currency,
+      pricePaid,
+      createdAt: new Date().toISOString()
+    };
+    setTokenBalance(newBal);
+    setTokenTier("standard");
+    setSubscriptionStatus("active");
+    setTokenTransactions((prev) => [newTx, ...prev]);
+    localStorage.setItem("orbelo_agent_tokens", String(newBal));
+
+    const notif: Notification = {
+      id: `notif-${Date.now()}`,
+      type: "success",
+      title: "Tokens Credited",
+      message: `Successfully topped up 2,000 tokens (${currency === "USD" ? "$600" : "£500"}). New balance: ${newBal.toLocaleString()} tokens.`,
+      timestamp: "Just now",
+      read: false
+    };
+    setNotifications((prev) => [notif, ...prev]);
+
+    return { success: true, tokens: newBal };
+  };
+
+  const deductTokens = async (
+    amount: number = 100,
+    action: string = "CORE_ACTION",
+    description?: string
+  ): Promise<{ success: boolean; remaining: number }> => {
+    if (role !== "agent") {
+      return { success: true, remaining: 999999 };
+    }
+    try {
+      const res = await api.tokens.deduct({ amount, action, description });
+      if (res?.success) {
+        if (!res.bypassed && typeof res.balance === "number") {
+          setTokenBalance(res.balance);
+          if (res.transaction) {
+            setTokenTransactions((prev) => [res.transaction, ...prev]);
+          }
+          localStorage.setItem("orbelo_agent_tokens", String(res.balance));
+          return { success: true, remaining: res.balance };
+        }
+      }
+    } catch (err: any) {
+      console.warn("Backend token deduction offline, applying local debit:", err?.message);
+    }
+
+    const newBal = Math.max(0, tokenBalance - amount);
+    const newTx: TokenTransaction = {
+      id: `tx-${Date.now()}`,
+      type: "debit",
+      amount,
+      balanceAfter: newBal,
+      action,
+      description: description || `Used ${amount} tokens for ${action}`,
+      currency: "GBP",
+      pricePaid: 0,
+      createdAt: new Date().toISOString()
+    };
+    setTokenBalance(newBal);
+    setTokenTransactions((prev) => [newTx, ...prev]);
+    localStorage.setItem("orbelo_agent_tokens", String(newBal));
+    return { success: true, remaining: newBal };
+  };
+
+  const checkAndSpendTokens = async (
+    actionName: string,
+    cost: number = 100,
+    description?: string
+  ): Promise<boolean> => {
+    if (role !== "agent") {
+      return true; // Staff role has unlimited access
+    }
+    if (tokenBalance < cost) {
+      setTokenModalPrompt(
+        `You need ${cost} tokens to ${actionName}. Your current balance is ${tokenBalance.toLocaleString()} tokens. Please subscribe or refill to continue accessing broker functionalities.`
+      );
+      setIsTokenModalOpen(true);
+      const notif: Notification = {
+        id: `notif-${Date.now()}`,
+        type: "warning",
+        title: "Insufficient Tokens",
+        message: `Action blocked: You need ${cost} tokens to ${actionName}. Current balance: ${tokenBalance.toLocaleString()} tokens.`,
+        timestamp: "Just now",
+        read: false
+      };
+      setNotifications((prev) => [notif, ...prev]);
+      return false;
+    }
+    await deductTokens(cost, actionName, description);
+    return true;
+  };
+
+  // ─── User Profile & Password Methods ─────────────────────────────────────────
+  const updateUserProfile = async (updates: Partial<UserProfile>): Promise<boolean> => {
+    setCurrentUser((prev) => (prev ? { ...prev, ...updates } : null));
+    try {
+      await api.profile.update(updates);
+    } catch (err: any) {
+      console.warn("Backend profile update sync notice:", err?.message);
+    }
+    if (currentUser?.email) {
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.email.toLowerCase() === currentUser.email.toLowerCase()
+            ? { ...u, ...updates }
+            : u
+        )
+      );
+    }
+    const notif: Notification = {
+      id: `notif-${Date.now()}`,
+      type: "success",
+      title: "Profile Updated",
+      message: "Your profile details have been saved successfully.",
+      timestamp: "Just now",
+      read: false
+    };
+    setNotifications((prev) => [notif, ...prev]);
+    return true;
+  };
+
+  const changeUserPassword = async (
+    currentPassword: string,
+    newPassword: string
+  ): Promise<{ success: boolean; message: string }> => {
+    try {
+      const res = await api.profile.changePassword({ currentPassword, newPassword });
+      const notif: Notification = {
+        id: `notif-${Date.now()}`,
+        type: "success",
+        title: "Password Changed",
+        message: res?.message || "Password updated successfully.",
+        timestamp: "Just now",
+        read: false
+      };
+      setNotifications((prev) => [notif, ...prev]);
+      return { success: true, message: res?.message || "Password updated successfully." };
+    } catch (err: any) {
+      return {
+        success: false,
+        message: err?.message || "Failed to update password. Please verify your current password."
+      };
+    }
+  };
+
   const resetToDefaultData = () => {
     setBookings(initialBookings);
     setClients(initialClients);
@@ -1936,6 +2277,20 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
         refreshAuditLog,
         notifications,
         markNotificationRead,
+        tokenBalance,
+        tokenTier,
+        subscriptionStatus,
+        subscriptionExpiresAt,
+        tokenTransactions,
+        isTokenModalOpen,
+        tokenModalPrompt,
+        openTokenModal,
+        closeTokenModal,
+        subscribeOrRefillTokens,
+        deductTokens,
+        checkAndSpendTokens,
+        updateUserProfile,
+        changeUserPassword,
         resetToDefaultData
       }}
     >

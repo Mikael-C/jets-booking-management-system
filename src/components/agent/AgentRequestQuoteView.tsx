@@ -19,11 +19,20 @@ import {
   Trash2,
   Luggage,
   HeartHandshake,
-  Save
+  Save,
+  Coins
 } from "lucide-react";
 
 export default function AgentRequestQuoteView() {
-  const { addAgentRequest, currentUser, setActiveNav, clients } = useAviation();
+  const {
+    addAgentRequest,
+    currentUser,
+    setActiveNav,
+    clients,
+    checkAndSpendTokens,
+    tokenBalance,
+    openTokenModal
+  } = useAviation();
 
   const [selectedClientId, setSelectedClientId] = useState("");
   const [clientName, setClientName] = useState("");
@@ -122,7 +131,7 @@ export default function AgentRequestQuoteView() {
     );
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     let routeText = "";
@@ -133,6 +142,13 @@ export default function AgentRequestQuoteView() {
     } else {
       routeText = `${originIcao} → ${destIcao}`;
     }
+
+    const hasTokens = await checkAndSpendTokens(
+      "Submit Quote Request",
+      100,
+      `Quote Request for route ${routeText} (${clientName || "Client"})`
+    );
+    if (!hasTokens) return;
 
     const title = `Quote Request: ${routeText} (${clientName || "Client"})`;
 
@@ -240,6 +256,28 @@ export default function AgentRequestQuoteView() {
           <p className="text-xs text-[#0F1420]/65 mt-0.5">
             Fill in the trip parameters, passenger requirements, client fiscal info, and options to transmit directly to Admin Flight Dispatch.
           </p>
+        </div>
+
+        {/* Token Balance & Cost Badge */}
+        <div className="flex items-center gap-3 p-3 rounded-xl bg-[#F5F2EC] border border-[#E0DAD0]">
+          <div>
+            <div className="flex items-center gap-1 text-[10px] font-mono font-bold uppercase text-[#0F1420]/60">
+              <Coins className="w-3.5 h-3.5 text-[#C9A052]" /> Action Cost
+            </div>
+            <div className="text-xs font-black font-mono text-emerald-800">
+              100 Tokens
+            </div>
+            <p className="text-[10px] text-gray-500 font-mono">
+              Balance: {tokenBalance.toLocaleString()}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => openTokenModal("Top up tokens for quote generation")}
+            className="px-2.5 py-1.5 rounded-lg bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] text-[10px] font-black uppercase tracking-wider transition-all shadow-sm"
+          >
+            Refill
+          </button>
         </div>
       </div>
 

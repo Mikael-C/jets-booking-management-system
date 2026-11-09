@@ -84,12 +84,64 @@ const seedDatabase = async (force = false) => {
   // ─── Users ─────────────────────────────────────────────
   const passwordHash = await bcrypt.hash('orbelo2026!', 12);
   const users = await User.insertMany([
-    { name: 'Maximilian von Bern', email: 'superadmin@orbelo.com', passwordHash, role: 'super_admin', isActive: true, title: 'Chief Executive Officer & Super Admin' },
-    { name: 'Capt. Alexander Vance', email: 'admin@orbelo.com', passwordHash, role: 'admin', isActive: true, title: 'Flight Operations Director' },
-    { name: 'Elena Rostova', email: 'finance@orbelo.com', passwordHash, role: 'finance', isActive: true, title: 'Chief Financial Officer' },
-    { name: 'David Schneider', email: 'ops@orbelo.com', passwordHash, role: 'operations', isActive: true, title: 'Flight Dispatch & OCC' },
-    { name: 'Marcus Vance', email: 'agent@orbelo.com', passwordHash, role: 'agent', isActive: true, title: 'Executive Charter Broker' },
-    { name: 'Sophia Laurent', email: 'sophia@orbelo.com', passwordHash, role: 'agent', isActive: true, title: 'Senior Charter Broker' },
+    { name: 'Maximilian von Bern', email: 'superadmin@orbelo.com', passwordHash, role: 'super_admin', isActive: true, title: 'Chief Executive Officer & Super Admin', company: 'Orbelo Aviation Management GmbH', location: 'Linz, Austria' },
+    { name: 'Capt. Alexander Vance', email: 'admin@orbelo.com', passwordHash, role: 'admin', isActive: true, title: 'Flight Operations Director', company: 'Orbelo Aviation Management GmbH', location: 'Vienna, Austria' },
+    { name: 'Elena Rostova', email: 'finance@orbelo.com', passwordHash, role: 'finance', isActive: true, title: 'Chief Financial Officer', company: 'Orbelo Aviation Management GmbH', location: 'Zurich, Switzerland' },
+    { name: 'David Schneider', email: 'ops@orbelo.com', passwordHash, role: 'operations', isActive: true, title: 'Flight Dispatch & OCC', company: 'Orbelo Aviation Management GmbH', location: 'Linz, Austria' },
+    {
+      name: 'Marcus Vance',
+      email: 'agent@orbelo.com',
+      passwordHash,
+      role: 'agent',
+      isActive: true,
+      title: 'Executive Charter Broker',
+      company: 'Vance Aviation Advisory Ltd',
+      location: 'Geneva / London',
+      tokens: 2000,
+      tokenTier: 'standard',
+      subscriptionStatus: 'active',
+      subscriptionExpiresAt: new Date(Date.now() + 30 * 86400000),
+      tokenTransactions: [
+        {
+          id: 'tx-seed-1',
+          type: 'credit',
+          amount: 2000,
+          balanceAfter: 2000,
+          action: 'subscription',
+          description: 'Standard Broker Access Subscription (2,000 Tokens)',
+          currency: 'GBP',
+          pricePaid: 500,
+          createdAt: new Date(),
+        }
+      ]
+    },
+    {
+      name: 'Sophia Laurent',
+      email: 'sophia@orbelo.com',
+      passwordHash,
+      role: 'agent',
+      isActive: true,
+      title: 'Senior Charter Broker',
+      company: 'Laurent Private Jets Monaco',
+      location: 'Monaco / Nice',
+      tokens: 2000,
+      tokenTier: 'standard',
+      subscriptionStatus: 'active',
+      subscriptionExpiresAt: new Date(Date.now() + 30 * 86400000),
+      tokenTransactions: [
+        {
+          id: 'tx-seed-2',
+          type: 'credit',
+          amount: 2000,
+          balanceAfter: 2000,
+          action: 'subscription',
+          description: 'Standard Broker Access Subscription (2,000 Tokens)',
+          currency: 'USD',
+          pricePaid: 600,
+          createdAt: new Date(),
+        }
+      ]
+    },
   ]);
   console.log(`👤 Created ${users.length} users`);
 
