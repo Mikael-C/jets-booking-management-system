@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useAviation } from "@/lib/aviationContext";
 import { Booking, FlightLeg, TripType } from "@/types/aviation";
 import { airportsData, findAirportByCode } from "@/data/airports";
@@ -23,7 +23,13 @@ import {
   Percent,
   RefreshCw,
   Search,
-  Layers
+  Layers,
+  ArrowRight,
+  ChevronRight,
+  X,
+  Eye,
+  Edit2,
+  AlertTriangle
 } from "lucide-react";
 
 interface EditableFlownLeg {
@@ -37,10 +43,38 @@ interface EditableFlownLeg {
 }
 
 export default function GenerateInvoiceView() {
-  const { bookings, openDocument } = useAviation();
+  const { bookings, openDocument, createInvoice, getInvoices } = useAviation();
+
+  const [activeTab, setActiveTab] = useState<"list" | "builder">("list");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
 
   const [selectedBookingId, setSelectedBookingId] = useState<string>(bookings[0]?.id || "");
   const selectedBooking = bookings.find((b) => b.id === selectedBookingId) || bookings[0];
+
+  // All Invoices List
+  const invoicesList = useMemo(() => {
+    return bookings.filter((b) => b.invoiceNumber);
+  }, [bookings]);
+
+  const filteredInvoices = useMemo(() => {
+    return invoicesList.filter((b) => {
+      if (statusFilter !== "all") {
+        if (statusFilter === "paid" && b.paymentStatus !== "fully_paid") return false;
+        if (statusFilter === "unpaid" && b.paymentStatus !== "unpaid") return false;
+        if (statusFilter === "overdue" && b.paymentStatus !== "overdue") return false;
+      }
+      if (searchQuery.trim() !== "") {
+        const q = searchQuery.toLowerCase().trim();
+        const matchInv = (b.invoiceNumber || "").toLowerCase().includes(q);
+        const matchTrip = (b.tripNumber || "").toLowerCase().includes(q);
+        const matchClient = (b.client.fullName || "").toLowerCase().includes(q);
+        const matchAccount = (b.accountNumber || "").toLowerCase().includes(q);
+        if (!matchInv && !matchTrip && !matchClient && !matchAccount) return false;
+      }
+      return true;
+    });
+  }, [invoicesList, statusFilter, searchQuery]);
 
   // Invoice & Trip References
   const [invoiceNumber, setInvoiceNumber] = useState("00106020");
@@ -359,57 +393,306 @@ export default function GenerateInvoiceView() {
       currency
     };
 
-    setSuccess(true);
-    openDocument(selectedBooking, "invoice");
+    createInvoice(selectedBooking).then((saved) => {
+      setSuccess(true);
+      setActiveTab("list");
+      openDocument(saved, "invoice");
+    });
   };
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto pb-12">
-      {/* View Header */}
-      <div className="bg-white border border-[#E0DAD0] rounded-2xl p-6 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-[#C9A052]/15 text-[#9A7A35] border border-[#C9A052]/30">
-              COMMERCIAL INVOICING DESK
+    <div className="space-y-6">
+      {/* Hero Header */}
+      <div className="bg-[#0F1420] text-white rounded-2xl p-6 sm:p-8 border border-[#1C2436] shadow-xl relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+        <div className="space-y-2 max-w-2xl">
+          <div className="flex items-center gap-2">
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-[#C9A052]/20 text-[#C9A052] border border-[#C9A052]/40 uppercase flex items-center gap-1">
+              <Receipt className="w-3 h-3" />
+              COMMERCIAL INVOICING & SETTLEMENTS
             </span>
-            <span className="text-xs text-[#0F1420]/60">Austrian Tax & VAT Exempt System</span>
+            <span className="text-gray-400 text-xs font-mono">• {invoicesList.length} Generated Invoices</span>
           </div>
-          <h2 className="text-xl font-black text-[#0F1420] tracking-tight">
-            Generate Commercial Tax Invoice
-          </h2>
-          <p className="text-xs text-[#0F1420]/65 mt-0.5">
-            Compile official charter tax invoice with complete line-item breakdown, flown legs, and SEPA wire instructions.
+          <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+            Invoice Management & Generator
+          </h1>
+          <p className="text-xs text-gray-300 leading-relaxed">
+            Review all generated commercial tax invoices with official tax numbers, inspect payment and settlement statuses, view official invoice PDFs, or compile a new commercial flight invoice.
           </p>
         </div>
 
-        {/* Trip Selector & Batch Invoicing */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-mono font-bold text-[#0F1420]/70">Trip:</span>
-            <select
-              value={selectedBookingId}
-              onChange={(e) => handleBookingChange(e.target.value)}
-              className="bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3 py-1.5 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-            >
-              {bookings.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.tripNumber} ({b.client.fullName} • {formatCurrency(b.pricing?.totalFlightPrice || 12870, b.pricing?.currency || "EUR")})
-                </option>
-              ))}
-            </select>
-          </div>
-
+        {/* Tab Switcher at Top Right */}
+        <div className="flex items-center gap-2 p-1.5 rounded-xl bg-[#141A29] border border-[#1C2436]">
           <button
-            type="button"
-            onClick={() => setIsBatchModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0F1420] hover:bg-[#1A2338] text-[#C9A052] border border-[#C9A052]/40 text-xs font-mono font-bold transition-all shadow-sm"
-            title="Batch generate unique invoices for multiple flights in one click"
+            onClick={() => setActiveTab("list")}
+            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+              activeTab === "list"
+                ? "bg-[#C9A052] text-[#0F1420] shadow-sm font-black"
+                : "text-gray-300 hover:text-white"
+            }`}
           >
-            <Layers className="w-3.5 h-3.5 text-[#C9A052]" />
-            <span>Batch Generate Invoices</span>
+            All Generated Invoices ({invoicesList.length})
+          </button>
+          <button
+            onClick={() => setActiveTab("builder")}
+            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+              activeTab === "builder"
+                ? "bg-[#C9A052] text-[#0F1420] shadow-sm font-black"
+                : "text-gray-300 hover:text-white"
+            }`}
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Generate New Invoice</span>
           </button>
         </div>
       </div>
+
+      {activeTab === "list" ? (
+        <div className="space-y-5">
+          {/* Search & Status Filters */}
+          <div className="bg-white border border-[#E0DAD0] rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 transform -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by Invoice # (e.g. 00106020), Trip #, Client Name, or Account..."
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-[#E0DAD0] bg-[#F5F2EC] text-xs text-[#0F1420] font-medium placeholder-gray-400 focus:outline-none focus:border-[#C9A052] focus:bg-white transition-all"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setStatusFilter("all")}
+                className={`px-3 py-2 rounded-xl text-xs font-bold transition-all ${
+                  statusFilter === "all" ? "bg-[#0F1420] text-white" : "bg-[#F5F2EC] text-gray-700 hover:bg-[#EBE5DB]"
+                }`}
+              >
+                All Invoices
+              </button>
+              <button
+                onClick={() => setStatusFilter("paid")}
+                className={`px-3 py-2 rounded-xl text-xs font-bold transition-all ${
+                  statusFilter === "paid" ? "bg-[#0F1420] text-white" : "bg-[#F5F2EC] text-gray-700 hover:bg-[#EBE5DB]"
+                }`}
+              >
+                Paid
+              </button>
+              <button
+                onClick={() => setStatusFilter("unpaid")}
+                className={`px-3 py-2 rounded-xl text-xs font-bold transition-all ${
+                  statusFilter === "unpaid" ? "bg-[#0F1420] text-white" : "bg-[#F5F2EC] text-gray-700 hover:bg-[#EBE5DB]"
+                }`}
+              >
+                Unpaid
+              </button>
+              <button
+                onClick={() => setStatusFilter("overdue")}
+                className={`px-3 py-2 rounded-xl text-xs font-bold transition-all ${
+                  statusFilter === "overdue" ? "bg-[#0F1420] text-white" : "bg-[#F5F2EC] text-gray-700 hover:bg-[#EBE5DB]"
+                }`}
+              >
+                Overdue
+              </button>
+            </div>
+          </div>
+
+          {/* Invoices List Cards */}
+          <div className="space-y-4">
+            {filteredInvoices.map((inv) => {
+              const isPaid = inv.paymentStatus === "fully_paid";
+              const isOverdue = inv.paymentStatus === "overdue";
+              const isDeposit = inv.paymentStatus === "deposit_paid";
+              const invoiceTotal = inv.pricing?.totalFlightPrice || 12870;
+              const currencySymbol = inv.pricing?.currency || "EUR";
+
+              return (
+                <div
+                  key={inv.id}
+                  className="bg-white border border-[#E0DAD0] hover:border-[#C9A052] rounded-2xl p-5 sm:p-6 shadow-sm hover:shadow-md transition-all flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 group"
+                >
+                  {/* Left: Invoice Reference & Route */}
+                  <div className="flex items-start gap-4 min-w-0 flex-1">
+                    <div className="w-12 h-12 rounded-xl bg-[#FAF8F5] border border-[#E0DAD0] flex items-center justify-center flex-shrink-0 group-hover:border-[#C9A052] transition-colors">
+                      <Receipt className="w-6 h-6 text-[#C9A052]" />
+                    </div>
+
+                    <div className="space-y-1.5 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-sm font-black text-[#0F1420] px-2.5 py-0.5 rounded bg-[#F5F2EC] border border-[#E0DAD0]">
+                          INV-{inv.invoiceNumber}
+                        </span>
+                        <span className="text-xs font-mono text-gray-500 font-bold">
+                          Trip: {inv.tripNumber}
+                        </span>
+                        <span
+                          className={`text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full border ${
+                            isPaid
+                              ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                              : isOverdue
+                              ? "bg-red-100 text-red-800 border-red-300"
+                              : isDeposit
+                              ? "bg-blue-100 text-blue-800 border-blue-300"
+                              : "bg-amber-100 text-amber-800 border-amber-300"
+                          }`}
+                        >
+                          {isPaid ? "FULLY PAID" : isOverdue ? "OVERDUE" : isDeposit ? "DEPOSIT PAID" : "PAYMENT PENDING"}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-base font-extrabold text-[#0F1420]">
+                          {inv.legs[0]?.origin.city || "Geneva"} ({inv.legs[0]?.origin.icao})
+                        </h3>
+                        <span className="text-[#C9A052] font-bold">⇄</span>
+                        <h3 className="text-base font-extrabold text-[#0F1420]">
+                          {inv.legs[0]?.destination.city || "Genoa"} ({inv.legs[0]?.destination.icao})
+                        </h3>
+                        {inv.legs.length > 2 && (
+                          <span className="text-xs text-gray-400 font-mono">+{inv.legs.length - 1} legs</span>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
+                        <span className="font-semibold text-[#0F1420] flex items-center gap-1">
+                          <User className="w-3.5 h-3.5 text-gray-400" />
+                          <span>{inv.client.fullName}</span>
+                        </span>
+                        <span>•</span>
+                        <span className="font-mono text-gray-500">Acc: {inv.accountNumber || "ACC-21737"}</span>
+                        <span>•</span>
+                        <span className="flex items-center gap-1 text-gray-500">
+                          <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                          <span>Due: {inv.paymentDueDate || "03.10.2026"}</span>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right: Pricing & Actions */}
+                  <div className="flex items-center justify-between lg:justify-end gap-4 w-full lg:w-auto pt-3 lg:pt-0 border-t lg:border-t-0 border-gray-100">
+                    <div className="text-left lg:text-right">
+                      <div className="text-[10px] font-mono text-gray-400 uppercase">Total Payable</div>
+                      <div className="text-lg font-black text-[#0F1420] font-mono">
+                        {formatCurrency(invoiceTotal, currencySymbol)}
+                      </div>
+                      <div className="text-[10px] font-mono text-emerald-600 font-bold">
+                        VAT 0% Exempt (§6 Abs. 1)
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => openDocument(inv, "invoice")}
+                        className="px-3.5 py-2 rounded-xl bg-[#0F1420] hover:bg-[#1A2338] text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                        title="View official tax invoice PDF"
+                      >
+                        <Eye className="w-3.5 h-3.5 text-[#C9A052]" />
+                        <span>View PDF</span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          populateFromBooking(inv);
+                          setActiveTab("builder");
+                        }}
+                        className="px-3 py-2 rounded-xl bg-[#F5F2EC] hover:bg-[#EBE5DB] text-[#0F1420] text-xs font-bold transition-all border border-[#E0DAD0] flex items-center gap-1 cursor-pointer"
+                        title="Edit and re-compile this invoice"
+                      >
+                        <Edit2 className="w-3.5 h-3.5 text-gray-500" />
+                        <span>Edit</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+            {filteredInvoices.length === 0 && (
+              <div className="bg-white border border-[#E0DAD0] rounded-2xl p-12 text-center space-y-4">
+                <Receipt className="w-12 h-12 text-gray-300 mx-auto" />
+                <h3 className="text-base font-bold text-[#0F1420]">No Invoices Found</h3>
+                <p className="text-xs text-gray-500 max-w-sm mx-auto">
+                  No generated tax invoices matched your search criteria. Compile a new commercial flight invoice.
+                </p>
+                <button
+                  onClick={() => setActiveTab("builder")}
+                  className="px-5 py-2.5 rounded-xl bg-[#C9A052] text-[#0F1420] font-black text-xs transition-all shadow-md inline-flex items-center gap-2 cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Generate New Invoice</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        /* Invoice Builder Form */
+        <div className="space-y-6 max-w-5xl mx-auto pb-12">
+          {/* Back to List Navigation Banner */}
+          <div className="flex items-center justify-between">
+            <button
+              onClick={() => setActiveTab("list")}
+              className="inline-flex items-center gap-2 text-xs font-bold text-[#0F1420] hover:text-[#C9A052] transition-colors bg-white px-4 py-2 rounded-xl border border-[#E0DAD0] shadow-sm cursor-pointer"
+            >
+              ← Back to All Generated Invoices
+            </button>
+            <span className="text-xs font-mono text-gray-500">Invoice Compiler Mode</span>
+          </div>
+
+          {/* View Header */}
+          <div className="bg-white border border-[#E0DAD0] rounded-2xl p-6 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-[#C9A052]/15 text-[#9A7A35] border border-[#C9A052]/30">
+                  COMMERCIAL INVOICING DESK
+                </span>
+                <span className="text-xs text-[#0F1420]/60">Austrian Tax & VAT Exempt System</span>
+              </div>
+              <h2 className="text-xl font-black text-[#0F1420] tracking-tight">
+                Generate Commercial Tax Invoice
+              </h2>
+              <p className="text-xs text-[#0F1420]/65 mt-0.5">
+                Compile official charter tax invoice with complete line-item breakdown, flown legs, and SEPA wire instructions.
+              </p>
+            </div>
+
+            {/* Trip Selector & Batch Invoicing */}
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-mono font-bold text-[#0F1420]/70">Trip:</span>
+                <select
+                  value={selectedBookingId}
+                  onChange={(e) => handleBookingChange(e.target.value)}
+                  className="bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3 py-1.5 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                >
+                  {bookings.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.tripNumber} ({b.client.fullName} • {formatCurrency(b.pricing?.totalFlightPrice || 12870, b.pricing?.currency || "EUR")})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsBatchModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0F1420] hover:bg-[#1A2338] text-[#C9A052] border border-[#C9A052]/40 text-xs font-mono font-bold transition-all shadow-sm"
+                title="Batch generate unique invoices for multiple flights in one click"
+              >
+                <Layers className="w-3.5 h-3.5 text-[#C9A052]" />
+                <span>Batch Generate Invoices</span>
+              </button>
+            </div>
+          </div>
 
       {/* Keyed Smart Lookup Bar */}
       <div className="p-4 bg-white border border-[#E0DAD0] rounded-2xl shadow-sm space-y-2">
@@ -1205,5 +1488,7 @@ export default function GenerateInvoiceView() {
         </div>
       </form>
     </div>
+  )}
+</div>
   );
 }

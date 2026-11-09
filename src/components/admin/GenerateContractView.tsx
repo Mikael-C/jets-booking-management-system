@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useAviation } from "@/lib/aviationContext";
 import { Booking, FlightLeg, TripType } from "@/types/aviation";
 import { airportsData, findAirportByCode, getAirportFbos } from "@/data/airports";
@@ -25,11 +25,42 @@ import {
   Search,
   ArrowRight,
   CreditCard,
-  AlertTriangle
+  AlertTriangle,
+  Eye,
+  Edit2,
+  X,
+  Users
 } from "lucide-react";
 
 export default function GenerateContractView() {
-  const { bookings, addBooking, openDocument, setActiveNav, addAuditEntry, currentUser } = useAviation();
+  const { bookings, addBooking, openDocument, setActiveNav, addAuditEntry, currentUser, createContract, getContracts } = useAviation();
+
+  const [activeTab, setActiveTab] = useState<"list" | "builder">("list");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+
+  // All Contracts list from bookings
+  const contractsList = useMemo(() => {
+    return bookings.filter((b) => b.tripNumber || b.isContractSigned);
+  }, [bookings]);
+
+  const filteredContracts = useMemo(() => {
+    return contractsList.filter((b) => {
+      if (statusFilter !== "all") {
+        if (statusFilter === "signed" && !b.isContractSigned) return false;
+        if (statusFilter === "pending" && b.isContractSigned) return false;
+      }
+      if (searchQuery.trim() !== "") {
+        const q = searchQuery.toLowerCase().trim();
+        const matchRef = (b.tripNumber || "").toLowerCase().includes(q);
+        const matchClient = (b.client.fullName || "").toLowerCase().includes(q);
+        const matchAircraft = (b.aircraft.name || "").toLowerCase().includes(q);
+        const matchContractRef = `ca-${b.tripNumber || b.id}`.toLowerCase().includes(q);
+        if (!matchRef && !matchClient && !matchAircraft && !matchContractRef) return false;
+      }
+      return true;
+    });
+  }, [contractsList, statusFilter, searchQuery]);
 
   // Search / Lookup input (Key in Trip #, Quote Ref, or Invoice #)
   const [lookupQuery, setLookupQuery] = useState("");
@@ -297,7 +328,7 @@ export default function GenerateContractView() {
       totalWithCardFee: paymentChoice === "card" ? cardFee.totalWithFee : totalAmount
     };
 
-    addBooking(finalBooking);
+    createContract(finalBooking);
 
     if (currentUser) {
       addAuditEntry({
@@ -317,44 +348,279 @@ export default function GenerateContractView() {
   };
 
   return (
-    <div className="space-y-8 pb-16">
-      {/* View Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-[#0F1420] text-white p-6 sm:p-8 rounded-2xl border border-[#1C2436] shadow-xl">
-        <div className="space-y-1">
+    <div className="space-y-6">
+      {/* Hero Header */}
+      <div className="bg-[#0F1420] text-white rounded-2xl p-6 sm:p-8 border border-[#1C2436] shadow-xl relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+        <div className="space-y-2 max-w-2xl">
           <div className="flex items-center gap-2">
-            <span className="p-2 rounded-xl bg-[#C9A052]/20 text-[#C9A052] border border-[#C9A052]/30">
-              <ScrollText className="w-5 h-5" />
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-[#C9A052]/20 text-[#C9A052] border border-[#C9A052]/40 uppercase flex items-center gap-1">
+              <ScrollText className="w-3 h-3" />
+              CHARTER CONTRACTS & AGREEMENTS
             </span>
-            <span className="text-xs font-mono font-bold tracking-wider text-[#C9A052] uppercase">
-              Legal Documents Engine
-            </span>
+            <span className="text-gray-400 text-xs font-mono">• {contractsList.length} Active Contracts</span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-display font-black tracking-tight">
-            Aircraft Charter Agreement
+          <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+            Charter Contracts Management & Generator
           </h1>
-          <p className="text-xs sm:text-sm text-gray-300">
-            Generate, customize, and legally execute binding air carriage agreements under Austrian Law.
+          <p className="text-xs text-gray-300 leading-relaxed">
+            Review all master charter broker agreements, track electronic signature execution status, view official contract PDFs, or compile a new air charter contract.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        {/* Tab Switcher at Top Right */}
+        <div className="flex items-center gap-2 p-1.5 rounded-xl bg-[#141A29] border border-[#1C2436]">
           <button
-            onClick={handlePreviewContract}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold bg-[#141A29] text-gray-200 border border-[#242F48] hover:bg-[#1E2638] hover:text-white transition-all shadow-md"
+            onClick={() => setActiveTab("list")}
+            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+              activeTab === "list"
+                ? "bg-[#C9A052] text-[#0F1420] shadow-sm font-black"
+                : "text-gray-300 hover:text-white"
+            }`}
           >
-            <FileText className="w-4 h-4 text-[#C9A052]" />
-            Preview Contract PDF
+            All Generated Contracts ({contractsList.length})
           </button>
           <button
-            onClick={handleConfirmAndBook}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold bg-[#C9A052] text-[#0F1420] hover:bg-[#dbb366] transition-all shadow-lg shadow-[#C9A052]/20"
+            onClick={() => setActiveTab("builder")}
+            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+              activeTab === "builder"
+                ? "bg-[#C9A052] text-[#0F1420] shadow-sm font-black"
+                : "text-gray-300 hover:text-white"
+            }`}
           >
-            <CheckCircle2 className="w-4 h-4" />
-            Sign & Book Flight
-            <ArrowRight className="w-4 h-4" />
+            <Plus className="w-3.5 h-3.5" />
+            <span>Generate New Contract</span>
           </button>
         </div>
       </div>
+
+      {activeTab === "list" ? (
+        <div className="space-y-5">
+          {/* Search & Status Filters */}
+          <div className="bg-white border border-[#E0DAD0] rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 transform -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by Contract Ref (e.g. CA-PEU842), Trip #, Client Name, or Aircraft..."
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-[#E0DAD0] bg-[#F5F2EC] text-xs text-[#0F1420] font-medium placeholder-gray-400 focus:outline-none focus:border-[#C9A052] focus:bg-white transition-all"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setStatusFilter("all")}
+                className={`px-3 py-2 rounded-xl text-xs font-bold transition-all ${
+                  statusFilter === "all" ? "bg-[#0F1420] text-white" : "bg-[#F5F2EC] text-gray-700 hover:bg-[#EBE5DB]"
+                }`}
+              >
+                All Contracts
+              </button>
+              <button
+                onClick={() => setStatusFilter("signed")}
+                className={`px-3 py-2 rounded-xl text-xs font-bold transition-all ${
+                  statusFilter === "signed" ? "bg-[#0F1420] text-white" : "bg-[#F5F2EC] text-gray-700 hover:bg-[#EBE5DB]"
+                }`}
+              >
+                Signed & Executed
+              </button>
+              <button
+                onClick={() => setStatusFilter("pending")}
+                className={`px-3 py-2 rounded-xl text-xs font-bold transition-all ${
+                  statusFilter === "pending" ? "bg-[#0F1420] text-white" : "bg-[#F5F2EC] text-gray-700 hover:bg-[#EBE5DB]"
+                }`}
+              >
+                Pending Signature
+              </button>
+            </div>
+          </div>
+
+          {/* Contracts List Cards */}
+          <div className="space-y-4">
+            {filteredContracts.map((contract) => {
+              const isSigned = contract.isContractSigned;
+              const contractTotal = contract.pricing?.totalFlightPrice || 12870;
+              const currencySymbol = contract.pricing?.currency || "EUR";
+              const contractId = `CA-${contract.tripNumber || contract.id}`;
+
+              return (
+                <div
+                  key={contract.id}
+                  className="bg-white border border-[#E0DAD0] hover:border-[#C9A052] rounded-2xl p-5 sm:p-6 shadow-sm hover:shadow-md transition-all flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 group"
+                >
+                  {/* Left: Contract Reference & Route */}
+                  <div className="flex items-start gap-4 min-w-0 flex-1">
+                    <div className="w-12 h-12 rounded-xl bg-[#FAF8F5] border border-[#E0DAD0] flex items-center justify-center flex-shrink-0 group-hover:border-[#C9A052] transition-colors">
+                      <ScrollText className="w-6 h-6 text-[#C9A052]" />
+                    </div>
+
+                    <div className="space-y-1.5 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-sm font-black text-[#0F1420] px-2.5 py-0.5 rounded bg-[#F5F2EC] border border-[#E0DAD0]">
+                          {contractId}
+                        </span>
+                        <span className="text-xs font-mono text-gray-500 font-bold">
+                          Trip: {contract.tripNumber}
+                        </span>
+                        <span
+                          className={`text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full border ${
+                            isSigned
+                              ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                              : "bg-amber-100 text-amber-800 border-amber-300"
+                          }`}
+                        >
+                          {isSigned
+                            ? `SIGNED BY ${contract.contractSignedBy || contract.client.fullName}`
+                            : "AWAITING SIGNATURE"}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-base font-extrabold text-[#0F1420]">
+                          {contract.legs[0]?.origin.city || "Geneva"} ({contract.legs[0]?.origin.icao})
+                        </h3>
+                        <span className="text-[#C9A052] font-bold">⇄</span>
+                        <h3 className="text-base font-extrabold text-[#0F1420]">
+                          {contract.legs[0]?.destination.city || "Genoa"} ({contract.legs[0]?.destination.icao})
+                        </h3>
+                        {contract.legs.length > 2 && (
+                          <span className="text-xs text-gray-400 font-mono">+{contract.legs.length - 1} legs</span>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
+                        <span className="font-semibold text-[#0F1420] flex items-center gap-1">
+                          <User className="w-3.5 h-3.5 text-gray-400" />
+                          <span>{contract.client.fullName}</span>
+                        </span>
+                        <span>•</span>
+                        <span className="font-mono text-gray-500">{contract.aircraft.name} ({contract.aircraft.registration || "OE-FFB"})</span>
+                        <span>•</span>
+                        <span className="flex items-center gap-1 text-gray-500">
+                          <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                          <span>Contract Date: {contract.contractDate || "02.10.2026"}</span>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right: Value & Actions */}
+                  <div className="flex items-center justify-between lg:justify-end gap-4 w-full lg:w-auto pt-3 lg:pt-0 border-t lg:border-t-0 border-gray-100">
+                    <div className="text-left lg:text-right">
+                      <div className="text-[10px] font-mono text-gray-400 uppercase">Charter Value</div>
+                      <div className="text-lg font-black text-[#0F1420] font-mono">
+                        {formatCurrency(contractTotal, currencySymbol)}
+                      </div>
+                      <div className="text-[10px] font-mono text-gray-500">
+                        {contract.legs.length} Leg(s) Covered
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => openDocument(contract, "charter_agreement")}
+                        className="px-3.5 py-2 rounded-xl bg-[#0F1420] hover:bg-[#1A2338] text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                        title="View official charter agreement contract PDF"
+                      >
+                        <Eye className="w-3.5 h-3.5 text-[#C9A052]" />
+                        <span>View PDF</span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          populateFromBooking(contract);
+                          setActiveTab("builder");
+                        }}
+                        className="px-3 py-2 rounded-xl bg-[#F5F2EC] hover:bg-[#EBE5DB] text-[#0F1420] text-xs font-bold transition-all border border-[#E0DAD0] flex items-center gap-1 cursor-pointer"
+                        title="Edit contract details or signatory names"
+                      >
+                        <Edit2 className="w-3.5 h-3.5 text-gray-500" />
+                        <span>Edit</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+            {filteredContracts.length === 0 && (
+              <div className="bg-white border border-[#E0DAD0] rounded-2xl p-12 text-center space-y-4">
+                <ScrollText className="w-12 h-12 text-gray-300 mx-auto" />
+                <h3 className="text-base font-bold text-[#0F1420]">No Contracts Found</h3>
+                <p className="text-xs text-gray-500 max-w-sm mx-auto">
+                  No active charter contracts matched your search criteria. Generate a new aircraft charter agreement.
+                </p>
+                <button
+                  onClick={() => setActiveTab("builder")}
+                  className="px-5 py-2.5 rounded-xl bg-[#C9A052] text-[#0F1420] font-black text-xs transition-all shadow-md inline-flex items-center gap-2 cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Generate New Contract</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        /* Contract Builder Form */
+        <div className="space-y-8 pb-16">
+          {/* Back to List Navigation Banner */}
+          <div className="flex items-center justify-between">
+            <button
+              onClick={() => setActiveTab("list")}
+              className="inline-flex items-center gap-2 text-xs font-bold text-[#0F1420] hover:text-[#C9A052] transition-colors bg-white px-4 py-2 rounded-xl border border-[#E0DAD0] shadow-sm cursor-pointer"
+            >
+              ← Back to All Generated Contracts
+            </button>
+            <span className="text-xs font-mono text-gray-500">Contract Compiler Mode</span>
+          </div>
+
+          {/* View Header */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-[#0F1420] text-white p-6 sm:p-8 rounded-2xl border border-[#1C2436] shadow-xl">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="p-2 rounded-xl bg-[#C9A052]/20 text-[#C9A052] border border-[#C9A052]/30">
+                  <ScrollText className="w-5 h-5" />
+                </span>
+                <span className="text-xs font-mono font-bold tracking-wider text-[#C9A052] uppercase">
+                  Legal Documents Engine
+                </span>
+              </div>
+              <h1 className="text-2xl sm:text-3xl font-display font-black tracking-tight">
+                Aircraft Charter Agreement
+              </h1>
+              <p className="text-xs sm:text-sm text-gray-300">
+                Generate, customize, and legally execute binding air carriage agreements under Austrian Law.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                onClick={handlePreviewContract}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold bg-[#141A29] text-gray-200 border border-[#242F48] hover:bg-[#1E2638] hover:text-white transition-all shadow-md"
+              >
+                <FileText className="w-4 h-4 text-[#C9A052]" />
+                Preview Contract PDF
+              </button>
+              <button
+                onClick={handleConfirmAndBook}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold bg-[#C9A052] text-[#0F1420] hover:bg-[#dbb366] transition-all shadow-lg shadow-[#C9A052]/20"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                Sign & Book Flight
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
 
       {feedbackMsg && (
         <div className="bg-emerald-50 border border-emerald-300 text-emerald-900 px-4 py-3 rounded-xl text-xs font-semibold flex items-center gap-2 shadow-sm animate-pulse">
@@ -957,5 +1223,7 @@ export default function GenerateContractView() {
         </div>
       </div>
     </div>
+  )}
+</div>
   );
 }

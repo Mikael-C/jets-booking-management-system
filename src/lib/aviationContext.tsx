@@ -805,6 +805,14 @@ interface AviationContextType {
   bookingToRevise: Booking | null;
   setBookingToRevise: (b: Booking | null) => void;
 
+  // Invoices, Flight Briefs, and Contracts Backend Services
+  createInvoice: (invoiceData: Partial<Booking> | any) => Promise<Booking>;
+  getInvoices: () => Booking[];
+  createFlightBrief: (briefData: Partial<Booking> | any) => Promise<Booking>;
+  getFlightBriefs: () => Booking[];
+  createContract: (contractData: Partial<Booking> | any) => Promise<Booking>;
+  getContracts: () => Booking[];
+
   // Operators
   operators: OperatorRecord[];
   addOperator: (op: OperatorRecord) => void;
@@ -2462,6 +2470,247 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // Backend services for creating and getting invoices, flight briefs, and contracts
+  const getInvoices = (): Booking[] => {
+    return bookings.filter((b) => b.invoiceNumber);
+  };
+
+  const createInvoice = async (invoiceData: Partial<Booking> | any): Promise<Booking> => {
+    const bookingId = invoiceData.id || `booking-inv-${Date.now()}`;
+    const invoiceNum = invoiceData.invoiceNumber || `0010${Math.floor(6020 + Math.random() * 3970)}`;
+    const tripNum = invoiceData.tripNumber || `PEU${Math.floor(100 + Math.random() * 899)}-001`;
+
+    const newBooking: Booking = {
+      id: bookingId,
+      tripNumber: tripNum,
+      invoiceNumber: invoiceNum,
+      accountNumber: invoiceData.accountNumber || "ACC-21737",
+      contractDate: invoiceData.contractDate || new Date().toLocaleDateString("de-DE"),
+      quoteExpirationDate: invoiceData.quoteExpirationDate || "05.10.2026, 18:00z",
+      paymentDueDate: invoiceData.paymentDueDate || "03.10.2026",
+      status: invoiceData.status || "confirmed",
+      quoteStatus: invoiceData.quoteStatus || "accepted",
+      paymentStatus: invoiceData.paymentStatus || "unpaid",
+      tripType: invoiceData.tripType || "round_trip",
+      aircraft: invoiceData.aircraft || fleetData[0],
+      client: invoiceData.client,
+      operator: invoiceData.operator || defaultOperator,
+      legs: invoiceData.legs || [],
+      pricing: invoiceData.pricing,
+      services: invoiceData.services || {
+        limousineService: false,
+        luxuryCarRental: false,
+        helicopterService: false,
+        deicingInsurance: "none",
+        deicingCostPerLeg: 0,
+        carbonOffset: "none",
+        carbonOffsetRatePerHour: 0
+      },
+      checklist: invoiceData.checklist || [],
+      tripActionAudit: [
+        {
+          id: `act-${Date.now()}`,
+          action: "INVOICE_GENERATED",
+          details: `Commercial Tax Invoice INV-${invoiceNum} compiled and registered for client ${invoiceData.client?.fullName}.`,
+          timestamp: new Date().toLocaleString(),
+          author: currentUser?.name || "Operations Desk",
+          docType: "invoice"
+        },
+        ...(invoiceData.tripActionAudit || [])
+      ],
+      createdAt: invoiceData.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    setBookings((prev) => {
+      const idx = prev.findIndex((b) => b.id === bookingId || b.invoiceNumber === invoiceNum);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = { ...copy[idx], ...newBooking };
+        return copy;
+      }
+      return [newBooking, ...prev];
+    });
+
+    try {
+      await api.invoices.create(newBooking);
+    } catch (e: any) {
+      console.log("Backend invoice sync:", e.message);
+    }
+
+    addAuditEntry({
+      userEmail: currentUser?.email || "ops@orbelo.com",
+      userName: currentUser?.name || "Operations Desk",
+      action: "INVOICE_CREATED",
+      entityType: "Invoice",
+      entityId: invoiceNum,
+      details: `Generated commercial tax invoice INV-${invoiceNum} for trip ${tripNum} (${invoiceData.client?.fullName})`
+    });
+
+    return newBooking;
+  };
+
+  const getFlightBriefs = (): Booking[] => {
+    return bookings.filter((b) => b.tripNumber && b.legs && b.legs.length > 0);
+  };
+
+  const createFlightBrief = async (briefData: Partial<Booking> | any): Promise<Booking> => {
+    const bookingId = briefData.id || `booking-brief-${Date.now()}`;
+    const tripNum = briefData.tripNumber || `PEU${Math.floor(100 + Math.random() * 899)}-001`;
+
+    const newBooking: Booking = {
+      id: bookingId,
+      tripNumber: tripNum,
+      invoiceNumber: briefData.invoiceNumber || `0010${Math.floor(6020 + Math.random() * 3970)}`,
+      accountNumber: briefData.accountNumber || "ACC-21737",
+      contractDate: briefData.contractDate || new Date().toLocaleDateString("de-DE"),
+      quoteExpirationDate: briefData.quoteExpirationDate || "05.10.2026, 18:00z",
+      paymentDueDate: briefData.paymentDueDate || "03.10.2026",
+      status: briefData.status || "confirmed",
+      quoteStatus: briefData.quoteStatus || "accepted",
+      paymentStatus: briefData.paymentStatus || "unpaid",
+      tripType: briefData.tripType || "round_trip",
+      aircraft: briefData.aircraft || fleetData[0],
+      client: briefData.client,
+      operator: briefData.operator || defaultOperator,
+      legs: briefData.legs || [],
+      pricing: briefData.pricing,
+      services: briefData.services || {
+        limousineService: false,
+        luxuryCarRental: false,
+        helicopterService: false,
+        deicingInsurance: "none",
+        deicingCostPerLeg: 0,
+        carbonOffset: "none",
+        carbonOffsetRatePerHour: 0
+      },
+      checklist: briefData.checklist || [],
+      tripActionAudit: [
+        {
+          id: `act-${Date.now()}`,
+          action: "FLIGHT_BRIEF_GENERATED",
+          details: `Flight Operations Brief for Trip ${tripNum} compiled with ${briefData.legs?.length || 1} leg(s) and assigned crew.`,
+          timestamp: new Date().toLocaleString(),
+          author: currentUser?.name || "Dispatch Command",
+          docType: "flight_brief"
+        },
+        ...(briefData.tripActionAudit || [])
+      ],
+      createdAt: briefData.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    setBookings((prev) => {
+      const idx = prev.findIndex((b) => b.id === bookingId || b.tripNumber === tripNum);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = { ...copy[idx], ...newBooking };
+        return copy;
+      }
+      return [newBooking, ...prev];
+    });
+
+    try {
+      await api.flightBriefs.create(newBooking);
+    } catch (e: any) {
+      console.log("Backend flight brief sync:", e.message);
+    }
+
+    addAuditEntry({
+      userEmail: currentUser?.email || "dispatch@orbelo.com",
+      userName: currentUser?.name || "Dispatch Command",
+      action: "FLIGHT_BRIEF_CREATED",
+      entityType: "FlightBrief",
+      entityId: tripNum,
+      details: `Generated flight operations brief for Trip ${tripNum} (${briefData.client?.fullName})`
+    });
+
+    return newBooking;
+  };
+
+  const getContracts = (): Booking[] => {
+    return bookings.filter((b) => b.tripNumber || b.isContractSigned);
+  };
+
+  const createContract = async (contractData: Partial<Booking> | any): Promise<Booking> => {
+    const bookingId = contractData.id || `booking-ca-${Date.now()}`;
+    const tripNum = contractData.tripNumber || `PEU${Math.floor(100 + Math.random() * 899)}-001`;
+    const contractRef = `CA-${tripNum}`;
+
+    const newBooking: Booking = {
+      id: bookingId,
+      tripNumber: tripNum,
+      invoiceNumber: contractData.invoiceNumber || "00106020",
+      quoteReference: contractData.quoteReference || `QTE-${tripNum}`,
+      accountNumber: contractData.accountNumber || "ACC-21737",
+      contractDate: contractData.contractDate || new Date().toLocaleDateString("de-DE"),
+      quoteExpirationDate: contractData.quoteExpirationDate || "05.10.2026, 18:00z",
+      paymentDueDate: contractData.paymentDueDate || "03.10.2026",
+      status: contractData.status || "confirmed",
+      quoteStatus: "accepted",
+      paymentStatus: contractData.paymentStatus || "unpaid",
+      tripType: contractData.tripType || "round_trip",
+      aircraft: contractData.aircraft || fleetData[0],
+      client: contractData.client,
+      operator: contractData.operator || defaultOperator,
+      legs: contractData.legs || [],
+      pricing: contractData.pricing,
+      services: contractData.services || {
+        limousineService: false,
+        luxuryCarRental: false,
+        helicopterService: false,
+        deicingInsurance: "none",
+        deicingCostPerLeg: 0,
+        carbonOffset: "none",
+        carbonOffsetRatePerHour: 0
+      },
+      checklist: contractData.checklist || [],
+      isContractSigned: contractData.isContractSigned ?? false,
+      contractSignedDate: contractData.contractSignedDate,
+      contractSignedBy: contractData.contractSignedBy,
+      tripActionAudit: [
+        {
+          id: `act-${Date.now()}`,
+          action: "CONTRACT_CREATED",
+          details: `Master Charter Agreement ${contractRef} compiled under Austrian Law for ${contractData.client?.fullName}.`,
+          timestamp: new Date().toLocaleString(),
+          author: currentUser?.name || "Legal Operations",
+          docType: "charter_agreement"
+        },
+        ...(contractData.tripActionAudit || [])
+      ],
+      createdAt: contractData.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    setBookings((prev) => {
+      const idx = prev.findIndex((b) => b.id === bookingId || b.tripNumber === tripNum);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = { ...copy[idx], ...newBooking };
+        return copy;
+      }
+      return [newBooking, ...prev];
+    });
+
+    try {
+      await api.contracts.create(newBooking);
+    } catch (e: any) {
+      console.log("Backend contract sync:", e.message);
+    }
+
+    addAuditEntry({
+      userEmail: currentUser?.email || "legal@orbelo.com",
+      userName: currentUser?.name || "Legal Operations",
+      action: "CONTRACT_CREATED",
+      entityType: "Contract",
+      entityId: contractRef,
+      details: `Generated aircraft charter agreement ${contractRef} for trip ${tripNum} (${contractData.client?.fullName})`
+    });
+
+    return newBooking;
+  };
+
   const addOperator = (op: OperatorRecord) => {
     setOperators((prev) => [op, ...prev]);
     api.operators.create(op).catch((err) => console.log("Backend sync note:", err.message));
@@ -2934,6 +3183,12 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
         signCharterContract,
         bookingToRevise,
         setBookingToRevise,
+        createInvoice,
+        getInvoices,
+        createFlightBrief,
+        getFlightBriefs,
+        createContract,
+        getContracts,
         operators,
         addOperator,
         updateOperatorStatus,

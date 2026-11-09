@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useAviation } from "@/lib/aviationContext";
 import { Booking, FlightLeg, CrewMember, HandlingAgent, PassengerManifestItem } from "@/types/aviation";
 import { airportsData, findAirportByCode, getAirportFbos } from "@/data/airports";
@@ -25,7 +25,11 @@ import {
   Users,
   Sparkles,
   ChevronRight,
-  Search
+  Search,
+  Eye,
+  Edit2,
+  X,
+  ArrowRight
 } from "lucide-react";
 
 interface EditableLegBrief {
@@ -55,7 +59,42 @@ interface EditableLegBrief {
 }
 
 export default function GenerateBriefView() {
-  const { bookings, openDocument, contacts } = useAviation();
+  const { bookings, openDocument, contacts, createFlightBrief, getFlightBriefs } = useAviation();
+
+  const [activeTab, setActiveTab] = useState<"list" | "builder">("list");
+  const [listSearchQuery, setListSearchQuery] = useState("");
+  const [listStatusFilter, setListStatusFilter] = useState("all");
+
+  // All Flight Briefs list from bookings
+  const briefsList = useMemo(() => {
+    return bookings.filter((b) => b.tripNumber && b.legs && b.legs.length > 0);
+  }, [bookings]);
+
+  const filteredBriefs = useMemo(() => {
+    return briefsList.filter((b) => {
+      if (listStatusFilter !== "all") {
+        if (listStatusFilter === "dispatched" && b.status !== "dispatched") return false;
+        if (listStatusFilter === "confirmed" && b.status !== "confirmed") return false;
+        if (listStatusFilter === "completed" && b.status !== "completed") return false;
+      }
+      if (listSearchQuery.trim() !== "") {
+        const q = listSearchQuery.toLowerCase().trim();
+        const matchTrip = (b.tripNumber || "").toLowerCase().includes(q);
+        const matchClient = (b.client?.fullName || "").toLowerCase().includes(q);
+        const matchAircraft = (b.aircraft?.name || "").toLowerCase().includes(q);
+        const matchReg = (b.aircraft?.registration || "").toLowerCase().includes(q);
+        const matchRoute = (b.legs || []).some(
+          (l) =>
+            (l.origin?.icao || "").toLowerCase().includes(q) ||
+            (l.destination?.icao || "").toLowerCase().includes(q) ||
+            (l.origin?.city || "").toLowerCase().includes(q) ||
+            (l.destination?.city || "").toLowerCase().includes(q)
+        );
+        if (!matchTrip && !matchClient && !matchAircraft && !matchReg && !matchRoute) return false;
+      }
+      return true;
+    });
+  }, [briefsList, listStatusFilter, listSearchQuery]);
 
   // Search input: live filter by Trip ID or Client's Name
   const [searchQuery, setSearchQuery] = useState("");
@@ -394,45 +433,294 @@ export default function GenerateBriefView() {
 
     selectedBooking.legs = compiledLegs;
 
-    setSuccess(true);
-    openDocument(selectedBooking, "flight_brief");
+    createFlightBrief(selectedBooking).then((saved) => {
+      setSuccess(true);
+      setActiveTab("list");
+      openDocument(saved, "flight_brief");
+    });
   };
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto pb-12">
-      {/* View Header */}
-      <div className="bg-white border border-[#E0DAD0] rounded-2xl p-6 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-[#C9A052]/15 text-[#9A7A35] border border-[#C9A052]/30">
-              OPERATIONS DISPATCH CENTER
+    <div className="space-y-6">
+      {/* Hero Header */}
+      <div className="bg-[#0F1420] text-white rounded-2xl p-6 sm:p-8 border border-[#1C2436] shadow-xl relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+        <div className="space-y-2 max-w-2xl">
+          <div className="flex items-center gap-2">
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-[#C9A052]/20 text-[#C9A052] border border-[#C9A052]/40 uppercase flex items-center gap-1">
+              <Compass className="w-3 h-3" />
+              OPERATIONS DISPATCH CENTER • FLIGHT BRIEFS
             </span>
-            <span className="text-xs text-[#0F1420]/60">Flight Brief PDF Generator</span>
+            <span className="text-gray-400 text-xs font-mono">• {briefsList.length} Active Flight Briefs</span>
           </div>
-          <h2 className="text-xl font-black text-[#0F1420] tracking-tight">
-            Generate Flight Operations Brief
-          </h2>
-          <p className="text-xs text-[#0F1420]/65 mt-0.5">
-            Prepare mission operational brief for flight crew, handling agents, passenger manifest, and dispatch center.
+          <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+            Flight Operations Briefs & Generator
+          </h1>
+          <p className="text-xs text-gray-300 leading-relaxed">
+            Review all prepared operational flight briefs, crew assignments, and passenger manifests, view and download official briefs, or generate a new flight operations brief.
           </p>
         </div>
 
-        {/* Quick Trip Selector Fallback */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-mono font-bold text-[#0F1420]/70">Active Trip:</span>
-          <select
-            value={selectedBookingId}
-            onChange={(e) => handleBookingChange(e.target.value)}
-            className="bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3 py-1.5 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+        {/* Tab Switcher at Top Right */}
+        <div className="flex items-center gap-2 p-1.5 rounded-xl bg-[#141A29] border border-[#1C2436]">
+          <button
+            onClick={() => setActiveTab("list")}
+            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+              activeTab === "list"
+                ? "bg-[#C9A052] text-[#0F1420] shadow-sm font-black"
+                : "text-gray-300 hover:text-white"
+            }`}
           >
-            {bookings.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.tripNumber} ({b.client?.fullName} • {b.aircraft?.name})
-              </option>
-            ))}
-          </select>
+            All Generated Briefs ({briefsList.length})
+          </button>
+          <button
+            onClick={() => setActiveTab("builder")}
+            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+              activeTab === "builder"
+                ? "bg-[#C9A052] text-[#0F1420] shadow-sm font-black"
+                : "text-gray-300 hover:text-white"
+            }`}
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Generate New Brief</span>
+          </button>
         </div>
       </div>
+
+      {activeTab === "list" ? (
+        <div className="space-y-5">
+          {/* Search & Status Filters */}
+          <div className="bg-white border border-[#E0DAD0] rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 transform -translate-y-1/2" />
+              <input
+                type="text"
+                value={listSearchQuery}
+                onChange={(e) => setListSearchQuery(e.target.value)}
+                placeholder="Search by Trip ID (e.g. PEU842-001), Client, Aircraft, or Airport code..."
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-[#E0DAD0] bg-[#F5F2EC] text-xs text-[#0F1420] font-medium placeholder-gray-400 focus:outline-none focus:border-[#C9A052] focus:bg-white transition-all"
+              />
+              {listSearchQuery && (
+                <button
+                  onClick={() => setListSearchQuery("")}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setListStatusFilter("all")}
+                className={`px-3 py-2 rounded-xl text-xs font-bold transition-all ${
+                  listStatusFilter === "all" ? "bg-[#0F1420] text-white" : "bg-[#F5F2EC] text-gray-700 hover:bg-[#EBE5DB]"
+                }`}
+              >
+                All Missions
+              </button>
+              <button
+                onClick={() => setListStatusFilter("confirmed")}
+                className={`px-3 py-2 rounded-xl text-xs font-bold transition-all ${
+                  listStatusFilter === "confirmed" ? "bg-[#0F1420] text-white" : "bg-[#F5F2EC] text-gray-700 hover:bg-[#EBE5DB]"
+                }`}
+              >
+                Confirmed
+              </button>
+              <button
+                onClick={() => setListStatusFilter("dispatched")}
+                className={`px-3 py-2 rounded-xl text-xs font-bold transition-all ${
+                  listStatusFilter === "dispatched" ? "bg-[#0F1420] text-white" : "bg-[#F5F2EC] text-gray-700 hover:bg-[#EBE5DB]"
+                }`}
+              >
+                Dispatched
+              </button>
+              <button
+                onClick={() => setListStatusFilter("completed")}
+                className={`px-3 py-2 rounded-xl text-xs font-bold transition-all ${
+                  listStatusFilter === "completed" ? "bg-[#0F1420] text-white" : "bg-[#F5F2EC] text-gray-700 hover:bg-[#EBE5DB]"
+                }`}
+              >
+                Completed
+              </button>
+            </div>
+          </div>
+
+          {/* Flight Briefs List Cards */}
+          <div className="space-y-4">
+            {filteredBriefs.map((brief) => {
+              const isDispatched = brief.status === "dispatched" || brief.status === "in_flight";
+              const isCompleted = brief.status === "completed" || brief.status === "flown";
+              const cmdrName = brief.legs[0]?.crew?.find((c) => c.role === "CMDR")?.name || "Capt. Alexander Vance";
+              const paxCount = brief.legs[0]?.passengers?.length || brief.legs[0]?.paxCount || 2;
+
+              return (
+                <div
+                  key={brief.id}
+                  className="bg-white border border-[#E0DAD0] hover:border-[#C9A052] rounded-2xl p-5 sm:p-6 shadow-sm hover:shadow-md transition-all flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 group"
+                >
+                  {/* Left: Trip ID & Route */}
+                  <div className="flex items-start gap-4 min-w-0 flex-1">
+                    <div className="w-12 h-12 rounded-xl bg-[#FAF8F5] border border-[#E0DAD0] flex items-center justify-center flex-shrink-0 group-hover:border-[#C9A052] transition-colors">
+                      <Compass className="w-6 h-6 text-[#C9A052]" />
+                    </div>
+
+                    <div className="space-y-1.5 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-sm font-black text-[#0F1420] px-2.5 py-0.5 rounded bg-[#F5F2EC] border border-[#E0DAD0]">
+                          {brief.tripNumber}
+                        </span>
+                        <span className="text-xs font-mono text-gray-500 font-bold">
+                          Tail: {brief.aircraft.registration || "OE-FFB"}
+                        </span>
+                        <span
+                          className={`text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full border ${
+                            isCompleted
+                              ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                              : isDispatched
+                              ? "bg-blue-100 text-blue-800 border-blue-300"
+                              : "bg-amber-100 text-amber-800 border-amber-300"
+                          }`}
+                        >
+                          {isCompleted ? "MISSION COMPLETED" : isDispatched ? "DISPATCHED / ACTIVE" : "READY FOR DISPATCH"}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-base font-extrabold text-[#0F1420]">
+                          {brief.legs[0]?.origin.city || "Geneva"} ({brief.legs[0]?.origin.icao})
+                        </h3>
+                        <span className="text-[#C9A052] font-bold">⇄</span>
+                        <h3 className="text-base font-extrabold text-[#0F1420]">
+                          {brief.legs[0]?.destination.city || "Genoa"} ({brief.legs[0]?.destination.icao})
+                        </h3>
+                        {brief.legs.length > 2 && (
+                          <span className="text-xs text-gray-400 font-mono">+{brief.legs.length - 1} legs</span>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
+                        <span className="font-semibold text-[#0F1420] flex items-center gap-1">
+                          <User className="w-3.5 h-3.5 text-gray-400" />
+                          <span>{brief.client.fullName}</span>
+                        </span>
+                        <span>•</span>
+                        <span className="flex items-center gap-1 text-gray-500">
+                          <Users className="w-3.5 h-3.5 text-gray-400" />
+                          <span>{paxCount} Pax Manifest</span>
+                        </span>
+                        <span>•</span>
+                        <span className="flex items-center gap-1 text-gray-500">
+                          <Shield className="w-3.5 h-3.5 text-gray-400" />
+                          <span>PIC: {cmdrName}</span>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right: Aircraft & Actions */}
+                  <div className="flex items-center justify-between lg:justify-end gap-4 w-full lg:w-auto pt-3 lg:pt-0 border-t lg:border-t-0 border-gray-100">
+                    <div className="text-left lg:text-right">
+                      <div className="text-[10px] font-mono text-gray-400 uppercase">Assigned Aircraft</div>
+                      <div className="text-sm font-black text-[#0F1420]">
+                        {brief.aircraft.name}
+                      </div>
+                      <div className="text-[10px] font-mono text-gray-500">
+                        {brief.legs.length} Leg(s) Scheduled
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => openDocument(brief, "flight_brief")}
+                        className="px-3.5 py-2 rounded-xl bg-[#0F1420] hover:bg-[#1A2338] text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                        title="View official flight operations brief PDF"
+                      >
+                        <Eye className="w-3.5 h-3.5 text-[#C9A052]" />
+                        <span>View PDF</span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          handleBookingChange(brief.id);
+                          setActiveTab("builder");
+                        }}
+                        className="px-3 py-2 rounded-xl bg-[#F5F2EC] hover:bg-[#EBE5DB] text-[#0F1420] text-xs font-bold transition-all border border-[#E0DAD0] flex items-center gap-1 cursor-pointer"
+                        title="Reconfigure or edit flight brief details"
+                      >
+                        <Edit2 className="w-3.5 h-3.5 text-gray-500" />
+                        <span>Edit</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+            {filteredBriefs.length === 0 && (
+              <div className="bg-white border border-[#E0DAD0] rounded-2xl p-12 text-center space-y-4">
+                <Compass className="w-12 h-12 text-gray-300 mx-auto" />
+                <h3 className="text-base font-bold text-[#0F1420]">No Flight Briefs Found</h3>
+                <p className="text-xs text-gray-500 max-w-sm mx-auto">
+                  No active flight briefs matched your search criteria. Generate a new operational flight brief.
+                </p>
+                <button
+                  onClick={() => setActiveTab("builder")}
+                  className="px-5 py-2.5 rounded-xl bg-[#C9A052] text-[#0F1420] font-black text-xs transition-all shadow-md inline-flex items-center gap-2 cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Generate New Brief</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        /* Flight Brief Builder Form */
+        <div className="space-y-6 max-w-5xl mx-auto pb-12">
+          {/* Back to List Navigation Banner */}
+          <div className="flex items-center justify-between">
+            <button
+              onClick={() => setActiveTab("list")}
+              className="inline-flex items-center gap-2 text-xs font-bold text-[#0F1420] hover:text-[#C9A052] transition-colors bg-white px-4 py-2 rounded-xl border border-[#E0DAD0] shadow-sm cursor-pointer"
+            >
+              ← Back to All Flight Briefs
+            </button>
+            <span className="text-xs font-mono text-gray-500">Brief Compiler Mode</span>
+          </div>
+
+          {/* View Header */}
+          <div className="bg-white border border-[#E0DAD0] rounded-2xl p-6 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-[#C9A052]/15 text-[#9A7A35] border border-[#C9A052]/30">
+                  OPERATIONS DISPATCH CENTER
+                </span>
+                <span className="text-xs text-[#0F1420]/60">Flight Brief PDF Generator</span>
+              </div>
+              <h2 className="text-xl font-black text-[#0F1420] tracking-tight">
+                Generate Flight Operations Brief
+              </h2>
+              <p className="text-xs text-[#0F1420]/65 mt-0.5">
+                Prepare mission operational brief for flight crew, handling agents, passenger manifest, and dispatch center.
+              </p>
+            </div>
+
+            {/* Quick Trip Selector Fallback */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-mono font-bold text-[#0F1420]/70">Active Trip:</span>
+              <select
+                value={selectedBookingId}
+                onChange={(e) => handleBookingChange(e.target.value)}
+                className="bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3 py-1.5 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+              >
+                {bookings.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.tripNumber} ({b.client?.fullName} • {b.aircraft?.name})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
 
       {/* Primary Search Bar: Search by Trip ID or Client's Name */}
       <div className="bg-white border border-[#E0DAD0] rounded-2xl p-5 shadow-sm space-y-3 relative">
@@ -1396,5 +1684,7 @@ export default function GenerateBriefView() {
         </div>
       </form>
     </div>
+  )}
+</div>
   );
 }

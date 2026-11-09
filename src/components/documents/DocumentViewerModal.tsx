@@ -363,26 +363,29 @@ export default function DocumentViewerModal() {
           </div>
         </div>
 
-        {/* Tab Navigation Strip (Hidden in Print) */}
-        <div className="flex items-center gap-2 px-6 py-2.5 bg-[#0B101A] border-b border-gray-800 print:hidden overflow-x-auto">
-          {docTabs.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = currentDoc === tab.type;
-            return (
-              <button
-                key={tab.type}
-                onClick={() => setCurrentDoc(tab.type)}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
-                  isActive
-                    ? "bg-gold/20 text-gold border border-gold/40 shadow-sm"
-                    : "text-gray-400 hover:text-gray-200 hover:bg-gray-800/60"
-                }`}
-              >
-                <Icon className={`w-3.5 h-3.5 ${isActive ? "text-gold" : "text-gray-400"}`} />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
+        {/* Document Strip - Only displays the exact document being viewed */}
+        <div className="flex items-center justify-between px-6 py-2.5 bg-[#0B101A] border-b border-gray-800 print:hidden">
+          <div className="flex items-center gap-2">
+            {docTabs
+              .filter((tab) => tab.type === currentDoc)
+              .map((tab) => {
+                const Icon = tab.icon;
+                return (
+                  <div
+                    key={tab.type}
+                    className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold bg-[#C9A052]/20 text-[#C9A052] border border-[#C9A052]/40 shadow-sm"
+                  >
+                    <Icon className="w-3.5 h-3.5 text-[#C9A052]" />
+                    <span>{tab.label}</span>
+                  </div>
+                );
+              })}
+          </div>
+          <div className="hidden sm:flex items-center gap-2 text-[11px] font-mono text-gray-400">
+            <span>Ref: {activeBooking.quoteReference || activeBooking.tripNumber}</span>
+            <span>•</span>
+            <span className="text-emerald-400">Official Document</span>
+          </div>
         </div>
 
         {/* Document Content Viewport */}

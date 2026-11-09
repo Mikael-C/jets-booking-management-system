@@ -188,6 +188,53 @@ export const api = {
     },
   },
 
+  // Commercial Invoices API
+  invoices: {
+    list: (params?: Record<string, any>) => {
+      const q = params ? `?${new URLSearchParams(params).toString()}` : "";
+      return request<{ success: boolean; data: any[]; total: number }>(`/invoices${q}`);
+    },
+    get: (id: string) => request<{ success: boolean; data: any }>(`/invoices/${id}`),
+    create: (data: any) =>
+      request<{ success: boolean; message: string; data: any }>("/invoices", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+  },
+
+  // Flight Operations Briefs API
+  flightBriefs: {
+    list: (params?: Record<string, any>) => {
+      const q = params ? `?${new URLSearchParams(params).toString()}` : "";
+      return request<{ success: boolean; data: any[]; total: number }>(`/flight-briefs${q}`);
+    },
+    get: (id: string) => request<{ success: boolean; data: any }>(`/flight-briefs/${id}`),
+    create: (data: any) =>
+      request<{ success: boolean; message: string; data: any }>("/flight-briefs", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+  },
+
+  // Charter Contracts & Agreements API
+  contracts: {
+    list: (params?: Record<string, any>) => {
+      const q = params ? `?${new URLSearchParams(params).toString()}` : "";
+      return request<{ success: boolean; data: any[]; total: number }>(`/contracts${q}`);
+    },
+    get: (id: string) => request<{ success: boolean; data: any }>(`/contracts/${id}`),
+    create: (data: any) =>
+      request<{ success: boolean; message: string; data: any }>("/contracts", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    sign: (id: string, signatoryName?: string) =>
+      request<{ success: boolean; message: string; data: any }>(`/contracts/${id}/sign`, {
+        method: "POST",
+        body: JSON.stringify({ signatoryName }),
+      }),
+  },
+
   // In-App Messaging
   messages: {
     list: (params?: { channel?: string; recipientEmail?: string; tripNumber?: string; requestId?: string; limit?: number }) => {
