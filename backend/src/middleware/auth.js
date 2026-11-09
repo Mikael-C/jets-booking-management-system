@@ -43,6 +43,27 @@ const authenticate = async (req, res, next) => {
   }
 };
 
+const optionalAuthenticate = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split(' ')[1];
+      const decoded = jwtConfig.verifyAccessToken(token);
+      if (decoded && decoded.id) {
+        const user = await User.findById(decoded.id).select('-passwordHash -refreshTokens');
+        if (user && user.isActive) {
+          req.user = user;
+          req.userId = user._id.toString();
+          req.userRole = user.role;
+        }
+      }
+    }
+  } catch {
+    // Fallback gracefully for unauthenticated or public requests
+  }
+  next();
+};
+
 const authorize = (...roles) => {
   return (req, res, next) => {
     if (!req.user) {
@@ -87,4 +108,4 @@ const authorizePermission = (permission) => {
   };
 };
 
-module.exports = { authenticate, authorize, authorizePermission, ROLE_PERMISSIONS };
+module.exports = { authenticate, optionalAuthenticate, authorize, authorizePermission, ROLE_PERMISSIONS };

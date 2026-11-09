@@ -26,12 +26,37 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     ...options.headers,
   };
 
-  const res = await fetch(url, { ...options, headers });
-  if (!res.ok) {
+  try {
+    const res = await fetch(url, { ...options, headers });
+    if (res.ok) {
+      return await res.json();
+    }
+    // If external Render backend returned 404 or >= 500, attempt fallback to local / internal route
+    if (typeof window !== "undefined" && !API_BASE_URL.startsWith("/") && (res.status === 404 || res.status >= 500)) {
+      try {
+        const localRes = await fetch(`/api${cleanEndpoint}`, { ...options, headers });
+        if (localRes.ok) {
+          return await localRes.json();
+        }
+      } catch {
+        // Continue to original error reporting
+      }
+    }
     const errorData = await res.json().catch(() => ({ message: res.statusText }));
     throw new Error(errorData.message || `API Error: ${res.status}`);
+  } catch (err: any) {
+    if (typeof window !== "undefined" && !API_BASE_URL.startsWith("/")) {
+      try {
+        const localRes = await fetch(`/api${cleanEndpoint}`, { ...options, headers });
+        if (localRes.ok) {
+          return await localRes.json();
+        }
+      } catch {
+        // Fall through
+      }
+    }
+    throw err;
   }
-  return res.json();
 }
 
 export const api = {

@@ -2468,6 +2468,12 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       if (selectedBookingForDetail?.id === bookingId) setSelectedBookingForDetail(targetBooking);
       if (activeBooking?.id === bookingId) setActiveBooking(targetBooking);
     }
+
+    try {
+      api.contracts.sign(bookingId, signatoryName).catch((e: any) => {
+        console.log("Backend contract sign sync:", e.message);
+      });
+    } catch {}
   };
 
   // Backend services for creating and getting invoices, flight briefs, and contracts

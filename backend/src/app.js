@@ -8,7 +8,7 @@ const path = require('path');
 
 const { apiLimiter, authLimiter } = require('./middleware/rateLimiter');
 const { errorHandler } = require('./middleware/errorHandler');
-const { authenticate } = require('./middleware/auth');
+const { authenticate, optionalAuthenticate } = require('./middleware/auth');
 const logger = require('./middleware/logger');
 
 // Route imports
@@ -19,6 +19,9 @@ const clientRoutes = require('./routes/clients');
 const operatorRoutes = require('./routes/operators');
 const fleetRoutes = require('./routes/fleet');
 const quoteRoutes = require('./routes/quotes');
+const invoiceRoutes = require('./routes/invoices');
+const flightBriefRoutes = require('./routes/flightBriefs');
+const contractRoutes = require('./routes/contracts');
 const paymentRoutes = require('./routes/payments');
 const documentRoutes = require('./routes/documents');
 const avinodeRoutes = require('./routes/avinode');
@@ -149,6 +152,9 @@ app.use('/api/clients', authenticate, clientRoutes);
 app.use('/api/operators', authenticate, operatorRoutes);
 app.use('/api/fleet', fleetRoutes); // GET fleet is public for frontend display
 app.use('/api/quotes', authenticate, quoteRoutes);
+app.use('/api/invoices', optionalAuthenticate, invoiceRoutes);
+app.use('/api/flight-briefs', optionalAuthenticate, flightBriefRoutes);
+app.use('/api/contracts', optionalAuthenticate, contractRoutes);
 app.use('/api/payments', authenticate, paymentRoutes);
 app.use('/api/documents', authenticate, documentRoutes);
 app.use('/api/avinode', authenticate, avinodeRoutes);
