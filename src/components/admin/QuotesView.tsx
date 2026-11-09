@@ -36,7 +36,8 @@ import {
   FileCheck,
   SlidersHorizontal,
   X,
-  Upload
+  Upload,
+  Camera
 } from "lucide-react";
 
 export default function QuotesView() {
@@ -112,7 +113,60 @@ export default function QuotesView() {
   const [selectedAircraftId, setSelectedAircraftId] = useState("cessna-citation-mustang");
   const [customExteriorImage, setCustomExteriorImage] = useState("");
   const [customInteriorImage, setCustomInteriorImage] = useState("");
-  const [isImagePickerOpen, setIsImagePickerOpen] = useState(false);
+  const [hasCustomExterior, setHasCustomExterior] = useState(false);
+  const [hasCustomInterior, setHasCustomInterior] = useState(false);
+  const [isDraggingExterior, setIsDraggingExterior] = useState(false);
+  const [isDraggingInterior, setIsDraggingInterior] = useState(false);
+  const [imageUploadFeedback, setImageUploadFeedback] = useState<string | null>(null);
+
+  const exteriorFileInputRef = React.useRef<HTMLInputElement>(null);
+  const interiorFileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleImageFileChange = (file: File | undefined, type: "exterior" | "interior") => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setImageUploadFeedback("Please select a valid image file (PNG, JPG, WEBP)");
+      setTimeout(() => setImageUploadFeedback(null), 3000);
+      return;
+    }
+    if (file.size > 15 * 1024 * 1024) {
+      setImageUploadFeedback("Image file is too large (maximum 15 MB)");
+      setTimeout(() => setImageUploadFeedback(null), 3000);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const result = e.target?.result as string;
+      if (result) {
+        if (type === "exterior") {
+          setCustomExteriorImage(result);
+          setHasCustomExterior(true);
+          setImageUploadFeedback("✓ Aircraft exterior photo successfully updated!");
+        } else {
+          setCustomInteriorImage(result);
+          setHasCustomInterior(true);
+          setImageUploadFeedback("✓ VIP cabin interior photo successfully updated!");
+        }
+        setTimeout(() => setImageUploadFeedback(null), 3500);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleResetImage = (type: "exterior" | "interior", e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (type === "exterior") {
+      setCustomExteriorImage(currentAircraft.imageExterior || "");
+      setHasCustomExterior(false);
+      setImageUploadFeedback("Reverted exterior photo to fleet default");
+    } else {
+      setCustomInteriorImage(currentAircraft.imageInterior || "");
+      setHasCustomInterior(false);
+      setImageUploadFeedback("Reverted cabin photo to fleet default");
+    }
+    setTimeout(() => setImageUploadFeedback(null), 3000);
+  };
 
   // Flight Legs
   const [legs, setLegs] = useState<
@@ -158,13 +212,15 @@ export default function QuotesView() {
 
   // When aircraft changes, update default images if not custom
   useEffect(() => {
-    if (currentAircraft && !customExteriorImage) {
-      setCustomExteriorImage(currentAircraft.imageExterior || "");
+    if (currentAircraft) {
+      if (!hasCustomExterior) {
+        setCustomExteriorImage(currentAircraft.imageExterior || "");
+      }
+      if (!hasCustomInterior) {
+        setCustomInteriorImage(currentAircraft.imageInterior || "");
+      }
     }
-    if (currentAircraft && !customInteriorImage) {
-      setCustomInteriorImage(currentAircraft.imageInterior || "");
-    }
-  }, [currentAircraft]);
+  }, [currentAircraft, hasCustomExterior, hasCustomInterior]);
 
   // Populate from bookingToRevise if revising
   useEffect(() => {
@@ -176,9 +232,20 @@ export default function QuotesView() {
       setClientPhone(bookingToRevise.client.phone);
       setClientAddress(bookingToRevise.client.streetAddress);
       setAccountNumber(bookingToRevise.accountNumber || "ACC-21737");
-      setSelectedAircraftId(bookingToRevise.aircraft.id || "cessna-citation-mustang");
-      setCustomExteriorImage(bookingToRevise.aircraftCustomImages?.exterior || bookingToRevise.aircraft.imageExterior || "");
-      setCustomInteriorImage(bookingToRevise.aircraftCustomImages?.interior || bookingToRevise.aircraft.imageInterior || "");
+      if (bookingToRevise.aircraftCustomImages?.exterior) {
+        setCustomExteriorImage(bookingToRevise.aircraftCustomImages.exterior);
+        setHasCustomExterior(true);
+      } else {
+        setCustomExteriorImage(bookingToRevise.aircraft.imageExterior || "");
+        setHasCustomExterior(false);
+      }
+      if (bookingToRevise.aircraftCustomImages?.interior) {
+        setCustomInteriorImage(bookingToRevise.aircraftCustomImages.interior);
+        setHasCustomInterior(true);
+      } else {
+        setCustomInteriorImage(bookingToRevise.aircraft.imageInterior || "");
+        setHasCustomInterior(false);
+      }
       if (bookingToRevise.legs && bookingToRevise.legs.length > 0) {
         setLegs(
           bookingToRevise.legs.filter((l) => !l.isCancelled).map((l) => ({
@@ -849,75 +916,208 @@ export default function QuotesView() {
               </select>
             </div>
 
-            {/* Live Aircraft Preview and Image Editors */}
+            {/* Feedback alert after image upload or reset */}
+            {imageUploadFeedback && (
+              <div className="p-3 rounded-xl bg-[#C9A052]/10 border border-[#C9A052]/40 text-[#0F1420] text-xs font-semibold flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-[#C9A052] flex-shrink-0" />
+                  <span>{imageUploadFeedback}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setImageUploadFeedback(null)}
+                  className="text-gray-400 hover:text-gray-600 text-xs p-1"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
+            {/* Hidden native file inputs for exterior and interior uploads */}
+            <input
+              type="file"
+              ref={exteriorFileInputRef}
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                handleImageFileChange(e.target.files?.[0], "exterior");
+                e.target.value = "";
+              }}
+            />
+            <input
+              type="file"
+              ref={interiorFileInputRef}
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                handleImageFileChange(e.target.files?.[0], "interior");
+                e.target.value = "";
+              }}
+            />
+
+            {/* Live Aircraft Preview and Click-to-Upload Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pt-1">
               {/* Exterior Image Customizer */}
-              <div className="p-4 rounded-xl border border-[#E0DAD0] bg-[#FDFCFA] space-y-2.5">
+              <div className="p-4 rounded-xl border border-[#E0DAD0] bg-[#FDFCFA] space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-[#0F1420] flex items-center gap-1.5">
                     <ImageIcon className="w-3.5 h-3.5 text-[#C9A052]" />
                     <span>Aircraft Exterior Image</span>
                   </span>
-                  <span className="text-[10px] font-mono text-gray-500">Shown on Proposal Cover</span>
-                </div>
-
-                <div className="h-44 rounded-xl overflow-hidden border border-gray-200 bg-[#141A29] relative">
-                  <img
-                    src={customExteriorImage || currentAircraft.imageExterior}
-                    alt="Aircraft Exterior"
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-black/60 backdrop-blur-sm text-white font-mono text-[10px] font-bold">
-                    Exterior Preview
+                  <div className="flex items-center gap-2">
+                    {hasCustomExterior ? (
+                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                        <Check className="w-3 h-3 text-emerald-600" /> Custom Photo
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-mono text-gray-500">Fleet Standard</span>
+                    )}
+                    {hasCustomExterior && (
+                      <button
+                        type="button"
+                        onClick={(e) => handleResetImage("exterior", e)}
+                        className="text-[10px] font-mono font-bold text-gray-500 hover:text-gray-800 flex items-center gap-1 hover:underline cursor-pointer"
+                        title="Reset to fleet default photo"
+                      >
+                        <RotateCcw className="w-2.5 h-2.5" /> Reset
+                      </button>
+                    )}
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-[11px] font-bold text-gray-600 mb-1">
-                    Exterior Photo Image URL (or paste custom asset):
-                  </label>
-                  <input
-                    type="url"
-                    value={customExteriorImage}
-                    onChange={(e) => setCustomExteriorImage(e.target.value)}
-                    placeholder="https://images.unsplash.com/..."
-                    className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3 py-1.5 text-xs font-mono text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                {/* Interactive Clickable & Droppable Image Container */}
+                <div
+                  onClick={() => exteriorFileInputRef.current?.click()}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setIsDraggingExterior(true);
+                  }}
+                  onDragLeave={() => setIsDraggingExterior(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDraggingExterior(false);
+                    handleImageFileChange(e.dataTransfer.files?.[0], "exterior");
+                  }}
+                  className={`h-48 sm:h-52 rounded-xl overflow-hidden relative cursor-pointer group transition-all border-2 ${
+                    isDraggingExterior
+                      ? "border-[#C9A052] bg-[#C9A052]/15 ring-4 ring-[#C9A052]/20 scale-[1.01]"
+                      : "border-gray-200 hover:border-[#C9A052] bg-[#141A29]"
+                  }`}
+                  title="Click to replace aircraft exterior image"
+                >
+                  <img
+                    src={customExteriorImage || currentAircraft.imageExterior}
+                    alt="Aircraft Exterior"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   />
+
+                  {/* Top Badge */}
+                  <div className="absolute top-2.5 left-2.5 px-2.5 py-1 rounded-md bg-black/70 backdrop-blur-md text-white font-mono text-[10px] font-bold border border-white/10 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#C9A052]"></span>
+                    Exterior Preview
+                  </div>
+
+                  {/* Full Overlay on Hover */}
+                  <div className="absolute inset-0 bg-black/60 backdrop-blur-xs flex flex-col items-center justify-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-white p-4 text-center">
+                    <div className="w-11 h-11 rounded-full bg-[#C9A052]/20 border border-[#C9A052] flex items-center justify-center text-[#C9A052] mb-1 shadow-lg group-hover:scale-110 transition-transform">
+                      <Camera className="w-5 h-5" />
+                    </div>
+                    <span className="text-xs font-black tracking-wide text-white">Click to Replace Exterior Image</span>
+                    <span className="text-[10px] font-mono text-gray-300">Upload aircraft photo from your device (PNG, JPG, WEBP)</span>
+                  </div>
+
+                  {/* Bottom Quick-Action Bar */}
+                  <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/85 via-black/50 to-transparent py-2 px-3 flex items-center justify-between text-white border-t border-white/10">
+                    <span className="text-[11px] font-medium text-gray-200 flex items-center gap-1.5">
+                      <Upload className="w-3.5 h-3.5 text-[#C9A052]" />
+                      Click image to replace photo
+                    </span>
+                    <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded bg-white/20 hover:bg-[#C9A052] hover:text-[#0F1420] text-white transition-colors">
+                      Upload Photo
+                    </span>
+                  </div>
                 </div>
               </div>
 
               {/* Interior Cabin Image Customizer */}
-              <div className="p-4 rounded-xl border border-[#E0DAD0] bg-[#FDFCFA] space-y-2.5">
+              <div className="p-4 rounded-xl border border-[#E0DAD0] bg-[#FDFCFA] space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-[#0F1420] flex items-center gap-1.5">
                     <ImageIcon className="w-3.5 h-3.5 text-[#C9A052]" />
                     <span>VIP Cabin Interior Image</span>
                   </span>
-                  <span className="text-[10px] font-mono text-gray-500">Shown in Cabin Spec</span>
-                </div>
-
-                <div className="h-44 rounded-xl overflow-hidden border border-gray-200 bg-[#141A29] relative">
-                  <img
-                    src={customInteriorImage || currentAircraft.imageInterior}
-                    alt="Cabin Interior"
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-black/60 backdrop-blur-sm text-white font-mono text-[10px] font-bold">
-                    Cabin Interior Preview
+                  <div className="flex items-center gap-2">
+                    {hasCustomInterior ? (
+                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                        <Check className="w-3 h-3 text-emerald-600" /> Custom Photo
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-mono text-gray-500">Fleet Standard</span>
+                    )}
+                    {hasCustomInterior && (
+                      <button
+                        type="button"
+                        onClick={(e) => handleResetImage("interior", e)}
+                        className="text-[10px] font-mono font-bold text-gray-500 hover:text-gray-800 flex items-center gap-1 hover:underline cursor-pointer"
+                        title="Reset to fleet default cabin photo"
+                      >
+                        <RotateCcw className="w-2.5 h-2.5" /> Reset
+                      </button>
+                    )}
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-[11px] font-bold text-gray-600 mb-1">
-                    Cabin Interior Photo URL:
-                  </label>
-                  <input
-                    type="url"
-                    value={customInteriorImage}
-                    onChange={(e) => setCustomInteriorImage(e.target.value)}
-                    placeholder="https://images.unsplash.com/..."
-                    className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3 py-1.5 text-xs font-mono text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                {/* Interactive Clickable & Droppable Image Container */}
+                <div
+                  onClick={() => interiorFileInputRef.current?.click()}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setIsDraggingInterior(true);
+                  }}
+                  onDragLeave={() => setIsDraggingInterior(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDraggingInterior(false);
+                    handleImageFileChange(e.dataTransfer.files?.[0], "interior");
+                  }}
+                  className={`h-48 sm:h-52 rounded-xl overflow-hidden relative cursor-pointer group transition-all border-2 ${
+                    isDraggingInterior
+                      ? "border-[#C9A052] bg-[#C9A052]/15 ring-4 ring-[#C9A052]/20 scale-[1.01]"
+                      : "border-gray-200 hover:border-[#C9A052] bg-[#141A29]"
+                  }`}
+                  title="Click to replace aircraft cabin interior image"
+                >
+                  <img
+                    src={customInteriorImage || currentAircraft.imageInterior}
+                    alt="Cabin Interior"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   />
+
+                  {/* Top Badge */}
+                  <div className="absolute top-2.5 left-2.5 px-2.5 py-1 rounded-md bg-black/70 backdrop-blur-md text-white font-mono text-[10px] font-bold border border-white/10 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#C9A052]"></span>
+                    Cabin Interior Preview
+                  </div>
+
+                  {/* Full Overlay on Hover */}
+                  <div className="absolute inset-0 bg-black/60 backdrop-blur-xs flex flex-col items-center justify-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-white p-4 text-center">
+                    <div className="w-11 h-11 rounded-full bg-[#C9A052]/20 border border-[#C9A052] flex items-center justify-center text-[#C9A052] mb-1 shadow-lg group-hover:scale-110 transition-transform">
+                      <Camera className="w-5 h-5" />
+                    </div>
+                    <span className="text-xs font-black tracking-wide text-white">Click to Replace Cabin Interior Image</span>
+                    <span className="text-[10px] font-mono text-gray-300">Upload cabin photo from your device (PNG, JPG, WEBP)</span>
+                  </div>
+
+                  {/* Bottom Quick-Action Bar */}
+                  <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/85 via-black/50 to-transparent py-2 px-3 flex items-center justify-between text-white border-t border-white/10">
+                    <span className="text-[11px] font-medium text-gray-200 flex items-center gap-1.5">
+                      <Upload className="w-3.5 h-3.5 text-[#C9A052]" />
+                      Click image to replace photo
+                    </span>
+                    <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded bg-white/20 hover:bg-[#C9A052] hover:text-[#0F1420] text-white transition-colors">
+                      Upload Photo
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>

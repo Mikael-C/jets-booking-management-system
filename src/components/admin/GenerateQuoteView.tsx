@@ -45,7 +45,10 @@ import {
   Search,
   Image as ImageIcon,
   ScrollText,
-  CheckSquare
+  CheckSquare,
+  Camera,
+  Upload,
+  RotateCcw
 } from "lucide-react";
 
 interface QuoteLegInput {
@@ -132,6 +135,22 @@ export default function GenerateQuoteView() {
   const [smokingCabinOverride, setSmokingCabinOverride] = useState<boolean>(false);
   const [exteriorImageOverride, setExteriorImageOverride] = useState<string>("");
   const [interiorImageOverride, setInteriorImageOverride] = useState<string>("");
+
+  const exteriorFileRef = React.useRef<HTMLInputElement>(null);
+  const interiorFileRef = React.useRef<HTMLInputElement>(null);
+
+  const handleImageFileChange = (file: File | undefined, type: "exterior" | "interior") => {
+    if (!file || !file.type.startsWith("image/")) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const res = e.target?.result as string;
+      if (res) {
+        if (type === "exterior") setExteriorImageOverride(res);
+        else setInteriorImageOverride(res);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Sync initial aircraft specs when aircraft changes
   useEffect(() => {
@@ -1085,34 +1104,101 @@ export default function GenerateQuoteView() {
               </div>
             </div>
 
-            {/* Custom Pictures Input (Exterior & Interior) */}
-            <div className="pt-2 border-t border-[#E0DAD0] grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-              <div>
-                <label className="block text-[10px] font-mono uppercase text-[#0F1420]/70 mb-1 flex items-center gap-1">
-                  <ImageIcon className="w-3 h-3 text-[#C9A052]" />
-                  Custom Exterior Photo URL
-                </label>
-                <input
-                  type="text"
-                  placeholder="https://... (Aircraft exterior photo URL)"
-                  value={exteriorImageOverride}
-                  onChange={(e) => setExteriorImageOverride(e.target.value)}
-                  className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                />
+            {/* Custom Pictures Input (Exterior & Interior) - Click to Upload */}
+            <input
+              type="file"
+              ref={exteriorFileRef}
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                handleImageFileChange(e.target.files?.[0], "exterior");
+                e.target.value = "";
+              }}
+            />
+            <input
+              type="file"
+              ref={interiorFileRef}
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                handleImageFileChange(e.target.files?.[0], "interior");
+                e.target.value = "";
+              }}
+            />
+
+            <div className="pt-3 border-t border-[#E0DAD0] grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-mono uppercase text-[#0F1420]/70 flex items-center gap-1 font-bold">
+                    <ImageIcon className="w-3 h-3 text-[#C9A052]" />
+                    Aircraft Exterior Photo
+                  </label>
+                  {exteriorImageOverride && exteriorImageOverride !== currentAircraft.imageExterior && (
+                    <button
+                      type="button"
+                      onClick={() => setExteriorImageOverride(currentAircraft.imageExterior || "")}
+                      className="text-[10px] font-mono text-gray-500 hover:text-gray-800 flex items-center gap-1 cursor-pointer"
+                    >
+                      <RotateCcw className="w-2.5 h-2.5" /> Reset
+                    </button>
+                  )}
+                </div>
+                <div
+                  onClick={() => exteriorFileRef.current?.click()}
+                  className="h-36 rounded-xl overflow-hidden border-2 border-dashed border-[#E0DAD0] hover:border-[#C9A052] bg-[#141A29] relative cursor-pointer group transition-all"
+                  title="Click to replace aircraft exterior image"
+                >
+                  <img
+                    src={exteriorImageOverride || currentAircraft.imageExterior}
+                    alt="Exterior"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                  />
+                  <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1 text-white text-center p-2">
+                    <Camera className="w-5 h-5 text-[#C9A052]" />
+                    <span className="text-[11px] font-bold">Click to Upload / Replace</span>
+                    <span className="text-[9px] text-gray-300 font-mono">PNG, JPG, WEBP</span>
+                  </div>
+                  <div className="absolute bottom-1.5 left-2 px-2 py-0.5 rounded bg-black/70 backdrop-blur-xs text-[9px] font-mono font-bold text-white flex items-center gap-1">
+                    <Upload className="w-2.5 h-2.5 text-[#C9A052]" /> Click to replace
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-[10px] font-mono uppercase text-[#0F1420]/70 mb-1 flex items-center gap-1">
-                  <ImageIcon className="w-3 h-3 text-[#C9A052]" />
-                  Custom Interior Photo URL
-                </label>
-                <input
-                  type="text"
-                  placeholder="https://... (Aircraft cabin interior photo URL)"
-                  value={interiorImageOverride}
-                  onChange={(e) => setInteriorImageOverride(e.target.value)}
-                  className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                />
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-mono uppercase text-[#0F1420]/70 flex items-center gap-1 font-bold">
+                    <ImageIcon className="w-3 h-3 text-[#C9A052]" />
+                    VIP Cabin Interior Photo
+                  </label>
+                  {interiorImageOverride && interiorImageOverride !== currentAircraft.imageInterior && (
+                    <button
+                      type="button"
+                      onClick={() => setInteriorImageOverride(currentAircraft.imageInterior || "")}
+                      className="text-[10px] font-mono text-gray-500 hover:text-gray-800 flex items-center gap-1 cursor-pointer"
+                    >
+                      <RotateCcw className="w-2.5 h-2.5" /> Reset
+                    </button>
+                  )}
+                </div>
+                <div
+                  onClick={() => interiorFileRef.current?.click()}
+                  className="h-36 rounded-xl overflow-hidden border-2 border-dashed border-[#E0DAD0] hover:border-[#C9A052] bg-[#141A29] relative cursor-pointer group transition-all"
+                  title="Click to replace cabin interior image"
+                >
+                  <img
+                    src={interiorImageOverride || currentAircraft.imageInterior}
+                    alt="Interior"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                  />
+                  <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1 text-white text-center p-2">
+                    <Camera className="w-5 h-5 text-[#C9A052]" />
+                    <span className="text-[11px] font-bold">Click to Upload / Replace</span>
+                    <span className="text-[9px] text-gray-300 font-mono">PNG, JPG, WEBP</span>
+                  </div>
+                  <div className="absolute bottom-1.5 left-2 px-2 py-0.5 rounded bg-black/70 backdrop-blur-xs text-[9px] font-mono font-bold text-white flex items-center gap-1">
+                    <Upload className="w-2.5 h-2.5 text-[#C9A052]" /> Click to replace
+                  </div>
+                </div>
               </div>
             </div>
           </div>
