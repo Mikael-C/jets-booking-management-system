@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useAviation } from "@/lib/aviationContext";
 import { airportsData, findAirportByCode, getAirportFbos, getDefaultHandlingAgent, searchAirports } from "@/data/airports";
+import AirportSearchSelect from "@/components/common/AirportSearchSelect";
 import { fleetData } from "@/data/fleet";
 import { defaultOperator } from "@/data/initialBookings";
 import { Booking, FlightLeg, AdditionalServices, TripType, PetDetails, LuggageDetails, Airport, FboOption } from "@/types/aviation";
@@ -1330,17 +1331,10 @@ export default function GenerateQuoteView() {
                           <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
                             Origin Airport
                           </label>
-                          <select
+                          <AirportSearchSelect
                             value={leg.originIcao}
-                            onChange={(e) => handleLegChange(index, "originIcao", e.target.value)}
-                            className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2.5 py-2 text-xs text-[#0F1420] font-mono font-bold focus:outline-none focus:border-[#C9A052]"
-                          >
-                            {airportsData.map((a) => (
-                              <option key={a.icao} value={a.icao}>
-                                [{a.icao}] {a.city} — {a.name}
-                              </option>
-                            ))}
-                          </select>
+                            onChange={(val) => handleLegChange(index, "originIcao", val)}
+                          />
                           <p className="text-[10px] text-gray-500 mt-1 truncate">
                             {origAirport.name} ({origAirport.country})
                           </p>
@@ -1351,17 +1345,10 @@ export default function GenerateQuoteView() {
                           <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
                             Destination Airport
                           </label>
-                          <select
+                          <AirportSearchSelect
                             value={leg.destIcao}
-                            onChange={(e) => handleLegChange(index, "destIcao", e.target.value)}
-                            className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2.5 py-2 text-xs text-[#0F1420] font-mono font-bold focus:outline-none focus:border-[#C9A052]"
-                          >
-                            {airportsData.map((a) => (
-                              <option key={a.icao} value={a.icao}>
-                                [{a.icao}] {a.city} — {a.name}
-                              </option>
-                            ))}
-                          </select>
+                            onChange={(val) => handleLegChange(index, "destIcao", val)}
+                          />
                           <p className="text-[10px] text-gray-500 mt-1 truncate">
                             {destAirport.name} ({destAirport.country})
                           </p>

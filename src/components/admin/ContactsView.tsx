@@ -364,48 +364,50 @@ export default function ContactsView() {
         {filteredContacts.map((contact) => (
           <div
             key={contact.id}
-            className="bg-white border border-[#E0DAD0] hover:border-[#C9A052] rounded-2xl p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between space-y-4 group"
+            className="bg-white border border-[#E0DAD0] hover:border-[#C9A052] rounded-2xl p-4 sm:p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between space-y-4 group min-w-0 relative overflow-hidden"
           >
-            <div className="space-y-3">
-              {/* Header: Name, Agent Badge, Gender & Weight */}
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-[#0F1420] text-white">
-                      {contact.lastName.toUpperCase()}, {contact.firstName}
+            <div className="space-y-3 min-w-0">
+              {/* Header: Name Badge & Action Buttons */}
+              <div className="flex items-center justify-between gap-2 min-w-0">
+                <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
+                  <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-[#0F1420] text-white truncate max-w-full">
+                    {contact.lastName.toUpperCase()}, {contact.firstName}
+                  </span>
+                  {contact.isAgent && (
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-[#C9A052]/20 text-[#9A7A35] border border-[#C9A052]/40 shrink-0">
+                      Agent Rep
                     </span>
-                    {contact.isAgent && (
-                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-[#C9A052]/20 text-[#9A7A35] border border-[#C9A052]/40">
-                        Agent Rep
-                      </span>
-                    )}
-                  </div>
-                  <h3 className="text-base font-black text-[#0F1420] group-hover:text-[#C9A052] transition-colors">
-                    {contact.firstName} {contact.middleName ? `${contact.middleName} ` : ""}{contact.lastName}
-                  </h3>
-                  {contact.associatedAccountName && (
-                    <p className="text-xs text-gray-500 font-medium truncate">
-                      Account: <strong className="text-[#0F1420]">{contact.associatedAccountName}</strong>
-                    </p>
                   )}
                 </div>
 
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-0.5 shrink-0 bg-[#F5F2EC]/80 border border-[#E0DAD0]/80 rounded-lg p-0.5">
                   <button
                     onClick={() => handleOpenEditModal(contact)}
-                    className="p-1.5 rounded-lg text-gray-400 hover:text-[#0F1420] hover:bg-[#F5F2EC] transition-colors"
+                    className="p-1.5 rounded-md text-gray-500 hover:text-[#0F1420] hover:bg-white transition-all cursor-pointer"
                     title="Edit Contact"
                   >
-                    <Edit2 className="w-4 h-4" />
+                    <Edit2 className="w-3.5 h-3.5" />
                   </button>
                   <button
                     onClick={() => deleteContact(contact.id)}
-                    className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                    className="p-1.5 rounded-md text-gray-500 hover:text-red-600 hover:bg-white transition-all cursor-pointer"
                     title="Delete Contact"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
+              </div>
+
+              {/* Contact Full Name & Associated Account */}
+              <div className="min-w-0">
+                <h3 className="text-base font-black text-[#0F1420] group-hover:text-[#C9A052] transition-colors truncate">
+                  {contact.firstName} {contact.middleName ? `${contact.middleName} ` : ""}{contact.lastName}
+                </h3>
+                {contact.associatedAccountName && (
+                  <p className="text-xs text-gray-500 font-medium truncate mt-0.5">
+                    Account: <strong className="text-[#0F1420]">{contact.associatedAccountName}</strong>
+                  </p>
+                )}
               </div>
 
               {/* Bio & Manifest Metrics: Gender, Weight, Country */}
