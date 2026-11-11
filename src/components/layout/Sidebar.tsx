@@ -32,8 +32,7 @@ import {
   PlusCircle,
   User,
   MessageSquare,
-  MapPin,
-  Building
+  MapPin
 } from "lucide-react";
 
 export default function Sidebar() {
@@ -58,6 +57,11 @@ export default function Sidebar() {
   const inProgressBookingsCount = bookings.filter((b) =>
     ["draft", "quote_sent", "client_review"].includes(b.status)
   ).length;
+  const bookingTripsCount = new Set(bookings.map((booking) => {
+    const isBookedRecord = booking.isBooked ||
+      ["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(booking.status);
+    return isBookedRecord ? booking.tripId || booking.tripNumber || booking.id : booking.id;
+  })).size;
 
   const getRoleDisplay = () => {
     switch (role) {
@@ -143,25 +147,6 @@ export default function Sidebar() {
             </button>
 
             <button
-              onClick={() => setActiveNav("bookings")}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "bookings"
-                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
-                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Plane className={`w-4 h-4 ${activeNav === "bookings" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Bookings</span>
-              </div>
-              <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold ${
-                activeNav === "bookings" ? "bg-[#0F1420] text-white" : "bg-[#1C2436] text-gray-300"
-              }`}>
-                {bookings.length}
-              </span>
-            </button>
-
-            <button
               onClick={() => setActiveNav("payments")}
               className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                 activeNav === "payments"
@@ -193,6 +178,25 @@ export default function Sidebar() {
                 <span>Quotes</span>
               </div>
               <ChevronRight className={`w-3.5 h-3.5 ${activeNav === "quotes" || activeNav === "generate_quote" ? "text-[#0F1420]" : "text-gray-500"}`} />
+            </button>
+
+            <button
+              onClick={() => setActiveNav("bookings")}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeNav === "bookings"
+                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
+                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <Plane className={`w-4 h-4 ${activeNav === "bookings" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
+                <span>Bookings</span>
+              </div>
+              <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold ${
+                activeNav === "bookings" ? "bg-[#0F1420] text-white" : "bg-[#1C2436] text-gray-300"
+              }`}>
+                {bookingTripsCount}
+              </span>
             </button>
 
             <button
@@ -327,20 +331,6 @@ export default function Sidebar() {
               <div className="flex items-center gap-2.5">
                 <MapPin className={`w-4 h-4 ${activeNav === "airports" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
                 <span>Airports</span>
-              </div>
-            </button>
-
-            <button
-              onClick={() => setActiveNav("fbos")}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "fbos"
-                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
-                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Building className={`w-4 h-4 ${activeNav === "fbos" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>FBO</span>
               </div>
             </button>
 

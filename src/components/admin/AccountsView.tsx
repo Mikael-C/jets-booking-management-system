@@ -419,8 +419,8 @@ export default function AccountsView() {
         </div>
       </div>
 
-      {/* Accounts List Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      {/* Accounts List */}
+      <div className="flex flex-col gap-3">
         {filteredAccounts.map((account) => (
           <div
             key={account.id}

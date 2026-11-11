@@ -14,10 +14,21 @@ const { sendStatusUpdateEmail } = require('../services/emailService');
 // Helper to look up bookings by Mongo _id, custom id, or tripNumber
 const getBookingFilter = (id) => {
   if (mongoose.Types.ObjectId.isValid(id)) {
-    return { $or: [{ _id: id }, { id: id }, { tripNumber: id }], isDeleted: false };
+    return { $or: [{ _id: id }, { id: id }, { tripId: id }, { bookingRevisionId: id }, { tripNumber: id }], isDeleted: false };
   }
-  return { $or: [{ id: id }, { tripNumber: id }], isDeleted: false };
+  return { $or: [{ id: id }, { tripId: id }, { bookingRevisionId: id }, { tripNumber: id }], isDeleted: false };
 };
+
+const getTripFilter = (booking) => ({
+  isDeleted: false,
+  $or: [
+    ...(booking.tripId ? [{ tripId: booking.tripId }] : []),
+    ...(booking.tripNumber ? [{ tripNumber: booking.tripNumber }] : [])
+  ]
+});
+
+const tripSuffix = (booking) =>
+  (booking.tripId || booking.tripNumber || '').replace(/\D/g, '').slice(-3) || '001';
 
 // Valid booking status transitions
 const VALID_TRANSITIONS = {
@@ -112,6 +123,52 @@ router.get('/', async (req, res) => {
 });
 
 // GET /api/bookings/:id
+router.get('/trip/:tripId/invoices', async (req, res) => {
+  const filter = {
+    isDeleted: false,
+    $and: [
+      { $or: [{ tripId: req.params.tripId }, { tripNumber: req.params.tripId }] },
+      { $or: [{ isBooked: true }, { status: { $in: ['confirmed', 'dispatched', 'in_flight', 'completed', 'flown'] } }] }
+    ]
+  };
+  if (req.userRole === 'agent') filter.agentEmail = req.user.email;
+
+  const bookings = await Booking.find(filter).sort({ bookingRevisionId: 1, createdAt: 1 }).lean();
+  if (!bookings.length) return res.status(404).json({ success: false, message: 'Trip invoices not found' });
+
+  const latest = [...bookings].reverse().find((item) => item.isBooked && !item.isCancelled) || bookings[bookings.length - 1];
+  const invoiceEntries = bookings.map((item) => ({
+    type: 'invoice',
+    invoiceNumber: item.invoiceNumber,
+    bookingRevisionId: item.bookingRevisionId,
+    amount: item.pricing?.totalFlightPrice || 0,
+    bookingId: item.id || item._id
+  }));
+  const creditNoteEntries = new Map();
+  for (const item of bookings) {
+    for (const creditNote of item.creditNotes || []) {
+      const key = creditNote.creditNoteNumber || creditNote.number || creditNote.id;
+      if (key && !creditNoteEntries.has(key)) {
+        creditNoteEntries.set(key, { type: 'credit_note', ...creditNote, bookingRevisionId: item.bookingRevisionId });
+      }
+    }
+  }
+  const ledger = [...invoiceEntries, ...creditNoteEntries.values()];
+  return res.json({
+    success: true,
+    data: bookings,
+    ledger,
+    consolidated: {
+      tripId: latest.tripId || req.params.tripId,
+      currency: latest.pricing?.currency || 'EUR',
+      finalBalance: latest.pricing?.totalFlightPrice || 0,
+      latestBookingRevisionId: latest.bookingRevisionId || '',
+      invoiceCount: bookings.filter((item) => item.invoiceNumber).length,
+      creditNotes: bookings.flatMap((item) => item.creditNotes || [])
+    }
+  });
+});
+
 router.get('/:id', async (req, res) => {
   const booking = await Booking.findOne(getBookingFilter(req.params.id));
   if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
@@ -258,6 +315,72 @@ router.post('/:id/convert-to-confirmed', authorize('super_admin', 'admin', 'oper
     return res.status(400).json({
       success: false,
       message: 'Booking must be in accepted or paid status to confirm',
+    });
+
+    // POST /api/bookings/:id/revise
+    router.post('/:id/revise', authorize('super_admin', 'admin', 'operations'), async (req, res) => {
+      const original = await Booking.findOne(getBookingFilter(req.params.id));
+      if (!original) return res.status(404).json({ success: false, message: 'Booking not found' });
+      const isBooked = original.isBooked || ['confirmed', 'dispatched', 'in_flight', 'completed', 'flown'].includes(original.status);
+      if (original.isCancelled || !isBooked) {
+        return res.status(409).json({ success: false, message: 'Only the active booked iteration can be revised' });
+      }
+
+      const siblings = await Booking.find(getTripFilter(original)).sort({ createdAt: 1 });
+      const nextRevision = Math.max(
+        0,
+        ...siblings.map((item) => Number((item.bookingRevisionId || '').split('-').pop()) || 0)
+      ) + 1;
+      const suffix = tripSuffix(original);
+      const revisionId = `BK-${suffix}-${String(nextRevision).padStart(2, '0')}`;
+      const revisedData = original.toObject();
+      delete revisedData._id;
+      delete revisedData.__v;
+      delete revisedData.createdAt;
+      delete revisedData.updatedAt;
+      Object.assign(revisedData, req.body || {});
+      revisedData.id = `booking-revision-${Date.now()}`;
+      revisedData.tripId = original.tripId || `TRIP-${new Date().getFullYear()}-${suffix}`;
+      revisedData.bookingRevisionId = revisionId;
+      revisedData.isCancelled = false;
+      revisedData.cancellationReason = '';
+      revisedData.supersededBy = '';
+      revisedData.isBooked = true;
+      revisedData.status = req.body?.status || original.status;
+      revisedData.quoteStatus = 'accepted';
+      revisedData.invoiceNumber = `INV-${suffix}-${String(nextRevision).padStart(2, '0')}`;
+
+      const oldTotal = Number(original.pricing?.totalFlightPrice || 0);
+      const newTotal = Number(revisedData.pricing?.totalFlightPrice || 0);
+      const delta = newTotal - oldTotal;
+      if (delta !== 0) {
+        const existingNotes = revisedData.creditNotes || [];
+        const noteSequence = existingNotes.length + 1;
+        const creditNoteNumber = `CN-${suffix}-${String(noteSequence).padStart(2, '0')}`;
+        revisedData.creditNotes = [{
+          id: `cn-${Date.now()}`,
+          number: creditNoteNumber,
+          creditNoteNumber,
+          date: new Date().toISOString().slice(0, 10),
+          issueDate: new Date().toISOString().slice(0, 10),
+          amount: Math.abs(delta),
+          reason: req.body?.revisionReason || `Booking price adjustment for ${revisionId}`,
+          originalTotal: oldTotal,
+          newTotal,
+          netBalance: delta,
+          clientOwes: Math.max(delta, 0),
+          weOweClient: Math.max(-delta, 0)
+        }, ...existingNotes];
+      }
+
+      original.isCancelled = true;
+      original.cancellationReason = `Superseded by booking revision ${revisionId}`;
+      original.supersededBy = revisedData.id;
+      await original.save();
+      const revised = await Booking.create(revisedData);
+      await logBookingAction(req.user, 'booking_revised', revised, req);
+
+      return res.status(201).json({ success: true, data: revised });
     });
   }
 

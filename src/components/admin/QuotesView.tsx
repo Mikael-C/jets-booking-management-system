@@ -14,6 +14,7 @@ import {
   formatFlightTime,
   calculateDistanceNm
 } from "@/lib/pricingCalculator";
+import { calculateLegArrivalAndTz } from "@/lib/aviationTimezones";
 import {
   FileText,
   Search,
@@ -45,7 +46,11 @@ import {
   Dog,
   Briefcase,
   Trash2,
-  RefreshCw
+  RefreshCw,
+  ChevronDown,
+  ChevronUp,
+  Send,
+  Lock
 } from "lucide-react";
 
 export default function QuotesView() {
@@ -54,6 +59,7 @@ export default function QuotesView() {
     addBooking,
     openDocument,
     convertQuoteToBooked,
+    sendQuoteToAgent,
     setSelectedBookingForDetail,
     setActiveNav,
     accounts,
@@ -62,7 +68,8 @@ export default function QuotesView() {
     addAuditEntry,
     bookingToRevise,
     setBookingToRevise,
-    clients
+    clients,
+    reviseQuote
   } = useAviation();
 
   const [activeTab, setActiveTab] = useState<"list" | "builder">("list");
@@ -70,13 +77,40 @@ export default function QuotesView() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [selectedQuoteForDocs, setSelectedQuoteForDocs] = useState<Booking | null>(null);
 
-  // All Quotes (bookings in draft, quote_sent, client_review, or having quoteStatus)
+  const [expandedTripIds, setExpandedTripIds] = useState<Set<string>>(new Set());
+
+  // Active quotes: has quoteReference/status and NOT yet booked as a confirmed booking
   const quotesList = useMemo(() => {
-    return bookings.filter((b) => b.quoteReference || b.quoteStatus || ["draft", "quote_sent", "client_review"].includes(b.status));
+    return bookings.filter((b) =>
+      (b.quoteReference || b.quoteStatus || ["draft", "quote_sent", "client_review"].includes(b.status))
+      && !b.isBooked
+    );
   }, [bookings]);
 
-  const filteredQuotes = useMemo(() => {
-    return quotesList.filter((b) => {
+  // Group active quotes by tripId - latest revision per tripId
+  const tripGroupedQuotes = useMemo(() => {
+    const tripMap = new Map<string, { latest: Booking; allRevisions: Booking[] }>();
+    for (const b of quotesList) {
+      const tId = b.tripId || b.id;
+      const existing = tripMap.get(tId);
+      if (!existing) {
+        tripMap.set(tId, { latest: b, allRevisions: [b] });
+      } else {
+        existing.allRevisions.push(b);
+        // Latest = highest quoteVersion, or most recently created
+        const curVer = b.quoteVersion || parseInt((b.quoteId || "").split("-").pop() || "1", 10) || 1;
+        const prevVer = existing.latest.quoteVersion || parseInt((existing.latest.quoteId || "").split("-").pop() || "1", 10) || 1;
+        if (curVer > prevVer) existing.latest = b;
+      }
+    }
+    return Array.from(tripMap.values()).map(g => ({
+      ...g,
+      allRevisions: g.allRevisions.sort((a, b) => (b.quoteVersion || 1) - (a.quoteVersion || 1)),
+    }));
+  }, [quotesList]);
+
+  const filteredTripGroups = useMemo(() => {
+    return tripGroupedQuotes.filter(({ latest: b }) => {
       if (statusFilter !== "all") {
         if (statusFilter === "draft" && b.quoteStatus !== "draft" && b.status !== "draft") return false;
         if (statusFilter === "sent" && b.quoteStatus !== "sent" && b.status !== "quote_sent") return false;
@@ -85,8 +119,8 @@ export default function QuotesView() {
 
       if (searchQuery.trim() !== "") {
         const q = searchQuery.toLowerCase().trim();
-        const matchRef = (b.quoteReference || "").toLowerCase().includes(q);
-        const matchTrip = (b.tripNumber || "").toLowerCase().includes(q);
+        const matchRef = (b.quoteReference || b.quoteId || "").toLowerCase().includes(q);
+        const matchTrip = (b.tripNumber || b.tripId || "").toLowerCase().includes(q);
         const matchClient = (b.client.fullName || "").toLowerCase().includes(q);
         const matchAircraft = (b.aircraft.name || "").toLowerCase().includes(q);
         const matchRoute = (b.legs || []).some(
@@ -101,7 +135,15 @@ export default function QuotesView() {
 
       return true;
     });
-  }, [quotesList, statusFilter, searchQuery]);
+  }, [tripGroupedQuotes, statusFilter, searchQuery]);
+
+  const toggleTripExpand = (tripId: string) => {
+    setExpandedTripIds(prev => {
+      const next = new Set(prev);
+      if (next.has(tripId)) next.delete(tripId); else next.add(tripId);
+      return next;
+    });
+  };
 
   // ================= QUOTE BUILDER & REVISION STATE =================
   const [quoteReference, setQuoteReference] = useState("");
@@ -275,6 +317,7 @@ export default function QuotesView() {
       arrHandlerEmail: string;
       pets?: PetDetails;
       luggage?: LuggageDetails;
+      durationOverrideMinutes?: number;
     }>
   >([
     {
@@ -506,7 +549,7 @@ export default function QuotesView() {
         }
       }
 
-      if (field === "departureTime" || field === "originIcao" || field === "destIcao") {
+      if (field === "departureTime" || field === "originIcao" || field === "destIcao" || (field as string) === "durationOverrideMinutes") {
         const orig = findAirportByCode(field === "originIcao" ? val : updated[idx].originIcao);
         const dest = findAirportByCode(field === "destIcao" ? val : updated[idx].destIcao);
         const dist = calculateDistanceNm(
@@ -515,14 +558,11 @@ export default function QuotesView() {
           dest.coordinates?.lat || 44.4,
           dest.coordinates?.lng || 8.8
         );
-        const flightMinutes = estimateFlightTimeMinutes(dist);
+        const defaultMinutes = estimateFlightTimeMinutes(dist);
+        const durationMinutes = updated[idx].durationOverrideMinutes || defaultMinutes;
         const depTime = field === "departureTime" ? val : updated[idx].departureTime;
-        const [hStr, mStr] = (depTime || "11:00").split(":");
-        const depMinutes = (parseInt(hStr, 10) || 10) * 60 + (parseInt(mStr, 10) || 0);
-        const arrTotalMin = depMinutes + flightMinutes;
-        const arrH = String(Math.floor(arrTotalMin / 60) % 24).padStart(2, "0");
-        const arrM = String(arrTotalMin % 60).padStart(2, "0");
-        updated[idx].arrivalTime = `${arrH}:${arrM}`;
+        const tzInfo = calculateLegArrivalAndTz(orig, dest, depTime || "11:00", durationMinutes);
+        updated[idx].arrivalTime = tzInfo.arrivalTimeLocal;
       }
 
       return updated;
@@ -540,14 +580,27 @@ export default function QuotesView() {
         destAirport.coordinates?.lat || 44.4,
         destAirport.coordinates?.lng || 8.8
       );
-      const minutes = estimateFlightTimeMinutes(dist);
+      const defaultMinutes = estimateFlightTimeMinutes(dist);
+      const minutes = leg.durationOverrideMinutes || defaultMinutes;
+      const tzInfo = calculateLegArrivalAndTz(originAirport, destAirport, leg.departureTime || "11:00", minutes);
       return {
         legNumber: idx + 1,
         flightDate: leg.flightDate,
         origin: originAirport,
         destination: destAirport,
         departureTimeLocal: leg.departureTime,
-        arrivalTimeLocal: leg.arrivalTime,
+        arrivalTimeLocal: leg.arrivalTime || tzInfo.arrivalTimeLocal,
+        flightTimeMinutes: minutes,
+        manualDurationMinutes: leg.durationOverrideMinutes,
+        isDurationOverridden: Boolean(leg.durationOverrideMinutes),
+        departureTimeUtc: tzInfo.departureTimeUtc,
+        arrivalTimeUtc: tzInfo.arrivalTimeUtc,
+        originTz: tzInfo.origTz.label,
+        destTz: tzInfo.destTz.label,
+        tzDiffHours: tzInfo.tzDiffHours,
+        originTimezone: tzInfo.origTz.tzName,
+        destinationTimezone: tzInfo.destTz.tzName,
+        timezoneDifferenceHours: tzInfo.tzDiffHours,
         flightTimeFormatted: formatFlightTime(minutes),
         paxCount: leg.paxCount,
         flightNumber: `PEU842`,
@@ -642,9 +695,15 @@ export default function QuotesView() {
       ? (bookingToRevise?.tripNumber || `PEU${Math.floor(100 + Math.random() * 899)}-001`)
       : (bookingToRevise?.tripNumber || quoteRef);
     const invoiceNum = bookingToRevise?.invoiceNumber || `INV-${Math.floor(100000 + Math.random() * 900000)}`;
+    const tripDigits = (bookingToRevise?.tripId || tripNum || quoteRef).replace(/\D/g, "");
+    const tripSuffix = tripDigits.slice(-3) || String(Math.floor(100 + Math.random() * 899));
+    const tripId = bookingToRevise?.tripId || `TRIP-${new Date().getFullYear()}-${tripSuffix}`;
 
     return {
       id: bookingToRevise ? bookingToRevise.id : `booking-qte-${Date.now()}`,
+      tripId,
+      quoteId: bookingToRevise?.quoteId || `QUO-${tripSuffix}-01`,
+      isBooked: isBookedFlight,
       tripNumber: tripNum,
       quoteReference: quoteRef,
       invoiceNumber: invoiceNum,
@@ -652,7 +711,7 @@ export default function QuotesView() {
       contractDate,
       quoteExpirationDate,
       paymentDueDate: "10.10.2026",
-      status: isBookedFlight ? "confirmed" : (quoteStatus === "Sent" ? "quote_sent" : "draft"),
+      status: isBookedFlight ? "confirmed" : advanceToContract ? "contract_sent" : (quoteStatus === "Sent" ? "quote_sent" : "draft"),
       quoteStatus: isBookedFlight ? "accepted" : (advanceToContract ? "accepted" : (quoteStatus.toLowerCase() as any)),
       quoteVersion: bookingToRevise ? (bookingToRevise.quoteVersion || 1) + 1 : 1,
       paymentStatus: "unpaid",
@@ -730,8 +789,10 @@ export default function QuotesView() {
       return;
     }
 
-    const newBooking = createBookingRecord(false, false);
-    addBooking(newBooking);
+    const draft = createBookingRecord(false, false);
+    const newBooking = bookingToRevise ? reviseQuote(bookingToRevise.id, draft) : draft;
+    if (!newBooking) return;
+    if (!bookingToRevise) addBooking(newBooking);
     addAuditEntry({
       userEmail: currentUser?.email || "admin@orbelo.com",
       userName: currentUser?.name || "Operations Team",
@@ -746,8 +807,10 @@ export default function QuotesView() {
 
   // Advance Quote -> Contract
   const handleProceedToContract = () => {
-    const newBooking = createBookingRecord(false, true);
-    addBooking(newBooking);
+    const draft = createBookingRecord(false, true);
+    const newBooking = bookingToRevise ? reviseQuote(bookingToRevise.id, draft) : draft;
+    if (!newBooking) return;
+    if (!bookingToRevise) addBooking(newBooking);
     addAuditEntry({
       userEmail: currentUser?.email || "admin@orbelo.com",
       userName: currentUser?.name || "Operations Team",
@@ -762,9 +825,10 @@ export default function QuotesView() {
 
   // Convert Quote directly to Confirmed Booking
   const handleConfirmAndBookFlight = () => {
-    const newBooking = createBookingRecord(true, false);
-    addBooking(newBooking);
-    convertQuoteToBooked(newBooking.id);
+    const draft = createBookingRecord(true, false);
+    const newBooking = bookingToRevise ? reviseQuote(bookingToRevise.id, draft) : draft;
+    if (!newBooking) return;
+    if (!bookingToRevise) addBooking(newBooking);
     addAuditEntry({
       userEmail: currentUser?.email || "admin@orbelo.com",
       userName: currentUser?.name || "Operations Team",
@@ -877,164 +941,266 @@ export default function QuotesView() {
             </div>
           </div>
 
-          {/* Quotes List Cards */}
+          {/* Quotes Trip Groups */}
           <div className="space-y-4">
-            {filteredQuotes.map((quote) => {
-              const isBooked = ["confirmed", "dispatched", "in_flight", "completed"].includes(quote.status);
+            {filteredTripGroups.map(({ latest: quote, allRevisions }) => {
+              const tId = quote.tripId || quote.id;
+              const isExpanded = expandedTripIds.has(tId);
+              const hasMultipleRevisions = allRevisions.length > 1;
+              const isLatestCancelled = quote.isCancelled;
               const isContractSent = quote.status === "contract_sent";
 
               return (
-                <div
-                  key={quote.id}
-                  className="bg-white border border-[#E0DAD0] hover:border-[#C9A052] rounded-2xl p-5 sm:p-6 shadow-sm hover:shadow-md transition-all flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 group"
-                >
-                  {/* Left: ID & Route Information */}
-                  <div className="flex items-start gap-4 min-w-0 flex-1">
-                    {/* Aircraft Thumbnail */}
-                    <div className="w-20 h-20 rounded-xl overflow-hidden border border-[#E0DAD0] bg-[#141A29] flex-shrink-0 relative group">
-                      <img
-                        src={quote.aircraftCustomImages?.exterior || quote.aircraft.imageExterior}
-                        alt={quote.aircraft.name}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end p-1">
-                        <span className="text-[9px] font-mono font-bold text-white uppercase truncate">
-                          {quote.aircraft.registration || "OE-FFB"}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="space-y-1.5 min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-mono text-sm font-black text-[#0F1420] px-2.5 py-0.5 rounded bg-[#F5F2EC] border border-[#E0DAD0]">
-                          {quote.quoteReference || (quote.tripNumber ? `QTE-${quote.tripNumber}` : "QTE-PENDING")}
-                        </span>
-                        {quote.quoteVersion && quote.quoteVersion > 1 && (
-                          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-300">
-                            Version {quote.quoteVersion} (Revised)
+                <div key={tId} className="bg-white border border-[#E0DAD0] hover:border-[#C9A052]/60 rounded-2xl shadow-sm hover:shadow-md transition-all overflow-hidden">
+                  {/* Main Quote Card */}
+                  <div className="p-5 sm:p-6 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 group">
+                    {/* Left: ID & Route Information */}
+                    <div className="flex items-start gap-4 min-w-0 flex-1">
+                      {/* Aircraft Thumbnail */}
+                      <div className="w-20 h-20 rounded-xl overflow-hidden border border-[#E0DAD0] bg-[#141A29] flex-shrink-0 relative">
+                        <img
+                          src={quote.aircraftCustomImages?.exterior || quote.aircraft.imageExterior}
+                          alt={quote.aircraft.name}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end p-1">
+                          <span className="text-[9px] font-mono font-bold text-white uppercase truncate">
+                            {quote.aircraft.registration || "OE-FFB"}
                           </span>
-                        )}
-                        <span className={`text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full border ${
-                          isBooked
-                            ? "bg-emerald-100 text-emerald-800 border-emerald-300"
-                            : isContractSent
-                            ? "bg-blue-100 text-blue-800 border-blue-300"
-                            : "bg-amber-100 text-amber-800 border-amber-300"
-                        }`}>
-                          {isBooked ? "BOOKED AS FLIGHT" : isContractSent ? "CONTRACT ISSUED" : "QUOTATION SENT"}
-                        </span>
+                        </div>
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-base font-extrabold text-[#0F1420]">
-                          {quote.legs[0]?.origin.city || "Geneva"} ({quote.legs[0]?.origin.icao})
-                        </h3>
-                        <span className="text-[#C9A052] font-bold">⇄</span>
-                        <h3 className="text-base font-extrabold text-[#0F1420]">
-                          {quote.legs[0]?.destination.city || "Genoa"} ({quote.legs[0]?.destination.icao})
-                        </h3>
-                        {quote.legs.length > 2 && (
-                          <span className="text-xs text-gray-400 font-mono">+{quote.legs.length - 1} legs</span>
-                        )}
+                      <div className="space-y-1.5 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {/* Trip ID */}
+                          <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded bg-[#0F1420] text-[#C9A052]">
+                            {quote.tripId || `TRIP-${quote.tripNumber}`}
+                          </span>
+                          {/* Latest Quote ID */}
+                          <span className="font-mono text-xs font-black text-[#0F1420] px-2.5 py-0.5 rounded bg-[#F5F2EC] border border-[#E0DAD0]">
+                            {quote.quoteId || quote.quoteReference || `QUO-${quote.tripNumber}`}
+                          </span>
+                          {quote.quoteVersion && quote.quoteVersion > 1 && (
+                            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-300">
+                              Rev. {quote.quoteVersion}
+                            </span>
+                          )}
+                          <span className={`text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full border ${
+                            isLatestCancelled
+                              ? "bg-red-100 text-red-800 border-red-300"
+                              : isContractSent
+                              ? "bg-blue-100 text-blue-800 border-blue-300"
+                              : "bg-amber-100 text-amber-800 border-amber-300"
+                          }`}>
+                            {isLatestCancelled ? "CANCELLED / SUPERSEDED" : isContractSent ? "CONTRACT ISSUED" : "QUOTATION ACTIVE"}
+                          </span>
+                          {/* Revisions badge */}
+                          {hasMultipleRevisions && (
+                            <button
+                              type="button"
+                              onClick={() => toggleTripExpand(tId)}
+                              className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-300 flex items-center gap-1 hover:bg-purple-200 transition-colors"
+                            >
+                              {allRevisions.length} Iterations
+                              {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-base font-extrabold text-[#0F1420]">
+                            {quote.legs[0]?.origin.city || "Geneva"} ({quote.legs[0]?.origin.icao})
+                          </h3>
+                          <span className="text-[#C9A052] font-bold">⇄</span>
+                          <h3 className="text-base font-extrabold text-[#0F1420]">
+                            {quote.legs[quote.legs.length - 1]?.destination.city || "Genoa"} ({quote.legs[quote.legs.length - 1]?.destination.icao})
+                          </h3>
+                          {quote.legs.length > 2 && (
+                            <span className="text-xs text-gray-400 font-mono">+{quote.legs.length - 1} legs</span>
+                          )}
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
+                          <span className="font-semibold text-[#0F1420] flex items-center gap-1">
+                            <User className="w-3.5 h-3.5 text-gray-400" />
+                            <span>{quote.client.fullName}</span>
+                          </span>
+                          <span>•</span>
+                          <span className="font-medium flex items-center gap-1">
+                            <Plane className="w-3.5 h-3.5 text-gray-400" />
+                            <span>{quote.aircraft.name}</span>
+                          </span>
+                          <span>•</span>
+                          <span className="font-mono text-gray-500">
+                            Expires: {quote.quoteExpirationDate || "48 Hours"}
+                          </span>
+                          {quote.agentName && (
+                            <>
+                              <span>•</span>
+                              <span className="font-mono text-[#C9A052]">Agent: {quote.agentName}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right: Price & Action Buttons */}
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 w-full lg:w-auto justify-between lg:justify-end border-t lg:border-t-0 pt-3 lg:pt-0 border-gray-100">
+                      <div className="text-left sm:text-right">
+                        <span className="text-[10px] font-mono text-gray-500 uppercase block">Total Flight Price</span>
+                        <div className="text-xl font-black font-mono text-[#0F1420]">
+                          {formatCurrency(quote.pricing.totalFlightPrice, quote.pricing.currency || "EUR")}
+                        </div>
+                        <span className="text-[10px] font-mono text-emerald-700">0% VAT §6 Abs. 1 Zif. 3</span>
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
-                        <span className="font-semibold text-[#0F1420] flex items-center gap-1">
-                          <User className="w-3.5 h-3.5 text-gray-400" />
-                          <span>{quote.client.fullName}</span>
-                        </span>
-                        <span>•</span>
-                        <span className="font-medium flex items-center gap-1">
-                          <Plane className="w-3.5 h-3.5 text-gray-400" />
-                          <span>{quote.aircraft.name}</span>
-                        </span>
-                        <span>•</span>
-                        <span className="font-mono text-gray-500">
-                          Expires: {quote.quoteExpirationDate || "48 Hours"}
-                        </span>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {/* Send Quote to Agent */}
+                        {!isLatestCancelled && (
+                          <button
+                            onClick={() => {
+                              sendQuoteToAgent(quote.id);
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] font-extrabold text-xs shadow-sm transition-all cursor-pointer"
+                            title="Email the quotation PDF to the assigned agent"
+                          >
+                            <Send className="w-3.5 h-3.5" />
+                            <span>Send to Agent</span>
+                          </button>
+                        )}
+
+                        {/* Contract Agreement Button */}
+                        <button
+                          onClick={() => openDocument(quote, "charter_agreement")}
+                          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#141A29] hover:bg-[#1C2436] text-[#C9A052] font-bold text-xs shadow-sm transition-all cursor-pointer"
+                          title="Open or execute Master Charter Agreement"
+                        >
+                          <ScrollText className="w-3.5 h-3.5" />
+                          <span>Contract</span>
+                        </button>
+
+                        {/* Book Button */}
+                        {!isLatestCancelled && (
+                          <button
+                            onClick={() => handleBookQuote(quote)}
+                            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow-sm transition-all cursor-pointer"
+                            title="Convert quotation to confirmed booking"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>Book</span>
+                          </button>
+                        )}
+
+                        {/* Revise Button */}
+                        {!isLatestCancelled && (
+                          <button
+                            onClick={() => handleStartRevise(quote)}
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#F5F2EC] hover:bg-[#EBE5DB] text-[#0F1420] border border-[#E0DAD0] font-bold text-xs shadow-sm transition-all cursor-pointer"
+                            title="Revise route, aircraft images, and pricing"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5 text-[#C9A052]" />
+                            <span>Revise</span>
+                          </button>
+                        )}
+
+                        {/* View Documents */}
+                        <button
+                          onClick={() => setSelectedQuoteForDocs(quote)}
+                          className="p-2 rounded-xl bg-[#F5F2EC] hover:bg-[#EBE5DB] text-[#0F1420] border border-[#E0DAD0] transition-colors"
+                          title="View documents (Briefs, Invoices, Agreements, Credit Notes)"
+                        >
+                          <FileText className="w-4 h-4 text-[#C9A052]" />
+                        </button>
                       </div>
                     </div>
                   </div>
 
-                  {/* Right: Price & Required Action Buttons */}
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 w-full lg:w-auto justify-between lg:justify-end border-t lg:border-t-0 pt-3 lg:pt-0 border-gray-100">
-                    <div className="text-left sm:text-right">
-                      <span className="text-[10px] font-mono text-gray-500 uppercase block">Total Flight Price</span>
-                      <div className="text-xl font-black font-mono text-[#0F1420]">
-                        {formatCurrency(quote.pricing.totalFlightPrice, quote.pricing.currency || "EUR")}
+                  {/* Expandable Revisions Sublevel */}
+                  {hasMultipleRevisions && isExpanded && (
+                    <div className="border-t border-[#E0DAD0] bg-[#FAFAF8]">
+                      <div className="px-5 py-2.5 flex items-center gap-2 text-[11px] font-mono font-bold uppercase text-gray-400 tracking-wider border-b border-[#E0DAD0]">
+                        <Clock className="w-3.5 h-3.5 text-[#C9A052]" />
+                        All Iterations for Trip {quote.tripId || quote.tripNumber}
                       </div>
-                      <span className="text-[10px] font-mono text-emerald-700">0% VAT §6 Abs. 1 Zif. 3</span>
+                      <div className="divide-y divide-[#E0DAD0]">
+                        {allRevisions.map((rev) => {
+                          const isActive = !rev.isCancelled;
+                          const isLatest = rev.id === quote.id;
+                          return (
+                            <div key={rev.id} className={`px-6 py-3 flex items-center justify-between gap-4 text-xs transition-colors ${!isActive ? "opacity-60 bg-gray-50" : "bg-white hover:bg-[#FDFCFA]"}`}>
+                              <div className="flex items-center gap-3 min-w-0 flex-1">
+                                {!isActive ? (
+                                  <Lock className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                                ) : (
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                                )}
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-mono font-bold text-[#0F1420]">
+                                      {rev.quoteId || rev.quoteReference || `Iteration ${rev.quoteVersion || 1}`}
+                                    </span>
+                                    {isLatest && (
+                                      <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                        Latest Active
+                                      </span>
+                                    )}
+                                    {!isActive && (
+                                      <span className="text-[10px] font-mono text-red-700 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded">
+                                        Cancelled · {rev.cancellationReason || "Superseded"}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-[10px] text-gray-400 font-mono mt-0.5 truncate">
+                                    Created: {new Date(rev.createdAt || "").toLocaleDateString()} · {formatCurrency(rev.pricing.totalFlightPrice, rev.pricing.currency || "EUR")}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                {/* Always: view PDF */}
+                                <button
+                                  onClick={() => openDocument(rev, "quotation")}
+                                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#F5F2EC] hover:bg-[#EBE5DB] text-[#0F1420] font-bold text-[11px] border border-[#E0DAD0] transition-colors"
+                                >
+                                  <Eye className="w-3 h-3 text-[#C9A052]" />
+                                  View PDF
+                                </button>
+                                {/* Only latest active can be acted on */}
+                                {isLatest && isActive && (
+                                  <>
+                                    <button
+                                      onClick={() => handleStartRevise(rev)}
+                                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#0F1420] text-[#C9A052] font-bold text-[11px] border border-[#1C2436] hover:bg-[#1C2436] transition-colors"
+                                    >
+                                      <RotateCcw className="w-3 h-3" />
+                                      Revise
+                                    </button>
+                                    <button
+                                      onClick={() => handleBookQuote(rev)}
+                                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] transition-colors"
+                                    >
+                                      <CheckCircle2 className="w-3 h-3" />
+                                      Book
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-
-                    {/* Interactive Action Buttons per User Requirement:
-                        - Contract agreement button
-                        - Book button (moves to Bookings)
-                        - Revise button
-                        - View documents dropdown */}
-                    <div className="flex flex-wrap items-center gap-2">
-                      {/* Contract Agreement Button */}
-                      <button
-                        onClick={() => openDocument(quote, "charter_agreement")}
-                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#141A29] hover:bg-[#1C2436] text-[#C9A052] font-bold text-xs shadow-sm transition-all cursor-pointer"
-                        title="Open or execute Master Charter Agreement"
-                      >
-                        <ScrollText className="w-3.5 h-3.5" />
-                        <span>Contract Agreement</span>
-                      </button>
-
-                      {/* Book Button */}
-                      {!isBooked ? (
-                        <button
-                          onClick={() => handleBookQuote(quote)}
-                          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow-sm transition-all cursor-pointer"
-                          title="Convert quotation immediately to confirmed booking"
-                        >
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>Book</span>
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => {
-                            setSelectedBookingForDetail(quote);
-                          }}
-                          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-300 font-bold text-xs"
-                        >
-                          <Check className="w-3.5 h-3.5" />
-                          <span>Booked ({quote.tripNumber})</span>
-                        </button>
-                      )}
-
-                      {/* Revise Button */}
-                      <button
-                        onClick={() => handleStartRevise(quote)}
-                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#F5F2EC] hover:bg-[#EBE5DB] text-[#0F1420] border border-[#E0DAD0] font-bold text-xs shadow-sm transition-all cursor-pointer"
-                        title="Revise route, aircraft images, and pricing"
-                      >
-                        <RotateCcw className="w-3.5 h-3.5 text-[#C9A052]" />
-                        <span>Revise</span>
-                      </button>
-
-                      {/* Show Other Documents Modal Trigger */}
-                      <button
-                        onClick={() => setSelectedQuoteForDocs(quote)}
-                        className="p-2 rounded-xl bg-[#F5F2EC] hover:bg-[#EBE5DB] text-[#0F1420] border border-[#E0DAD0] transition-colors"
-                        title="View other generated documents (Briefs, Invoices, Agreements, Credit Notes)"
-                      >
-                        <FileText className="w-4 h-4 text-[#C9A052]" />
-                      </button>
-                    </div>
-                  </div>
+                  )}
                 </div>
               );
             })}
           </div>
 
-          {filteredQuotes.length === 0 && (
+          {filteredTripGroups.length === 0 && (
             <div className="bg-white border border-[#E0DAD0] rounded-2xl p-12 text-center space-y-3">
               <FileText className="w-10 h-10 text-gray-300 mx-auto" />
-              <h3 className="text-base font-bold text-[#0F1420]">No quotes matching filters</h3>
+              <h3 className="text-base font-bold text-[#0F1420]">No active quotes matching filters</h3>
               <p className="text-xs text-gray-500 max-w-md mx-auto">
-                No quotation records found for your search. Click below to start the quote generator.
+                No quotation records found. Booked proposals appear in Bookings. Click below to create a new quote.
               </p>
               <button
                 onClick={() => setActiveTab("builder")}
@@ -1908,92 +2074,160 @@ export default function QuotesView() {
                           </div>
                         </div>
 
-                        {/* Station Times and Respective FBO Dropdowns */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs bg-white/70 p-3.5 rounded-xl border border-[#E0DAD0]">
-                          <div>
-                            <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                              Departure Time (LT)
-                            </label>
-                            <input
-                              type="text"
-                              placeholder="11:00"
-                              value={leg.departureTime}
-                              onChange={(e) => handleLegChange(index, "departureTime", e.target.value)}
-                              required
-                              className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1.5 text-xs text-[#0F1420] font-mono font-bold focus:outline-none focus:border-[#C9A052]"
-                            />
-                          </div>
+                        {/* Station Times, Duration Override, Timezones, and Respective FBO Dropdowns */}
+                        {(() => {
+                          const dist = calculateDistanceNm(
+                            origAirport.coordinates?.lat || 46.2,
+                            origAirport.coordinates?.lng || 6.1,
+                            destAirport.coordinates?.lat || 44.4,
+                            destAirport.coordinates?.lng || 8.8
+                          );
+                          const autoMin = estimateFlightTimeMinutes(dist);
+                          const currentMin = leg.durationOverrideMinutes || autoMin;
+                          const tzCalc = calculateLegArrivalAndTz(origAirport, destAirport, leg.departureTime || "11:00", currentMin);
 
-                          <div>
-                            <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                              Arrival Time (LT)
-                            </label>
-                            <input
-                              type="text"
-                              placeholder="11:55"
-                              value={leg.arrivalTime}
-                              onChange={(e) => handleLegChange(index, "arrivalTime", e.target.value)}
-                              required
-                              className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1.5 text-xs text-[#0F1420] font-mono font-bold focus:outline-none focus:border-[#C9A052]"
-                            />
-                          </div>
+                          return (
+                            <div className="space-y-3">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-xs bg-white/80 p-3.5 rounded-xl border border-[#E0DAD0]">
+                                <div>
+                                  <div className="flex items-center justify-between mb-1">
+                                    <label className="text-[10px] font-mono font-bold uppercase text-[#0F1420]/70">
+                                      Departure Time (LT)
+                                    </label>
+                                    <span className="text-[10px] font-mono text-gray-500 font-bold">
+                                      {tzCalc.departureTimeUtc}
+                                    </span>
+                                  </div>
+                                  <input
+                                    type="text"
+                                    placeholder="11:00"
+                                    value={leg.departureTime}
+                                    onChange={(e) => handleLegChange(index, "departureTime", e.target.value)}
+                                    required
+                                    className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1.5 text-xs text-[#0F1420] font-mono font-bold focus:outline-none focus:border-[#C9A052]"
+                                  />
+                                  <span className="text-[9px] font-mono text-gray-400 mt-0.5 block">
+                                    Zone: {tzCalc.origTz.tzName} ({tzCalc.origTz.label})
+                                  </span>
+                                </div>
 
-                          {/* Departure FBO Dropdown for Origin Airport */}
-                          <div>
-                            <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1 flex items-center gap-1">
-                              <Building className="w-3 h-3 text-[#C9A052]" />
-                              Departure Station FBO
-                            </label>
-                            <select
-                              value={leg.depHandlerName}
-                              onChange={(e) => {
-                                const selectedFbo = origFbos.find((f) => f.name === e.target.value);
-                                if (selectedFbo) {
-                                  handleLegChange(index, "depHandlerName", selectedFbo.name);
-                                  handleLegChange(index, "depHandlerPhone", selectedFbo.phone);
-                                  handleLegChange(index, "depHandlerEmail", selectedFbo.email);
-                                } else {
-                                  handleLegChange(index, "depHandlerName", e.target.value);
-                                }
-                              }}
-                              className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1.5 text-xs text-[#0F1420] font-bold focus:outline-none focus:border-[#C9A052]"
-                            >
-                              {origFbos.map((fbo) => (
-                                <option key={fbo.id} value={fbo.name}>
-                                  {fbo.name}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
+                                <div>
+                                  <div className="flex items-center justify-between mb-1">
+                                    <label className="text-[10px] font-mono font-bold uppercase text-[#0F1420]/70">
+                                      Flight Duration Override
+                                    </label>
+                                    <span className="text-[10px] font-mono text-[#C9A052] font-bold">
+                                      Auto: {formatFlightTime(autoMin)}
+                                    </span>
+                                  </div>
+                                  <div className="relative">
+                                    <input
+                                      type="number"
+                                      min={10}
+                                      max={1200}
+                                      placeholder={String(autoMin)}
+                                      value={leg.durationOverrideMinutes || ""}
+                                      onChange={(e) => {
+                                        const v = e.target.value ? parseInt(e.target.value, 10) : undefined;
+                                        handleLegChange(index, "durationOverrideMinutes" as any, v);
+                                      }}
+                                      className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1.5 text-xs text-[#0F1420] font-mono font-bold focus:outline-none focus:border-[#C9A052]"
+                                    />
+                                    <span className="absolute right-2 top-1.5 text-[10px] font-mono text-gray-400">min</span>
+                                  </div>
+                                  <span className="text-[9px] font-mono text-gray-400 mt-0.5 block">
+                                    {leg.durationOverrideMinutes ? `Manual: ${formatFlightTime(leg.durationOverrideMinutes)}` : "Estimated by distance"}
+                                  </span>
+                                </div>
 
-                          {/* Arrival FBO Dropdown for Destination Airport */}
-                          <div>
-                            <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1 flex items-center gap-1">
-                              <Building className="w-3 h-3 text-[#C9A052]" />
-                              Arrival Station FBO
-                            </label>
-                            <select
-                              value={leg.arrHandlerName}
-                              onChange={(e) => {
-                                const selectedFbo = destFbos.find((f) => f.name === e.target.value);
-                                if (selectedFbo) {
-                                  handleLegChange(index, "arrHandlerName", selectedFbo.name);
-                                  handleLegChange(index, "arrHandlerPhone", selectedFbo.phone);
-                                  handleLegChange(index, "arrHandlerEmail", selectedFbo.email);
-                                } else {
-                                  handleLegChange(index, "arrHandlerName", e.target.value);
-                                }
-                              }}
-                              className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1.5 text-xs text-[#0F1420] font-bold focus:outline-none focus:border-[#C9A052]"
-                            >
-                              {destFbos.map((fbo) => (
-                                <option key={fbo.id} value={fbo.name}>
-                                  {fbo.name}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        </div>
+                                <div>
+                                  <div className="flex items-center justify-between mb-1">
+                                    <label className="text-[10px] font-mono font-bold uppercase text-[#0F1420]/70">
+                                      Arrival Time (LT)
+                                    </label>
+                                    <span className="text-[10px] font-mono text-gray-500 font-bold">
+                                      {tzCalc.arrivalTimeUtc}
+                                    </span>
+                                  </div>
+                                  <input
+                                    type="text"
+                                    placeholder="11:55"
+                                    value={leg.arrivalTime}
+                                    onChange={(e) => handleLegChange(index, "arrivalTime", e.target.value)}
+                                    required
+                                    className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1.5 text-xs text-[#0F1420] font-mono font-bold focus:outline-none focus:border-[#C9A052]"
+                                  />
+                                  <div className="flex items-center justify-between mt-0.5">
+                                    <span className="text-[9px] font-mono text-gray-400">
+                                      Zone: {tzCalc.destTz.tzName} ({tzCalc.destTz.label})
+                                    </span>
+                                    <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 border border-amber-300">
+                                      {tzCalc.tzDiffLabel}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs bg-white/70 p-3.5 rounded-xl border border-[#E0DAD0]">
+                                {/* Departure FBO Dropdown for Origin Airport */}
+                                <div>
+                                  <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1 flex items-center gap-1">
+                                    <Building className="w-3 h-3 text-[#C9A052]" />
+                                    Departure Station FBO
+                                  </label>
+                                  <select
+                                    value={leg.depHandlerName}
+                                    onChange={(e) => {
+                                      const selectedFbo = origFbos.find((f) => f.name === e.target.value);
+                                      if (selectedFbo) {
+                                        handleLegChange(index, "depHandlerName", selectedFbo.name);
+                                        handleLegChange(index, "depHandlerPhone", selectedFbo.phone);
+                                        handleLegChange(index, "depHandlerEmail", selectedFbo.email);
+                                      } else {
+                                        handleLegChange(index, "depHandlerName", e.target.value);
+                                      }
+                                    }}
+                                    className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1.5 text-xs text-[#0F1420] font-bold focus:outline-none focus:border-[#C9A052]"
+                                  >
+                                    {origFbos.map((fbo) => (
+                                      <option key={fbo.id} value={fbo.name}>
+                                        {fbo.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+
+                                {/* Arrival FBO Dropdown for Destination Airport */}
+                                <div>
+                                  <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1 flex items-center gap-1">
+                                    <Building className="w-3 h-3 text-[#C9A052]" />
+                                    Arrival Station FBO
+                                  </label>
+                                  <select
+                                    value={leg.arrHandlerName}
+                                    onChange={(e) => {
+                                      const selectedFbo = destFbos.find((f) => f.name === e.target.value);
+                                      if (selectedFbo) {
+                                        handleLegChange(index, "arrHandlerName", selectedFbo.name);
+                                        handleLegChange(index, "arrHandlerPhone", selectedFbo.phone);
+                                        handleLegChange(index, "arrHandlerEmail", selectedFbo.email);
+                                      } else {
+                                        handleLegChange(index, "arrHandlerName", e.target.value);
+                                      }
+                                    }}
+                                    className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1.5 text-xs text-[#0F1420] font-bold focus:outline-none focus:border-[#C9A052]"
+                                  >
+                                    {destFbos.map((fbo) => (
+                                      <option key={fbo.id} value={fbo.name}>
+                                        {fbo.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
                     )}
 

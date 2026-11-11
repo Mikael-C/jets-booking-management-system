@@ -196,6 +196,17 @@ export interface FlightLeg {
   departureTimeLocal: string; // e.g. "08:00" or "11:00 h"
   arrivalTimeLocal: string; // e.g. "09:15" or "11:55 h"
   flightTimeFormatted: string; // e.g. "1h 15m"
+  flightTimeMinutes?: number;
+  manualDurationMinutes?: number;
+  isDurationOverridden?: boolean;
+  departureTimeUtc?: string;
+  arrivalTimeUtc?: string;
+  originTz?: string;
+  destTz?: string;
+  tzDiffHours?: number;
+  originTimezone?: string;
+  destinationTimezone?: string;
+  timezoneDifferenceHours?: number;
   paxCount: number;
   flightNumber: string; // Callsign e.g. "PEA501", "GAC842U"
   aircraftRegistration: string; // Tail e.g. "OE-FFB"
@@ -363,6 +374,18 @@ export interface MarginRule {
 
 export interface Booking {
   id: string;
+  tripId?: string; // Global consistent trip ID e.g. "TRIP-2026-842"
+  quoteId?: string; // e.g. "QUO-842-01"
+  bookingRevisionId?: string; // e.g. "BK-842-01"
+  revisionAdjustments?: Array<{
+    id: string;
+    label: string;
+    amount: number;
+  }>;
+  isCancelled?: boolean;
+  cancellationReason?: string;
+  isBooked?: boolean;
+  supersededBy?: string;
   tripNumber: string; // e.g. "PEU842-001" or "ZFL433" (Assigned when booked as a flight)
   invoiceNumber: string; // e.g. "00106020"
   accountNumber: string; // Linked to client account e.g. "ACC-21737"
@@ -444,6 +467,21 @@ export interface Booking {
     complementaryDeductions?: number;
     complementaryDeduction?: number;
   }>;
+  consolidatedInvoice?: {
+    tripId: string;
+    currency: "EUR" | "USD" | "GBP" | "CHF";
+    finalBalance: number;
+    latestBookingRevisionId: string;
+    invoiceCount: number;
+    ledger: Array<{
+      type: "invoice" | "credit_note";
+      invoiceNumber?: string;
+      creditNoteNumber?: string;
+      bookingRevisionId?: string;
+      amount: number;
+      reason?: string;
+    }>;
+  };
   createdAt: string;
   updatedAt: string;
 }
@@ -634,9 +672,18 @@ export interface PetRecord {
 
 export interface ContactRecord {
   id: string;
+  fullName?: string;
+  prefix?: string; // e.g. "Mr.", "Mrs.", "Dr.", "Capt.", "H.E.", "Sheikh"
   firstName: string;
-  middleName?: string;
-  lastName: string;
+  middleName1?: string;
+  middleName2?: string;
+  middleName?: string; // fallback / combined
+  lastName1?: string;
+  lastName2?: string;
+  lastName: string; // primary / combined surname
+  suffix?: string; // e.g. "Jr.", "Sr.", "II", "III", "Esq."
+  title?: string; // e.g. "Family Office Principal", "Lead Charterer", "Signatory"
+  tripsFlown?: string[]; // IDs of trips / bookings this contact has flown on
   email: string;
   phone: string;
   country: string;
@@ -671,5 +718,3 @@ export interface ContactRecord {
   notes?: string;
   createdAt: string;
 }
-
-

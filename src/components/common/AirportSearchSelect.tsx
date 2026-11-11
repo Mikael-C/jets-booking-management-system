@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useMemo, useRef, useEffect } from "react";
-import { airportsData } from "@/data/airports";
+import { useAirportDirectory } from "@/lib/airportDirectory";
 import { Airport } from "@/types/aviation";
 import { Search, X, ChevronDown, Check, MapPin, Building } from "lucide-react";
 
@@ -20,6 +20,7 @@ export default function AirportSearchSelect({
   className = "",
   disabled = false,
 }: AirportSearchSelectProps) {
+  const [airportsData] = useAirportDirectory();
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
@@ -32,7 +33,7 @@ export default function AirportSearchSelect({
         (a) => a.icao.toUpperCase() === (value || "").toUpperCase()
       ) || null
     );
-  }, [value]);
+  }, [value, airportsData]);
 
   // Filter airports matching the same comprehensive logic as AirportsView
   const filteredAirports = useMemo(() => {
@@ -49,6 +50,8 @@ export default function AirportSearchSelect({
       const matchesFbo = (a.fbos || []).some(
         (f) =>
           f.name.toLowerCase().includes(q) ||
+          f.phone.toLowerCase().includes(q) ||
+          f.email.toLowerCase().includes(q) ||
           (f.languages || []).some((l) => l.toLowerCase().includes(q))
       );
       return (
@@ -60,7 +63,7 @@ export default function AirportSearchSelect({
         matchesFbo
       );
     });
-  }, [searchQuery]);
+  }, [searchQuery, airportsData]);
 
   // Click outside listener
   useEffect(() => {
@@ -150,7 +153,14 @@ export default function AirportSearchSelect({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && filteredAirports.length > 0) {
+                  event.preventDefault();
+                  handleSelectAirport(filteredAirports[0].icao);
+                }
+              }}
               placeholder="Search by Airport Name, ICAO code (e.g. LSGG, LFMN), IATA code, or City..."
+              aria-label="Search airports by name, airport code, or city"
               className="w-full pl-9 pr-8 py-2 rounded-lg border border-[#E0DAD0] bg-[#F5F2EC] text-xs text-[#0F1420] font-medium placeholder-gray-400 focus:outline-none focus:border-[#C9A052] focus:bg-white transition-all"
             />
             {searchQuery && (

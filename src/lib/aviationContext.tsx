@@ -461,6 +461,14 @@ export const resolveAircraft = (rawAircraft: any): Aircraft => {
 export const normalizeBooking = (b: any): Booking => {
   const id = String(b?.id || b?._id || `booking-${Date.now()}`);
   const tripNumber = String(b?.tripNumber || `PEU${Math.floor(100 + Math.random() * 899)}-001`);
+  const tripNumDigits = tripNumber.replace(/\D/g, "").slice(0, 3) || "842";
+  const tripId = String(b?.tripId || `TRIP-2026-${tripNumDigits}`);
+  const isBooked = Boolean(
+    b?.isBooked || ["confirmed", "dispatched", "in_flight", "completed"].includes(b?.status)
+  );
+  const quoteVersion = Number(b?.quoteVersion || 1);
+  const quoteId = String(b?.quoteId || b?.quoteReference || `QUO-${tripNumDigits}-0${quoteVersion}`);
+  const bookingRevisionId = String(b?.bookingRevisionId || `BK-${tripNumDigits}-01`);
   
   // Resolve aircraft
   const aircraft = resolveAircraft(b?.aircraft);
@@ -654,6 +662,14 @@ export const normalizeBooking = (b: any): Booking => {
 
   return {
     id,
+    tripId,
+    quoteId,
+    bookingRevisionId,
+    isCancelled: Boolean(b?.isCancelled || false),
+    cancellationReason: b?.cancellationReason ? String(b.cancellationReason) : undefined,
+    isBooked,
+    supersededBy: b?.supersededBy ? String(b.supersededBy) : undefined,
+    creditNotes: Array.isArray(b?.creditNotes) ? b.creditNotes : [],
     tripNumber,
     invoiceNumber: String(b?.invoiceNumber || ""),
     accountNumber: String(b?.accountNumber || client.accountNumber || "ACC-21737"),
@@ -744,7 +760,8 @@ interface AviationContextType {
   updateBookingStatus: (bookingId: string, status: BookingStatus) => void;
   updateBookingPaymentStatus: (bookingId: string, paymentStatus: Booking["paymentStatus"]) => void;
   toggleChecklistItem: (bookingId: string, stepId: string) => void;
-  convertQuoteToBooked: (bookingId: string) => void;
+  convertQuoteToBooked: (bookingId: string, booking?: Booking) => void;
+  sendQuoteToAgent: (bookingId: string) => void;
 
   // Agent Requests
   agentRequests: AgentRequest[];
@@ -804,6 +821,20 @@ interface AviationContextType {
   signCharterContract: (bookingId: string, signatoryName?: string) => void;
   bookingToRevise: Booking | null;
   setBookingToRevise: (b: Booking | null) => void;
+  reviseQuote: (quoteIdOrTripId: string, overrides?: Partial<Booking>) => Booking | null;
+  reviseBookingWithCreditNote: (
+    bookingId: string,
+    overrides: Partial<Booking>,
+    reason: string
+  ) => Booking | null;
+  syncPassengerToContact: (
+    passenger: any,
+    associatedAccountId?: string,
+    associatedAccountName?: string,
+    tripId?: string
+  ) => void;
+  getTripHistoryForContact: (contactId: string) => Booking[];
+  getTripRevisions: (tripId: string) => Booking[];
 
   // Invoices, Flight Briefs, and Contracts Backend Services
   createInvoice: (invoiceData: Partial<Booking> | any) => Promise<Booking>;
@@ -1031,6 +1062,14 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
           }
         })
         .catch(() => {});
+
+      api.contacts.list({ limit: 100 })
+        .then((res) => {
+          if (res?.data && Array.isArray(res.data) && res.data.length > 0) {
+            setContacts(res.data.map((contact: any) => ({ ...contact, id: contact.id || contact._id })));
+          }
+        })
+        .catch((err) => console.warn("Backend contacts sync notice:", err?.message));
 
       api.operators.list({ limit: 100 })
         .then((res) => {
@@ -1708,41 +1747,80 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const convertQuoteToBooked = (bookingId: string) => {
-    let updatedBooking: Booking | null = null;
+  const convertQuoteToBooked = (bookingId: string, bookingCandidate?: Booking) => {
+    const target = bookings.find((booking) => booking.id === bookingId) || bookingCandidate;
+    if (!target || target.isCancelled) return;
+
+    const tripDigits = (target.tripId || target.tripNumber || "").replace(/\D/g, "");
+    const tripSuffix = tripDigits.slice(-3) || "001";
+    const tripId = target.tripId || `TRIP-${new Date().getFullYear()}-${tripSuffix}`;
+    const storedTripNumber = target.tripNumber?.trim() || "";
+    const officialTripNumber = storedTripNumber && !/^(QTE|QUO|REV)[-_]/i.test(storedTripNumber)
+      ? storedTripNumber
+      : `PEU${tripSuffix}-001`;
+    const updatedBooking: Booking = {
+      ...target,
+      tripId,
+      quoteId: target.quoteId || `QUO-${tripSuffix}-${String(target.quoteVersion || 1).padStart(2, "0")}`,
+      bookingRevisionId: target.bookingRevisionId || `BK-${tripSuffix}-01`,
+      isBooked: true,
+      tripNumber: officialTripNumber,
+      status: "confirmed",
+      quoteStatus: "accepted",
+      legs: (target.legs || []).map((leg) => ({
+        ...leg,
+        flightNumber: leg.flightNumber?.trim() || `PEU${tripSuffix}`
+      })),
+      updatedAt: new Date().toISOString()
+    };
+
     setBookings((prev) =>
-      prev.map((b) => {
-        if (b.id !== bookingId) return b;
-        const officialTripNumber = b.tripNumber && b.tripNumber.trim() !== "" ? b.tripNumber : `PEU${Math.floor(100 + Math.random() * 899)}-001`;
-        const numSuffix = officialTripNumber.replace(/\D/g, "").slice(0, 3) || "842";
-        const updatedLegs = (b.legs || []).map((l) => ({
-          ...l,
-          flightNumber: l.flightNumber && l.flightNumber.trim() !== "" ? l.flightNumber : `PEU${numSuffix}`
-        }));
-        const updated: Booking = {
-          ...b,
-          tripNumber: officialTripNumber,
-          status: "confirmed",
-          quoteStatus: "accepted",
-          legs: updatedLegs,
-          updatedAt: new Date().toISOString()
-        };
-        updatedBooking = updated;
-        return updated;
+      prev.map((booking) => {
+        const sameTrip = booking.tripId === target.tripId ||
+          (!target.tripId && booking.tripNumber === target.tripNumber);
+        if (booking.id === bookingId) return updatedBooking;
+        if (sameTrip && !booking.isCancelled) {
+          return {
+            ...booking,
+            tripId,
+            isCancelled: true,
+            cancellationReason: `Superseded by booked revision ${updatedBooking.bookingRevisionId}`,
+            supersededBy: updatedBooking.id,
+            updatedAt: new Date().toISOString()
+          };
+        }
+        return booking;
       })
     );
+    if (selectedBookingForDetail?.id === bookingId) setSelectedBookingForDetail(updatedBooking);
+    if (activeBooking?.id === bookingId) setActiveBooking(updatedBooking);
 
-    if (updatedBooking) {
-      if (selectedBookingForDetail && selectedBookingForDetail.id === bookingId) {
-        setSelectedBookingForDetail(updatedBooking);
-      }
-      if (activeBooking && activeBooking.id === bookingId) {
-        setActiveBooking(updatedBooking);
-      }
-    }
-
-    api.bookings.confirm(bookingId).catch((err) => console.log("Backend sync note:", err.message));
+    api.quotes.convertToBooking(bookingId)
+      .then((response) => {
+        if (response?.data) {
+          const persisted = normalizeBooking(response.data);
+          setBookings((prev) => prev.map((booking) => booking.id === bookingId ? persisted : booking));
+        }
+      })
+      .catch((err) => console.warn("Backend booking conversion notice:", err.message));
     setActiveNav("bookings");
+  };
+
+  const sendQuoteToAgent = (bookingId: string) => {
+    const target = bookings.find((booking) => booking.id === bookingId);
+    if (!target || target.isCancelled || target.isBooked) return;
+
+    const sentQuote: Booking = {
+      ...target,
+      quoteStatus: "sent",
+      status: "quote_sent",
+      updatedAt: new Date().toISOString()
+    };
+    setBookings((prev) => prev.map((booking) => booking.id === bookingId ? sentQuote : booking));
+    if (selectedBookingForDetail?.id === bookingId) setSelectedBookingForDetail(sentQuote);
+
+    api.quotes.send(bookingId)
+      .catch((err) => console.warn("Quote email dispatch notice:", err.message));
   };
 
   const refreshBookings = async (): Promise<Booking[]> => {
@@ -2176,6 +2254,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       try { localStorage.setItem("orbelo_contacts_v2", JSON.stringify(next)); } catch {}
       return next;
     });
+    api.contacts.create(contact).catch((err) => console.warn("Backend contact create notice:", err.message));
     addAuditEntry({
       userEmail: currentUser?.email || "admin@orbelo.com",
       userName: currentUser?.name || "System Admin",
@@ -2192,6 +2271,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       try { localStorage.setItem("orbelo_contacts_v2", JSON.stringify(next)); } catch {}
       return next;
     });
+    api.contacts.update(id, updates).catch((err) => console.warn("Backend contact update notice:", err.message));
   };
 
   const deleteContact = (id: string) => {
@@ -2200,6 +2280,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       try { localStorage.setItem("orbelo_contacts_v2", JSON.stringify(next)); } catch {}
       return next;
     });
+    api.contacts.delete(id).catch((err) => console.warn("Backend contact delete notice:", err.message));
   };
 
   const reviseBookingRoute = (
@@ -2224,6 +2305,33 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
           ? { ...b.pricing, ...pricingOverrides }
           : calculatePricing(b.aircraft, newLegs, b.services, b.pricing.currency || "EUR");
 
+        const currentRevNum = parseInt((b.bookingRevisionId || "").split("-").pop() || "1", 10) || ((b.routeRevisions?.length || 0) + 1);
+        const nextRevNum = currentRevNum + 1;
+        const tripNumDigits = (b.tripNumber || b.tripId || "842").replace(/\D/g, "").slice(0, 3) || "842";
+        const nextBookingRevisionId = `BK-${tripNumDigits}-${String(nextRevNum).padStart(2, "0")}`;
+
+        const priceDifference = recalculatedPricing.totalFlightPrice - b.pricing.totalFlightPrice;
+        const autoCreditNotes = [...(b.creditNotes || [])];
+
+        if (priceDifference !== 0) {
+          const creditNoteNumber = `CR-${Math.floor(100000 + Math.random() * 900000)}`;
+          const todayFormatted = new Date().toLocaleDateString("de-DE");
+          autoCreditNotes.unshift({
+            id: `cn-${Date.now()}`,
+            number: creditNoteNumber,
+            creditNoteNumber,
+            date: todayFormatted,
+            issueDate: todayFormatted,
+            amount: Math.abs(priceDifference),
+            reason: `Booking revision ${nextBookingRevisionId} adjustment: ${reason}`,
+            originalTotal: b.pricing.totalFlightPrice,
+            newTotal: recalculatedPricing.totalFlightPrice,
+            netBalance: priceDifference,
+            clientOwes: priceDifference > 0 ? priceDifference : 0,
+            weOweClient: priceDifference < 0 ? Math.abs(priceDifference) : 0,
+          });
+        }
+
         const revisionId = `REV-${Date.now()}`;
         const revisionRecord = {
           id: revisionId,
@@ -2234,14 +2342,14 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
           newLegs,
           previousPrice: b.pricing.totalFlightPrice,
           newPrice: recalculatedPricing.totalFlightPrice,
-          docRef: `REV-${b.quoteReference || b.tripNumber}`
+          docRef: nextBookingRevisionId
         };
 
         const updatedAudit = [
           {
             id: `act-${Date.now()}`,
             action: "ROUTE_REVISED",
-            details: `Trip itinerary altered: ${reason}. Superseded ${currentActiveLegs.length} leg(s). New flight price recognized: €${recalculatedPricing.totalFlightPrice.toLocaleString()}.`,
+            details: `Trip itinerary altered (${nextBookingRevisionId}): ${reason}. Superseded ${currentActiveLegs.length} leg(s). New flight price recognized: €${recalculatedPricing.totalFlightPrice.toLocaleString()}.${priceDifference !== 0 ? ` Credit adjustment note generated.` : ""}`,
             timestamp: new Date().toLocaleString(),
             author: currentUser?.name || "Operations Team",
             docType: "quotation"
@@ -2251,10 +2359,12 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
 
         const updated: Booking = {
           ...b,
+          bookingRevisionId: nextBookingRevisionId,
           legs: [...newLegs, ...cancelledOldLegs, ...b.legs.filter((l) => l.isCancelled)],
           pricing: recalculatedPricing,
           quoteVersion: (b.quoteVersion || 1) + 1,
           routeRevisions: [revisionRecord, ...(b.routeRevisions || [])],
+          creditNotes: autoCreditNotes,
           tripActionAudit: updatedAudit,
           updatedAt: new Date().toISOString()
         };
@@ -2276,6 +2386,100 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       entityId: bookingId,
       details: `Altered trip route for ${bookingId}: ${reason}. Accounting adjusted to recognize only the revised route revenue.`
     });
+  };
+
+  const reviseBookingWithCreditNote = (
+    bookingId: string,
+    overrides: Partial<Booking>,
+    reason: string
+  ): Booking | null => {
+    const original = bookings.find((booking) => booking.id === bookingId);
+    const originalIsBooked = original && (
+      original.isBooked || ["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(original.status)
+    );
+    if (!original || original.isCancelled || !originalIsBooked) return null;
+
+    const related = bookings.filter((booking) =>
+      original.tripId ? booking.tripId === original.tripId : booking.tripNumber === original.tripNumber
+    );
+    const nextRevision = related.reduce((latest, booking) => {
+      const current = Number((booking.bookingRevisionId || "").split("-").pop()) || 0;
+      return Math.max(latest, current);
+    }, 0) + 1;
+    const digits = (original.tripId || original.tripNumber || "").replace(/\D/g, "");
+    const suffix = digits.slice(-3) || "001";
+    const revisionId = `BK-${suffix}-${String(nextRevision).padStart(2, "0")}`;
+    const nextPricing = overrides.pricing
+      ? { ...original.pricing, ...overrides.pricing }
+      : original.pricing;
+    const previousTotal = original.pricing.totalFlightPrice || 0;
+    const nextTotal = nextPricing.totalFlightPrice || 0;
+    const delta = nextTotal - previousTotal;
+    const date = new Date().toISOString().slice(0, 10);
+    const creditNoteNumber = `CN-${suffix}-${String((original.creditNotes?.length || 0) + 1).padStart(2, "0")}`;
+    const creditNote = delta === 0 ? undefined : {
+      id: `cn-${Date.now()}`,
+      number: creditNoteNumber,
+      creditNoteNumber,
+      date,
+      issueDate: date,
+      amount: Math.abs(delta),
+      reason,
+      originalTotal: previousTotal,
+      newTotal: nextTotal,
+      netBalance: delta,
+      clientOwes: Math.max(delta, 0),
+      weOweClient: Math.max(-delta, 0)
+    };
+    const revised: Booking = {
+      ...original,
+      ...overrides,
+      id: `booking-revision-${Date.now()}`,
+      tripId: original.tripId || `TRIP-${new Date().getFullYear()}-${suffix}`,
+      bookingRevisionId: revisionId,
+      isCancelled: false,
+      cancellationReason: undefined,
+      supersededBy: undefined,
+      isBooked: true,
+      status: overrides.status || original.status,
+      quoteStatus: "accepted",
+      pricing: nextPricing,
+      creditNotes: creditNote ? [creditNote, ...(original.creditNotes || [])] : original.creditNotes,
+      updatedAt: new Date().toISOString()
+    };
+    const archived: Booking = {
+      ...original,
+      isCancelled: true,
+      cancellationReason: `Superseded by booking revision ${revisionId}`,
+      supersededBy: revised.id,
+      updatedAt: new Date().toISOString()
+    };
+
+    setBookings((prev) => [revised, ...prev.map((booking) => booking.id === bookingId ? archived : booking)]);
+    if (selectedBookingForDetail?.id === bookingId) setSelectedBookingForDetail(revised);
+    if (activeBooking?.id === bookingId) setActiveBooking(revised);
+    api.bookings.revise(bookingId, { ...overrides, revisionReason: reason })
+      .then((response) => {
+        if (response?.data) {
+          const persisted = normalizeBooking(response.data);
+          setBookings((prev) => prev.map((booking) =>
+            booking.bookingRevisionId === revisionId ? persisted : booking
+          ));
+          if (selectedBookingForDetail?.id === bookingId) setSelectedBookingForDetail(persisted);
+          if (activeBooking?.id === bookingId) setActiveBooking(persisted);
+        }
+      })
+      .catch((err) => console.warn("Backend booking revision notice:", err.message));
+
+    addAuditEntry({
+      userEmail: currentUser?.email || "ops@orbelo.com",
+      userName: currentUser?.name || "Operations Desk",
+      action: "BOOKING_REVISED",
+      entityType: "Booking",
+      entityId: revisionId,
+      details: `Created booking revision ${revisionId} for trip ${revised.tripId}. ${delta === 0 ? "No price adjustment." : `Credit note ${creditNoteNumber}: ${delta > 0 ? "client owes" : "refund due"} ${Math.abs(delta)}.`} ${reason}`
+    });
+    return revised;
   };
 
   const issueCreditNote = (
@@ -2343,6 +2547,244 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       entityType: "CreditNote",
       entityId: creditNoteNumber,
       details: `Issued credit note ${creditNoteNumber} for booking ${bookingId}. Reason: "${note.reason}". Net balance: €${note.netBalance}`
+    });
+  };
+
+  const reviseQuote = (quoteIdOrTripId: string, overrides?: Partial<Booking>): Booking | null => {
+    let newQuote: Booking | null = null;
+    const baseBooking = bookings.find(
+      (b) => b.quoteId === quoteIdOrTripId || b.id === quoteIdOrTripId || b.tripId === quoteIdOrTripId
+    ) || null;
+    setBookings((prev) => {
+      const base = prev.find(
+        (b) => b.quoteId === quoteIdOrTripId || b.id === quoteIdOrTripId || b.tripId === quoteIdOrTripId
+      );
+      if (!base || base.isCancelled || base.isBooked) return prev;
+
+      const currentVer = base.quoteVersion || parseInt((base.quoteId || "").split("-").pop() || "1", 10) || 1;
+      const tripDigits = (base.tripId || base.tripNumber || "").replace(/\D/g, "");
+      const tripNumDigits = tripDigits.slice(-3) || "001";
+      const tripId = base.tripId || `TRIP-${new Date().getFullYear()}-${tripNumDigits}`;
+      const nextVer = Math.max(currentVer, ...prev
+        .filter((booking) => booking.tripId === base.tripId || (!base.tripId && booking.tripNumber === base.tripNumber))
+        .map((booking) => booking.quoteVersion || 0)) + 1;
+      const nextQuoteId = `QUO-${tripNumDigits}-${String(nextVer).padStart(2, "0")}`;
+      const newBookingId = `booking-quote-${Date.now()}`;
+
+      const cancelledPrev: Booking = {
+        ...base,
+        tripId,
+        isCancelled: true,
+        cancellationReason: `Superseded by revision ${nextQuoteId}`,
+        supersededBy: nextQuoteId,
+        quoteStatus: "expired",
+        status: "cancelled",
+        updatedAt: new Date().toISOString()
+      };
+
+      const pricingMerged = overrides?.pricing
+        ? { ...base.pricing, ...overrides.pricing }
+        : base.pricing;
+
+      const legsMerged = overrides?.legs || base.legs;
+
+      const generatedQuote: Booking = {
+        ...base,
+        ...overrides,
+        id: newBookingId,
+        tripId,
+        quoteId: nextQuoteId,
+        quoteReference: nextQuoteId,
+        quoteVersion: nextVer,
+        bookingRevisionId: base.bookingRevisionId || `BK-${tripNumDigits}-01`,
+        isCancelled: false,
+        cancellationReason: undefined,
+        isBooked: Boolean(overrides?.isBooked),
+        status: overrides?.status || "draft",
+        quoteStatus: overrides?.quoteStatus || "pending",
+        pricing: pricingMerged,
+        legs: legsMerged,
+        tripActionAudit: [
+          {
+            id: `act-${Date.now()}`,
+            action: "QUOTE_REVISED",
+            details: `Created quote revision ${nextQuoteId} (Iteration ${nextVer}) under Trip ${base.tripId}. Prior revision ${base.quoteId} superseded.`,
+            timestamp: new Date().toLocaleString(),
+            author: currentUser?.name || "Charter Broker",
+            docType: "quotation"
+          },
+          ...(base.tripActionAudit || [])
+        ],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      newQuote = generatedQuote;
+      return [generatedQuote, ...prev.map((b) => (b.id === base.id ? cancelledPrev : b))];
+    });
+
+    if (newQuote) {
+      setActiveBooking(newQuote);
+      setSelectedBookingForDetail(newQuote);
+      addAuditEntry({
+        userEmail: currentUser?.email || "broker@orbelo.com",
+        userName: currentUser?.name || "Charter Broker",
+        action: "QUOTE_REVISED",
+        entityType: "Quote",
+        entityId: (newQuote as Booking).quoteId || (newQuote as Booking).id,
+        details: `Issued quote revision ${(newQuote as Booking).quoteId || "—"} under Trip ${(newQuote as Booking).tripId || "—"}.`
+      });
+      if (baseBooking) {
+        api.quotes.revise(baseBooking.id, overrides)
+          .then((response) => {
+            const persisted = normalizeBooking(response?.data || response);
+            setBookings((prev) => prev.map((booking) =>
+              booking.quoteId === newQuote?.quoteId ? persisted : booking
+            ));
+          })
+          .catch((err) => console.warn("Backend quote revision notice:", err.message));
+      }
+    }
+
+    return newQuote;
+  };
+
+  const getTripRevisions = (tripId: string): Booking[] => {
+    return bookings
+      .filter((b) => b.tripId === tripId || b.id === tripId || b.tripNumber === tripId)
+      .sort((a, b) => (a.quoteVersion || 1) - (b.quoteVersion || 1));
+  };
+
+  const syncPassengerToContact = (
+    passenger: any,
+    associatedAccountId?: string,
+    associatedAccountName?: string,
+    tripId?: string
+  ) => {
+    if (!passenger) return;
+    const rawFullName = (passenger.fullName || passenger.name || "").trim();
+    const nameParts = rawFullName.split(/\s+/).filter(Boolean);
+    const pFirst = (passenger.firstName || passenger.first_name || nameParts[0] || "").trim();
+    const pLast = (passenger.lastName || passenger.last_name || nameParts[nameParts.length - 1] || "").trim();
+    const pPassport = (passenger.passportNumber || passenger.passport_number || "").trim();
+
+    if (!pFirst && !pLast && !pPassport) return;
+
+    setContacts((prev) => {
+      const existingIdx = prev.findIndex((c) => {
+        if (pPassport && c.passportDetails?.passportNumber && c.passportDetails.passportNumber.toLowerCase() === pPassport.toLowerCase()) {
+          return true;
+        }
+        if (pFirst && pLast && c.firstName.toLowerCase() === pFirst.toLowerCase() && c.lastName.toLowerCase() === pLast.toLowerCase()) {
+          return true;
+        }
+        return false;
+      });
+
+      if (existingIdx >= 0) {
+        const existing = prev[existingIdx];
+        const existingTrips = existing.tripsFlown || [];
+        const nextTrips = tripId && !existingTrips.includes(tripId) ? [...existingTrips, tripId] : existingTrips;
+        const updated: ContactRecord = {
+          ...existing,
+          prefix: passenger.prefix || existing.prefix,
+          middleName1: passenger.middleName1 || nameParts.slice(1, -1)[0] || existing.middleName1,
+          middleName2: passenger.middleName2 || existing.middleName2,
+          lastName1: passenger.lastName1 || existing.lastName1,
+          lastName2: passenger.lastName2 || existing.lastName2,
+          suffix: passenger.suffix || existing.suffix,
+          title: passenger.title || existing.title,
+          associatedAccountId: associatedAccountId || existing.associatedAccountId,
+          associatedAccountName: associatedAccountName || existing.associatedAccountName,
+          tripsFlown: nextTrips,
+          passportDetails: pPassport
+            ? {
+                passportNumber: pPassport,
+                issuingCountry: passenger.nationality || existing.passportDetails?.issuingCountry || "United States",
+                placeOfBirth: existing.passportDetails?.placeOfBirth || "",
+                dateOfBirth: passenger.dateOfBirth || passenger.dob || existing.passportDetails?.dateOfBirth || "",
+                expirationDate: passenger.passportExpiry || existing.passportDetails?.expirationDate || ""
+              }
+            : existing.passportDetails
+        };
+        const nextList = [...prev];
+        nextList[existingIdx] = updated;
+        try { localStorage.setItem("orbelo_contacts_v2", JSON.stringify(nextList)); } catch {}
+        return nextList;
+      }
+
+      const newContact: ContactRecord = {
+        id: `cnt-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        prefix: passenger.prefix || "",
+        firstName: pFirst || "Passenger",
+        middleName1: passenger.middleName1 || nameParts.slice(1, -1)[0] || "",
+        middleName2: passenger.middleName2 || "",
+        middleName: passenger.middleName || "",
+        lastName1: passenger.lastName1 || "",
+        lastName2: passenger.lastName2 || "",
+        lastName: pLast || "Guest",
+        suffix: passenger.suffix || "",
+        title: passenger.title || "Passenger",
+        tripsFlown: tripId ? [tripId] : [],
+        email: passenger.email || `${(pFirst || "pax").toLowerCase()}.${(pLast || "client").toLowerCase()}@client.vip`,
+        phone: passenger.phone || "+1 555 019 2831",
+        country: passenger.nationality || "United States",
+        gender: (passenger.gender || "Other") as any,
+        weightKg: Number(passenger.weightKg || 75),
+        associatedAccountId: associatedAccountId || undefined,
+        associatedAccountName: associatedAccountName || undefined,
+        isAgent: false,
+        bioIdType: "passport",
+        passportDetails: pPassport
+          ? {
+              passportNumber: pPassport,
+              issuingCountry: passenger.nationality || "United States",
+              placeOfBirth: "",
+              dateOfBirth: passenger.dateOfBirth || passenger.dob || "",
+              expirationDate: passenger.passportExpiry || ""
+            }
+          : undefined,
+        createdAt: new Date().toISOString()
+      };
+
+      const nextList = [newContact, ...prev];
+      try { localStorage.setItem("orbelo_contacts_v2", JSON.stringify(nextList)); } catch {}
+      return nextList;
+    });
+  };
+
+  const getTripHistoryForContact = (contactId: string): Booking[] => {
+    const contact = contacts.find((c) => c.id === contactId);
+    if (!contact) return [];
+
+    const pPassport = contact.passportDetails?.passportNumber?.toLowerCase();
+    const cFull = `${contact.firstName} ${contact.lastName}`.toLowerCase().trim();
+    const cEmail = contact.email?.toLowerCase().trim();
+
+    return bookings.filter((b) => {
+      if (contact.tripsFlown && (
+        (b.tripId && contact.tripsFlown.includes(b.tripId)) ||
+        (b.tripNumber && contact.tripsFlown.includes(b.tripNumber)) ||
+        contact.tripsFlown.includes(b.id)
+      )) {
+        return true;
+      }
+      if (cEmail && b.client?.email?.toLowerCase().trim() === cEmail) return true;
+      if (cFull && b.client?.fullName?.toLowerCase().trim() === cFull) return true;
+
+      if (Array.isArray(b.legs)) {
+        for (const leg of b.legs) {
+          if (Array.isArray(leg.passengers)) {
+            for (const p of leg.passengers) {
+              const passNo = (p.passportNumber || "").toLowerCase();
+              if (pPassport && passNo && passNo === pPassport) return true;
+              const paxName = (p.fullName || `${(p as any).firstName || ""} ${(p as any).lastName || ""}`).toLowerCase().trim();
+              if (cFull && (paxName === cFull || (p.fullName && p.fullName.toLowerCase().trim() === cFull))) return true;
+            }
+          }
+        }
+      }
+      return false;
     });
   };
 
@@ -2617,9 +3059,26 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     });
 
     try {
-      await api.flightBriefs.create(newBooking);
+      const response = await api.flightBriefs.create(newBooking);
+      const contactResponse = await api.flightBriefs.syncPassengers(
+        response?.data?.id || newBooking.id,
+        (newBooking.legs || []).flatMap((leg) => leg.passengers || []),
+        newBooking.accountNumber
+      );
+      if (contactResponse?.data?.length) {
+        setContacts((prev) => {
+          const synced = contactResponse.data.map((contact: any) => ({
+            ...contact,
+            id: contact.id || contact._id
+          }));
+          const syncedIds = new Set(synced.map((contact: ContactRecord) => contact.id));
+          const next = [...synced, ...prev.filter((contact) => !syncedIds.has(contact.id))];
+          try { localStorage.setItem("orbelo_contacts_v2", JSON.stringify(next)); } catch {}
+          return next;
+        });
+      }
     } catch (e: any) {
-      console.log("Backend flight brief sync:", e.message);
+      console.warn("Backend flight brief/passenger sync notice:", e.message);
     }
 
     addAuditEntry({
@@ -3163,6 +3622,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
         updateBookingPaymentStatus,
         toggleChecklistItem,
         convertQuoteToBooked,
+        sendQuoteToAgent,
         agentRequests,
         addAgentRequest,
         updateAgentRequestStatus,
@@ -3183,12 +3643,17 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
         updateContact,
         deleteContact,
         reviseBookingRoute,
+        reviseBookingWithCreditNote,
         issueCreditNote,
         agentConfirmQuote,
         superAdminConfirmQuote,
         signCharterContract,
         bookingToRevise,
         setBookingToRevise,
+        reviseQuote,
+        syncPassengerToContact,
+        getTripHistoryForContact,
+        getTripRevisions,
         createInvoice,
         getInvoices,
         createFlightBrief,

@@ -16,6 +16,7 @@ const authRoutes = require('./routes/auth');
 const bookingRoutes = require('./routes/bookings');
 const agentRequestRoutes = require('./routes/agentRequests');
 const clientRoutes = require('./routes/clients');
+const contactRoutes = require('./routes/contacts');
 const operatorRoutes = require('./routes/operators');
 const fleetRoutes = require('./routes/fleet');
 const quoteRoutes = require('./routes/quotes');
@@ -149,6 +150,7 @@ app.use('/api/airports', airportRoutes);
 app.use('/api/bookings', authenticate, bookingRoutes);
 app.use('/api/agent-requests', authenticate, agentRequestRoutes);
 app.use('/api/clients', authenticate, clientRoutes);
+app.use('/api/contacts', authenticate, contactRoutes);
 app.use('/api/operators', authenticate, operatorRoutes);
 app.use('/api/fleet', fleetRoutes); // GET fleet is public for frontend display
 app.use('/api/quotes', authenticate, quoteRoutes);

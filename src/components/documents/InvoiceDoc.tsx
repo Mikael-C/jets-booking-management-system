@@ -246,6 +246,45 @@ export default function InvoiceDoc({ booking }: InvoiceDocProps) {
           </div>
         </div>
       </div>
+      {booking.consolidatedInvoice && (
+        <div className="doc-page min-h-[1050px] bg-white p-8 sm:p-10 rounded-sm shadow-xl border border-gray-200 mb-8 print:mb-0 print:border-none print:shadow-none print:p-0">
+          <div className="border-b-2 border-gray-900 pb-3 mb-5">
+            <h2 className="text-2xl font-extrabold uppercase text-gray-900">Consolidated Trip Ledger</h2>
+            <p className="text-xs font-mono text-gray-600">
+              Trip {booking.consolidatedInvoice.tripId} · {booking.consolidatedInvoice.invoiceCount} invoice iteration(s)
+            </p>
+          </div>
+          <table className="w-full text-xs border-collapse">
+            <thead>
+              <tr className="border-b border-gray-400 text-left">
+                <th className="py-2 pr-3">Document</th>
+                <th className="py-2 pr-3">Booking Iteration</th>
+                <th className="py-2 pr-3">Details</th>
+                <th className="py-2 text-right">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {booking.consolidatedInvoice.ledger.map((entry, index) => (
+                <tr key={`${entry.type}-${index}`} className="border-b border-gray-200">
+                  <td className="py-2 pr-3 font-mono">{entry.type === "invoice" ? entry.invoiceNumber : entry.creditNoteNumber}</td>
+                  <td className="py-2 pr-3 font-mono">{entry.bookingRevisionId || "—"}</td>
+                  <td className="py-2 pr-3">{entry.reason || (entry.type === "invoice" ? "Booking invoice" : "Credit note adjustment")}</td>
+                  <td className="py-2 text-right font-mono">
+                    {entry.type === "credit_note" ? "−" : ""}
+                    {formatCurrency(entry.amount, booking.consolidatedInvoice?.currency || pricing.currency)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="mt-8 ml-auto max-w-sm border-t-2 border-gray-900 pt-3 flex justify-between font-extrabold">
+            <span>FINAL CONSOLIDATED BALANCE</span>
+            <span className="font-mono">
+              {formatCurrency(booking.consolidatedInvoice.finalBalance, booking.consolidatedInvoice.currency)}
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

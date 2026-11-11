@@ -261,15 +261,6 @@ export default function FleetView() {
             <span>Aircraft Fleet ({fleetData.length})</span>
           </button>
           <button
-            onClick={() => setActiveTab("fbos")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-              activeTab === "fbos" ? "bg-[#0F1420] text-white shadow-sm" : "text-[#0F1420]/70 hover:text-[#0F1420]"
-            }`}
-          >
-            <Building2 className="w-3.5 h-3.5 text-[#C9A052]" />
-            <span>FBO Directory ({INITIAL_FBOS.length})</span>
-          </button>
-          <button
             onClick={() => setActiveTab("photos")}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
               activeTab === "photos" ? "bg-[#0F1420] text-white shadow-sm" : "text-[#0F1420]/70 hover:text-[#0F1420]"

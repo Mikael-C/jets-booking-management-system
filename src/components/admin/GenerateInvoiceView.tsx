@@ -6,6 +6,7 @@ import { Booking, FlightLeg, TripType } from "@/types/aviation";
 import { airportsData, findAirportByCode } from "@/data/airports";
 import { defaultOperator } from "@/data/initialBookings";
 import { formatCurrency } from "@/lib/pricingCalculator";
+import { api } from "@/lib/api";
 import {
   Receipt,
   Plane,
@@ -29,7 +30,10 @@ import {
   X,
   Eye,
   Edit2,
-  AlertTriangle
+  AlertTriangle,
+  ChevronDown,
+  ChevronUp,
+  RotateCcw
 } from "lucide-react";
 
 interface EditableFlownLeg {
@@ -52,13 +56,46 @@ export default function GenerateInvoiceView() {
   const [selectedBookingId, setSelectedBookingId] = useState<string>(bookings[0]?.id || "");
   const selectedBooking = bookings.find((b) => b.id === selectedBookingId) || bookings[0];
 
-  // All Invoices List
-  const invoicesList = useMemo(() => {
-    return bookings.filter((b) => b.invoiceNumber);
+  const [expandedTripIds, setExpandedTripIds] = useState<Set<string>>(new Set());
+  const [consolidatedInvoiceError, setConsolidatedInvoiceError] = useState("");
+
+  // Group invoices / booked flights by tripId
+  const tripGroupedInvoices = useMemo(() => {
+    const map = new Map<string, { latest: Booking; allRevisions: Booking[] }>();
+    const invoiceEligible = bookings.filter(
+      (b) => b.isBooked || ["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(b.status)
+    );
+    for (const b of invoiceEligible) {
+      const tId = b.tripId || b.id;
+      const existing = map.get(tId);
+      if (!existing) {
+        map.set(tId, { latest: b, allRevisions: [b] });
+      } else {
+        existing.allRevisions.push(b);
+        const active = !b.isCancelled;
+        const latestActive = !existing.latest.isCancelled;
+        if (active && !latestActive) {
+          existing.latest = b;
+        } else if (active === latestActive && Number((b.bookingRevisionId || "").split("-").pop()) >
+          Number((existing.latest.bookingRevisionId || "").split("-").pop())) {
+          existing.latest = b;
+        }
+      }
+    }
+    return Array.from(map.values()).map((g) => ({
+      ...g,
+      allRevisions: g.allRevisions.sort((a, b) =>
+        Number((b.bookingRevisionId || "").split("-").pop()) - Number((a.bookingRevisionId || "").split("-").pop())
+      )
+    }));
   }, [bookings]);
 
-  const filteredInvoices = useMemo(() => {
-    return invoicesList.filter((b) => {
+  const invoicesList = useMemo(() => {
+    return tripGroupedInvoices.map((g) => g.latest);
+  }, [tripGroupedInvoices]);
+
+  const filteredTripInvoices = useMemo(() => {
+    return tripGroupedInvoices.filter(({ latest: b }) => {
       if (statusFilter !== "all") {
         if (statusFilter === "paid" && b.paymentStatus !== "fully_paid") return false;
         if (statusFilter === "unpaid" && b.paymentStatus !== "unpaid") return false;
@@ -67,14 +104,71 @@ export default function GenerateInvoiceView() {
       if (searchQuery.trim() !== "") {
         const q = searchQuery.toLowerCase().trim();
         const matchInv = (b.invoiceNumber || "").toLowerCase().includes(q);
-        const matchTrip = (b.tripNumber || "").toLowerCase().includes(q);
-        const matchClient = (b.client.fullName || "").toLowerCase().includes(q);
+        const matchTrip = (b.tripNumber || b.tripId || "").toLowerCase().includes(q);
+        const matchClient = (b.client?.fullName || "").toLowerCase().includes(q);
         const matchAccount = (b.accountNumber || "").toLowerCase().includes(q);
         if (!matchInv && !matchTrip && !matchClient && !matchAccount) return false;
       }
       return true;
     });
-  }, [invoicesList, statusFilter, searchQuery]);
+  }, [tripGroupedInvoices, statusFilter, searchQuery]);
+
+  const toggleTripExpand = (tripId: string) => {
+    setExpandedTripIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(tripId)) next.delete(tripId);
+      else next.add(tripId);
+      return next;
+    });
+  };
+
+  const openConsolidatedInvoice = async (booking: Booking) => {
+    const revisions = bookings.filter((item) =>
+      (booking.tripId ? item.tripId === booking.tripId : item.tripNumber === booking.tripNumber) &&
+      (item.isBooked || ["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(item.status))
+    );
+    const creditNotes = new Map<string, NonNullable<Booking["creditNotes"]>[number]>();
+    revisions.forEach((revision) => (revision.creditNotes || []).forEach((note) => {
+      const key = note.creditNoteNumber || note.number || note.id;
+      if (key) creditNotes.set(key, note);
+    }));
+    const localLedger = [
+      ...revisions.map((revision) => ({
+        type: "invoice" as const,
+        invoiceNumber: revision.invoiceNumber,
+        bookingRevisionId: revision.bookingRevisionId,
+        amount: revision.pricing.totalFlightPrice || 0
+      })),
+      ...Array.from(creditNotes.values()).map((note) => ({
+        type: "credit_note" as const,
+        creditNoteNumber: note.creditNoteNumber || note.number,
+        amount: note.amount,
+        reason: note.reason
+      }))
+    ];
+    let consolidatedInvoice = {
+      tripId: booking.tripId || booking.tripNumber,
+      currency: booking.pricing.currency,
+      finalBalance: booking.pricing.totalFlightPrice || 0,
+      latestBookingRevisionId: booking.bookingRevisionId || "",
+      invoiceCount: revisions.filter((revision) => revision.invoiceNumber).length,
+      ledger: localLedger
+    };
+
+    try {
+      const response = await api.bookings.tripInvoices(booking.tripId || booking.tripNumber);
+      if (response?.consolidated) {
+        consolidatedInvoice = { ...response.consolidated, ledger: response.ledger || localLedger };
+      }
+      setConsolidatedInvoiceError("");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "The backend trip ledger is unavailable.";
+      setConsolidatedInvoiceError(`Using available local revision data. ${message}`);
+      console.warn("Consolidated invoice backend lookup notice:", message);
+    }
+
+    openDocument({ ...booking, consolidatedInvoice }, "invoice");
+  };
 
   // Invoice & Trip References
   const [invoiceNumber, setInvoiceNumber] = useState("00106020");
@@ -505,9 +599,12 @@ export default function GenerateInvoiceView() {
             </div>
           </div>
 
-          {/* Invoices List Cards */}
+          {/* Invoices List Cards Grouped by Trip */}
           <div className="space-y-4">
-            {filteredInvoices.map((inv) => {
+            {filteredTripInvoices.map(({ latest: inv, allRevisions }) => {
+              const tId = inv.tripId || inv.id;
+              const isExpanded = expandedTripIds.has(tId);
+              const hasMultiple = allRevisions.length > 1;
               const isPaid = inv.paymentStatus === "fully_paid";
               const isOverdue = inv.paymentStatus === "overdue";
               const isDeposit = inv.paymentStatus === "deposit_paid";
@@ -516,107 +613,182 @@ export default function GenerateInvoiceView() {
 
               return (
                 <div
-                  key={inv.id}
-                  className="bg-white border border-[#E0DAD0] hover:border-[#C9A052] rounded-2xl p-5 sm:p-6 shadow-sm hover:shadow-md transition-all flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 group"
+                  key={tId}
+                  className="bg-white border border-[#E0DAD0] hover:border-[#C9A052] rounded-2xl shadow-sm hover:shadow-md transition-all overflow-hidden"
                 >
-                  {/* Left: Invoice Reference & Route */}
-                  <div className="flex items-start gap-4 min-w-0 flex-1">
-                    <div className="w-12 h-12 rounded-xl bg-[#FAF8F5] border border-[#E0DAD0] flex items-center justify-center flex-shrink-0 group-hover:border-[#C9A052] transition-colors">
-                      <Receipt className="w-6 h-6 text-[#C9A052]" />
+                  <div className="p-5 sm:p-6 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 group">
+                    {/* Left: Invoice Reference & Route */}
+                    <div className="flex items-start gap-4 min-w-0 flex-1">
+                      <div className="w-12 h-12 rounded-xl bg-[#FAF8F5] border border-[#E0DAD0] flex items-center justify-center flex-shrink-0 group-hover:border-[#C9A052] transition-colors">
+                        <Receipt className="w-6 h-6 text-[#C9A052]" />
+                      </div>
+
+                      <div className="space-y-1.5 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-mono text-sm font-black text-[#0F1420] px-2.5 py-0.5 rounded bg-[#F5F2EC] border border-[#E0DAD0]">
+                            INV-{inv.invoiceNumber || inv.tripNumber}
+                          </span>
+                          <span className="text-xs font-mono text-[#0F1420] font-bold px-2 py-0.5 rounded bg-[#FAF8F5] border border-[#E0DAD0]">
+                            Trip: {inv.tripId || `TRIP-${inv.tripNumber}`}
+                          </span>
+                          <span
+                            className={`text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full border ${
+                              isPaid
+                                ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                                : isOverdue
+                                ? "bg-red-100 text-red-800 border-red-300"
+                                : isDeposit
+                                ? "bg-blue-100 text-blue-800 border-blue-300"
+                                : "bg-amber-100 text-amber-800 border-amber-300"
+                            }`}
+                          >
+                            {isPaid ? "FULLY PAID" : isOverdue ? "OVERDUE" : isDeposit ? "DEPOSIT PAID" : "PAYMENT PENDING"}
+                          </span>
+
+                          {hasMultiple && (
+                            <button
+                              type="button"
+                              onClick={() => toggleTripExpand(tId)}
+                              className="text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-300 flex items-center gap-1 hover:bg-purple-200 transition-colors"
+                            >
+                              <span>{allRevisions.length} Trip Iterations</span>
+                              {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-base font-extrabold text-[#0F1420]">
+                            {inv.legs[0]?.origin.city || "Geneva"} ({inv.legs[0]?.origin.icao})
+                          </h3>
+                          <span className="text-[#C9A052] font-bold">⇄</span>
+                          <h3 className="text-base font-extrabold text-[#0F1420]">
+                            {inv.legs[inv.legs.length - 1]?.destination.city || "Genoa"} ({inv.legs[inv.legs.length - 1]?.destination.icao})
+                          </h3>
+                          {inv.legs.length > 2 && (
+                            <span className="text-xs text-gray-400 font-mono">+{inv.legs.length - 1} legs</span>
+                          )}
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
+                          <span className="font-semibold text-[#0F1420] flex items-center gap-1">
+                            <User className="w-3.5 h-3.5 text-gray-400" />
+                            <span>{inv.client.fullName}</span>
+                          </span>
+                          <span>•</span>
+                          <span className="font-mono text-gray-500">Acc: {inv.accountNumber || "ACC-21737"}</span>
+                          <span>•</span>
+                          <span className="flex items-center gap-1 text-gray-500">
+                            <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                            <span>Due: {inv.paymentDueDate || "03.10.2026"}</span>
+                          </span>
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="space-y-1.5 min-w-0">
+                    {/* Right: Pricing & Actions */}
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between lg:justify-end gap-4 w-full lg:w-auto pt-3 lg:pt-0 border-t lg:border-t-0 border-gray-100">
+                      <div className="text-left sm:text-right">
+                        <div className="text-[10px] font-mono text-gray-400 uppercase">Total Payable</div>
+                        <div className="text-lg font-black text-[#0F1420] font-mono">
+                          {formatCurrency(invoiceTotal, currencySymbol)}
+                        </div>
+                        <div className="text-[10px] font-mono text-emerald-600 font-bold">
+                          VAT 0% Exempt (§6 Abs. 1)
+                        </div>
+                      </div>
+
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-mono text-sm font-black text-[#0F1420] px-2.5 py-0.5 rounded bg-[#F5F2EC] border border-[#E0DAD0]">
-                          INV-{inv.invoiceNumber}
-                        </span>
-                        <span className="text-xs font-mono text-gray-500 font-bold">
-                          Trip: {inv.tripNumber}
-                        </span>
-                        <span
-                          className={`text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full border ${
-                            isPaid
-                              ? "bg-emerald-100 text-emerald-800 border-emerald-300"
-                              : isOverdue
-                              ? "bg-red-100 text-red-800 border-red-300"
-                              : isDeposit
-                              ? "bg-blue-100 text-blue-800 border-blue-300"
-                              : "bg-amber-100 text-amber-800 border-amber-300"
-                          }`}
+                        {/* Consolidated Invoice Button */}
+                        <button
+                          onClick={() => openConsolidatedInvoice(inv)}
+                          className="px-3 py-2 rounded-xl bg-[#0F1420] hover:bg-[#1A2338] text-[#C9A052] border border-[#C9A052]/40 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                          title="Generate Consolidated All-Iterations Commercial Invoice"
                         >
-                          {isPaid ? "FULLY PAID" : isOverdue ? "OVERDUE" : isDeposit ? "DEPOSIT PAID" : "PAYMENT PENDING"}
-                        </span>
-                      </div>
+                          <Receipt className="w-3.5 h-3.5 text-[#C9A052]" />
+                          <span>Consolidated Invoice</span>
+                        </button>
 
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-base font-extrabold text-[#0F1420]">
-                          {inv.legs[0]?.origin.city || "Geneva"} ({inv.legs[0]?.origin.icao})
-                        </h3>
-                        <span className="text-[#C9A052] font-bold">⇄</span>
-                        <h3 className="text-base font-extrabold text-[#0F1420]">
-                          {inv.legs[0]?.destination.city || "Genoa"} ({inv.legs[0]?.destination.icao})
-                        </h3>
-                        {inv.legs.length > 2 && (
-                          <span className="text-xs text-gray-400 font-mono">+{inv.legs.length - 1} legs</span>
-                        )}
-                      </div>
+                        <button
+                          onClick={() => openDocument(inv, "invoice")}
+                          className="px-3.5 py-2 rounded-xl bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] text-xs font-black transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                          title="View official tax invoice PDF"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>View PDF</span>
+                        </button>
 
-                      <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
-                        <span className="font-semibold text-[#0F1420] flex items-center gap-1">
-                          <User className="w-3.5 h-3.5 text-gray-400" />
-                          <span>{inv.client.fullName}</span>
-                        </span>
-                        <span>•</span>
-                        <span className="font-mono text-gray-500">Acc: {inv.accountNumber || "ACC-21737"}</span>
-                        <span>•</span>
-                        <span className="flex items-center gap-1 text-gray-500">
-                          <Calendar className="w-3.5 h-3.5 text-gray-400" />
-                          <span>Due: {inv.paymentDueDate || "03.10.2026"}</span>
-                        </span>
+                        <button
+                          onClick={() => {
+                            populateFromBooking(inv);
+                            setActiveTab("builder");
+                          }}
+                          className="px-3 py-2 rounded-xl bg-[#F5F2EC] hover:bg-[#EBE5DB] text-[#0F1420] text-xs font-bold transition-all border border-[#E0DAD0] flex items-center gap-1 cursor-pointer"
+                          title="Edit and re-compile this invoice"
+                        >
+                          <Edit2 className="w-3.5 h-3.5 text-gray-500" />
+                          <span>Edit</span>
+                        </button>
                       </div>
                     </div>
                   </div>
+                  {consolidatedInvoiceError && (
+                    <p className="px-5 pb-2 text-[10px] text-amber-700 font-mono">{consolidatedInvoiceError}</p>
+                  )}
 
-                  {/* Right: Pricing & Actions */}
-                  <div className="flex items-center justify-between lg:justify-end gap-4 w-full lg:w-auto pt-3 lg:pt-0 border-t lg:border-t-0 border-gray-100">
-                    <div className="text-left lg:text-right">
-                      <div className="text-[10px] font-mono text-gray-400 uppercase">Total Payable</div>
-                      <div className="text-lg font-black text-[#0F1420] font-mono">
-                        {formatCurrency(invoiceTotal, currencySymbol)}
+                  {/* Expandable Revisions Sublevel */}
+                  {hasMultiple && isExpanded && (
+                    <div className="border-t border-[#E0DAD0] bg-[#FAFAF8]">
+                      <div className="px-5 py-2.5 flex items-center justify-between text-[11px] font-mono font-bold uppercase text-gray-500 tracking-wider border-b border-[#E0DAD0]">
+                        <span className="flex items-center gap-2">
+                          <Clock className="w-3.5 h-3.5 text-[#C9A052]" />
+                          All Invoiced Iterations for Trip {inv.tripId || inv.tripNumber}
+                        </span>
+                        <span className="text-[#C9A052]">Strictly Synchronized with Booking Records</span>
                       </div>
-                      <div className="text-[10px] font-mono text-emerald-600 font-bold">
-                        VAT 0% Exempt (§6 Abs. 1)
+                      <div className="divide-y divide-[#E0DAD0]">
+                        {allRevisions.map((rev, revIdx) => (
+                          <div key={rev.id || revIdx} className="px-6 py-3 flex items-center justify-between gap-4 text-xs bg-white hover:bg-[#FDFCFA] transition-colors">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-mono font-bold text-[#0F1420]">
+                                    {rev.bookingRevisionId || rev.quoteId || `Iteration ${rev.quoteVersion || revIdx + 1}`}
+                                  </span>
+                                  {rev.id === inv.id && (
+                                    <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                      Latest Active
+                                    </span>
+                                  )}
+                                  <span className="font-mono text-gray-400 text-[11px]">
+                                    Inv #{rev.invoiceNumber || inv.invoiceNumber}
+                                  </span>
+                                </div>
+                                <p className="text-[10px] text-gray-500 font-mono mt-0.5">
+                                  Routing: {rev.legs?.[0]?.origin?.icao} → {rev.legs?.[rev.legs?.length - 1]?.destination?.icao} · Total: {formatCurrency(rev.pricing?.totalFlightPrice || 12870, rev.pricing?.currency || "EUR")}
+                                </p>
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => openDocument(rev, "invoice")}
+                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#F5F2EC] hover:bg-[#EBE5DB] text-[#0F1420] font-bold text-[11px] border border-[#E0DAD0] transition-colors flex-shrink-0"
+                            >
+                              <Eye className="w-3 h-3 text-[#C9A052]" />
+                              <span>View Iteration PDF</span>
+                            </button>
+                          </div>
+                        ))}
                       </div>
                     </div>
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => openDocument(inv, "invoice")}
-                        className="px-3.5 py-2 rounded-xl bg-[#0F1420] hover:bg-[#1A2338] text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
-                        title="View official tax invoice PDF"
-                      >
-                        <Eye className="w-3.5 h-3.5 text-[#C9A052]" />
-                        <span>View PDF</span>
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          populateFromBooking(inv);
-                          setActiveTab("builder");
-                        }}
-                        className="px-3 py-2 rounded-xl bg-[#F5F2EC] hover:bg-[#EBE5DB] text-[#0F1420] text-xs font-bold transition-all border border-[#E0DAD0] flex items-center gap-1 cursor-pointer"
-                        title="Edit and re-compile this invoice"
-                      >
-                        <Edit2 className="w-3.5 h-3.5 text-gray-500" />
-                        <span>Edit</span>
-                      </button>
-                    </div>
-                  </div>
+                  )}
                 </div>
               );
             })}
 
-            {filteredInvoices.length === 0 && (
+            {filteredTripInvoices.length === 0 && (
               <div className="bg-white border border-[#E0DAD0] rounded-2xl p-12 text-center space-y-4">
                 <Receipt className="w-12 h-12 text-gray-300 mx-auto" />
                 <h3 className="text-base font-bold text-[#0F1420]">No Invoices Found</h3>

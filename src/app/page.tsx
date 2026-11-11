@@ -23,7 +23,6 @@ import AccountsView from "@/components/admin/AccountsView";
 import ContactsView from "@/components/admin/ContactsView";
 import AgentsView from "@/components/admin/AgentsView";
 import AirportsView from "@/components/admin/AirportsView";
-import FbosView from "@/components/admin/FbosView";
 import ClientsView from "@/components/admin/ClientsView";
 import FleetView from "@/components/admin/FleetView";
 import OperatorsView from "@/components/admin/OperatorsView";
@@ -84,8 +83,6 @@ export default function Home() {
           return <OperatorsView />;
         case "airports":
           return <AirportsView />;
-        case "fbos":
-          return <FbosView />;
         case "agent_requests":
         case "sourcing":
           return <AgentRequestsQueueView />;
@@ -132,8 +129,6 @@ export default function Home() {
           return <ContactsView />;
         case "airports":
           return <AirportsView />;
-        case "fbos":
-          return <FbosView />;
         case "messages":
           return <MessagesView />;
         case "profile":

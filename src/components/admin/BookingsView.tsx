@@ -42,9 +42,16 @@ export default function BookingsView() {
   const [activeTab, setActiveTab] = useState<
     "all" | "confirmed" | "quotes_sent" | "quotes_pending" | "quotes_undecided" | "completed"
   >("all");
+  const [expandedTripIds, setExpandedTripIds] = useState<Set<string>>(new Set());
 
-  const countAll = bookings.length;
-  const countConfirmed = bookings.filter((b) => ["confirmed", "dispatched", "in_flight"].includes(b.status)).length;
+  const countAll = new Set(bookings.map((booking) => {
+    const isBookedRecord = booking.isBooked ||
+      ["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(booking.status);
+    return isBookedRecord ? booking.tripId || booking.tripNumber || booking.id : booking.id;
+  })).size;
+  const countConfirmed = new Set(bookings
+    .filter((booking) => ["confirmed", "dispatched", "in_flight"].includes(booking.status))
+    .map((booking) => booking.tripId || booking.tripNumber || booking.id)).size;
   const countQuotesSent = bookings.filter((b) => b.quoteStatus === "sent" || b.status === "quote_sent").length;
   const countQuotesPending = bookings.filter((b) => b.quoteStatus === "pending").length;
   const countQuotesUndecided = bookings.filter((b) => b.quoteStatus === "undecided" || b.status === "client_review").length;
@@ -84,6 +91,34 @@ export default function BookingsView() {
 
     return true;
   });
+
+  const bookingGroups = (() => {
+    const groups = new Map<string, Booking[]>();
+    bookings.forEach((booking) => {
+      const isBookedRecord = booking.isBooked ||
+        ["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(booking.status);
+      const tripKey = isBookedRecord
+        ? booking.tripId || booking.tripNumber || booking.id
+        : booking.id;
+      groups.set(tripKey, [...(groups.get(tripKey) || []), booking]);
+    });
+
+    return Array.from(groups.entries()).map(([tripKey, revisions]) => {
+      const byVersion = (a: Booking, b: Booking) => {
+        const aVersion = Number((a.bookingRevisionId || "").split("-").pop()) || 1;
+        const bVersion = Number((b.bookingRevisionId || "").split("-").pop()) || 1;
+        const versionDifference = aVersion - bVersion;
+        if (versionDifference !== 0) return versionDifference;
+        return Date.parse(a.updatedAt || a.createdAt || "") - Date.parse(b.updatedAt || b.createdAt || "");
+      };
+      const ordered = [...revisions].sort(byVersion);
+      const active = ordered.filter((revision) => !revision.isCancelled && revision.status !== "cancelled");
+      const currentRevisions = active.length ? active : ordered;
+      return { tripKey, revisions: ordered, latest: currentRevisions[currentRevisions.length - 1] };
+    }).filter((group) => filteredBookings.some((booking) =>
+      group.revisions.some((revision) => revision.id === booking.id)
+    ));
+  })();
 
   const getStatusBadge = (status: Booking["status"]) => {
     switch (status) {
@@ -268,7 +303,7 @@ export default function BookingsView() {
             <span className="font-extrabold text-xs font-mono uppercase tracking-wider text-[#0F1420]">
               Flight Operations Register
             </span>
-            <span className="text-xs text-gray-500">({filteredBookings.length} results)</span>
+            <span className="text-xs text-gray-500">({bookingGroups.length} results)</span>
             <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono border ${
               bookingsSource === "backend"
                 ? "bg-emerald-50 text-emerald-800 border-emerald-300"
@@ -316,18 +351,20 @@ export default function BookingsView() {
                   </td>
                 </tr>
               ) : (
-                filteredBookings.map((booking) => {
+                bookingGroups.map(({ tripKey, revisions, latest: booking }) => {
                   const totalChecklist = (booking.checklist || []).length;
                   const completedChecklist = (booking.checklist || []).filter((c) => c.isCompleted || (c as any).completed).length;
                   const isAllReady = totalChecklist > 0 && completedChecklist === totalChecklist;
                   const isInProgress = ["draft", "quote_sent", "client_review"].includes(booking.status);
+                  const hasIterations = revisions.length > 1;
+                  const isExpanded = expandedTripIds.has(tripKey);
 
                   return (
-                    <tr
-                      key={booking.id}
-                      onClick={() => setSelectedBookingForDetail(booking)}
-                      className="hover:bg-[#F5F2EC]/60 transition-colors cursor-pointer group"
-                    >
+                    <React.Fragment key={tripKey}>
+                      <tr
+                        onClick={() => setSelectedBookingForDetail(booking)}
+                        className="hover:bg-[#F5F2EC]/60 transition-colors cursor-pointer group"
+                      >
                       {/* Trip & Status */}
                       <td className="py-4 px-4">
                         <div className="flex flex-col gap-1">
@@ -350,6 +387,23 @@ export default function BookingsView() {
                           <div className="flex items-center gap-1 flex-wrap">
                             {getStatusBadge(booking.status)}
                             {getQuoteBadge(booking)}
+                            {hasIterations && (
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setExpandedTripIds((prev) => {
+                                    const next = new Set(prev);
+                                    if (next.has(tripKey)) next.delete(tripKey);
+                                    else next.add(tripKey);
+                                    return next;
+                                  });
+                                }}
+                                className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-purple-100 text-purple-800 border border-purple-300 hover:bg-purple-200"
+                              >
+                                {revisions.length} Iterations {isExpanded ? "−" : "+"}
+                              </button>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -451,6 +505,16 @@ export default function BookingsView() {
                                 <span>Invoice</span>
                               </button>
 
+                              {/* Charter Contract */}
+                              <button
+                                onClick={() => openDocument(booking, "charter_agreement")}
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#141A29] hover:bg-[#1E2638] text-[#C9A052] text-[11px] font-bold transition-all shadow-sm"
+                                title="View Executed Charter Contract Agreement"
+                              >
+                                <ScrollText className="w-3.5 h-3.5" />
+                                <span>Contract</span>
+                              </button>
+
                               {/* Credit Note */}
                               <button
                                 onClick={() => openDocument(booking, "credit_note")}
@@ -497,7 +561,42 @@ export default function BookingsView() {
                           )}
                         </div>
                       </td>
-                    </tr>
+                      </tr>
+                      {hasIterations && isExpanded && (
+                        <tr className="bg-[#FAF8F5]">
+                          <td colSpan={7} className="px-5 py-3">
+                            <div className="space-y-2 border-l-2 border-[#C9A052] pl-4">
+                              <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-gray-500">
+                                Booking history · {tripKey}
+                              </p>
+                              {revisions.map((revision) => (
+                                <button
+                                  key={revision.id}
+                                  type="button"
+                                  onClick={() => setSelectedBookingForDetail(revision)}
+                                  className={`w-full flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left text-xs ${
+                                    revision.id === booking.id
+                                      ? "border-emerald-300 bg-emerald-50"
+                                      : "border-[#E0DAD0] bg-white hover:border-[#C9A052]"
+                                  }`}
+                                >
+                                  <span className="font-mono font-bold text-[#0F1420]">
+                                    {revision.bookingRevisionId || revision.tripNumber}
+                                    {revision.id === booking.id && <span className="ml-2 text-emerald-700">Current</span>}
+                                    {(revision.isCancelled || revision.status === "cancelled") && <span className="ml-2 text-red-600">Archived</span>}
+                                  </span>
+                                  <span className="text-gray-500">{revision.updatedAt || revision.createdAt || "Date unavailable"}</span>
+                                  <span className="font-mono font-bold text-[#0F1420]">
+                                    {formatCurrency(revision.pricing.totalFlightPrice, revision.pricing.currency)}
+                                  </span>
+                                  <span className="text-gray-600">{revision.cancellationReason || revision.status.replace("_", " ")}</span>
+                                </button>
+                              ))}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   );
                 })
               )}

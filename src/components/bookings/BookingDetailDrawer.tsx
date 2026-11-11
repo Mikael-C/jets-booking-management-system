@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { useAviation } from "@/lib/aviationContext";
 import { formatCurrency } from "@/lib/pricingCalculator";
+import { api } from "@/lib/api";
 import {
   X,
   Plane,
@@ -29,7 +30,9 @@ import {
   PenTool,
   History,
   DollarSign,
-  ExternalLink
+  ExternalLink,
+  Plus,
+  Trash2
 } from "lucide-react";
 
 export default function BookingDetailDrawer() {
@@ -44,24 +47,33 @@ export default function BookingDetailDrawer() {
     issueCreditNote,
     currentUser,
     setActiveNav,
-    role
+    role,
+    getTripRevisions,
+    reviseBookingRoute,
+    reviseBookingWithCreditNote
   } = useAviation();
 
-  if (!selectedBookingForDetail) return null;
   const booking = selectedBookingForDetail;
 
   const [showCreditModal, setShowCreditModal] = useState(false);
-  const [creditRevTotal, setCreditRevTotal] = useState<number>(booking.pricing.totalFlightPrice || 15000);
+  const [showBookingRevisionModal, setShowBookingRevisionModal] = useState(false);
+  const [bookingRevisionReason, setBookingRevisionReason] = useState("");
+  const [revisionAdjustments, setRevisionAdjustments] = useState<Array<{ id: string; label: string; amount: number }>>([]);
+  const [consolidatedInvoiceError, setConsolidatedInvoiceError] = useState("");
+  const [creditRevTotal, setCreditRevTotal] = useState<number>(booking?.pricing.totalFlightPrice || 15000);
   const [cancellationFeeInput, setCancellationFeeInput] = useState<number>(0);
   const [complementaryInput, setComplementaryInput] = useState<number>(0);
   const [creditReasonInput, setCreditReasonInput] = useState<string>("Route revision & schedule adjustment");
 
   const [showSignModal, setShowSignModal] = useState(false);
-  const [signerInput, setSignerInput] = useState(booking.client.fullName || "");
+  const [signerInput, setSignerInput] = useState(booking?.client.fullName || "");
 
-  const isBooked = ["confirmed", "dispatched", "in_flight", "completed"].includes(booking.status);
-  const isContractStage = booking.status === "contract_sent";
-  const isQuoteStage = !isBooked && !isContractStage;
+  if (!booking) return null;
+
+  const isCancelled = Boolean(booking.isCancelled || booking.status === "cancelled");
+  const isBooked = !isCancelled && (booking.isBooked || ["confirmed", "dispatched", "in_flight", "completed"].includes(booking.status));
+  const isContractStage = !isCancelled && booking.status === "contract_sent";
+  const isQuoteStage = !isBooked && !isContractStage && !isCancelled;
 
   const totalSteps = booking.checklist.length;
   const completedSteps = booking.checklist.filter((s) => s.isCompleted).length;
@@ -69,6 +81,57 @@ export default function BookingDetailDrawer() {
   const isAllRequiredDone = booking.checklist
     .filter((s) => s.requiredForDispatch)
     .every((s) => s.isCompleted);
+
+  const openConsolidatedInvoice = async () => {
+    const revisions = getTripRevisions(booking.tripId || booking.tripNumber).filter((revision) =>
+      revision.isBooked || ["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(revision.status)
+    );
+    const invoiceEntries = revisions.map((revision) => ({
+      type: "invoice" as const,
+      invoiceNumber: revision.invoiceNumber,
+      bookingRevisionId: revision.bookingRevisionId,
+      amount: revision.pricing.totalFlightPrice || 0
+    }));
+    const uniqueCreditNotes = new Map<
+      string,
+      NonNullable<(typeof revisions)[number]["creditNotes"]>[number]
+    >();
+    revisions.forEach((revision) => (revision.creditNotes || []).forEach((note) => {
+      const key = note.creditNoteNumber || note.number || note.id;
+      if (key) uniqueCreditNotes.set(key, note);
+    }));
+    const localLedger = [
+      ...invoiceEntries,
+      ...Array.from(uniqueCreditNotes.values()).map((note) => ({
+        type: "credit_note" as const,
+        creditNoteNumber: note.creditNoteNumber || note.number,
+        amount: note.amount,
+        reason: note.reason
+      }))
+    ];
+    let consolidatedInvoice = {
+      tripId: booking.tripId || booking.tripNumber,
+      currency: booking.pricing.currency,
+      finalBalance: booking.pricing.totalFlightPrice || 0,
+      latestBookingRevisionId: booking.bookingRevisionId || "",
+      invoiceCount: revisions.filter((revision) => revision.invoiceNumber).length,
+      ledger: localLedger
+    };
+
+    try {
+      const response = await api.bookings.tripInvoices(booking.tripId || booking.tripNumber);
+      if (response?.consolidated) {
+        consolidatedInvoice = { ...response.consolidated, ledger: response.ledger || localLedger };
+      }
+      setConsolidatedInvoiceError("");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "The backend trip ledger is unavailable.";
+      setConsolidatedInvoiceError(`Using available local revision data. ${message}`);
+      console.warn("Consolidated invoice backend lookup notice:", message);
+    }
+
+    openDocument({ ...booking, consolidatedInvoice }, "invoice");
+  };
 
   const getStatusBadge = (status: typeof booking.status) => {
     switch (status) {
@@ -129,13 +192,37 @@ export default function BookingDetailDrawer() {
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-xs font-mono uppercase tracking-wider text-[#C9A052] font-bold">
-                  {isBooked ? "CONFIRMED CHARTER RECORD" : isContractStage ? "CONTRACT REVIEW STAGE" : "CHARTER QUOTATION"}
+                  {isCancelled ? "ARCHIVED CHARTER ITERATION" : isBooked ? "CONFIRMED CHARTER RECORD" : isContractStage ? "CONTRACT REVIEW STAGE" : "CHARTER QUOTATION"}
                 </span>
                 <span className="text-gray-500">•</span>
                 <span className="text-xs font-mono text-gray-300">Acc: {booking.accountNumber}</span>
               </div>
               <h2 className="text-xl font-black text-white flex items-center gap-2.5">
-                {isBooked ? (
+                {isCancelled ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    <button
+                      onClick={() => openDocument(booking, "quotation")}
+                      className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-[#F5F2EC] hover:bg-[#EBE5DB] text-[#0F1420] font-extrabold text-xs border border-[#E0DAD0]"
+                    >
+                      <FileText className="w-3.5 h-3.5 text-[#C9A052]" />
+                      <span>View Quotation</span>
+                    </button>
+                    <button
+                      onClick={() => openDocument(booking, "invoice")}
+                      className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-[#F5F2EC] hover:bg-[#EBE5DB] text-[#0F1420] font-extrabold text-xs border border-[#E0DAD0]"
+                    >
+                      <Receipt className="w-3.5 h-3.5 text-[#C9A052]" />
+                      <span>View Invoice</span>
+                    </button>
+                    <button
+                      onClick={() => openDocument(booking, "charter_agreement")}
+                      className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-[#141A29] hover:bg-[#1C2436] text-[#C9A052] font-extrabold text-xs"
+                    >
+                      <ScrollText className="w-3.5 h-3.5" />
+                      <span>View Paperwork</span>
+                    </button>
+                  </div>
+                ) : isBooked ? (
                   <>Trip {booking.tripNumber}</>
                 ) : (
                   <>Quote Ref: {booking.quoteReference || (booking.tripNumber ? `QTE-${booking.tripNumber.replace(/\D/g, '') || booking.tripNumber}` : "QTE-PENDING")}</>
@@ -265,47 +352,68 @@ export default function BookingDetailDrawer() {
             </div>
 
             {isBooked ? (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {/* Flight Brief */}
-                <button
-                  onClick={() => openDocument(booking, "flight_brief")}
-                  className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] font-extrabold text-xs transition-all shadow-sm cursor-pointer"
-                  title="Generate Operational Flight Brief with FBO & Crew details"
-                >
-                  <Compass className="w-3.5 h-3.5" />
-                  <span>Flight Brief</span>
-                </button>
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {/* Flight Brief */}
+                  <button
+                    onClick={() => openDocument(booking, "flight_brief")}
+                    className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] font-extrabold text-xs transition-all shadow-sm cursor-pointer"
+                    title="Generate Operational Flight Brief with FBO & Crew details"
+                  >
+                    <Compass className="w-3.5 h-3.5" />
+                    <span>Flight Brief</span>
+                  </button>
 
-                {/* Tax Invoice */}
-                <button
-                  onClick={() => openDocument(booking, "invoice")}
-                  className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] font-extrabold text-xs transition-all shadow-sm cursor-pointer"
-                  title="Generate Official Tax Invoice"
-                >
-                  <Receipt className="w-3.5 h-3.5" />
-                  <span>Tax Invoice</span>
-                </button>
+                  {/* Tax Invoice */}
+                  <button
+                    onClick={() => openDocument(booking, "invoice")}
+                    className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] font-extrabold text-xs transition-all shadow-sm cursor-pointer"
+                    title="Generate Official Tax Invoice"
+                  >
+                    <Receipt className="w-3.5 h-3.5" />
+                    <span>Tax Invoice</span>
+                  </button>
 
-                {/* Credit Note */}
-                <button
-                  onClick={() => openDocument(booking, "credit_note")}
-                  className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-red-100 hover:bg-red-200 text-red-900 border border-red-300 font-extrabold text-xs transition-all shadow-sm cursor-pointer"
-                  title="Generate Official Credit Note Adjustment"
-                >
-                  <RotateCcw className="w-3.5 h-3.5 text-red-700" />
-                  <span>Credit Note</span>
-                </button>
+                  {/* Credit Note */}
+                  <button
+                    onClick={() => openDocument(booking, "credit_note")}
+                    className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-red-100 hover:bg-red-200 text-red-900 border border-red-300 font-extrabold text-xs transition-all shadow-sm cursor-pointer"
+                    title="Generate Official Credit Note Adjustment"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5 text-red-700" />
+                    <span>Credit Note</span>
+                  </button>
 
-                {/* Charter Agreement */}
-                <button
-                  onClick={() => openDocument(booking, "charter_agreement")}
-                  className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-[#141A29] hover:bg-[#1C2436] text-[#C9A052] font-extrabold text-xs transition-all shadow-sm cursor-pointer"
-                  title="View Executed Charter Agreement"
-                >
-                  <ScrollText className="w-3.5 h-3.5" />
-                  <span>Agreement</span>
-                </button>
-              </div>
+                  {/* Charter Agreement */}
+                  <button
+                    onClick={() => openDocument(booking, "charter_agreement")}
+                    className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-[#141A29] hover:bg-[#1C2436] text-[#C9A052] font-extrabold text-xs transition-all shadow-sm cursor-pointer"
+                    title="View Executed Charter Agreement"
+                  >
+                    <ScrollText className="w-3.5 h-3.5" />
+                    <span>Agreement</span>
+                  </button>
+                </div>
+
+                {/* Consolidated All-Iterations Invoice Generator */}
+                <div className="mt-3 pt-3 border-t border-[#E0DAD0] flex items-center justify-between gap-2 flex-wrap">
+                  <span className="text-[11px] font-mono text-gray-500">
+                    Trip ID: <strong className="text-[#0F1420]">{booking.tripId || `TRIP-${booking.tripNumber}`}</strong> · Revision: <strong className="text-[#C9A052]">{booking.bookingRevisionId || "BK-01"}</strong>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={openConsolidatedInvoice}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0F1420] text-[#C9A052] hover:bg-[#1C2436] font-bold text-xs font-mono transition-all border border-[#C9A052]/40 shadow-sm"
+                    title="Generate consolidated multi-iteration commercial invoice"
+                  >
+                    <Receipt className="w-3.5 h-3.5" />
+                    <span>Generate Consolidated All-Iterations Invoice</span>
+                  </button>
+                </div>
+                {consolidatedInvoiceError && (
+                  <p className="mt-2 text-[10px] text-amber-700 font-mono">{consolidatedInvoiceError}</p>
+                )}
+              </>
             ) : isContractStage ? (
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <button
@@ -483,11 +591,16 @@ export default function BookingDetailDrawer() {
 
                     <div className="text-right text-xs font-mono space-y-1">
                       <p className={`font-bold ${isCancelled ? "text-red-800 line-through" : "text-[#0F1420]"}`}>
-                        {leg.flightDate} • Dep: {leg.departureTimeLocal}
+                        {leg.flightDate} • Dep: {leg.departureTimeLocal} {leg.departureTimeUtc && `(${leg.departureTimeUtc})`}
                       </p>
                       <p className="text-[11px] text-gray-500">
-                        Duration: {leg.flightTimeFormatted} • Call: {leg.flightNumber || "PEU842"}
+                        Arr: {leg.arrivalTimeLocal} {leg.arrivalTimeUtc && `(${leg.arrivalTimeUtc})`} · {leg.flightTimeFormatted}
                       </p>
+                      {leg.timezoneDifferenceHours !== undefined && (
+                        <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300 inline-block">
+                          {leg.timezoneDifferenceHours === 0 ? "Same Timezone" : leg.timezoneDifferenceHours > 0 ? `+${leg.timezoneDifferenceHours}h TZ delta` : `${leg.timezoneDifferenceHours}h TZ delta`}
+                        </span>
+                      )}
                       {isCancelled && (
                         <div className="flex items-center justify-end gap-1.5 pt-1">
                           <button
@@ -610,7 +723,19 @@ export default function BookingDetailDrawer() {
               </span>
             </div>
 
-            {booking.isContractSigned ? (
+            {isCancelled ? (
+              <div className="p-4 rounded-xl bg-gray-50 border border-gray-300 text-gray-700 flex items-center justify-between gap-3">
+                <span className="text-xs font-mono font-bold">Archived iteration · contract is view-only</span>
+                {booking.isContractSigned && (
+                  <button
+                    onClick={() => openDocument(booking, "charter_agreement")}
+                    className="px-3 py-1.5 rounded-lg bg-[#0F1420] hover:bg-[#1A2338] text-[#C9A052] text-xs font-bold font-mono"
+                  >
+                    View Contract
+                  </button>
+                )}
+              </div>
+            ) : booking.isContractSigned ? (
               <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-900 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
@@ -658,7 +783,7 @@ export default function BookingDetailDrawer() {
                   Credit Notes, Settlements & Balances
                 </h3>
               </div>
-              <button
+              {!isCancelled && <button
                 onClick={() => {
                   setCreditRevTotal(booking.pricing.totalFlightPrice || 15000);
                   setShowCreditModal(true);
@@ -667,7 +792,7 @@ export default function BookingDetailDrawer() {
               >
                 <DollarSign className="w-3.5 h-3.5" />
                 <span>Create Credit Note / Pull Balance</span>
-              </button>
+              </button>}
             </div>
 
             {/* Issued Credit Notes List */}
@@ -772,7 +897,7 @@ export default function BookingDetailDrawer() {
               </span>
             </div>
 
-            {!isBooked && (
+            {!isBooked && !isCancelled && (
               <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
                 <span>Operational dispatch checklist and ATC slot clearances activate upon contract confirmation.</span>
@@ -796,7 +921,7 @@ export default function BookingDetailDrawer() {
                 return (
                   <div
                     key={step.id}
-                    onClick={() => toggleChecklistItem(booking.id, step.id)}
+                    onClick={isCancelled ? undefined : () => toggleChecklistItem(booking.id, step.id)}
                     className={`p-3 rounded-xl border transition-all cursor-pointer flex items-start gap-3 select-none ${
                       isDone
                         ? "bg-emerald-50/70 border-emerald-300 hover:border-emerald-400"
@@ -849,7 +974,9 @@ export default function BookingDetailDrawer() {
           </div>
 
           <div className="flex items-center gap-2">
-            {!isBooked ? (
+            {isCancelled ? (
+              <span className="text-[11px] font-mono font-bold text-gray-500">Archived iteration · paperwork view only</span>
+            ) : !isBooked ? (
               <button
                 onClick={() => convertQuoteToBooked(booking.id)}
                 className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md transition-all cursor-pointer"
@@ -857,19 +984,34 @@ export default function BookingDetailDrawer() {
                 <CheckCircle2 className="w-4 h-4" />
                 <span>Confirm & Book Flight</span>
               </button>
-            ) : booking.status !== "dispatched" && (
-              <button
-                onClick={() => updateBookingStatus(booking.id, "dispatched")}
-                disabled={!isAllRequiredDone}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold transition-all ${
-                  isAllRequiredDone
-                    ? "bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] shadow-md cursor-pointer"
-                    : "bg-gray-200 text-gray-400 cursor-not-allowed"
-                }`}
-              >
-                <PlaneTakeoff className="w-4 h-4" />
-                <span>Clear & Dispatch Flight</span>
-              </button>
+            ) : (
+              <>
+                <button
+                  onClick={() => {
+                    setBookingRevisionReason("");
+                    setRevisionAdjustments([]);
+                    setShowBookingRevisionModal(true);
+                  }}
+                  className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-extrabold bg-[#F5F2EC] hover:bg-[#EBE5DB] text-[#0F1420] border border-[#E0DAD0] transition-all"
+                >
+                  <RotateCcw className="w-4 h-4 text-[#C9A052]" />
+                  <span>Revise Booking</span>
+                </button>
+                {booking.status !== "dispatched" && (
+                  <button
+                    onClick={() => updateBookingStatus(booking.id, "dispatched")}
+                    disabled={!isAllRequiredDone}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold transition-all ${
+                      isAllRequiredDone
+                        ? "bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] shadow-md cursor-pointer"
+                        : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                    }`}
+                  >
+                    <PlaneTakeoff className="w-4 h-4" />
+                    <span>Clear & Dispatch Flight</span>
+                  </button>
+                )}
+              </>
             )}
 
             <button
@@ -880,6 +1022,161 @@ export default function BookingDetailDrawer() {
             </button>
           </div>
         </div>
+
+        {showBookingRevisionModal && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/65 backdrop-blur-sm p-3 sm:p-5">
+            <div className="bg-white border border-[#D1C9BC] rounded-2xl max-w-4xl w-full max-h-[92vh] shadow-2xl overflow-hidden flex flex-col">
+              <div className="px-6 py-5 bg-[#0F1420] text-white flex items-start justify-between border-b border-[#1C2436]">
+                <div>
+                  <span className="text-[10px] font-mono uppercase tracking-widest font-bold text-[#C9A052]">BOOKING REVISION · {booking.bookingRevisionId || booking.tripNumber}</span>
+                  <h3 className="mt-1 text-xl font-black">Revise Booked Trip</h3>
+                  <p className="mt-1 text-xs text-gray-300">Review the itinerary and itemize additions or reductions before creating the next iteration.</p>
+                </div>
+                <button type="button" onClick={() => setShowBookingRevisionModal(false)} className="p-2 rounded-xl text-gray-400 hover:text-white hover:bg-[#1C2436]" aria-label="Close booking revision">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5">
+                <section className="space-y-3">
+                  <h4 className="text-xs font-mono uppercase tracking-wider font-bold text-[#0F1420] border-b border-[#E0DAD0] pb-2">Booking Details</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="p-3 rounded-xl bg-[#F5F2EC] border border-[#E0DAD0]">
+                      <span className="text-[10px] font-mono uppercase text-gray-500">Client / Account</span>
+                      <p className="mt-1 font-bold text-[#0F1420]">{booking.client.fullName}</p>
+                      <p className="text-[10px] text-gray-500">{booking.accountNumber}</p>
+                    </div>
+                    <div className="p-3 rounded-xl bg-[#F5F2EC] border border-[#E0DAD0]">
+                      <span className="text-[10px] font-mono uppercase text-gray-500">Aircraft</span>
+                      <p className="mt-1 font-bold text-[#0F1420]">{booking.aircraft.name}</p>
+                      <p className="text-[10px] text-gray-500">{booking.aircraft.registration || "Registration pending"}</p>
+                    </div>
+                    <div className="p-3 rounded-xl bg-[#F5F2EC] border border-[#E0DAD0]">
+                      <span className="text-[10px] font-mono uppercase text-gray-500">Trip / Current Revision</span>
+                      <p className="mt-1 font-bold font-mono text-[#0F1420]">{booking.tripId || booking.tripNumber}</p>
+                      <p className="text-[10px] text-gray-500">{booking.bookingRevisionId || "Original booking"}</p>
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-[#E0DAD0] overflow-hidden divide-y divide-[#E0DAD0]">
+                    {(booking.legs || []).filter((leg) => !leg.isCancelled).map((leg, index) => (
+                      <div key={`${leg.legNumber}-${index}`} className="px-3 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <span className="font-mono font-bold text-[#0F1420]">{leg.origin.icao} <ArrowRight className="inline w-3 h-3 text-[#C9A052]" /> {leg.destination.icao}</span>
+                        <span className="text-gray-500">{leg.flightDate} · {leg.departureTimeLocal} · {leg.paxCount} passengers</span>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h4 className="text-xs font-mono uppercase tracking-wider font-bold text-[#0F1420]">Revision Adjustments</h4>
+                      <p className="text-[11px] text-gray-500 mt-1">Enter positive amounts for additions and negative amounts for removals or reductions.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setRevisionAdjustments((items) => [...items, { id: `adjustment-${Date.now()}`, label: "", amount: 0 }])}
+                      className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#0F1420] text-[#C9A052] text-xs font-bold"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Add item
+                    </button>
+                  </div>
+                  {revisionAdjustments.length === 0 ? (
+                    <div className="p-4 rounded-xl border border-dashed border-[#D1C9BC] text-center text-xs text-gray-500">
+                      No price adjustments added. Add an item to increase or reduce the trip amount.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {revisionAdjustments.map((item) => (
+                        <div key={item.id} className="grid grid-cols-[1fr_150px_38px] gap-2 items-center">
+                          <input
+                            value={item.label}
+                            onChange={(event) => setRevisionAdjustments((items) => items.map((current) => current.id === item.id ? { ...current, label: event.target.value } : current))}
+                            placeholder="Adjustment description (e.g. catering removed)"
+                            className="min-w-0 rounded-lg border border-[#E0DAD0] bg-white px-3 py-2 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                          />
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={item.amount}
+                            onChange={(event) => setRevisionAdjustments((items) => items.map((current) => current.id === item.id ? { ...current, amount: event.target.value === "" ? 0 : Number(event.target.value) } : current))}
+                            aria-label="Adjustment amount"
+                            className="w-full rounded-lg border border-[#E0DAD0] bg-white px-3 py-2 text-right font-mono text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setRevisionAdjustments((items) => items.filter((current) => current.id !== item.id))}
+                            className="p-2 rounded-lg text-red-600 hover:bg-red-50"
+                            aria-label="Remove adjustment"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <label className="block space-y-1">
+                    <span className="text-[10px] font-mono uppercase text-gray-500">Revision reason</span>
+                    <textarea
+                      rows={2}
+                      value={bookingRevisionReason}
+                      onChange={(event) => setBookingRevisionReason(event.target.value)}
+                      placeholder="Explain the booking changes"
+                      className="w-full rounded-lg border border-[#E0DAD0] bg-white p-3 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                    />
+                  </label>
+                </section>
+
+                <section className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="p-3 rounded-xl bg-[#F5F2EC] border border-[#E0DAD0]">
+                    <span className="text-[10px] font-mono uppercase text-gray-500">Current Total</span>
+                    <p className="mt-1 font-bold font-mono text-[#0F1420]">{formatCurrency(booking.pricing.totalFlightPrice, booking.pricing.currency)}</p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-[#F5F2EC] border border-[#E0DAD0]">
+                    <span className="text-[10px] font-mono uppercase text-gray-500">Net Adjustment</span>
+                    <p className={`mt-1 font-bold font-mono ${revisionAdjustments.reduce((sum, item) => sum + item.amount, 0) < 0 ? "text-red-700" : "text-emerald-700"}`}>
+                      {formatCurrency(revisionAdjustments.reduce((sum, item) => sum + item.amount, 0), booking.pricing.currency)}
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-[#0F1420] border border-[#1C2436]">
+                    <span className="text-[10px] font-mono uppercase text-[#C9A052]">Revised Trip Total</span>
+                    <p className="mt-1 font-black font-mono text-white">{formatCurrency(booking.pricing.totalFlightPrice + revisionAdjustments.reduce((sum, item) => sum + item.amount, 0), booking.pricing.currency)}</p>
+                  </div>
+                </section>
+                <p className="text-[11px] text-gray-500">A new booking iteration will be created. A price change automatically generates the corresponding credit/debit note.</p>
+              </div>
+              <div className="px-5 py-4 bg-[#F5F2EC] border-t border-[#E0DAD0] flex justify-end gap-2">
+                <button type="button" onClick={() => setShowBookingRevisionModal(false)} className="px-4 py-2 rounded-xl text-xs font-bold text-gray-600 hover:bg-white">Cancel</button>
+                <button
+                  type="button"
+                  disabled={
+                    !bookingRevisionReason.trim() ||
+                    !Number.isFinite(booking.pricing.totalFlightPrice + revisionAdjustments.reduce((sum, item) => sum + item.amount, 0)) ||
+                    booking.pricing.totalFlightPrice + revisionAdjustments.reduce((sum, item) => sum + item.amount, 0) < 0 ||
+                    revisionAdjustments.some((item) => !item.label.trim() || !Number.isFinite(item.amount))
+                  }
+                  onClick={() => {
+                    const netAdjustment = revisionAdjustments.reduce((sum, item) => sum + item.amount, 0);
+                    const total = booking.pricing.totalFlightPrice + netAdjustment;
+                    const updatedPricing = {
+                      ...booking.pricing,
+                      totalFlightPrice: total,
+                      subtotal: Math.max(0, (booking.pricing.subtotal || booking.pricing.totalFlightPrice) + netAdjustment)
+                    };
+                    const revised = reviseBookingWithCreditNote(
+                      booking.id,
+                      { pricing: updatedPricing, revisionAdjustments },
+                      bookingRevisionReason.trim()
+                    );
+                    if (revised) setShowBookingRevisionModal(false);
+                  }}
+                  className="px-5 py-2 rounded-xl text-xs font-extrabold bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] disabled:bg-gray-200 disabled:text-gray-400"
+                >
+                  Create Booking Revision
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Credit Note & Settlement Modal */}
         {showCreditModal && (

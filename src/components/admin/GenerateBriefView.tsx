@@ -29,7 +29,8 @@ import {
   Eye,
   Edit2,
   X,
-  ArrowRight
+  ArrowRight,
+  Lock
 } from "lucide-react";
 
 interface EditableLegBrief {
@@ -59,7 +60,7 @@ interface EditableLegBrief {
 }
 
 export default function GenerateBriefView() {
-  const { bookings, openDocument, contacts, createFlightBrief, getFlightBriefs } = useAviation();
+  const { bookings, openDocument, contacts, createFlightBrief, getFlightBriefs, syncPassengerToContact } = useAviation();
 
   const [activeTab, setActiveTab] = useState<"list" | "builder">("list");
   const [listSearchQuery, setListSearchQuery] = useState("");
@@ -434,6 +435,20 @@ export default function GenerateBriefView() {
     selectedBooking.legs = compiledLegs;
 
     createFlightBrief(selectedBooking).then((saved) => {
+      // Automatically sync passengers to contacts linked to the account
+      compiledLegs.forEach((leg) => {
+        leg.passengers.forEach((pax) => {
+          if (pax.fullName && pax.fullName.trim()) {
+            syncPassengerToContact(
+              pax,
+              selectedBooking.accountNumber || selectedBooking.client.accountNumber,
+              selectedBooking.client.fullName,
+              selectedBooking.tripId || selectedBooking.tripNumber
+            );
+          }
+        });
+      });
+
       setSuccess(true);
       setActiveTab("list");
       openDocument(saved, "flight_brief");
@@ -1199,59 +1214,31 @@ export default function GenerateBriefView() {
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-mono uppercase text-[#0F1420]/70 mb-1">
-                      From (Airport)
+                    <label className="flex items-center gap-1 text-[10px] font-mono uppercase text-[#0F1420]/70 mb-1">
+                      <Lock className="w-3 h-3 text-[#C9A052]" />
+                      <span>From (Airport) — Locked Route</span>
                     </label>
-                    <select
-                      value={leg.originIcao}
-                      onChange={(e) => {
-                        const newIcao = e.target.value;
-                        const fbos = getAirportFbos(newIcao);
-                        const updated = [...legs];
-                        updated[index].originIcao = newIcao;
-                        if (fbos.length > 0) {
-                          updated[index].depHandlerName = fbos[0].name;
-                          updated[index].depHandlerPhone = fbos[0].phone || "";
-                          updated[index].depHandlerEmail = fbos[0].email || "";
-                        }
-                        setLegs(updated);
-                      }}
-                      className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1.5 text-xs font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                    >
-                      {airportsData.map((a) => (
-                        <option key={a.icao} value={a.icao}>
-                          [{a.icao}] {a.city} — {a.name}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-lg px-2.5 py-2 text-xs font-mono font-bold text-[#0F1420] flex items-center justify-between" title="Origin airport is locked to confirmed booking routing. To change, revise the booking.">
+                      <div className="truncate">
+                        <span className="text-[#C9A052] font-black mr-1.5">[{leg.originIcao}]</span>
+                        <span>{findAirportByCode(leg.originIcao)?.city || leg.originIcao} — {findAirportByCode(leg.originIcao)?.name || ""}</span>
+                      </div>
+                      <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-[#0F1420]/10 text-gray-600 flex-shrink-0 ml-1">LOCKED</span>
+                    </div>
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-mono uppercase text-[#0F1420]/70 mb-1">
-                      To (Airport)
+                    <label className="flex items-center gap-1 text-[10px] font-mono uppercase text-[#0F1420]/70 mb-1">
+                      <Lock className="w-3 h-3 text-[#C9A052]" />
+                      <span>To (Airport) — Locked Route</span>
                     </label>
-                    <select
-                      value={leg.destIcao}
-                      onChange={(e) => {
-                        const newIcao = e.target.value;
-                        const fbos = getAirportFbos(newIcao);
-                        const updated = [...legs];
-                        updated[index].destIcao = newIcao;
-                        if (fbos.length > 0) {
-                          updated[index].arrHandlerName = fbos[0].name;
-                          updated[index].arrHandlerPhone = fbos[0].phone || "";
-                          updated[index].arrHandlerEmail = fbos[0].email || "";
-                        }
-                        setLegs(updated);
-                      }}
-                      className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1.5 text-xs font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                    >
-                      {airportsData.map((a) => (
-                        <option key={a.icao} value={a.icao}>
-                          [{a.icao}] {a.city} — {a.name}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-lg px-2.5 py-2 text-xs font-mono font-bold text-[#0F1420] flex items-center justify-between" title="Destination airport is locked to confirmed booking routing. To change, revise the booking.">
+                      <div className="truncate">
+                        <span className="text-[#C9A052] font-black mr-1.5">[{leg.destIcao}]</span>
+                        <span>{findAirportByCode(leg.destIcao)?.city || leg.destIcao} — {findAirportByCode(leg.destIcao)?.name || ""}</span>
+                      </div>
+                      <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-[#0F1420]/10 text-gray-600 flex-shrink-0 ml-1">LOCKED</span>
+                    </div>
                   </div>
 
                   <div>

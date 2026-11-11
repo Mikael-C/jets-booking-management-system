@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
 const Booking = require('../models/Booking');
+const Contact = require('../models/Contact');
+const { authorize } = require('../middleware/auth');
 const { createAuditEntry } = require('../services/auditService');
 
 // Safe Booking finder supporting ObjectId and custom ID strings
@@ -159,6 +161,76 @@ router.post('/', async (req, res) => {
       message: error.message || 'Failed to process flight brief',
     });
   }
+});
+
+router.post('/:id/sync-passengers', authorize('super_admin', 'admin', 'operations'), async (req, res) => {
+  const booking = await findBooking(req.params.id);
+  if (!booking) return res.status(404).json({ success: false, message: 'Flight brief not found' });
+
+  const supplied = Array.isArray(req.body?.passengers) ? req.body.passengers : [];
+  const passengers = supplied.length
+    ? supplied
+    : (booking.legs || []).flatMap((leg) => leg.passengers || []);
+  const accountNumber = req.body?.accountNumber || booking.accountNumber || booking.client?.accountNumber || '';
+  const tripId = booking.tripId || booking.tripNumber;
+  const syncedContacts = [];
+
+  for (const passenger of passengers) {
+    const fullName = String(passenger.fullName || passenger.name || '').trim();
+    const nameParts = fullName.split(/\s+/).filter(Boolean);
+    const firstName = String(passenger.firstName || passenger.first_name || nameParts[0] || '').trim();
+    const lastName = String(passenger.lastName || passenger.last_name || nameParts[nameParts.length - 1] || '').trim();
+    const passportNumber = String(passenger.passportNumber || passenger.passport_number || '').trim();
+    const email = String(passenger.email || '').trim().toLowerCase();
+    if (!firstName && !lastName && !passportNumber && !email) continue;
+
+    const selectors = [];
+    if (passportNumber) selectors.push({ 'passportDetails.passportNumber': passportNumber });
+    if (email) selectors.push({ email });
+    if (firstName && lastName) selectors.push({ firstName, lastName1: passenger.lastName1 || lastName });
+    let contact = selectors.length
+      ? await Contact.findOne({ isDeleted: false, $or: selectors })
+      : null;
+
+    if (!contact) {
+      contact = new Contact({
+        id: `contact-${Date.now()}-${syncedContacts.length}`,
+        firstName,
+        lastName1: passenger.lastName1 || lastName,
+        tripsFlown: []
+      });
+    }
+
+    contact.prefix = passenger.prefix || contact.prefix;
+    contact.firstName = firstName || contact.firstName;
+    contact.middleName1 = passenger.middleName1 || nameParts.slice(1, -1)[0] || contact.middleName1;
+    contact.middleName2 = passenger.middleName2 || contact.middleName2;
+    contact.lastName1 = passenger.lastName1 || lastName || contact.lastName1;
+    contact.lastName2 = passenger.lastName2 || contact.lastName2;
+    contact.suffix = passenger.suffix || contact.suffix;
+    contact.title = passenger.title || contact.title;
+    contact.fullName = fullName || [contact.firstName, contact.middleName1, contact.middleName2, contact.lastName1, contact.lastName2].filter(Boolean).join(' ');
+    contact.email = email || contact.email;
+    contact.phone = passenger.phone || contact.phone;
+    contact.country = passenger.nationality || contact.country;
+    contact.associatedAccountId = accountNumber || contact.associatedAccountId;
+    contact.associatedAccountName = booking.client?.fullName || contact.associatedAccountName;
+    if (passportNumber) {
+      contact.bioIdType = 'passport';
+      contact.passportDetails = {
+        ...(contact.passportDetails || {}),
+        passportNumber,
+        issuingCountry: passenger.nationality || contact.passportDetails?.issuingCountry || '',
+        dateOfBirth: passenger.dateOfBirth || passenger.dob || contact.passportDetails?.dateOfBirth || '',
+        expirationDate: passenger.passportExpiry || contact.passportDetails?.expirationDate || ''
+      };
+    }
+    if (tripId && !contact.tripsFlown.includes(tripId)) contact.tripsFlown.push(tripId);
+    await contact.save();
+    syncedContacts.push(contact);
+  }
+
+  return res.json({ success: true, data: syncedContacts });
 });
 
 // PATCH /api/flight-briefs/:id/status

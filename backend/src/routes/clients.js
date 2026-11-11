@@ -10,6 +10,14 @@ const { createAuditEntry } = require('../services/auditService');
 const clientSchema = Joi.object({
   accountNumber: Joi.string().optional(),
   fullName: Joi.string().required(),
+  prefix: Joi.string().optional().allow(''),
+  firstName: Joi.string().optional().allow(''),
+  middleName1: Joi.string().optional().allow(''),
+  middleName2: Joi.string().optional().allow(''),
+  lastName1: Joi.string().optional().allow(''),
+  lastName2: Joi.string().optional().allow(''),
+  suffix: Joi.string().optional().allow(''),
+  title: Joi.string().optional().allow(''),
   companyName: Joi.string().optional().allow(''),
   streetAddress: Joi.string().required(),
   cityPostalCountry: Joi.string().required(),
@@ -66,8 +74,8 @@ router.post('/', authorize('super_admin', 'admin', 'operations'), validate(clien
   const existing = await Client.findOne({ email: req.body.email });
   if (existing) return res.status(409).json({ message: 'Client with this email already exists' });
 
-  const accNum = req.body.accountNumber || `ACC-${Math.floor(10000 + Math.random() * 90000)}`;
-  const client = new Client({ ...req.body, accountNumber: accNum });
+  const { accountNumber, ...clientData } = req.body;
+  const client = new Client(clientData);
   await client.save();
 
   await createAuditEntry({ user: req.user,
@@ -79,8 +87,14 @@ router.post('/', authorize('super_admin', 'admin', 'operations'), validate(clien
 
 // PUT /api/clients/:id
 router.put('/:id', authorize('super_admin', 'admin', 'operations'), validate(clientSchema), async (req, res) => {
-  const client = await Client.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+  const client = await Client.findById(req.params.id);
   if (!client) return res.status(404).json({ message: 'Client not found' });
+  if (req.body.accountNumber && req.body.accountNumber !== client.accountNumber) {
+    return res.status(400).json({ message: 'Account number is permanent and cannot be modified.' });
+  }
+  const { accountNumber, ...clientData } = req.body;
+  Object.assign(client, clientData);
+  await client.save();
 
   await createAuditEntry({ user: req.user,
     action: 'CLIENT_UPDATED', entityType: 'Client', entityId: client._id.toString(),

@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useAviation } from "@/lib/aviationContext";
-import { ContactRecord, PetRecord, BioIdType } from "@/types/aviation";
+import { Booking, ContactRecord, PetRecord, BioIdType } from "@/types/aviation";
+import { api } from "@/lib/api";
 import { countriesList } from "@/data/countries";
 import {
   Users,
@@ -21,20 +22,84 @@ import {
   ShieldCheck,
   ChevronRight,
   Scale,
-  UserCheck
+  UserCheck,
+  Eye,
+  Plane,
+  Clock,
+  Compass
 } from "lucide-react";
 
+function getContactTripRole(booking: Booking, contact: ContactRecord): string {
+  const normalize = (value?: string) => (value || "").trim().toLowerCase();
+  const name = normalize(contact.fullName || [
+    contact.prefix,
+    contact.firstName,
+    contact.middleName1,
+    contact.middleName2,
+    contact.lastName1,
+    contact.lastName2 || contact.lastName,
+    contact.suffix
+  ].filter(Boolean).join(" "));
+  if (name && normalize(booking.contractSignedBy) === name) return "Signatory";
+
+  const passport = normalize(contact.passportDetails?.passportNumber);
+  const isLeadPassenger = booking.legs.some((leg) =>
+    leg.passengers.some((passenger) => {
+      const matchesContact = (passport && normalize(passenger.passportNumber) === passport) ||
+        normalize(passenger.fullName) === name;
+      return matchesContact && passenger.isLeadPassenger;
+    })
+  );
+  return isLeadPassenger ? "Lead Pax" : "Guest";
+}
+
 export default function ContactsView() {
-  const { contacts, addContact, updateContact, deleteContact, accounts, role } = useAviation();
+  const { contacts, addContact, updateContact, deleteContact, accounts, role, getTripHistoryForContact, openDocument } = useAviation();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedLetter, setSelectedLetter] = useState<string>("all");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingContactId, setEditingContactId] = useState<string | null>(null);
+  const [viewingContact, setViewingContact] = useState<ContactRecord | null>(null);
+  const [contactTripHistory, setContactTripHistory] = useState<Booking[] | null>(null);
 
-  // Form State
+  useEffect(() => {
+    if (!viewingContact) {
+      setContactTripHistory(null);
+      return;
+    }
+
+    let active = true;
+    const contactId = viewingContact.id;
+    setContactTripHistory(null);
+    api.contacts.getTrips(contactId)
+      .then(({ data }) => {
+        if (active) setContactTripHistory(data);
+      })
+      .catch((error) => {
+        console.warn("Unable to load contact flight history; showing locally available trips.", error);
+        if (active) setContactTripHistory(getTripHistoryForContact(contactId));
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [viewingContact?.id]);
+
+  const tripHistory = contactTripHistory ??
+    (viewingContact ? getTripHistoryForContact(viewingContact.id) : []);
+
+  // Form State - Multi-part Name
+  const [prefix, setPrefix] = useState("");
   const [firstName, setFirstName] = useState("");
+  const [middleName1, setMiddleName1] = useState("");
+  const [middleName2, setMiddleName2] = useState("");
   const [middleName, setMiddleName] = useState("");
+  const [lastName1, setLastName1] = useState("");
+  const [lastName2, setLastName2] = useState("");
   const [lastName, setLastName] = useState("");
+  const [suffix, setSuffix] = useState("");
+  const [title, setTitle] = useState("");
+
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [country, setCountry] = useState("Austria");
@@ -103,9 +168,16 @@ export default function ContactsView() {
 
   const resetForm = () => {
     setEditingContactId(null);
+    setPrefix("");
     setFirstName("");
+    setMiddleName1("");
+    setMiddleName2("");
     setMiddleName("");
+    setLastName1("");
+    setLastName2("");
     setLastName("");
+    setSuffix("");
+    setTitle("");
     setEmail("");
     setPhone("");
     setCountry("Austria");
@@ -135,9 +207,16 @@ export default function ContactsView() {
 
   const handleOpenEditModal = (c: ContactRecord) => {
     setEditingContactId(c.id);
+    setPrefix(c.prefix || "");
     setFirstName(c.firstName);
+    setMiddleName1(c.middleName1 || "");
+    setMiddleName2(c.middleName2 || "");
     setMiddleName(c.middleName || "");
+    setLastName1(c.lastName1 || "");
+    setLastName2(c.lastName2 || "");
     setLastName(c.lastName);
+    setSuffix(c.suffix || "");
+    setTitle(c.title || "");
     setEmail(c.email);
     setPhone(c.phone);
     setCountry(c.country);
@@ -205,7 +284,8 @@ export default function ContactsView() {
     const errors: string[] = [];
 
     if (!firstName.trim()) errors.push("First Name is required.");
-    if (!lastName.trim()) errors.push("Last Name is required.");
+    const effectiveLastName = lastName1.trim() || lastName.trim();
+    if (!effectiveLastName) errors.push("Last Name is required.");
     if (!email.trim() || !email.includes("@")) errors.push("Valid Email is required.");
     if (!phone.trim()) errors.push("Telephone Number is required.");
     if (!country.trim()) errors.push("Country must be selected.");
@@ -226,11 +306,22 @@ export default function ContactsView() {
     }
 
     const selectedAccount = accounts.find((a) => a.id === associatedAccountId);
+    const combinedLastName = lastName1.trim()
+      ? [lastName1.trim(), lastName2.trim()].filter(Boolean).join(" ")
+      : lastName.trim();
+    const combinedMiddleName = [middleName1.trim(), middleName2.trim()].filter(Boolean).join(" ") || middleName.trim() || undefined;
 
     const contactPayload: Partial<ContactRecord> = {
-      firstName,
-      middleName: middleName || undefined,
-      lastName,
+      prefix: prefix.trim() || undefined,
+      firstName: firstName.trim(),
+      middleName1: middleName1.trim() || undefined,
+      middleName2: middleName2.trim() || undefined,
+      middleName: combinedMiddleName,
+      lastName1: lastName1.trim() || undefined,
+      lastName2: lastName2.trim() || undefined,
+      lastName: combinedLastName,
+      suffix: suffix.trim() || undefined,
+      title: title.trim() || undefined,
       email,
       phone,
       country,
@@ -359,8 +450,8 @@ export default function ContactsView() {
         </div>
       </div>
 
-      {/* Contacts Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+      {/* Contacts List */}
+      <div className="flex flex-col gap-3">
         {filteredContacts.map((contact) => (
           <div
             key={contact.id}
@@ -401,8 +492,17 @@ export default function ContactsView() {
               {/* Contact Full Name & Associated Account */}
               <div className="min-w-0">
                 <h3 className="text-base font-black text-[#0F1420] group-hover:text-[#C9A052] transition-colors truncate">
-                  {contact.firstName} {contact.middleName ? `${contact.middleName} ` : ""}{contact.lastName}
+                  {contact.prefix ? `${contact.prefix} ` : ""}
+                  {contact.firstName}{" "}
+                  {contact.middleName1 ? `${contact.middleName1} ` : (contact.middleName ? `${contact.middleName} ` : "")}
+                  {contact.middleName2 ? `${contact.middleName2} ` : ""}
+                  {contact.lastName1 ? `${contact.lastName1} ` : ""}
+                  {contact.lastName2 ? contact.lastName2 : contact.lastName}
+                  {contact.suffix ? `, ${contact.suffix}` : ""}
                 </h3>
+                {contact.title && (
+                  <p className="text-[11px] font-bold text-[#C9A052] font-mono truncate">{contact.title}</p>
+                )}
                 {contact.associatedAccountName && (
                   <p className="text-xs text-gray-500 font-medium truncate mt-0.5">
                     Account: <strong className="text-[#0F1420]">{contact.associatedAccountName}</strong>
@@ -487,11 +587,16 @@ export default function ContactsView() {
               )}
             </div>
 
-            {/* Footer */}
-            <div className="pt-3 border-t border-[#E0DAD0] flex items-center justify-between text-xs">
-              <span className="text-[11px] font-mono text-gray-400">
-                Created {contact.createdAt}
-              </span>
+            {/* Footer with Flight History & Edit Profile */}
+            <div className="pt-3 border-t border-[#E0DAD0] flex items-center justify-between text-xs gap-2">
+              <button
+                onClick={() => setViewingContact(contact)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#F5F2EC] hover:bg-[#EBE5DB] text-[#0F1420] font-bold text-xs font-mono transition-colors border border-[#E0DAD0]"
+                title="View full profile & past flights flown"
+              >
+                <Eye className="w-3.5 h-3.5 text-[#C9A052]" />
+                <span>Flight History</span>
+              </button>
               <button
                 onClick={() => handleOpenEditModal(contact)}
                 className="text-xs font-bold text-[#C9A052] hover:text-[#0F1420] flex items-center gap-1 transition-colors"
@@ -567,6 +672,35 @@ export default function ContactsView() {
                   1. Passenger Legal Name & Metrics
                 </h3>
 
+                {/* Prefix & Title Row */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-[#0F1420] mb-1">
+                      Prefix / Salutation
+                    </label>
+                    <input
+                      type="text"
+                      value={prefix}
+                      onChange={(e) => setPrefix(e.target.value)}
+                      placeholder="e.g. Mr., Dr., H.E., Sheikh"
+                      className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs text-[#0F1420] font-medium focus:outline-none focus:border-[#C9A052]"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-bold text-[#0F1420] mb-1">
+                      Title / Designation
+                    </label>
+                    <input
+                      type="text"
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      placeholder="e.g. Family Office Principal, Lead Charterer, Signatory"
+                      className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs text-[#0F1420] font-medium focus:outline-none focus:border-[#C9A052]"
+                    />
+                  </div>
+                </div>
+
+                {/* First Name & Middle Names Row */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
                     <label className="block text-xs font-bold text-[#0F1420] mb-1">
@@ -580,29 +714,67 @@ export default function ContactsView() {
                       className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs text-[#0F1420] font-medium focus:outline-none focus:border-[#C9A052]"
                     />
                   </div>
-
                   <div>
                     <label className="block text-xs font-bold text-[#0F1420] mb-1">
-                      Middle Name
+                      Middle Name 1
                     </label>
                     <input
                       type="text"
-                      value={middleName}
-                      onChange={(e) => setMiddleName(e.target.value)}
+                      value={middleName1}
+                      onChange={(e) => setMiddleName1(e.target.value)}
                       placeholder="e.g. Alexander"
                       className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs text-[#0F1420] font-medium focus:outline-none focus:border-[#C9A052]"
                     />
                   </div>
-
                   <div>
                     <label className="block text-xs font-bold text-[#0F1420] mb-1">
-                      Last Name <span className="text-red-500">*</span>
+                      Middle Name 2
                     </label>
                     <input
                       type="text"
-                      value={lastName}
-                      onChange={(e) => setLastName(e.target.value)}
+                      value={middleName2}
+                      onChange={(e) => setMiddleName2(e.target.value)}
+                      placeholder="e.g. Christian"
+                      className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs text-[#0F1420] font-medium focus:outline-none focus:border-[#C9A052]"
+                    />
+                  </div>
+                </div>
+
+                {/* Surnames & Suffix Row */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-[#0F1420] mb-1">
+                      Last Name 1 (Primary) <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={lastName1}
+                      onChange={(e) => setLastName1(e.target.value)}
                       placeholder="e.g. Brinkmann"
+                      className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs text-[#0F1420] font-medium focus:outline-none focus:border-[#C9A052]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-[#0F1420] mb-1">
+                      Last Name 2 (Secondary / Maternal)
+                    </label>
+                    <input
+                      type="text"
+                      value={lastName2}
+                      onChange={(e) => setLastName2(e.target.value)}
+                      placeholder="e.g. von Habsburg"
+                      className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs text-[#0F1420] font-medium focus:outline-none focus:border-[#C9A052]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-[#0F1420] mb-1">
+                      Suffix
+                    </label>
+                    <input
+                      type="text"
+                      value={suffix}
+                      onChange={(e) => setSuffix(e.target.value)}
+                      placeholder="e.g. Jr., III, Esq."
                       className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs text-[#0F1420] font-medium focus:outline-none focus:border-[#C9A052]"
                     />
                   </div>
@@ -995,6 +1167,226 @@ export default function ContactsView() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Contact Profile & Flight History Modal / Slide-Over */}
+      {viewingContact && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white border border-[#E0DAD0] rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden">
+            {/* Header */}
+            <div className="p-6 bg-[#0F1420] text-white flex items-start justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-[#C9A052] font-bold">
+                    CONTACT PROFILE & FLIGHT HISTORY
+                  </span>
+                  {viewingContact.title && (
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-400/30">
+                      {viewingContact.title}
+                    </span>
+                  )}
+                  {viewingContact.isAgent && (
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-[#C9A052]/20 text-[#C9A052] border border-[#C9A052]/40">
+                      Agent Rep
+                    </span>
+                  )}
+                </div>
+                <h2 className="text-xl font-black text-white">
+                  {viewingContact.prefix ? `${viewingContact.prefix} ` : ""}
+                  {viewingContact.firstName}{" "}
+                  {viewingContact.middleName1 ? `${viewingContact.middleName1} ` : (viewingContact.middleName ? `${viewingContact.middleName} ` : "")}
+                  {viewingContact.middleName2 ? `${viewingContact.middleName2} ` : ""}
+                  {viewingContact.lastName1 ? `${viewingContact.lastName1} ` : ""}
+                  {viewingContact.lastName2 ? viewingContact.lastName2 : viewingContact.lastName}
+                  {viewingContact.suffix ? `, ${viewingContact.suffix}` : ""}
+                </h2>
+                {viewingContact.associatedAccountName && (
+                  <p className="text-xs text-gray-300 font-mono">
+                    Account: <strong className="text-white">{viewingContact.associatedAccountName}</strong>
+                    {viewingContact.associatedAccountId && ` (${viewingContact.associatedAccountId})`}
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={() => setViewingContact(null)}
+                className="p-2 rounded-xl text-gray-400 hover:text-white hover:bg-[#1C2436] transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Content Body */}
+            <div className="p-6 overflow-y-auto space-y-6">
+              {/* Credentials & Metrics */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3.5 rounded-xl bg-[#F5F2EC] border border-[#E0DAD0] text-xs font-mono">
+                <div>
+                  <span className="text-[10px] text-gray-500 uppercase block font-sans">Country</span>
+                  <span className="font-bold text-[#0F1420]">{viewingContact.country}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-gray-500 uppercase block font-sans">Gender</span>
+                  <span className="font-bold text-[#0F1420]">{viewingContact.gender}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-gray-500 uppercase block font-sans">Weight</span>
+                  <span className="font-bold text-[#0F1420]">{viewingContact.weightKg} kg</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-gray-500 uppercase block font-sans">Bio Document</span>
+                  <span className="font-bold text-[#0F1420]">{viewingContact.bioIdType?.toUpperCase()}</span>
+                </div>
+              </div>
+
+              {/* Contact Info */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono">
+                <div className="p-3 rounded-xl border border-[#E0DAD0] bg-white flex items-center gap-2">
+                  <Mail className="w-4 h-4 text-[#C9A052] shrink-0" />
+                  <span className="truncate">{viewingContact.email}</span>
+                </div>
+                <div className="p-3 rounded-xl border border-[#E0DAD0] bg-white flex items-center gap-2">
+                  <Phone className="w-4 h-4 text-[#C9A052] shrink-0" />
+                  <span className="truncate">{viewingContact.phone}</span>
+                </div>
+              </div>
+
+              {/* Passport / Identification Details */}
+              <div className="p-4 rounded-xl border border-[#E0DAD0] bg-white space-y-2 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-mono font-bold text-gray-700 uppercase flex items-center gap-1.5">
+                    <FileText className="w-3.5 h-3.5 text-[#C9A052]" />
+                    Identification & Travel Credentials
+                  </span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-100 text-emerald-800">
+                    Verified APIS
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 font-mono pt-1 text-gray-600">
+                  <div>
+                    <span className="text-[10px] text-gray-400 uppercase block">Doc Number</span>
+                    <strong className="text-[#0F1420]">
+                      {viewingContact.bioIdType === "passport"
+                        ? viewingContact.passportDetails?.passportNumber || "On File"
+                        : viewingContact.bioIdType === "id"
+                        ? viewingContact.idDetails?.idNumber || "On File"
+                        : viewingContact.visaDetails?.visaNumber || "On File"}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-gray-400 uppercase block">Issuing Authority</span>
+                    <strong className="text-[#0F1420]">
+                      {viewingContact.passportDetails?.issuingCountry || viewingContact.country}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-gray-400 uppercase block">Expiration Date</span>
+                    <strong className="text-[#0F1420]">
+                      {viewingContact.passportDetails?.expirationDate || viewingContact.idDetails?.expirationDate || viewingContact.visaDetails?.validUntil || "Valid"}
+                    </strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* FLIGHT HISTORY SECTION */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Plane className="w-4 h-4 text-[#C9A052]" />
+                    <h3 className="text-sm font-extrabold text-[#0F1420]">
+                      Trips Flown & Flight History
+                    </h3>
+                  </div>
+                  <span className="text-xs font-mono font-bold px-2.5 py-0.5 rounded-full bg-[#0F1420] text-[#C9A052]">
+                    {tripHistory.length} Flights
+                  </span>
+                </div>
+
+                {tripHistory.length === 0 ? (
+                  <div className="p-6 rounded-xl border border-dashed border-gray-300 text-center space-y-1.5">
+                    <Clock className="w-6 h-6 text-gray-400 mx-auto" />
+                    <p className="text-xs font-bold text-gray-700">No flight records found for this passenger</p>
+                    <p className="text-[11px] text-gray-400">
+                      When this contact is added to a flight brief passenger manifest or booking, completed trips will appear here automatically.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {tripHistory.map((b) => (
+                      <div
+                        key={b.id}
+                        className="p-3.5 rounded-xl border border-[#E0DAD0] bg-[#FAFAF8] hover:bg-white hover:border-[#C9A052]/60 transition-all text-xs space-y-2"
+                      >
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-black text-[#0F1420] px-2 py-0.5 rounded bg-white border border-[#E0DAD0]">
+                              {b.tripNumber || b.tripId}
+                            </span>
+                            <span className="text-[10px] font-mono text-gray-500">
+                              {b.legs?.[0]?.flightDate || new Date(b.createdAt || "").toLocaleDateString()}
+                            </span>
+                          </div>
+                          <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border ${
+                            b.status === "completed" || b.status === "flown"
+                              ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                              : "bg-blue-100 text-blue-800 border-blue-300"
+                          }`}>
+                            {b.status.toUpperCase()}
+                          </span>
+                          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-[#F4EBD8] text-[#7A5A1B]">
+                            {getContactTripRole(b, viewingContact)}
+                          </span>
+                        </div>
+
+                        {/* Routing & Aircraft */}
+                        <div className="flex items-center justify-between text-xs pt-1">
+                          <div className="flex items-center gap-1.5 font-bold text-[#0F1420]">
+                            <span>{b.legs?.[0]?.origin?.city || b.legs?.[0]?.origin?.icao || "Departure"}</span>
+                            <span className="text-[#C9A052]">→</span>
+                            <span>{b.legs?.[b.legs.length - 1]?.destination?.city || b.legs?.[b.legs.length - 1]?.destination?.icao || "Arrival"}</span>
+                          </div>
+                          <span className="font-mono text-gray-500">
+                            {b.aircraft?.name} ({b.aircraft?.registration || "OE-FFB"})
+                          </span>
+                        </div>
+                        <div className="flex justify-end gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => openDocument(b, "invoice")}
+                            className="px-2.5 py-1 rounded-lg bg-[#0F1420] text-[#C9A052] font-bold text-[10px]"
+                          >
+                            View Invoice
+                          </button>
+                          {b.isContractSigned && (
+                            <button
+                              type="button"
+                              onClick={() => openDocument(b, "charter_agreement")}
+                              className="px-2.5 py-1 rounded-lg border border-[#E0DAD0] text-[#0F1420] font-bold text-[10px]"
+                            >
+                              View Contract
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-[#E0DAD0] bg-gray-50 flex items-center justify-between">
+              <span className="text-xs text-gray-500 font-mono">
+                Contact ID: {viewingContact.id}
+              </span>
+              <button
+                type="button"
+                onClick={() => setViewingContact(null)}
+                className="px-4 py-2 rounded-xl bg-[#0F1420] text-[#C9A052] font-bold text-xs"
+              >
+                Close Profile
+              </button>
+            </div>
           </div>
         </div>
       )}

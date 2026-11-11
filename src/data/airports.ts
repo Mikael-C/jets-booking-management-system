@@ -3421,6 +3421,19 @@ export const airportsData: Airport[] = [
   }
 ];
 
+function getCurrentAirports(): Airport[] {
+  if (typeof window === "undefined") return airportsData;
+  try {
+    const saved = window.localStorage.getItem("orbelo_airport_directory_v1");
+    if (!saved) return airportsData;
+    const parsed: unknown = JSON.parse(saved);
+    return Array.isArray(parsed) ? parsed as Airport[] : airportsData;
+  } catch (error) {
+    console.warn("Unable to load saved airport directory data.", error);
+    return airportsData;
+  }
+}
+
 function sweepAddress(addr: string): string {
   return addr;
 }
@@ -3429,9 +3442,10 @@ function sweepAddress(addr: string): string {
  * Return airport by 4-letter ICAO, 3-letter IATA, or unique internal ID
  */
 export function findAirportByCode(code: string): Airport {
-  if (!code) return airportsData[0];
+  const currentAirports = getCurrentAirports();
+  if (!code) return currentAirports[0];
   const clean = code.trim().toUpperCase();
-  const match = airportsData.find(
+  const match = currentAirports.find(
     (a) =>
       a.icao.toUpperCase() === clean ||
       a.iata.toUpperCase() === clean ||
@@ -3474,7 +3488,7 @@ export function findAirportByCode(code: string): Airport {
  */
 export function getAirportFbos(code: string): FboOption[] {
   const airport = findAirportByCode(code);
-  if (airport && airport.fbos && airport.fbos.length > 0) {
+  if (airport?.fbos) {
     return airport.fbos;
   }
   return [
@@ -3497,7 +3511,7 @@ export function getAirportFbos(code: string): FboOption[] {
  */
 export function getAllFbos(): (FboOption & { airportIcao: string; airportIata: string; airportName: string; city: string; country: string })[] {
   const result: (FboOption & { airportIcao: string; airportIata: string; airportName: string; city: string; country: string })[] = [];
-  for (const apt of airportsData) {
+  for (const apt of getCurrentAirports()) {
     if (apt.fbos) {
       for (const f of apt.fbos) {
         result.push({
@@ -3538,9 +3552,10 @@ export function getDefaultHandlingAgent(code: string, stationType: "dep" | "arr"
  * Search airports by text query (matches name, 4-letter ICAO, 3-letter IATA, city, country)
  */
 export function searchAirports(query: string, limit: number = 30): Airport[] {
-  if (!query || query.trim().length === 0) return airportsData.slice(0, limit);
+  const currentAirports = getCurrentAirports();
+  if (!query || query.trim().length === 0) return currentAirports.slice(0, limit);
   const q = query.trim().toLowerCase();
-  return airportsData
+  return currentAirports
     .filter(
       (a) =>
         a.icao.toLowerCase().includes(q) ||

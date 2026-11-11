@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
-import { airportsData, getAllFbos } from "@/data/airports";
+import { useAirportDirectory } from "@/lib/airportDirectory";
 import { Airport, FboOption } from "@/types/aviation";
 import {
   MapPin,
@@ -20,14 +20,20 @@ import {
   CheckCircle2,
   AlertTriangle,
   Globe,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Plus,
+  Edit2,
+  Trash2
 } from "lucide-react";
 
 export default function AirportsView() {
+  const [airportsData, saveAirportDirectory] = useAirportDirectory();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRegion, setSelectedRegion] = useState<string>("all");
   const [selectedType, setSelectedType] = useState<string>("all");
   const [selectedAirportForModal, setSelectedAirportForModal] = useState<Airport | null>(null);
+  const [editingFboId, setEditingFboId] = useState<string | null>(null);
+  const [fboDraft, setFboDraft] = useState<Partial<FboOption>>({});
 
   // Filtered airports
   const filteredAirports = useMemo(() => {
@@ -63,6 +69,8 @@ export default function AirportsView() {
         const matchesFbo = (a.fbos || []).some(
           (f) =>
             f.name.toLowerCase().includes(q) ||
+            f.phone.toLowerCase().includes(q) ||
+            f.email.toLowerCase().includes(q) ||
             (f.languages || []).some((l) => l.toLowerCase().includes(q))
         );
         if (!matchesName && !matchesIcao && !matchesIata && !matchesCity && !matchesCountry && !matchesFbo) {
@@ -72,11 +80,53 @@ export default function AirportsView() {
 
       return true;
     });
-  }, [searchQuery, selectedRegion, selectedType]);
+  }, [airportsData, searchQuery, selectedRegion, selectedType]);
 
   const totalFbosCount = useMemo(() => {
     return airportsData.reduce((sum, a) => sum + (a.fbos?.length || 0), 0);
-  }, []);
+  }, [airportsData]);
+
+  const saveFbo = () => {
+    if (!selectedAirportForModal || !fboDraft.name?.trim() || !fboDraft.phone?.trim() || !fboDraft.email?.trim()) return;
+    const airport = airportsData.find((item) => item.id === selectedAirportForModal.id) || selectedAirportForModal;
+    const id = editingFboId === "new" ? `fbo-${airport.icao.toLowerCase()}-${Date.now()}` : editingFboId!;
+    const fbo: FboOption = {
+      id,
+      name: fboDraft.name.trim(),
+      phone: fboDraft.phone.trim(),
+      email: fboDraft.email.trim(),
+      airportIcao: airport.icao,
+      airportName: airport.name,
+      vhfFrequency: fboDraft.vhfFrequency?.trim(),
+      address: fboDraft.address?.trim(),
+      operatingHours: fboDraft.operatingHours?.trim(),
+      languages: fboDraft.languages,
+      amenities: fboDraft.amenities,
+      notes: fboDraft.notes?.trim()
+    };
+    const next = airportsData.map((item) => item.id !== airport.id ? item : {
+      ...item,
+      fbos: editingFboId === "new"
+        ? [...(item.fbos || []), fbo]
+        : (item.fbos || []).map((existing) => existing.id === id ? fbo : existing)
+    });
+    saveAirportDirectory(next);
+    setSelectedAirportForModal(next.find((item) => item.id === airport.id) || null);
+    setEditingFboId(null);
+    setFboDraft({});
+  };
+
+  const removeFbo = (fboId: string) => {
+    if (!selectedAirportForModal) return;
+    const airport = airportsData.find((item) => item.id === selectedAirportForModal.id) || selectedAirportForModal;
+    const next = airportsData.map((item) => item.id === airport.id
+      ? { ...item, fbos: (item.fbos || []).filter((fbo) => fbo.id !== fboId) }
+      : item
+    );
+    saveAirportDirectory(next);
+    setSelectedAirportForModal(next.find((item) => item.id === airport.id) || null);
+    setEditingFboId(null);
+  };
 
   return (
     <div className="space-y-6">
@@ -180,18 +230,28 @@ export default function AirportsView() {
         </div>
       </div>
 
-      {/* Airport Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+      {/* Airport Directory List */}
+      <div className="bg-white border border-[#E0DAD0] rounded-2xl shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-[#F5F2EC] text-[#0F1420]/70 font-mono text-[10px] uppercase tracking-wider border-b border-[#E0DAD0]">
+              <tr>
+                <th className="px-4 py-3">Airport</th>
+                <th className="px-4 py-3">Location</th>
+                <th className="px-4 py-3">Runway / Hours</th>
+                <th className="px-4 py-3">FBO Facilities</th>
+                <th className="px-4 py-3 text-right">Details</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#E0DAD0]">
         {filteredAirports.map((airport) => (
-          <div
+          <tr
             key={airport.id}
-            className="bg-white border border-[#E0DAD0] hover:border-[#C9A052] rounded-2xl p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group"
+            onClick={() => setSelectedAirportForModal(airport)}
+            className="hover:bg-[#FAF8F5] cursor-pointer transition-colors"
           >
-            <div className="space-y-4">
-              {/* Card Header: Codes & Location */}
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
+            <td className="px-4 py-3">
+              <div className="flex items-center gap-2">
                     <span className="px-2.5 py-1 rounded-lg bg-[#0F1420] text-white font-mono font-black text-sm tracking-wide shadow-sm">
                       {airport.icao}
                     </span>
@@ -203,106 +263,38 @@ export default function AirportsView() {
                         Top Hub
                       </span>
                     )}
-                  </div>
-                  <h3 className="text-base font-extrabold text-[#0F1420] group-hover:text-[#C9A052] transition-colors leading-snug">
-                    {airport.name}
-                  </h3>
-                  <p className="text-xs text-gray-600 flex items-center gap-1 mt-0.5">
-                    <MapPin className="w-3.5 h-3.5 text-gray-400" />
-                    <span>{airport.city}, {airport.country}</span>
-                  </p>
-                </div>
               </div>
-
-              {/* Technical Specifications: Runway & Hours */}
-              <div className="p-3.5 rounded-xl bg-[#F5F2EC] border border-[#E0DAD0] space-y-2.5 text-xs">
-                {/* Runway Specs */}
-                <div>
-                  <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-gray-500 mb-0.5">
-                    Runway Specifications
-                  </div>
-                  <div className="font-bold text-[#0F1420] flex items-center justify-between">
-                    <span>{airport.runwayLength || "2,500 m / 8,200 ft - Asphalt"}</span>
-                    {airport.elevation && (
-                      <span className="text-[10px] text-gray-500 font-mono">Elev: {airport.elevation}</span>
-                    )}
-                  </div>
-                  {airport.runwaySurface && (
-                    <div className="text-[11px] text-gray-600 font-mono">{airport.runwaySurface}</div>
-                  )}
-                </div>
-
-                {/* Operating Hours */}
-                <div className="pt-2 border-t border-[#E0DAD0]">
-                  <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-gray-500 mb-0.5 flex items-center gap-1">
-                    <Clock className="w-3 h-3 text-[#C9A052]" />
-                    <span>Operating Hours</span>
-                  </div>
-                  <p className="font-bold text-[#0F1420]">
-                    {airport.operatingHours || "06:00 - 22:00 Local"}
-                  </p>
-                </div>
-
-                {/* Extension Possibilities */}
-                <div className="pt-2 border-t border-[#E0DAD0]">
-                  <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-gray-500 mb-0.5 flex items-center gap-1">
-                    <AlertTriangle className="w-3 h-3 text-amber-600" />
-                    <span>Extension Possibilities</span>
-                  </div>
-                  <p className="text-[11px] text-gray-700 leading-relaxed">
-                    {airport.extensionPossibilities || "Late night extensions possible with 24h prior request and PPR approval."}
-                  </p>
-                </div>
-              </div>
-
-              {/* Designated FBOs Preview */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-gray-500">
-                    Designated FBO Handlers ({airport.fbos?.length || 0})
-                  </span>
-                </div>
-                <div className="space-y-1.5">
-                  {(airport.fbos || []).slice(0, 2).map((fbo) => (
-                    <div
-                      key={fbo.id}
-                      className="p-2.5 rounded-xl border border-gray-200 bg-white hover:border-[#C9A052] transition-colors flex items-center justify-between text-xs"
-                    >
-                      <div className="min-w-0 pr-2">
-                        <div className="font-bold text-[#0F1420] truncate">{fbo.name}</div>
-                        <div className="text-[11px] text-gray-500 font-mono flex items-center gap-2">
-                          <span>{fbo.phone}</span>
-                          {fbo.vhfFrequency && (
-                            <span className="text-[#9A7A35]">VHF {fbo.vhfFrequency}</span>
-                          )}
-                        </div>
-                      </div>
-                      <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 flex-shrink-0">
-                        {fbo.operatingHours ? fbo.operatingHours.split(" ")[0] : "Active"}
-                      </span>
-                    </div>
-                  ))}
-                  {(airport.fbos?.length || 0) > 2 && (
-                    <p className="text-[11px] text-gray-500 italic text-center pt-0.5">
-                      +{(airport.fbos?.length || 0) - 2} more designated FBOs available
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Card Footer Button */}
-            <div className="pt-4 mt-4 border-t border-[#E0DAD0]">
+              <p className="mt-1 font-bold text-[#0F1420]">{airport.name}</p>
+            </td>
+            <td className="px-4 py-3 text-gray-600">
+              <div className="flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5 text-[#C9A052]" />{airport.city}, {airport.country}</div>
+              <div className="mt-1 text-[10px] font-mono text-gray-400">{airport.region || "Global"}</div>
+            </td>
+            <td className="px-4 py-3">
+              <div className="font-semibold text-[#0F1420]">{airport.runwayLength || "Runway details unavailable"}</div>
+              <div className="mt-1 text-gray-500">{airport.operatingHours || "06:00 - 22:00 Local"}</div>
+            </td>
+            <td className="px-4 py-3">
+              <span className="font-bold text-[#0F1420]">{airport.fbos?.length || 0} FBO{airport.fbos?.length === 1 ? "" : "s"}</span>
+              <div className="mt-1 max-w-xs truncate text-gray-500">{(airport.fbos || []).map((fbo) => fbo.name).join(", ") || "No linked FBOs"}</div>
+            </td>
+            <td className="px-4 py-3 text-right">
               <button
-                onClick={() => setSelectedAirportForModal(airport)}
-                className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-[#0F1420] hover:bg-[#1C2436] text-[#C9A052] text-xs font-bold transition-all shadow-sm"
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setSelectedAirportForModal(airport);
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#0F1420] text-[#C9A052] text-xs font-bold"
               >
-                <span>View All Designated FBOs ({airport.fbos?.length || 0})</span>
-                <ChevronRight className="w-3.5 h-3.5" />
+                View airport <ChevronRight className="w-3.5 h-3.5" />
               </button>
-            </div>
-          </div>
+            </td>
+          </tr>
         ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {filteredAirports.length === 0 && (
@@ -381,9 +373,18 @@ export default function AirportsView() {
 
               {/* Designated FBOs Section */}
               <div className="space-y-3">
-                <h3 className="text-sm font-black text-[#0F1420] flex items-center justify-between border-b pb-2">
+                <h3 className="text-sm font-black text-[#0F1420] flex items-center justify-between border-b pb-2 gap-3">
                   <span>Designated FBO Handlers ({selectedAirportForModal.fbos?.length || 0})</span>
-                  <span className="text-xs text-gray-500 font-normal">Contact info, operating hours & spoken languages</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingFboId("new");
+                      setFboDraft({ name: "", phone: "", email: "", vhfFrequency: "", address: "", operatingHours: "", languages: [], amenities: [], notes: "" });
+                    }}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#0F1420] text-[#C9A052] text-[10px] font-bold"
+                  >
+                    <Plus className="w-3 h-3" /> Add FBO
+                  </button>
                 </h3>
 
                 <div className="space-y-4">
@@ -402,9 +403,32 @@ export default function AirportsView() {
                             </p>
                           )}
                         </div>
-                        <span className="px-2.5 py-1 rounded-full text-[11px] font-mono font-bold bg-[#C9A052]/20 text-[#9A7A35] border border-[#C9A052]/40 w-max">
-                          {fbo.operatingHours || "H24 / 7 days"}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="px-2.5 py-1 rounded-full text-[11px] font-mono font-bold bg-[#C9A052]/20 text-[#9A7A35] border border-[#C9A052]/40 w-max">
+                            {fbo.operatingHours || "H24 / 7 days"}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingFboId(fbo.id);
+                              setFboDraft({ ...fbo });
+                            }}
+                            className="p-1.5 rounded-lg border border-[#E0DAD0] text-gray-600 hover:text-[#0F1420]"
+                            aria-label={`Edit ${fbo.name}`}
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (window.confirm(`Remove ${fbo.name} from ${selectedAirportForModal.icao}?`)) removeFbo(fbo.id);
+                            }}
+                            className="p-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50"
+                            aria-label={`Remove ${fbo.name}`}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
 
                       {/* Contact row */}
@@ -449,6 +473,7 @@ export default function AirportsView() {
                               </span>
                             ))}
                           </div>
+
                         </div>
                       )}
 
@@ -474,13 +499,82 @@ export default function AirportsView() {
                     </div>
                   ))}
                 </div>
+                {editingFboId && (
+                  <div className="rounded-xl border border-[#C9A052]/50 bg-[#FAF8F5] p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-bold text-sm text-[#0F1420]">{editingFboId === "new" ? "Add FBO" : "Edit FBO"}</h4>
+                      <span className="text-[10px] font-mono text-gray-500">{selectedAirportForModal.icao} · {selectedAirportForModal.name}</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {([
+                        ["name", "FBO name"],
+                        ["phone", "Phone"],
+                        ["email", "Email"],
+                        ["vhfFrequency", "VHF frequency"],
+                        ["address", "Address"],
+                        ["operatingHours", "Operating hours"]
+                      ] as const).map(([field, label]) => (
+                        <label key={field} className="space-y-1">
+                          <span className="block text-[10px] font-mono uppercase text-gray-500">{label}</span>
+                          <input
+                            value={String(fboDraft[field] || "")}
+                            onChange={(event) => setFboDraft((prev) => ({ ...prev, [field]: event.target.value }))}
+                            type={field === "email" ? "email" : "text"}
+                            required={field === "name" || field === "phone" || field === "email"}
+                            className="w-full rounded-lg border border-[#E0DAD0] bg-white px-3 py-2 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                          />
+                        </label>
+                      ))}
+                      <label className="space-y-1 sm:col-span-2">
+                        <span className="block text-[10px] font-mono uppercase text-gray-500">Languages (comma-separated)</span>
+                        <input
+                          value={(fboDraft.languages || []).join(", ")}
+                          onChange={(event) => setFboDraft((prev) => ({ ...prev, languages: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) }))}
+                          className="w-full rounded-lg border border-[#E0DAD0] bg-white px-3 py-2 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                        />
+                      </label>
+                      <label className="space-y-1 sm:col-span-2">
+                        <span className="block text-[10px] font-mono uppercase text-gray-500">Amenities (comma-separated)</span>
+                        <input
+                          value={(fboDraft.amenities || []).join(", ")}
+                          onChange={(event) => setFboDraft((prev) => ({ ...prev, amenities: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) }))}
+                          className="w-full rounded-lg border border-[#E0DAD0] bg-white px-3 py-2 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                        />
+                      </label>
+                      <label className="space-y-1 sm:col-span-2">
+                        <span className="block text-[10px] font-mono uppercase text-gray-500">Notes</span>
+                        <textarea
+                          rows={2}
+                          value={fboDraft.notes || ""}
+                          onChange={(event) => setFboDraft((prev) => ({ ...prev, notes: event.target.value }))}
+                          className="w-full rounded-lg border border-[#E0DAD0] bg-white px-3 py-2 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                        />
+                      </label>
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <button type="button" onClick={() => { setEditingFboId(null); setFboDraft({}); }} className="px-3 py-1.5 rounded-lg text-xs font-bold text-gray-600">Cancel</button>
+                      <button
+                        type="button"
+                        disabled={!fboDraft.name?.trim() || !fboDraft.phone?.trim() || !fboDraft.email?.trim()}
+                        onClick={saveFbo}
+                        className="px-3 py-1.5 rounded-lg bg-[#C9A052] text-[#0F1420] text-xs font-bold disabled:opacity-50"
+                      >
+                        Save FBO
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
             {/* Modal Footer */}
             <div className="p-4 bg-[#F5F2EC] border-t border-[#E0DAD0] flex justify-end">
               <button
-                onClick={() => setSelectedAirportForModal(null)}
+                onClick={() => {
+                  setSelectedAirportForModal(null);
+                  setEditingFboId(null);
+                  setFboDraft({});
+                }}
                 className="px-5 py-2 rounded-xl bg-[#0F1420] text-white text-xs font-bold hover:bg-[#1A2338]"
               >
                 Close

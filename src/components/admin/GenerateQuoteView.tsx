@@ -15,6 +15,7 @@ import {
   formatCurrency,
   calculateCardFee
 } from "@/lib/pricingCalculator";
+import { calculateLegArrivalAndTz } from "@/lib/aviationTimezones";
 import {
   Plane,
   User,
@@ -67,6 +68,7 @@ interface QuoteLegInput {
   arrHandlerEmail: string;
   pets?: PetDetails;
   luggage?: LuggageDetails;
+  durationOverrideMinutes?: number;
 }
 
 export default function GenerateQuoteView() {
@@ -348,7 +350,7 @@ export default function GenerateQuoteView() {
       }
     }
 
-    if (field === "departureTime" || field === "originIcao" || field === "destIcao") {
+    if (field === "departureTime" || field === "originIcao" || field === "destIcao" || (field as string) === "durationOverrideMinutes") {
       const orig = findAirportByCode(field === "originIcao" ? val : updated[idx].originIcao);
       const dest = findAirportByCode(field === "destIcao" ? val : updated[idx].destIcao);
       const dist = calculateDistanceNm(
@@ -357,14 +359,11 @@ export default function GenerateQuoteView() {
         dest.coordinates?.lat || 44.4,
         dest.coordinates?.lng || 8.8
       );
-      const flightMinutes = estimateFlightTimeMinutes(dist);
+      const defaultMinutes = estimateFlightTimeMinutes(dist);
+      const durationMinutes = updated[idx].durationOverrideMinutes || defaultMinutes;
       const depTime = field === "departureTime" ? val : updated[idx].departureTime;
-      const [hStr, mStr] = depTime.split(":");
-      const depMinutes = (parseInt(hStr, 10) || 10) * 60 + (parseInt(mStr, 10) || 0);
-      const arrTotalMin = depMinutes + flightMinutes;
-      const arrH = String(Math.floor(arrTotalMin / 60) % 24).padStart(2, "0");
-      const arrM = String(arrTotalMin % 60).padStart(2, "0");
-      updated[idx].arrivalTime = `${arrH}:${arrM}`;
+      const tzInfo = calculateLegArrivalAndTz(orig, dest, depTime || "11:00", durationMinutes);
+      updated[idx].arrivalTime = tzInfo.arrivalTimeLocal;
     }
 
     setLegs(updated);
@@ -381,7 +380,9 @@ export default function GenerateQuoteView() {
         destAirport.coordinates?.lat || 44.4,
         destAirport.coordinates?.lng || 8.8
       );
-      const flightMinutes = estimateFlightTimeMinutes(dist);
+      const defaultMinutes = estimateFlightTimeMinutes(dist);
+      const flightMinutes = leg.durationOverrideMinutes || defaultMinutes;
+      const tzInfo = calculateLegArrivalAndTz(originAirport, destAirport, leg.departureTime || "11:00", flightMinutes);
 
       return {
         legNumber: idx + 1,
@@ -389,7 +390,18 @@ export default function GenerateQuoteView() {
         origin: originAirport,
         destination: destAirport,
         departureTimeLocal: leg.departureTime.includes("h") ? leg.departureTime : `${leg.departureTime} h`,
-        arrivalTimeLocal: leg.arrivalTime.includes("h") ? leg.arrivalTime : `${leg.arrivalTime} h`,
+        arrivalTimeLocal: (leg.arrivalTime || tzInfo.arrivalTimeLocal).includes("h") ? (leg.arrivalTime || tzInfo.arrivalTimeLocal) : `${leg.arrivalTime || tzInfo.arrivalTimeLocal} h`,
+        flightTimeMinutes: flightMinutes,
+        manualDurationMinutes: leg.durationOverrideMinutes,
+        isDurationOverridden: Boolean(leg.durationOverrideMinutes),
+        departureTimeUtc: tzInfo.departureTimeUtc,
+        arrivalTimeUtc: tzInfo.arrivalTimeUtc,
+        originTz: tzInfo.origTz.label,
+        destTz: tzInfo.destTz.label,
+        tzDiffHours: tzInfo.tzDiffHours,
+        originTimezone: tzInfo.origTz.tzName,
+        destinationTimezone: tzInfo.destTz.tzName,
+        timezoneDifferenceHours: tzInfo.tzDiffHours,
         flightTimeFormatted: formatFlightTime(flightMinutes),
         paxCount: leg.paxCount,
         flightNumber: "", // NO callsign on quote without booking!
@@ -1383,92 +1395,160 @@ export default function GenerateQuoteView() {
                         </div>
                       </div>
 
-                      {/* Station Times and Respective FBO Dropdowns */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs bg-white/70 p-3.5 rounded-xl border border-[#E0DAD0]">
-                        <div>
-                          <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                            Departure Time (LT)
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="11:00"
-                            value={leg.departureTime}
-                            onChange={(e) => handleLegChange(index, "departureTime", e.target.value)}
-                            required
-                            className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1.5 text-xs text-[#0F1420] font-mono font-bold focus:outline-none focus:border-[#C9A052]"
-                          />
-                        </div>
+                      {/* Station Times, Duration Override, Timezones, and Respective FBO Dropdowns */}
+                      {(() => {
+                        const dist = calculateDistanceNm(
+                          origAirport.coordinates?.lat || 46.2,
+                          origAirport.coordinates?.lng || 6.1,
+                          destAirport.coordinates?.lat || 44.4,
+                          destAirport.coordinates?.lng || 8.8
+                        );
+                        const autoMin = estimateFlightTimeMinutes(dist);
+                        const currentMin = leg.durationOverrideMinutes || autoMin;
+                        const tzCalc = calculateLegArrivalAndTz(origAirport, destAirport, leg.departureTime || "11:00", currentMin);
 
-                        <div>
-                          <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                            Arrival Time (LT)
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="11:55"
-                            value={leg.arrivalTime}
-                            onChange={(e) => handleLegChange(index, "arrivalTime", e.target.value)}
-                            required
-                            className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1.5 text-xs text-[#0F1420] font-mono font-bold focus:outline-none focus:border-[#C9A052]"
-                          />
-                        </div>
+                        return (
+                          <div className="space-y-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-xs bg-white/80 p-3.5 rounded-xl border border-[#E0DAD0]">
+                              <div>
+                                <div className="flex items-center justify-between mb-1">
+                                  <label className="text-[10px] font-mono font-bold uppercase text-[#0F1420]/70">
+                                    Departure Time (LT)
+                                  </label>
+                                  <span className="text-[10px] font-mono text-gray-500 font-bold">
+                                    {tzCalc.departureTimeUtc}
+                                  </span>
+                                </div>
+                                <input
+                                  type="text"
+                                  placeholder="11:00"
+                                  value={leg.departureTime}
+                                  onChange={(e) => handleLegChange(index, "departureTime", e.target.value)}
+                                  required
+                                  className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1.5 text-xs text-[#0F1420] font-mono font-bold focus:outline-none focus:border-[#C9A052]"
+                                />
+                                <span className="text-[9px] font-mono text-gray-400 mt-0.5 block">
+                                  Zone: {tzCalc.origTz.tzName} ({tzCalc.origTz.label})
+                                </span>
+                              </div>
 
-                        {/* Departure FBO Dropdown for Origin Airport */}
-                        <div>
-                          <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1 flex items-center gap-1">
-                            <Building className="w-3 h-3 text-[#C9A052]" />
-                            Departure Station FBO
-                          </label>
-                          <select
-                            value={leg.depHandlerName}
-                            onChange={(e) => {
-                              const selectedFbo = origFbos.find((f) => f.name === e.target.value);
-                              if (selectedFbo) {
-                                handleLegChange(index, "depHandlerName", selectedFbo.name);
-                                handleLegChange(index, "depHandlerPhone", selectedFbo.phone);
-                                handleLegChange(index, "depHandlerEmail", selectedFbo.email);
-                              } else {
-                                handleLegChange(index, "depHandlerName", e.target.value);
-                              }
-                            }}
-                            className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1.5 text-xs text-[#0F1420] font-bold focus:outline-none focus:border-[#C9A052]"
-                          >
-                            {origFbos.map((fbo) => (
-                              <option key={fbo.id} value={fbo.name}>
-                                {fbo.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
+                              <div>
+                                <div className="flex items-center justify-between mb-1">
+                                  <label className="text-[10px] font-mono font-bold uppercase text-[#0F1420]/70">
+                                    Flight Duration Override
+                                  </label>
+                                  <span className="text-[10px] font-mono text-[#C9A052] font-bold">
+                                    Auto: {formatFlightTime(autoMin)}
+                                  </span>
+                                </div>
+                                <div className="relative">
+                                  <input
+                                    type="number"
+                                    min={10}
+                                    max={1200}
+                                    placeholder={String(autoMin)}
+                                    value={leg.durationOverrideMinutes || ""}
+                                    onChange={(e) => {
+                                      const v = e.target.value ? parseInt(e.target.value, 10) : undefined;
+                                      handleLegChange(index, "durationOverrideMinutes" as any, v);
+                                    }}
+                                    className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1.5 text-xs text-[#0F1420] font-mono font-bold focus:outline-none focus:border-[#C9A052]"
+                                  />
+                                  <span className="absolute right-2 top-1.5 text-[10px] font-mono text-gray-400">min</span>
+                                </div>
+                                <span className="text-[9px] font-mono text-gray-400 mt-0.5 block">
+                                  {leg.durationOverrideMinutes ? `Manual: ${formatFlightTime(leg.durationOverrideMinutes)}` : "Estimated by distance"}
+                                </span>
+                              </div>
 
-                        {/* Arrival FBO Dropdown for Destination Airport */}
-                        <div>
-                          <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1 flex items-center gap-1">
-                            <Building className="w-3 h-3 text-[#C9A052]" />
-                            Arrival Station FBO
-                          </label>
-                          <select
-                            value={leg.arrHandlerName}
-                            onChange={(e) => {
-                              const selectedFbo = destFbos.find((f) => f.name === e.target.value);
-                              if (selectedFbo) {
-                                handleLegChange(index, "arrHandlerName", selectedFbo.name);
-                                handleLegChange(index, "arrHandlerPhone", selectedFbo.phone);
-                                handleLegChange(index, "arrHandlerEmail", selectedFbo.email);
-                              } else {
-                                handleLegChange(index, "arrHandlerName", e.target.value);
-                              }
-                            }}
-                            className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1.5 text-xs text-[#0F1420] font-bold focus:outline-none focus:border-[#C9A052]"
-                          >
-                            {destFbos.map((fbo) => (
-                              <option key={fbo.id} value={fbo.name}>
-                                {fbo.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
+                              <div>
+                                <div className="flex items-center justify-between mb-1">
+                                  <label className="text-[10px] font-mono font-bold uppercase text-[#0F1420]/70">
+                                    Arrival Time (LT)
+                                  </label>
+                                  <span className="text-[10px] font-mono text-gray-500 font-bold">
+                                    {tzCalc.arrivalTimeUtc}
+                                  </span>
+                                </div>
+                                <input
+                                  type="text"
+                                  placeholder="11:55"
+                                  value={leg.arrivalTime}
+                                  onChange={(e) => handleLegChange(index, "arrivalTime", e.target.value)}
+                                  required
+                                  className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1.5 text-xs text-[#0F1420] font-mono font-bold focus:outline-none focus:border-[#C9A052]"
+                                />
+                                <div className="flex items-center justify-between mt-0.5">
+                                  <span className="text-[9px] font-mono text-gray-400">
+                                    Zone: {tzCalc.destTz.tzName} ({tzCalc.destTz.label})
+                                  </span>
+                                  <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 border border-amber-300">
+                                    {tzCalc.tzDiffLabel}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs bg-white/70 p-3.5 rounded-xl border border-[#E0DAD0]">
+                              {/* Departure FBO Dropdown for Origin Airport */}
+                              <div>
+                                <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1 flex items-center gap-1">
+                                  <Building className="w-3 h-3 text-[#C9A052]" />
+                                  Departure Station FBO
+                                </label>
+                                <select
+                                  value={leg.depHandlerName}
+                                  onChange={(e) => {
+                                    const selectedFbo = origFbos.find((f) => f.name === e.target.value);
+                                    if (selectedFbo) {
+                                      handleLegChange(index, "depHandlerName", selectedFbo.name);
+                                      handleLegChange(index, "depHandlerPhone", selectedFbo.phone);
+                                      handleLegChange(index, "depHandlerEmail", selectedFbo.email);
+                                    } else {
+                                      handleLegChange(index, "depHandlerName", e.target.value);
+                                    }
+                                  }}
+                                  className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1.5 text-xs text-[#0F1420] font-bold focus:outline-none focus:border-[#C9A052]"
+                                >
+                                  {origFbos.map((fbo) => (
+                                    <option key={fbo.id} value={fbo.name}>
+                                      {fbo.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              {/* Arrival FBO Dropdown for Destination Airport */}
+                              <div>
+                                <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1 flex items-center gap-1">
+                                  <Building className="w-3 h-3 text-[#C9A052]" />
+                                  Arrival Station FBO
+                                </label>
+                                <select
+                                  value={leg.arrHandlerName}
+                                  onChange={(e) => {
+                                    const selectedFbo = destFbos.find((f) => f.name === e.target.value);
+                                    if (selectedFbo) {
+                                      handleLegChange(index, "arrHandlerName", selectedFbo.name);
+                                      handleLegChange(index, "arrHandlerPhone", selectedFbo.phone);
+                                      handleLegChange(index, "arrHandlerEmail", selectedFbo.email);
+                                    } else {
+                                      handleLegChange(index, "arrHandlerName", e.target.value);
+                                    }
+                                  }}
+                                  className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1.5 text-xs text-[#0F1420] font-bold focus:outline-none focus:border-[#C9A052]"
+                                >
+                                  {destFbos.map((fbo) => (
+                                    <option key={fbo.id} value={fbo.name}>
+                                      {fbo.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   )}
 

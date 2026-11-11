@@ -8,6 +8,14 @@ const clientSchema = new mongoose.Schema(
       index: true,
     },
     fullName: { type: String, required: true, trim: true },
+    prefix: { type: String, default: '', trim: true },
+    firstName: { type: String, default: '', trim: true },
+    middleName1: { type: String, default: '', trim: true },
+    middleName2: { type: String, default: '', trim: true },
+    lastName1: { type: String, default: '', trim: true },
+    lastName2: { type: String, default: '', trim: true },
+    suffix: { type: String, default: '', trim: true },
+    title: { type: String, default: '', trim: true },
     companyName: { type: String, default: '', trim: true },
     streetAddress: { type: String, default: '' },
     cityPostalCountry: { type: String, default: '' },
@@ -51,6 +59,13 @@ clientSchema.pre('validate', async function (next) {
   if (this.isNew && !this.accountNumber) {
     const { generateAccountNumber } = require('../utils/generateId');
     this.accountNumber = await generateAccountNumber();
+  }
+  next();
+});
+
+clientSchema.pre('save', function (next) {
+  if (!this.isNew && this.isModified('accountNumber')) {
+    return next(new Error('Account number is permanent and cannot be modified.'));
   }
   next();
 });

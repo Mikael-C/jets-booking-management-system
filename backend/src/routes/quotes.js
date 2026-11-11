@@ -53,10 +53,139 @@ const findBooking = async (id) => {
     } catch {}
   }
   return await Booking.findOne({
-    $or: [{ id: id }, { tripNumber: id }, { quoteReference: id }, { invoiceNumber: id }],
+    $or: [{ id: id }, { tripId: id }, { quoteId: id }, { bookingRevisionId: id }, { tripNumber: id }, { quoteReference: id }, { invoiceNumber: id }],
     isDeleted: false,
   });
 };
+
+const getTripFilter = (booking) => ({
+  isDeleted: false,
+  $or: [
+    ...(booking.tripId ? [{ tripId: booking.tripId }] : []),
+    ...(booking.tripNumber ? [{ tripNumber: booking.tripNumber }] : [])
+  ]
+});
+
+const getTripSuffix = (booking) =>
+  (booking.tripId || booking.tripNumber || '').replace(/\D/g, '').slice(-3) || '001';
+
+const reviseQuote = async (req, res) => {
+  const original = await findBooking(req.params.id);
+  if (!original) return res.status(404).json({ message: 'Quote not found' });
+  if (original.isCancelled || original.isBooked) {
+    return res.status(409).json({ message: 'Cancelled or booked quote iterations cannot be revised' });
+  }
+
+  const siblings = await Booking.find(getTripFilter(original)).sort({ quoteVersion: -1 });
+  if (siblings.some((quote) => quote.isBooked && !quote.isCancelled)) {
+    return res.status(409).json({ message: 'A booked trip cannot be revised as a quote' });
+  }
+  const nextVersion = Math.max(
+    0,
+    ...siblings.map((quote) => Number(quote.quoteVersion) || 0),
+    ...siblings.map((quote) => Number((quote.quoteId || '').split('-').pop()) || 0)
+  ) + 1;
+  const tripId = original.tripId || `TRIP-${new Date().getFullYear()}-${getTripSuffix(original)}`;
+  const quoteId = `QUO-${getTripSuffix({ ...original.toObject(), tripId })}-${String(nextVersion).padStart(2, '0')}`;
+  const revised = original.toObject();
+  delete revised._id;
+  delete revised.__v;
+  delete revised.createdAt;
+  delete revised.updatedAt;
+  Object.assign(revised, req.body || {});
+  const bookImmediately = req.body?.isBooked === true;
+  revised.id = `booking-quote-${Date.now()}`;
+  revised.tripId = tripId;
+  revised.quoteId = quoteId;
+  revised.quoteReference = quoteId;
+  revised.quoteVersion = nextVersion;
+  revised.isCancelled = false;
+  revised.cancellationReason = '';
+  revised.supersededBy = '';
+  revised.isBooked = bookImmediately;
+  revised.quoteStatus = bookImmediately ? 'accepted' : (req.body?.quoteStatus || 'draft');
+  revised.status = bookImmediately ? 'confirmed' : (req.body?.status || 'quoted');
+  if (bookImmediately) {
+    revised.bookingRevisionId = revised.bookingRevisionId || `BK-${getTripSuffix({ ...original.toObject(), tripId })}-01`;
+  }
+  revised.createdAt = new Date();
+  revised.updatedAt = new Date();
+
+  for (const quote of siblings) {
+    if (quote._id.equals(original._id) || (!quote.isCancelled && !quote.isBooked)) {
+      quote.tripId = tripId;
+      quote.isCancelled = true;
+      quote.cancellationReason = `Superseded by ${quoteId}`;
+      quote.supersededBy = quoteId;
+      quote.quoteStatus = 'expired';
+      quote.status = 'cancelled';
+      await quote.save();
+    }
+  }
+
+  const booking = await Booking.create(revised);
+  await createAuditEntry({
+    user: req.user,
+    action: 'QUOTE_NEW_VERSION',
+    entityType: 'Quote',
+    entityId: quoteId,
+    details: `Created quote revision ${quoteId} for trip ${tripId}`
+  });
+  return res.status(201).json(booking);
+};
+
+router.post('/:id/revise', authorize('super_admin', 'admin', 'operations'), reviseQuote);
+
+router.post('/:id/convert-to-booking', authorize('super_admin', 'admin', 'operations'), async (req, res) => {
+  const booking = await findBooking(req.params.id);
+  if (!booking) return res.status(404).json({ message: 'Quote not found' });
+  if (booking.isCancelled) return res.status(409).json({ message: 'Cancelled quote iterations cannot be booked' });
+
+  const previousTripNumber = booking.tripNumber;
+  if (!booking.tripId) {
+    booking.tripId = `TRIP-${new Date().getFullYear()}-${getTripSuffix(booking)}`;
+  }
+  if (!booking.tripNumber || /^(QTE|QUO|REV)[-_]/i.test(booking.tripNumber)) {
+    booking.tripNumber = `PEU${getTripSuffix(booking)}-001`;
+  }
+  if (!booking.quoteId) {
+    booking.quoteId = `QUO-${getTripSuffix(booking)}-${String(booking.quoteVersion || 1).padStart(2, '0')}`;
+  }
+  booking.isBooked = true;
+  booking.quoteStatus = 'accepted';
+  booking.status = 'confirmed';
+  booking.bookingRevisionId = booking.bookingRevisionId || `BK-${getTripSuffix(booking)}-01`;
+  booking.contractDate = booking.contractDate || new Date().toISOString().slice(0, 10);
+  await booking.save();
+
+  const siblings = await Booking.find({
+    isDeleted: false,
+    $or: [
+      { tripId: booking.tripId },
+      ...(previousTripNumber ? [{ tripNumber: previousTripNumber }] : [])
+    ],
+    _id: { $ne: booking._id },
+    isCancelled: false
+  });
+  for (const prior of siblings) {
+    prior.tripId = booking.tripId;
+    prior.isCancelled = true;
+    prior.cancellationReason = `Superseded by booked revision ${booking.bookingRevisionId}`;
+    prior.supersededBy = booking.id || booking._id.toString();
+    prior.quoteStatus = 'expired';
+    prior.status = 'cancelled';
+    await prior.save();
+  }
+
+  await createAuditEntry({
+    user: req.user,
+    action: 'QUOTE_CONVERTED_TO_BOOKING',
+    entityType: 'Booking',
+    entityId: booking.tripId,
+    details: `Quote ${booking.quoteId} converted to booking ${booking.bookingRevisionId}`
+  });
+  return res.json({ success: true, data: booking });
+});
 
 // POST /api/quotes/generate — generate a quote from an agent request
 router.post('/generate', authorize('super_admin', 'admin', 'operations'), async (req, res) => {
@@ -123,10 +252,15 @@ router.post('/generate', authorize('super_admin', 'admin', 'operations'), async 
   const count = await Booking.countDocuments();
   const year = new Date().getFullYear();
   const tripNumber = `ORB-${year}-${String(count + 1).padStart(3, '0')}`;
+  const tripId = `TRIP-${year}-${String(count + 1).padStart(3, '0')}`;
+  const quoteId = `QUO-${String(count + 1).padStart(3, '0')}-01`;
 
   const booking = new Booking({
+    tripId,
+    quoteId,
+    quoteVersion: 1,
     tripNumber,
-    quoteReference: tripNumber,
+    quoteReference: quoteId,
     contractDate: new Date().toISOString().split('T')[0],
     quoteExpirationDate: quoteExpirationDate || new Date(Date.now() + 48 * 3600 * 1000).toISOString().split('T')[0],
     paymentDueDate: paymentDueDate || new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString().split('T')[0],
@@ -139,6 +273,8 @@ router.post('/generate', authorize('super_admin', 'admin', 'operations'), async 
       phone: agentRequest.clientPhone,
       companyName: agentRequest.companyName
     },
+    agentName: agentRequest.agentName || '',
+    agentEmail: agentRequest.agentEmail || '',
     aircraft: aircraft.toObject(),
     legs,
     pricing,
@@ -202,9 +338,14 @@ router.get('/:id', authorize('super_admin', 'admin', 'finance', 'operations', 'a
 router.post('/:id/send', authorize('super_admin', 'admin', 'operations'), async (req, res) => {
   const booking = await findBooking(req.params.id);
   if (!booking) return res.status(404).json({ message: 'Quote/Booking not found' });
+  if (booking.isCancelled || booking.isBooked) {
+    return res.status(409).json({ message: 'Cancelled or booked quote iterations cannot be sent' });
+  }
+  const recipientEmail = booking.agentEmail || booking.client?.email;
+  if (!recipientEmail) return res.status(400).json({ message: 'Quote has no agent or client email address' });
 
   const pdfBuffer = await generateQuotePdf(booking.toObject());
-  await sendQuoteEmail(booking.client.email, booking.toObject(), pdfBuffer);
+  await sendQuoteEmail(recipientEmail, booking.toObject(), pdfBuffer);
 
   booking.quoteStatus = 'sent';
   booking.status = 'quote_sent';
@@ -212,13 +353,13 @@ router.post('/:id/send', authorize('super_admin', 'admin', 'operations'), async 
 
   await createAuditEntry({ user: req.user,
     action: 'QUOTE_SENT', entityType: 'Quote', entityId: booking.tripNumber,
-    details: `Quote ${booking.tripNumber} sent to ${booking.client.email}`
+    details: `Quote ${booking.quoteId || booking.tripNumber} sent to ${recipientEmail}`
   });
 
   await createNotification({
     type: 'info',
     title: 'Quote Sent',
-    message: `Quote ${booking.tripNumber} has been sent to ${booking.client.fullName} (${booking.client.email})`
+    message: `Quote ${booking.quoteId || booking.tripNumber} has been sent to ${recipientEmail}`
   });
 
   res.json({ message: 'Quote sent successfully', quoteStatus: 'sent' });
@@ -232,6 +373,7 @@ router.patch('/:id/status', authorize('super_admin', 'admin', 'finance', 'operat
 
   const booking = await findBooking(req.params.id);
   if (!booking) return res.status(404).json({ message: 'Quote not found' });
+  if (booking.isCancelled) return res.status(409).json({ message: 'Cancelled quote iterations are locked' });
 
   booking.quoteStatus = quoteStatus;
   if (quoteStatus === 'accepted') {
@@ -249,37 +391,7 @@ router.patch('/:id/status', authorize('super_admin', 'admin', 'finance', 'operat
   res.json(booking);
 });
 
-// POST /api/quotes/:id/version — create a new quote version
-router.post('/:id/version', authorize('super_admin', 'admin', 'operations'), async (req, res) => {
-  const original = await findBooking(req.params.id);
-  if (!original) return res.status(404).json({ message: 'Quote not found' });
-
-  const newVersion = original.toObject();
-  delete newVersion._id;
-  newVersion.quoteVersion = (original.quoteVersion || 1) + 1;
-  newVersion.quoteStatus = 'draft';
-  newVersion.status = 'quoted';
-  newVersion.tripNumber = `${original.tripNumber.split('-v')[0]}-v${newVersion.quoteVersion}`;
-  newVersion.createdAt = new Date();
-  newVersion.updatedAt = new Date();
-
-  // Apply any overrides from body
-  Object.assign(newVersion, req.body);
-
-  if (req.body.aircraftId) {
-    const newAircraft = await findAircraft(req.body.aircraftId);
-    if (newAircraft) newVersion.aircraft = newAircraft.toObject();
-  }
-
-  const booking = new Booking(newVersion);
-  await booking.save();
-
-  await createAuditEntry({ user: req.user,
-    action: 'QUOTE_NEW_VERSION', entityType: 'Quote', entityId: booking.tripNumber,
-    details: `Created quote version ${newVersion.quoteVersion} for trip ${original.tripNumber}`
-  });
-
-  res.status(201).json(booking);
-});
+// Keep the legacy endpoint compatible while enforcing the same revision rules.
+router.post('/:id/version', authorize('super_admin', 'admin', 'operations'), reviseQuote);
 
 module.exports = router;

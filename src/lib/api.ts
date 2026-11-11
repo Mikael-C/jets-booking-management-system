@@ -101,6 +101,15 @@ export const api = {
       request<{ success: boolean; data: any }>(`/bookings/${id}/convert-to-confirmed`, {
         method: "POST",
       }),
+    revise: (id: string, data: any) =>
+      request<{ success: boolean; data: any }>(`/bookings/${id}/revise`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    tripInvoices: (tripId: string) =>
+      request<{ success: boolean; data: any[]; ledger: any[]; consolidated: any }>(
+        `/bookings/trip/${encodeURIComponent(tripId)}/invoices`
+      ),
     toggleChecklist: (bookingId: string, stepId: string, completed: boolean) =>
       request<{ success: boolean; data: any }>(`/bookings/${bookingId}/checklist/${stepId}`, {
         method: "PATCH",
@@ -239,6 +248,11 @@ export const api = {
         method: "POST",
         body: JSON.stringify(data),
       }),
+    syncPassengers: (id: string, passengers: any[], accountNumber?: string) =>
+      request<{ success: boolean; data: any[] }>(`/flight-briefs/${id}/sync-passengers`, {
+        method: "POST",
+        body: JSON.stringify({ passengers, accountNumber }),
+      }),
   },
 
   // Charter Contracts & Agreements API
@@ -311,6 +325,28 @@ export const api = {
     get: (id: string) => request<any>(`/clients/${id}`),
     create: (data: any) => request<any>("/clients", { method: "POST", body: JSON.stringify(data) }),
     update: (id: string, data: any) => request<any>(`/clients/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  },
+
+  // Passenger and contact directory
+  contacts: {
+    list: (params?: Record<string, any>) => {
+      const q = params ? `?${new URLSearchParams(params).toString()}` : "";
+      return request<{ success: boolean; data: any[]; total: number }>(`/contacts${q}`);
+    },
+    getTrips: (id: string) =>
+      request<{ success: boolean; data: any[] }>(`/contacts/${encodeURIComponent(id)}/trips`),
+    create: (data: any) =>
+      request<{ success: boolean; data: any }>("/contacts", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    update: (id: string, data: any) =>
+      request<{ success: boolean; data: any }>(`/contacts/${encodeURIComponent(id)}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      }),
+    delete: (id: string) =>
+      request<{ success: boolean }>(`/contacts/${encodeURIComponent(id)}`, { method: "DELETE" }),
   },
 
   // Operators
@@ -389,6 +425,15 @@ export const api = {
       request<any>(`/quotes/${id}/version`, {
         method: "POST",
         body: JSON.stringify(overrides || {}),
+      }),
+    revise: (id: string, overrides?: any) =>
+      request<any>(`/quotes/${id}/revise`, {
+        method: "POST",
+        body: JSON.stringify(overrides || {}),
+      }),
+    convertToBooking: (id: string) =>
+      request<{ success: boolean; data: any }>(`/quotes/${id}/convert-to-booking`, {
+        method: "POST",
       }),
   },
 
