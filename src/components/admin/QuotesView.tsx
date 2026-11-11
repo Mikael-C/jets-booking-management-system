@@ -71,7 +71,8 @@ export default function QuotesView() {
     bookingToRevise,
     setBookingToRevise,
     clients,
-    reviseQuote
+    reviseQuote,
+    reviseBookingWithCreditNote
   } = useAviation();
 
   const [activeTab, setActiveTab] = useState<"list" | "builder">("list");
@@ -87,14 +88,25 @@ export default function QuotesView() {
 
   // Active quotes: has quoteReference/status and NOT yet booked as a confirmed booking
   const quotesList = useMemo(() => {
+    const bookedQuoteFamilies = new Set(
+      bookings
+        .filter((booking) => booking.isBooked || ["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(booking.status))
+        .map(getQuoteIterationGroupKey)
+    );
     return bookings.filter((b) =>
       (b.quoteReference || b.quoteStatus || ["draft", "quote_sent", "client_review"].includes(b.status))
       && !b.isBooked
+      && !bookedQuoteFamilies.has(getQuoteIterationGroupKey(b))
     );
   }, [bookings]);
 
   // Quote iterations are grouped by their quote family, never by the collision-prone trip suffix.
   const tripGroupedQuotes = useMemo(() => {
+    const getVersion = (booking: Booking) => {
+      if (booking.quoteVersion) return booking.quoteVersion;
+      const match = (booking.quoteId || booking.quoteReference || "").match(/-(?:V)?(\d+)$/i);
+      return match ? Number(match[1]) : 1;
+    };
     const tripMap = new Map<string, { latest: Booking; allRevisions: Booking[] }>();
     for (const b of quotesList) {
       const tId = getQuoteIterationGroupKey(b);
@@ -104,14 +116,14 @@ export default function QuotesView() {
       } else {
         existing.allRevisions.push(b);
         // Latest = highest quoteVersion, or most recently created
-        const curVer = b.quoteVersion || parseInt((b.quoteId || "").split("-").pop() || "1", 10) || 1;
-        const prevVer = existing.latest.quoteVersion || parseInt((existing.latest.quoteId || "").split("-").pop() || "1", 10) || 1;
+        const curVer = getVersion(b);
+        const prevVer = getVersion(existing.latest);
         if (curVer > prevVer) existing.latest = b;
       }
     }
     return Array.from(tripMap.values()).map(g => ({
       ...g,
-      allRevisions: g.allRevisions.sort((a, b) => (b.quoteVersion || 1) - (a.quoteVersion || 1)),
+      allRevisions: g.allRevisions.sort((a, b) => getVersion(b) - getVersion(a)),
     }));
   }, [quotesList]);
 
@@ -390,6 +402,19 @@ export default function QuotesView() {
       setAccountNumber(bookingToRevise.accountNumber || "ACC-21737");
       if (bookingToRevise.tripType) setTripType(bookingToRevise.tripType);
       if (bookingToRevise.pricing?.currency) setCurrency(bookingToRevise.pricing.currency as any);
+      setVipCatering(Boolean(bookingToRevise.services?.vipCateringDetails));
+      setLimousineService(Boolean(bookingToRevise.services?.limousineService));
+      setLuxuryCarRental(Boolean(bookingToRevise.services?.luxuryCarRental));
+      setHelicopterService(Boolean(bookingToRevise.services?.helicopterService));
+      setDeicingInsurance(bookingToRevise.services?.deicingInsurance || "none");
+      setCarbonOffset(bookingToRevise.services?.carbonOffset || "none");
+      if (bookingToRevise.isBooked && bookingToRevise.pricing) {
+        setOverridePricing(true);
+        setCustomFlightPrice(bookingToRevise.pricing.flightPrice || 0);
+        setCustomAirportFees(bookingToRevise.pricing.airportFees || 0);
+        setCustomPassengerFees(bookingToRevise.pricing.passengerFees || 0);
+        setCustomAdditionalServices(bookingToRevise.pricing.additionalServicesTotal || 0);
+      }
       if (bookingToRevise.aircraft) {
         setSelectedAircraftId(bookingToRevise.aircraft.id);
         setAircraftNameOverride(bookingToRevise.aircraft.name);
@@ -692,10 +717,10 @@ export default function QuotesView() {
   const createBookingRecord = (isBookedFlight: boolean, advanceToContract: boolean = false): Booking => {
     return {
       id: "",
-      tripId: "",
-      quoteGroupId: "",
-      quoteId: "",
-      isBooked: isBookedFlight,
+      tripId: bookingToRevise?.tripId || "",
+      quoteGroupId: bookingToRevise?.quoteGroupId || "",
+      quoteId: bookingToRevise?.quoteId || "",
+      isBooked: Boolean(bookingToRevise?.isBooked) || isBookedFlight,
       tripNumber: "",
       quoteReference: "",
       invoiceNumber: "",
@@ -703,9 +728,9 @@ export default function QuotesView() {
       contractDate,
       quoteExpirationDate,
       paymentDueDate: "10.10.2026",
-      status: isBookedFlight ? "confirmed" : advanceToContract ? "contract_sent" : (quoteStatus === "Sent" ? "quote_sent" : "draft"),
-      quoteStatus: isBookedFlight ? "accepted" : (advanceToContract ? "accepted" : (quoteStatus.toLowerCase() as any)),
-      quoteVersion: 1,
+      status: bookingToRevise?.isBooked ? "confirmed" : isBookedFlight ? "confirmed" : advanceToContract ? "contract_sent" : (quoteStatus === "Sent" ? "quote_sent" : "draft"),
+      quoteStatus: bookingToRevise?.isBooked || isBookedFlight ? "accepted" : (advanceToContract ? "accepted" : (quoteStatus.toLowerCase() as any)),
+      quoteVersion: bookingToRevise?.quoteVersion || 1,
       paymentStatus: "unpaid",
       tripType,
       aircraft: effectiveAircraft,
@@ -785,6 +810,49 @@ export default function QuotesView() {
     try {
       const wasRevising = Boolean(bookingToRevise);
       const draft = createBookingRecord(false, false);
+      if (bookingToRevise?.isBooked) {
+        const supplementalAmount = effectivePricing.totalFlightPrice - bookingToRevise.pricing.totalFlightPrice;
+        if (!Number.isFinite(supplementalAmount) || supplementalAmount <= 0) {
+          setValidationErrors(["Add a positive-priced item above the original booking total to create a supplemental booking revision."]);
+          return;
+        }
+        const supplementalPricing = {
+          ...effectivePricing,
+          flightPrice: 0,
+          airportFees: 0,
+          passengerFees: 0,
+          dayOfWeekDiscount: 0,
+          inboundPassengerTax: 0,
+          outboundPassengerTax: 0,
+          additionalServicesTotal: supplementalAmount,
+          subtotal: supplementalAmount,
+          vatAmount: 0,
+          totalFlightPrice: supplementalAmount
+        };
+        const revisedBooking = await reviseBookingWithCreditNote(
+          bookingToRevise.id,
+          {
+            ...draft,
+            pricing: supplementalPricing,
+            isBooked: true,
+            isSupplementalRevision: true,
+            status: "confirmed",
+            quoteStatus: "accepted",
+            revisionAdjustments: [{
+              id: `supplement-${Date.now()}`,
+              label: "Additional booking items",
+              amount: supplementalAmount
+            }]
+          },
+          "Supplemental booking items"
+        );
+        if (!revisedBooking) throw new Error("Only the latest active booking can be revised.");
+        setBookingToRevise(null);
+        setActiveTab("list");
+        setActiveNav("bookings");
+        openDocument(revisedBooking, "invoice");
+        return;
+      }
       const newBooking = bookingToRevise
         ? await reviseQuote(bookingToRevise.id, draft)
         : await addBooking(draft);
@@ -919,7 +987,7 @@ export default function QuotesView() {
             }`}
           >
             <Plus className="w-3.5 h-3.5" />
-            <span>{bookingToRevise ? "Revise Quote" : "Create Quote"}</span>
+            <span>{bookingToRevise?.isBooked ? "Revise Booking" : bookingToRevise ? "Revise Quote" : "Create Quote"}</span>
           </button>
         </div>
       </div>
@@ -976,7 +1044,7 @@ export default function QuotesView() {
               const isLatestCancelled = quote.isCancelled;
               const isContractSent = quote.status === "contract_sent";
 
-              return (
+              return (false ? (
                 <div key={tId} className="bg-white border border-[#E0DAD0] hover:border-[#C9A052]/60 rounded-2xl shadow-sm hover:shadow-md transition-all overflow-hidden">
                   {/* Main Quote Card */}
                   <div className="p-5 sm:p-6 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 group">
@@ -1006,7 +1074,7 @@ export default function QuotesView() {
                           <span className="font-mono text-xs font-black text-[#0F1420] px-2.5 py-0.5 rounded bg-[#F5F2EC] border border-[#E0DAD0]">
                             {quote.quoteId || quote.quoteReference || "Pending server assignment"}
                           </span>
-                          {quote.quoteVersion && quote.quoteVersion > 1 && (
+                          {(quote.quoteVersion ?? 1) > 1 && (
                             <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-300">
                               Rev. {quote.quoteVersion}
                             </span>
@@ -1217,7 +1285,68 @@ export default function QuotesView() {
                     </div>
                   )}
                 </div>
-              );
+              ) : (
+                <div key={tId} className="overflow-hidden rounded-xl border border-[#E0DAD0] bg-white">
+                  <button
+                    type="button"
+                    onClick={() => toggleTripExpand(tId)}
+                    aria-expanded={isExpanded}
+                    className="flex w-full flex-wrap items-center gap-x-3 gap-y-2 px-5 py-4 text-left hover:bg-[#FAF8F5]"
+                  >
+                    <span className="font-semibold text-[#0F1420]">
+                      Trip ID ({quote.quoteId || quote.quoteReference || quote.tripId || quote.id})
+                    </span>
+                    <span className="text-gray-500">
+                      {quote.legs[0]?.origin.icao || "—"} - {quote.legs[quote.legs.length - 1]?.destination.icao || "—"}
+                    </span>
+                    <span className="min-w-0 flex-1 text-gray-700">
+                      {quote.client.companyName || quote.client.fullName || "Account unavailable"}
+                    </span>
+                    <span className="font-mono font-bold text-[#0F1420]">
+                      {formatCurrency(quote.pricing.totalFlightPrice, quote.pricing.currency || "EUR")}
+                    </span>
+                  </button>
+                  {isExpanded && (
+                    <div className="border-t border-[#E0DAD0] bg-[#FAF8F5]">
+                      {allRevisions.map((revision) => {
+                        const isLatest = revision.id === quote.id;
+                        const route = `${revision.legs[0]?.origin.icao || "—"} - ${revision.legs[revision.legs.length - 1]?.destination.icao || "—"}`;
+                        return (
+                          <div key={revision.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-[#E0DAD0] px-5 py-3 last:border-b-0">
+                            <span className="font-semibold text-[#0F1420]">
+                              Trip ID ({revision.quoteId || revision.quoteReference || revision.tripId || revision.id})
+                            </span>
+                            <span className="text-gray-500">{route}</span>
+                            <span className="min-w-0 flex-1 text-gray-700">
+                              {revision.client.companyName || revision.client.fullName || "Account unavailable"}
+                            </span>
+                            <span className="font-mono font-bold text-[#0F1420]">
+                              {formatCurrency(revision.pricing.totalFlightPrice, revision.pricing.currency || "EUR")}
+                            </span>
+                            {isLatest ? (
+                              <button
+                                type="button"
+                                onClick={() => handleStartRevise(revision)}
+                                className="rounded-lg border border-[#E0DAD0] bg-white px-3 py-1.5 text-xs font-bold text-[#0F1420] hover:border-[#C9A052]"
+                              >
+                                Revise
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => openDocument(revision, "quotation")}
+                                className="rounded-lg border border-[#E0DAD0] bg-white px-3 py-1.5 text-xs font-bold text-[#0F1420] hover:border-[#C9A052]"
+                              >
+                                View PDF
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              ));
             })}
           </div>
 
@@ -1245,7 +1374,11 @@ export default function QuotesView() {
             <div className="p-4 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 flex items-center justify-between">
               <div className="flex items-center gap-2 text-xs font-bold">
                 <RotateCcw className="w-4 h-4 text-[#C9A052]" />
-                <span>Revising Existing Proposal: {bookingToRevise.quoteReference || bookingToRevise.tripNumber}. Altering routes will supersede previous itineraries and adjust accounting automatically.</span>
+                <span>
+                  {bookingToRevise.isBooked
+                    ? `Adding a separately priced booking revision to ${bookingToRevise.bookingRevisionId || bookingToRevise.tripNumber}.`
+                    : `Revising Existing Proposal: ${bookingToRevise.quoteReference || bookingToRevise.tripNumber}. Altering routes will supersede previous itineraries and adjust accounting automatically.`}
+                </span>
               </div>
               <button
                 type="button"
@@ -2543,7 +2676,7 @@ export default function QuotesView() {
               </label>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs font-mono">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 text-xs font-mono">
               <div>
                 <label className="block text-[10px] text-gray-500 mb-1">Base Flight Price</label>
                 <input
@@ -2572,6 +2705,17 @@ export default function QuotesView() {
                   type="number"
                   value={effectivePricing.passengerFees}
                   onChange={(e) => setCustomPassengerFees(Number(e.target.value))}
+                  disabled={!overridePricing}
+                  className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-bold text-[#0F1420] disabled:bg-[#F5F2EC]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] text-gray-500 mb-1">Additional Services / Items</label>
+                <input
+                  type="number"
+                  value={effectivePricing.additionalServicesTotal}
+                  onChange={(e) => setCustomAdditionalServices(Number(e.target.value))}
                   disabled={!overridePricing}
                   className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-bold text-[#0F1420] disabled:bg-[#F5F2EC]"
                 />
@@ -2619,11 +2763,11 @@ export default function QuotesView() {
                   title="Save Quotation and Open Official PDF Document"
                 >
                   <FileText className="w-4 h-4" />
-                  <span>{isSubmitting ? "Saving Quote..." : bookingToRevise ? "Compile Revised Quote" : "Generate Quote PDF"}</span>
+                  <span>{isSubmitting ? "Saving..." : bookingToRevise?.isBooked ? "Save Booking Revision" : bookingToRevise ? "Compile Revised Quote" : "Generate Quote PDF"}</span>
                 </button>
 
                 {/* Action 2: Advance Quote -> Contract */}
-                <button
+                {!bookingToRevise?.isBooked && <button
                   type="button"
                   onClick={handleProceedToContract}
                   disabled={isSubmitting}
@@ -2633,10 +2777,10 @@ export default function QuotesView() {
                   <ScrollText className="w-4 h-4 text-[#C9A052]" />
                   <span>Proceed to Contract</span>
                   <ArrowRight className="w-3.5 h-3.5 text-[#C9A052]" />
-                </button>
+                </button>}
 
                 {/* Action 3: Contract -> Booked Contract */}
-                <button
+                {!bookingToRevise?.isBooked && <button
                   type="button"
                   onClick={handleConfirmAndBookFlight}
                   disabled={isSubmitting}
@@ -2645,7 +2789,7 @@ export default function QuotesView() {
                 >
                   <CheckCircle2 className="w-4 h-4" />
                   <span>Confirm & Book Flight</span>
-                </button>
+                </button>}
               </div>
             </div>
 

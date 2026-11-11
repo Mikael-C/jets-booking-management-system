@@ -32,7 +32,8 @@ export default function BookingsView() {
     refreshBookings,
     isBookingsLoading,
     bookingsSource,
-    setActiveNav
+    setActiveNav,
+    setBookingToRevise
   } = useAviation();
 
   // Fetch live bookings from backend database on mount
@@ -45,16 +46,21 @@ export default function BookingsView() {
   >("all");
   const [expandedTripIds, setExpandedTripIds] = useState<Set<string>>(new Set());
 
+  const bookedFamilies = new Set(bookings
+    .filter((booking) => booking.isBooked || ["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(booking.status))
+    .map((booking) => booking.tripId || booking.quoteGroupId)
+    .filter(Boolean));
   const visibleBookings = bookings.filter((booking) =>
     !((booking.isCancelled || booking.status === "cancelled") &&
       !booking.isBooked &&
-      (booking.quoteId || booking.quoteReference))
+      (booking.quoteId || booking.quoteReference) &&
+      !bookedFamilies.has(booking.tripId || booking.quoteGroupId))
   );
   const getIterationGroupKey = (booking: Booking) => {
     const isBookedRecord = booking.isBooked ||
       ["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(booking.status);
-    return isBookedRecord
-      ? booking.tripId || booking.tripNumber || booking.id
+    return isBookedRecord || booking.tripId || booking.quoteGroupId
+      ? booking.tripId || booking.quoteGroupId || booking.tripNumber || booking.id
       : booking.quoteId || booking.quoteReference
         ? getQuoteIterationGroupKey(booking)
         : booking.id;
@@ -112,9 +118,9 @@ export default function BookingsView() {
 
     return Array.from(groups.entries()).map(([tripKey, revisions]) => {
       const byVersion = (a: Booking, b: Booking) => {
-        const bothQuotes = !a.isBooked && !b.isBooked &&
+        const bothQuoteIterations =
           Boolean(a.quoteId || a.quoteReference) && Boolean(b.quoteId || b.quoteReference);
-        if (bothQuotes) {
+        if (bothQuoteIterations) {
           const quoteVersionDifference = (a.quoteVersion || 1) - (b.quoteVersion || 1);
           if (quoteVersionDifference !== 0) return quoteVersionDifference;
         }
@@ -127,7 +133,10 @@ export default function BookingsView() {
       const ordered = [...revisions].sort(byVersion);
       const active = ordered.filter((revision) => !revision.isCancelled && revision.status !== "cancelled");
       const currentRevisions = active.length ? active : ordered;
-      return { tripKey, revisions: ordered, latest: currentRevisions[currentRevisions.length - 1] };
+      const latest = currentRevisions[currentRevisions.length - 1];
+      const primary = currentRevisions.find((revision) => revision.isBooked && !revision.isSupplementalRevision)
+        || currentRevisions[0];
+      return { tripKey, revisions: ordered, latest, primary };
     }).filter((group) => filteredBookings.some((booking) =>
       group.revisions.some((revision) => revision.id === booking.id)
     ));
@@ -364,7 +373,7 @@ export default function BookingsView() {
                   </td>
                 </tr>
               ) : (
-                bookingGroups.map(({ tripKey, revisions, latest: booking }) => {
+                bookingGroups.map(({ tripKey, revisions, latest: latestRevision, primary: booking }) => {
                   const totalChecklist = (booking.checklist || []).length;
                   const completedChecklist = (booking.checklist || []).filter((c) => c.isCompleted || (c as any).completed).length;
                   const isAllReady = totalChecklist > 0 && completedChecklist === totalChecklist;
@@ -541,6 +550,19 @@ export default function BookingsView() {
                                   <span>Credit Note</span>
                                 </button>
                               ) : null}
+
+                              <button
+                                onClick={() => {
+                                  setSelectedBookingForDetail(latestRevision);
+                                  setBookingToRevise(latestRevision);
+                                  setActiveNav("quotes");
+                                }}
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#F5F2EC] hover:bg-[#EBE5DB] text-[#0F1420] text-[11px] font-bold transition-all shadow-sm"
+                                title="Open the quotation form to add a priced booking revision"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                                <span>Revise</span>
+                              </button>
                             </>
                           ) : (
                             /* Quote / Contract in progress actions */
@@ -604,8 +626,14 @@ export default function BookingsView() {
                                       {revision.isBooked
                                         ? revision.bookingRevisionId || revision.tripNumber
                                         : revision.quoteId || revision.quoteReference || revision.tripNumber}
-                                      {revision.id === booking.id && <span className="ml-2 text-emerald-700">Current</span>}
-                                      {(revision.isCancelled || revision.status === "cancelled") && <span className="ml-2 text-red-600">Archived</span>}
+                                      {revision.isSupplementalRevision && <span className="ml-2 text-blue-700">Additional</span>}
+                                      {revision.id === booking.id && <span className="ml-2 text-emerald-700">Initial booking</span>}
+                                      {revision.id === latestRevision?.id && revision.id !== booking.id && <span className="ml-2 text-blue-700">Latest</span>}
+                                      {(revision.isCancelled || revision.status === "cancelled") && (
+                                        <span className="ml-2 text-red-600">
+                                          {revision.isBooked ? "Archived" : "Cancelled"}
+                                        </span>
+                                      )}
                                     </span>
                                     <span className="text-gray-500">{revision.updatedAt || revision.createdAt || "Date unavailable"}</span>
                                     <span className="font-mono font-bold text-[#0F1420]">

@@ -47,6 +47,7 @@ export default function BookingDetailDrawer() {
     issueCreditNote,
     currentUser,
     setActiveNav,
+    setBookingToRevise,
     role,
     getTripRevisions,
     reviseBookingRoute,
@@ -76,6 +77,16 @@ export default function BookingDetailDrawer() {
   const isBooked = !isCancelled && (booking.isBooked || ["confirmed", "dispatched", "in_flight", "completed"].includes(booking.status));
   const isContractStage = !isCancelled && booking.status === "contract_sent";
   const isQuoteStage = !isBooked && !isContractStage && !isCancelled;
+  const activeBookingRevisions = getTripRevisions(booking.tripId || booking.tripNumber).filter((revision) =>
+    !revision.isCancelled &&
+    (revision.isBooked || ["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(revision.status))
+  );
+  const sortedActiveBookingRevisions = [...activeBookingRevisions].sort((a, b) =>
+    (Number((a.bookingRevisionId || "").split("-").pop()) || 1) -
+    (Number((b.bookingRevisionId || "").split("-").pop()) || 1)
+  );
+  const latestActiveBooking = sortedActiveBookingRevisions[sortedActiveBookingRevisions.length - 1];
+  const canReviseBooking = !latestActiveBooking || latestActiveBooking.id === booking.id;
 
   const totalSteps = booking.checklist.length;
   const completedSteps = booking.checklist.filter((s) => s.isCompleted).length;
@@ -988,18 +999,18 @@ export default function BookingDetailDrawer() {
               </button>
             ) : (
               <>
-                <button
+                {canReviseBooking ? <button
                   onClick={() => {
-                    setBookingRevisionReason("");
-                    setRevisionAdjustments([]);
-                    setBookingRevisionError("");
-                    setShowBookingRevisionModal(true);
+                    setBookingToRevise(booking);
+                    setSelectedBookingForDetail(null);
+                    setActiveNav("quotes");
                   }}
                   className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-extrabold bg-[#F5F2EC] hover:bg-[#EBE5DB] text-[#0F1420] border border-[#E0DAD0] transition-all"
                 >
                   <RotateCcw className="w-4 h-4 text-[#C9A052]" />
                   <span>Revise Booking</span>
                 </button>
+                : <span className="text-[11px] font-mono font-bold text-gray-500">Older iteration · view only</span>}
                 {booking.status !== "dispatched" && (
                   <button
                     onClick={() => updateBookingStatus(booking.id, "dispatched")}

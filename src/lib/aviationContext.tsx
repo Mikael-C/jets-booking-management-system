@@ -468,6 +468,7 @@ export const normalizeBooking = (b: any): Booking => {
   );
   const quoteVersion = Number(b?.quoteVersion || 1);
   const quoteId = String(b?.quoteId || b?.quoteReference || "");
+  const quoteGroupId = b?.quoteGroupId ? String(b.quoteGroupId) : undefined;
   const bookingRevisionId = String(b?.bookingRevisionId || "");
   
   // Resolve aircraft
@@ -664,7 +665,16 @@ export const normalizeBooking = (b: any): Booking => {
     id,
     tripId,
     quoteId,
+    quoteGroupId,
     bookingRevisionId,
+    revisionAdjustments: Array.isArray(b?.revisionAdjustments)
+      ? b.revisionAdjustments.map((adjustment: any, index: number) => ({
+          id: String(adjustment?.id || `adjustment-${index + 1}`),
+          label: String(adjustment?.label || "Additional booking items"),
+          amount: Number(adjustment?.amount || 0)
+        }))
+      : [],
+    isSupplementalRevision: Boolean(b?.isSupplementalRevision),
     isCancelled: Boolean(b?.isCancelled || false),
     cancellationReason: b?.cancellationReason ? String(b.cancellationReason) : undefined,
     isBooked,
@@ -2347,7 +2357,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       : original.pricing;
     const previousTotal = original.pricing.totalFlightPrice || 0;
     const nextTotal = nextPricing.totalFlightPrice || 0;
-    const delta = nextTotal - previousTotal;
+    const delta = overrides.isSupplementalRevision ? nextTotal : nextTotal - previousTotal;
     const response = await api.bookings.revise(bookingId, { ...overrides, revisionReason: reason });
     const revised = normalizeBooking(response.data);
     setBookings((prev) => [revised, ...prev]);
@@ -2360,7 +2370,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       action: "BOOKING_REVISED",
       entityType: "Booking",
       entityId: revised.bookingRevisionId || revised.id,
-      details: `Created booking revision ${revised.bookingRevisionId || revised.id} for trip ${revised.tripId}. ${delta === 0 ? (revised.creditNotes?.length ? "Line adjustments recorded with no net price change." : "No price adjustment.") : `Credit note ${revised.creditNotes?.[0]?.creditNoteNumber || "generated"}: ${delta > 0 ? "client owes" : "refund due"} ${Math.abs(delta)}.`} ${reason}`
+      details: `Created booking revision ${revised.bookingRevisionId || revised.id} for trip ${revised.tripId}. ${overrides.isSupplementalRevision ? `Supplemental invoice amount: ${delta}.` : delta === 0 ? (revised.creditNotes?.length ? "Line adjustments recorded with no net price change." : "No price adjustment.") : `Credit note ${revised.creditNotes?.[0]?.creditNoteNumber || "generated"}: ${delta > 0 ? "client owes" : "refund due"} ${Math.abs(delta)}.`} ${reason}`
     });
     return revised;
   };
@@ -2464,7 +2474,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       revised,
       ...prev.map((booking) => {
         if (getQuoteIterationGroupKey(booking) === quoteFamilyKey && booking.id !== revised.id) {
-          if (isBooked && !booking.isCancelled && !booking.isBooked) {
+          if (!booking.isCancelled && (!booking.isBooked || isBooked)) {
             return {
               ...booking,
               quoteGroupId: revised.quoteGroupId,

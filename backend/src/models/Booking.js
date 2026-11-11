@@ -222,6 +222,7 @@ const bookingSchema = new mongoose.Schema(
       default: 'unpaid',
     },
     revisionAdjustments: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    isSupplementalRevision: { type: Boolean, default: false },
     creditNotes: { type: [mongoose.Schema.Types.Mixed], default: [] },
     paymentReason: { type: String, default: '' },
     paymentMethodChoice: {

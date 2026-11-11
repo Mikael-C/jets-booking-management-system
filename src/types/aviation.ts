@@ -383,6 +383,7 @@ export interface Booking {
     label: string;
     amount: number;
   }>;
+  isSupplementalRevision?: boolean;
   isCancelled?: boolean;
   cancellationReason?: string;
   isBooked?: boolean;

@@ -197,7 +197,12 @@ export default function InvoiceDoc({ booking }: InvoiceDocProps) {
                   {formatCurrency(pricing.inboundPassengerTax + pricing.outboundPassengerTax, pricing.currency)}
                 </span>
               </div>
-              {pricing.additionalServicesTotal > 0 && (
+              {booking.revisionAdjustments?.length ? booking.revisionAdjustments.map((adjustment) => (
+                <div key={adjustment.id} className="flex justify-between text-gray-700 pl-3 text-[11px]">
+                  <span>- {adjustment.label}</span>
+                  <span className="font-mono">{formatCurrency(adjustment.amount, pricing.currency)}</span>
+                </div>
+              )) : pricing.additionalServicesTotal > 0 && (
                 <div className="flex justify-between text-gray-700 pl-3 text-[11px]">
                   <span>- Additional Services & Concierge</span>
                   <span className="font-mono">{formatCurrency(pricing.additionalServicesTotal, pricing.currency)}</span>

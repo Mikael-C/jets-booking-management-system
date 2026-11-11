@@ -389,7 +389,7 @@ router.post('/:id/revise', authorize('super_admin', 'admin', 'operations'), asyn
   const identifiers = await createBookingIdentifiers({
     quoteGroupId: original.quoteGroupId || original.tripId || original.id || original._id.toString(),
     quoteVersion: nextRevision,
-    isQuote: Boolean(original.quoteId),
+    isQuote: false,
     isBooked: true,
   });
   const revisedData = original.toObject();
@@ -417,10 +417,12 @@ router.post('/:id/revise', authorize('super_admin', 'admin', 'operations'), asyn
 
   const oldTotal = Number(original.pricing?.totalFlightPrice || 0);
   const newTotal = Number(revisedData.pricing?.totalFlightPrice || 0);
-  const delta = newTotal - oldTotal;
+  const isSupplementalRevision = req.body?.isSupplementalRevision === true;
+  const delta = isSupplementalRevision ? newTotal : newTotal - oldTotal;
   const hasLineAdjustments = Array.isArray(revisedData.revisionAdjustments) &&
     revisedData.revisionAdjustments.length > 0;
-  revisedData.creditNotes = delta === 0 && !hasLineAdjustments ? [] : [{
+  revisedData.isSupplementalRevision = isSupplementalRevision;
+  revisedData.creditNotes = isSupplementalRevision || (delta === 0 && !hasLineAdjustments) ? [] : [{
     id: `cn-${Date.now()}`,
     number: `CN-${identifiers.bookingRevisionId.replace(/^BK-/, '')}`,
     creditNoteNumber: `CN-${identifiers.bookingRevisionId.replace(/^BK-/, '')}`,

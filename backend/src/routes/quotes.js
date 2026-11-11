@@ -144,14 +144,12 @@ const reviseQuote = async (req, res) => {
   for (const quote of siblings) {
     quote.quoteGroupId = quoteGroupId;
     quote.tripId = tripId;
-    if (bookImmediately) {
-      quote.isBooked = false;
-      quote.isCancelled = true;
-      quote.cancellationReason = `Superseded by booked revision ${identifiers.quoteId}`;
-      quote.supersededBy = revised.id;
-      quote.quoteStatus = 'expired';
-      quote.status = 'cancelled';
-    }
+    quote.isBooked = false;
+    quote.isCancelled = true;
+    quote.cancellationReason = `Superseded by ${bookImmediately ? 'booked ' : ''}revision ${identifiers.quoteId}`;
+    quote.supersededBy = revised.id;
+    quote.quoteStatus = 'expired';
+    quote.status = 'cancelled';
     await quote.save();
   }
 
