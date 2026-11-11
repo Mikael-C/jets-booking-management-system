@@ -34,6 +34,8 @@ const agentRequestSchema = new mongoose.Schema(
   {
     id: { type: String, index: true },
     requestNumber: { type: String, unique: true, index: true },
+    tripId: { type: String, default: '', index: true },
+    quoteGroupId: { type: String, default: '', index: true },
     type: {
       type: String,
       enum: ['quote', 'flight_brief', 'invoice'],

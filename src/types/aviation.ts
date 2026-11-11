@@ -500,6 +500,8 @@ export interface RequestLegItem {
 
 export interface AgentRequest {
   id: string;
+  tripId?: string;
+  quoteGroupId?: string;
   type: RequestType;
   title: string;
   agentName: string;

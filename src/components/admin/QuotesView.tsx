@@ -1294,8 +1294,9 @@ export default function QuotesView() {
                     className="flex w-full flex-wrap items-center gap-x-3 gap-y-2 px-5 py-4 text-left hover:bg-[#FAF8F5]"
                   >
                     <span className="font-semibold text-[#0F1420]">
-                      Trip ID ({quote.quoteId || quote.quoteReference || quote.tripId || quote.id})
+                      Trip ID ({quote.tripId || "Pending assignment"})
                     </span>
+                    <span className="text-gray-500">{quote.quoteId || quote.quoteReference}</span>
                     <span className="text-gray-500">
                       {quote.legs[0]?.origin.icao || "—"} - {quote.legs[quote.legs.length - 1]?.destination.icao || "—"}
                     </span>
@@ -1314,8 +1315,9 @@ export default function QuotesView() {
                         return (
                           <div key={revision.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-[#E0DAD0] px-5 py-3 last:border-b-0">
                             <span className="font-semibold text-[#0F1420]">
-                              Trip ID ({revision.quoteId || revision.quoteReference || revision.tripId || revision.id})
+                              Trip ID ({revision.tripId || quote.tripId || "Pending assignment"})
                             </span>
+                            <span className="text-gray-500">{revision.quoteId || revision.quoteReference}</span>
                             <span className="text-gray-500">{route}</span>
                             <span className="min-w-0 flex-1 text-gray-700">
                               {revision.client.companyName || revision.client.fullName || "Account unavailable"}

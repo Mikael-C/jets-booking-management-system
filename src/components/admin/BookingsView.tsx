@@ -394,17 +394,17 @@ export default function BookingsView() {
                         <div className="flex flex-col gap-1">
                           {isBookedRecord ? (
                             <span className="font-extrabold text-[#0F1420] font-mono text-sm tracking-wide group-hover:text-[#C9A052] transition-colors flex items-center gap-1.5">
-                              Trip #{booking.tripNumber}
+                              Trip ID ({booking.tripId || "Pending assignment"})
                               <Eye className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity text-[#C9A052]" />
                             </span>
                           ) : (
                             <div className="flex flex-col">
                               <span className="font-bold text-[#9A7A35] font-mono text-xs tracking-wide group-hover:text-[#C9A052] transition-colors flex items-center gap-1.5">
-                                {booking.quoteReference || `QTE-${booking.tripNumber}`}
+                                Trip ID ({booking.tripId || "Pending assignment"})
                                 <Eye className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity text-[#C9A052]" />
                               </span>
                               <span className="text-[10px] text-gray-400 font-mono italic">
-                                (Trip # assigned on booking)
+                                {booking.quoteId || booking.quoteReference || "Quote ID pending"}
                               </span>
                             </div>
                           )}

@@ -7,7 +7,8 @@ const { authorize } = require('../middleware/auth');
 const { v4: uuidv4 } = require('uuid');
 const { createAuditEntry } = require('../services/auditService');
 const { sendAgentNotificationEmail } = require('../services/emailService');
-const { createBookingIdentifiers } = require('../services/bookingIdentifiers');
+const { randomUUID } = require('crypto');
+const { createBookingIdentifiers, createTripId } = require('../services/bookingIdentifiers');
 
 // Helper to look up agent requests by Mongo _id, custom id, or requestNumber
 const getAgentRequestFilter = (id) => {
@@ -83,9 +84,11 @@ router.get('/:id', async (req, res) => {
 
 // POST /api/agent-requests
 router.post('/', async (req, res) => {
-  const { id, requestNumber, status, isDeleted, ...submittedData } = req.body;
+  const { id, requestNumber, status, isDeleted, tripId, quoteGroupId, ...submittedData } = req.body;
   const requestData = {
     ...submittedData,
+    tripId: submittedData.type === 'quote' ? await createTripId() : '',
+    quoteGroupId: submittedData.type === 'quote' ? randomUUID() : '',
     agentName: req.user.name,
     agentEmail: req.user.email,
     status: 'pending',
@@ -114,7 +117,7 @@ router.put('/:id', async (req, res) => {
     return res.status(403).json({ success: false, message: 'Access denied' });
   }
 
-  const { status, requestNumber, isDeleted, ...updateData } = req.body;
+  const { status, requestNumber, isDeleted, tripId, quoteGroupId, ...updateData } = req.body;
   Object.assign(request, updateData);
   await request.save();
 
@@ -246,7 +249,17 @@ router.post('/:id/fulfill', authorize('super_admin', 'admin', 'operations'), asy
   }
 
   const isQuote = request.type === 'quote';
-  const identifiers = await createBookingIdentifiers({ isQuote, isBooked: Boolean(req.body.isBooked) });
+  const quoteGroupId = request.quoteGroupId || undefined;
+  const identifiers = await createBookingIdentifiers({
+    quoteGroupId,
+    tripId: request.tripId || undefined,
+    isQuote,
+    isBooked: Boolean(req.body.isBooked),
+  });
+  if (isQuote) {
+    request.tripId = identifiers.tripId;
+    request.quoteGroupId = identifiers.quoteGroupId;
+  }
   const bookingData = {
     ...req.body,
     ...identifiers,

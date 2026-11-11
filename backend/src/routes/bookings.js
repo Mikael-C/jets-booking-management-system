@@ -388,6 +388,7 @@ router.post('/:id/revise', authorize('super_admin', 'admin', 'operations'), asyn
   const suffix = tripSuffix(original);
   const identifiers = await createBookingIdentifiers({
     quoteGroupId: original.quoteGroupId || original.tripId || original.id || original._id.toString(),
+    tripId: original.tripId || undefined,
     quoteVersion: nextRevision,
     isQuote: false,
     isBooked: true,

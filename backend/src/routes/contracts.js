@@ -111,8 +111,9 @@ router.post('/', async (req, res) => {
       if (!booking.tripId || !booking.bookingRevisionId || !booking.tripNumber) {
         const identifiers = await createBookingIdentifiers({
           quoteGroupId: booking.quoteGroupId || booking.id || booking._id.toString(),
+          tripId: booking.tripId || undefined,
           quoteVersion: Number(booking.quoteVersion) || 1,
-          isQuote: !booking.quoteId,
+          isQuote: Boolean(booking.quoteId),
           isBooked: true,
         });
         booking.id = booking.id || identifiers.id;
@@ -150,7 +151,12 @@ router.post('/', async (req, res) => {
       booking.updatedAt = new Date();
       await booking.save();
     } else {
-      const identifiers = await createBookingIdentifiers({ isQuote: true, isBooked: true });
+      const identifiers = await createBookingIdentifiers({
+        quoteGroupId: body.quoteGroupId || undefined,
+        tripId: body.tripId || undefined,
+        isQuote: true,
+        isBooked: true,
+      });
       const tripNumber = await createTripNumber(identifiers.tripNumber);
       booking = new Booking({
         ...body,

@@ -236,16 +236,16 @@ export default function BookingDetailDrawer() {
                     </button>
                   </div>
                 ) : isBooked ? (
-                  <>Trip {booking.tripNumber}</>
+                  <>Trip ID {booking.tripId || "Pending assignment"}</>
                 ) : (
-                  <>Quote Ref: {booking.quoteReference || (booking.tripNumber ? `QTE-${booking.tripNumber.replace(/\D/g, '') || booking.tripNumber}` : "QTE-PENDING")}</>
+                  <>Trip ID {booking.tripId || "Pending assignment"}</>
                 )}
               </h2>
               <p className="text-[11px] text-gray-400 font-mono mt-0.5">
                 {isBooked ? (
                   <>Callsign: <strong className="text-white">{booking.legs[0]?.flightNumber || "PEU842"}</strong> • Tail: <strong className="text-white">{booking.aircraft.registration || "OE-FFB"}</strong></>
                 ) : (
-                  <span className="text-[#C9A052]">Flight call sign and Trip ID assigned upon booking confirmation</span>
+                  <span className="text-[#C9A052]">Quote reference: {booking.quoteReference || "Pending server assignment"}</span>
                 )}
               </p>
             </div>
@@ -1066,7 +1066,7 @@ export default function BookingDetailDrawer() {
                     </div>
                     <div className="p-3 rounded-xl bg-[#F5F2EC] border border-[#E0DAD0]">
                       <span className="text-[10px] font-mono uppercase text-gray-500">Trip / Current Revision</span>
-                      <p className="mt-1 font-bold font-mono text-[#0F1420]">{booking.tripId || booking.tripNumber}</p>
+                      <p className="mt-1 font-bold font-mono text-[#0F1420]">{booking.tripId || "Pending assignment"}</p>
                       <p className="text-[10px] text-gray-500">{booking.bookingRevisionId || "Original booking"}</p>
                     </div>
                   </div>

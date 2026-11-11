@@ -139,6 +139,7 @@ const reviseQuote = async (req, res) => {
   const bookImmediately = req.body?.isBooked === true;
   const identifiers = await createBookingIdentifiers({
     quoteGroupId,
+    tripId: original.tripId || undefined,
     quoteVersion: nextVersion,
     isQuote: true,
     isBooked: bookImmediately,
@@ -220,7 +221,7 @@ router.post('/:id/convert-to-booking', authorize('super_admin', 'admin', 'operat
   if (isBookedStatus(booking)) return res.json({ success: true, data: booking });
   const quoteGroupId = booking.quoteGroupId || booking.id || booking._id.toString();
   const groupToken = createHash('sha256').update(quoteGroupId).digest('hex').slice(0, 10).toUpperCase();
-  const tripId = booking.tripId || `TRIP-${new Date().getFullYear()}-${groupToken}`;
+  const existingTripId = booking.tripId;
   const siblings = await Booking.find(getQuoteFamilyFilter(booking));
   if (siblings.some((sibling) => isBookedStatus(sibling) && !sibling.isCancelled)) {
     return res.status(409).json({ message: 'A quote from this trip has already been booked' });
@@ -232,10 +233,12 @@ router.post('/:id/convert-to-booking', authorize('super_admin', 'admin', 'operat
   applyQuoteEdits(booking, req.body);
   const identifiers = await createBookingIdentifiers({
     quoteGroupId,
+    tripId: existingTripId || undefined,
     quoteVersion: getQuoteVersion(booking),
     isQuote: false,
     isBooked: true,
   });
+  const tripId = existingTripId || identifiers.tripId;
   booking.id = booking.id || identifiers.id;
   booking.quoteGroupId = quoteGroupId;
   booking.tripId = tripId;
@@ -336,7 +339,10 @@ router.post('/generate', authorize('super_admin', 'admin', 'operations'), async 
   });
 
   // Trip number
-  const identifiers = await createBookingIdentifiers();
+  const identifiers = await createBookingIdentifiers({
+    quoteGroupId: agentRequest.quoteGroupId || undefined,
+    tripId: agentRequest.tripId || undefined,
+  });
 
   const booking = new Booking({
     ...identifiers,
@@ -368,6 +374,8 @@ router.post('/generate', authorize('super_admin', 'admin', 'operations'), async 
   // Update agent request status
   agentRequest.status = 'processing';
   agentRequest.fulfilledBookingId = booking._id;
+  agentRequest.tripId = identifiers.tripId;
+  agentRequest.quoteGroupId = identifiers.quoteGroupId;
   await agentRequest.save();
 
   await createAuditEntry({ user: req.user,
