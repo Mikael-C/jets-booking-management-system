@@ -400,7 +400,7 @@ export default function BookingDetailDrawer() {
                 {/* Consolidated All-Iterations Invoice Generator */}
                 <div className="mt-3 pt-3 border-t border-[#E0DAD0] flex items-center justify-between gap-2 flex-wrap">
                   <span className="text-[11px] font-mono text-gray-500">
-                    Trip ID: <strong className="text-[#0F1420]">{booking.tripId || `TRIP-${booking.tripNumber}`}</strong> · Revision: <strong className="text-[#C9A052]">{booking.bookingRevisionId || "BK-01"}</strong>
+                    Trip ID: <strong className="text-[#0F1420]">{booking.tripId || "Pending server assignment"}</strong> · Revision: <strong className="text-[#C9A052]">{booking.bookingRevisionId || "Not assigned"}</strong>
                   </span>
                   <button
                     type="button"

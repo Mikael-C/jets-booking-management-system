@@ -130,19 +130,18 @@ export default function NewQuoteModal() {
 
   const estimatedPricing = calculatePricing(currentAircraft, compiledLegs, services, "EUR");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const randomSuffix = Math.floor(100 + Math.random() * 900);
-    const newTripNumber = `PEU${randomSuffix}-001`;
-    const newInvoiceNumber = `0010${Math.floor(6000 + Math.random() * 3000)}`;
-    const newAccountNumber = `${Math.floor(200000 + Math.random() * 800000)}`;
-
     const newBooking: Booking = {
-      id: `booking-${Date.now()}`,
-      tripNumber: newTripNumber,
-      invoiceNumber: newInvoiceNumber,
-      accountNumber: newAccountNumber,
+      id: "",
+      tripId: "",
+      quoteGroupId: "",
+      quoteId: "",
+      tripNumber: "",
+      quoteReference: "",
+      invoiceNumber: "",
+      accountNumber: "",
       contractDate: new Date().toLocaleDateString("de-DE"),
       quoteExpirationDate: new Date(Date.now() + 86400000 * 2).toLocaleDateString("de-DE") + ", 18:00z",
       paymentDueDate: new Date(Date.now() + 86400000 * 3).toLocaleDateString("de-DE"),
@@ -180,10 +179,10 @@ export default function NewQuoteModal() {
       ]
     };
 
-    addBooking(newBooking);
+    const persistedBooking = await addBooking(newBooking);
     closeNewQuoteModal();
     // Open the generated quote immediately
-    openDocument(newBooking, "quotation");
+    openDocument(persistedBooking, "quotation");
   };
 
   return (

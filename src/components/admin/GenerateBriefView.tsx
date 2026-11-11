@@ -106,7 +106,7 @@ export default function GenerateBriefView() {
 
   // Document Identifiers (Flight Brief DETAILS box)
   const [contractDate, setContractDate] = useState("30/06/2026");
-  const [tripNumber, setTripNumber] = useState("PEU842-001");
+  const [tripNumber, setTripNumber] = useState("");
   const [accountNumber, setAccountNumber] = useState("ACC-21737");
   const [quoteExpirationDate, setQuoteExpirationDate] = useState("1/07/2026");
 
@@ -888,10 +888,10 @@ export default function GenerateBriefView() {
               <input
                 type="text"
                 value={tripNumber}
-                onChange={(e) => setTripNumber(e.target.value)}
-                required
-                placeholder="ZFL433"
-                className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3.5 py-2 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                readOnly
+                placeholder="Assigned by the server"
+                title="Trip number is assigned by the backend"
+                className="w-full bg-gray-100 border border-[#E0DAD0] rounded-xl px-3.5 py-2 text-xs font-mono font-bold text-[#0F1420] cursor-not-allowed"
               />
             </div>
 

@@ -68,7 +68,7 @@ export default function GenerateContractView() {
 
   // Contract Metadata
   const [contractRef, setContractRef] = useState("CA-PEU842-001");
-  const [tripNumber, setTripNumber] = useState("PEU842-001");
+  const [tripNumber, setTripNumber] = useState("");
   const [accountNumber, setAccountNumber] = useState("ACC-21737");
   const [contractDate, setContractDate] = useState("02.10.2026");
   const [paymentDueDate, setPaymentDueDate] = useState("03.10.2026");
@@ -156,7 +156,7 @@ export default function GenerateContractView() {
   // Sync when selected booking changes
   const populateFromBooking = (b: Booking) => {
     setSelectedBookingId(b.id);
-    setTripNumber(b.tripNumber || `PEU842-${b.id.slice(-3)}`);
+    setTripNumber(b.tripNumber || "");
     setContractRef(`CA-${b.tripNumber || b.quoteReference || b.id}`);
     setAccountNumber(b.accountNumber || b.client.accountNumber || "ACC-21737");
     setContractDate(b.contractDate || "02.10.2026");
@@ -223,13 +223,17 @@ export default function GenerateContractView() {
   };
 
   const totalAmount = flightPrice + airportFees + passengerFees;
+  const selectedBooking = bookings.find((booking) => booking.id === selectedBookingId);
 
   // Build current Booking object for preview or execution
   const currentContractBooking: Booking = {
-    id: selectedBookingId || `booking-${Date.now()}`,
-    tripNumber: tripNumber || `PEU842-${Math.floor(100 + Math.random() * 900)}`,
-    invoiceNumber: "00106020",
-    quoteReference: `QTE-${Date.now().toString().slice(-6)}`,
+    id: selectedBookingId || "",
+    tripId: selectedBooking?.tripId || "",
+    quoteGroupId: selectedBooking?.quoteGroupId || "",
+    quoteId: selectedBooking?.quoteId || "",
+    tripNumber: tripNumber || "",
+    invoiceNumber: selectedBooking?.invoiceNumber || "",
+    quoteReference: selectedBooking?.quoteReference || selectedBooking?.quoteId || "",
     accountNumber: accountNumber,
     contractDate,
     quoteExpirationDate: "02.10.2026, 19:53z",
@@ -315,36 +319,41 @@ export default function GenerateContractView() {
   };
 
   // Sign & Book Flight -> Moves directly to Bookings Tab
-  const handleConfirmAndBook = () => {
-    const officialTripNumber = tripNumber && tripNumber.trim() !== "" ? tripNumber : `PEU842-${Math.floor(100 + Math.random() * 900)}`;
+  const handleConfirmAndBook = async () => {
     const finalBooking: Booking = {
       ...currentContractBooking,
-      tripNumber: officialTripNumber,
       status: "confirmed",
       quoteStatus: "accepted",
+      isBooked: true,
       paymentMethodChoice: paymentChoice,
       cardFeePercentage: 3.5,
       cardFeeAmount: paymentChoice === "card" ? cardFee.feeAmount : 0,
       totalWithCardFee: paymentChoice === "card" ? cardFee.totalWithFee : totalAmount
     };
 
-    createContract(finalBooking);
+    try {
+      const persistedBooking = await createContract(finalBooking);
+      setTripNumber(persistedBooking.tripNumber);
+      setContractRef(`CA-${persistedBooking.tripNumber}`);
 
-    if (currentUser) {
-      addAuditEntry({
-        userEmail: currentUser.email,
-        userName: currentUser.name,
-        action: "CONTRACT_EXECUTED",
-        entityType: "Contract",
-        entityId: officialTripNumber,
-        details: `Charter Agreement ${contractRef} executed for client ${clientName}. Confirmed as flight ${officialTripNumber}.`
-      });
+      if (currentUser) {
+        addAuditEntry({
+          userEmail: currentUser.email,
+          userName: currentUser.name,
+          action: "CONTRACT_EXECUTED",
+          entityType: "Contract",
+          entityId: persistedBooking.tripNumber,
+          details: `Charter Agreement ${contractRef} executed for client ${clientName}. Confirmed as flight ${persistedBooking.tripNumber}.`
+        });
+      }
+
+      setFeedbackMsg(`Success! Flight confirmed under Trip #${persistedBooking.tripNumber}. Redirecting to Bookings...`);
+      setTimeout(() => {
+        setActiveNav("bookings");
+      }, 900);
+    } catch (error) {
+      setFeedbackMsg(error instanceof Error ? error.message : "The contract could not be saved.");
     }
-
-    setFeedbackMsg(`Success! Flight confirmed under Trip #${officialTripNumber}. Redirecting to Bookings...`);
-    setTimeout(() => {
-      setActiveNav("bookings");
-    }, 900);
   };
 
   return (

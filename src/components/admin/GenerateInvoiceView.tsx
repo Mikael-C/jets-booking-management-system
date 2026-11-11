@@ -172,7 +172,7 @@ export default function GenerateInvoiceView() {
 
   // Invoice & Trip References
   const [invoiceNumber, setInvoiceNumber] = useState("00106020");
-  const [tripNumber, setTripNumber] = useState("PEU842-001");
+  const [tripNumber, setTripNumber] = useState("");
   const [accountNumber, setAccountNumber] = useState("2{21737}");
   const [invoiceDate, setInvoiceDate] = useState("02.10.2026");
   const [paymentDueDate, setPaymentDueDate] = useState("03.10.2026");
@@ -245,7 +245,7 @@ export default function GenerateInvoiceView() {
   const populateFromBooking = (b: Booking) => {
     setSelectedBookingId(b.id);
     setInvoiceNumber(b.invoiceNumber || `0010${Math.floor(6020 + Math.random() * 3970)}`);
-    setTripNumber(b.tripNumber || "PEU842-001");
+    setTripNumber(b.tripNumber || "");
     setAccountNumber(b.accountNumber || "ACC-21737");
     setInvoiceDate(b.contractDate || "02.10.2026");
     setPaymentDueDate(b.paymentDueDate || "03.10.2026");
@@ -629,7 +629,7 @@ export default function GenerateInvoiceView() {
                             INV-{inv.invoiceNumber || inv.tripNumber}
                           </span>
                           <span className="text-xs font-mono text-[#0F1420] font-bold px-2 py-0.5 rounded bg-[#FAF8F5] border border-[#E0DAD0]">
-                            Trip: {inv.tripId || `TRIP-${inv.tripNumber}`}
+                            Trip: {inv.tripId || "Not assigned"}
                           </span>
                           <span
                             className={`text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full border ${
@@ -1023,10 +1023,10 @@ export default function GenerateInvoiceView() {
               <input
                 type="text"
                 value={tripNumber}
-                onChange={(e) => setTripNumber(e.target.value)}
-                required
-                placeholder="PEU842-001"
-                className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3.5 py-2 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                readOnly
+                placeholder="Assigned by the server"
+                title="Trip number is assigned by the backend"
+                className="w-full bg-gray-100 border border-[#E0DAD0] rounded-xl px-3.5 py-2 text-xs font-mono font-bold text-[#0F1420] cursor-not-allowed"
               />
             </div>
 

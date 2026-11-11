@@ -152,7 +152,7 @@ export default function AgentRequestQuoteView() {
 
     const title = `Quote Request: ${routeText} (${clientName || "Client"})`;
 
-    addAgentRequest({
+    await addAgentRequest({
       type: "quote",
       title,
       agentName: currentUser?.name || "Marcus Vance",
@@ -191,7 +191,7 @@ export default function AgentRequestQuoteView() {
     setSubmitted(true);
   };
 
-  const handleSaveDraft = () => {
+  const handleSaveDraft = async () => {
     let routeText = "";
     if (tripType === "multi_leg") {
       routeText = multiLegs.map((l) => `${l.originIcao} → ${l.destIcao}`).join(" | ");
@@ -203,7 +203,7 @@ export default function AgentRequestQuoteView() {
 
     const title = `[DRAFT] Quote: ${routeText} (${clientName || "Client"})`;
 
-    addAgentRequest({
+    await addAgentRequest({
       type: "quote",
       title,
       agentName: currentUser?.name || "Marcus Vance",

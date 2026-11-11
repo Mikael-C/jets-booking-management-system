@@ -5,6 +5,7 @@ const Booking = require('../models/Booking');
 const Contact = require('../models/Contact');
 const { authorize } = require('../middleware/auth');
 const { createAuditEntry } = require('../services/auditService');
+const { createBookingIdentifiers, createTripNumber } = require('../services/bookingIdentifiers');
 
 // Safe Booking finder supporting ObjectId and custom ID strings
 const findBooking = async (id) => {
@@ -109,12 +110,25 @@ router.post('/', async (req, res) => {
   try {
     const body = req.body || {};
 
-    const bookingId = body.id || `booking-brief-${Date.now()}`;
-    const tripNumber = body.tripNumber || `ORB-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 899)}`;
-
     let booking = await findBooking(body.id || body.tripNumber);
 
     if (booking) {
+      if (!booking.tripId || !booking.bookingRevisionId || !booking.tripNumber) {
+        const identifiers = await createBookingIdentifiers({
+          quoteGroupId: booking.quoteGroupId || booking.id || booking._id.toString(),
+          quoteVersion: Number(booking.quoteVersion) || 1,
+          isQuote: Boolean(booking.quoteId),
+          isBooked: true,
+        });
+        booking.id = booking.id || identifiers.id;
+        booking.tripId = booking.tripId || identifiers.tripId;
+        booking.quoteGroupId = booking.quoteGroupId || identifiers.quoteGroupId;
+        booking.quoteId = booking.quoteId || identifiers.quoteId;
+        booking.quoteReference = booking.quoteReference || booking.quoteId;
+        booking.bookingRevisionId = booking.bookingRevisionId || identifiers.bookingRevisionId;
+        booking.tripNumber = booking.tripNumber || await createTripNumber(identifiers.tripNumber);
+        booking.invoiceNumber = booking.invoiceNumber || identifiers.invoiceNumber;
+      }
       if (body.legs && body.legs.length > 0) booking.legs = body.legs;
       if (body.aircraft) booking.aircraft = { ...booking.aircraft, ...body.aircraft };
       if (body.operator) booking.operator = { ...booking.operator, ...body.operator };
@@ -130,9 +144,13 @@ router.post('/', async (req, res) => {
       booking.updatedAt = new Date();
       await booking.save();
     } else {
+      const identifiers = await createBookingIdentifiers({ isQuote: true, isBooked: true });
+      const tripNumber = await createTripNumber(identifiers.tripNumber);
       booking = new Booking({
         ...body,
-        id: bookingId,
+        ...identifiers,
+        id: identifiers.id,
+        isBooked: true,
         tripNumber,
         status: body.status || 'confirmed',
         quoteStatus: body.quoteStatus || 'accepted',
@@ -145,14 +163,14 @@ router.post('/', async (req, res) => {
       user: req.user,
       action: 'FLIGHT_BRIEF_GENERATED',
       entityType: 'FlightBrief',
-      entityId: tripNumber,
-      details: `Generated flight operations brief for trip ${tripNumber} (${booking.legs?.length || 1} legs, crew assigned)`,
+      entityId: booking.tripNumber,
+      details: `Generated flight operations brief for trip ${booking.tripNumber} (${booking.legs?.length || 1} legs, crew assigned)`,
       req,
     }).catch(() => {});
 
     res.status(201).json({
       success: true,
-      message: `Flight Brief for Trip #${tripNumber} successfully prepared for operational dispatch.`,
+      message: `Flight Brief for Trip #${booking.tripNumber} successfully prepared for operational dispatch.`,
       data: booking,
     });
   } catch (error) {

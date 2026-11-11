@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { randomUUID } = require('crypto');
 
 const requestMessageSchema = new mongoose.Schema({
   id: { type: String },
@@ -44,11 +45,16 @@ const agentRequestSchema = new mongoose.Schema(
     clientName: { type: String, required: true },
     clientEmail: { type: String, required: true },
     clientPhone: { type: String, default: '' },
+    companyName: { type: String, default: '' },
+    clientAddress: { type: String, default: '' },
+    clientCityCountry: { type: String, default: '' },
+    clientVatNumber: { type: String, default: '' },
     route: { type: String, required: true },
     originIcao: { type: String, uppercase: true, required: true },
     destIcao: { type: String, uppercase: true, required: true },
     flightDate: { type: String, required: true },
     returnDate: { type: String, default: '' },
+    departureTime: { type: String, default: '' },
     paxCount: { type: Number, required: true, min: 1 },
     tripType: {
       type: String,
@@ -61,6 +67,7 @@ const agentRequestSchema = new mongoose.Schema(
       default: 'any',
     },
     preferredAircraft: { type: String, default: '' },
+    budgetNotes: { type: String, default: '' },
     budget: { type: Number, default: 0 },
     currency: { type: String, default: 'USD' },
     status: {
@@ -81,6 +88,16 @@ const agentRequestSchema = new mongoose.Schema(
     assignedToEmail: { type: String, default: '' },
     avInodeTripId: { type: String, default: '' },
     notes: { type: String, default: '' },
+    luggageCount: { type: Number, default: 0 },
+    hasPets: { type: Boolean, default: false },
+    specialNeeds: { type: String, default: '' },
+    isFlexibleTime: { type: Boolean, default: false },
+    limousineService: { type: Boolean, default: false },
+    luxuryCarRental: { type: Boolean, default: false },
+    helicopterService: { type: Boolean, default: false },
+    deicingInsurance: { type: String, default: 'none' },
+    carbonOffset: { type: String, default: 'none' },
+    cancellationInsurance: { type: Boolean, default: false },
     internalNotes: { type: String, default: '' },
     fulfilledBookingId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -91,11 +108,10 @@ const agentRequestSchema = new mongoose.Schema(
     deletedAt: { type: Date, default: null },
     additionalLegs: [
       {
-        from: String,
-        fromIcao: String,
-        to: String,
-        toIcao: String,
-        date: String,
+        originIcao: String,
+        destIcao: String,
+        flightDate: String,
+        departureTime: String,
         paxCount: Number,
       },
     ],
@@ -112,6 +128,7 @@ agentRequestSchema.index({ agentEmail: 1, status: 1 });
 agentRequestSchema.index({ createdAt: -1 });
 
 agentRequestSchema.pre('validate', async function (next) {
+  if (this.isNew && !this.id) this.id = `request-${randomUUID()}`;
   if (this.isNew && !this.requestNumber) {
     const { generateRequestNumber } = require('../utils/generateId');
     this.requestNumber = await generateRequestNumber();

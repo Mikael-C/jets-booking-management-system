@@ -37,7 +37,7 @@ export default function AgentRequestBriefView() {
 
     const title = `Flight Brief Request: ${selectedBooking?.tripNumber || "Charter Flight"} (${leadPax})`;
 
-    addAgentRequest({
+    await addAgentRequest({
       type: "flight_brief",
       title,
       agentName: currentUser?.name || "Marcus Vance",

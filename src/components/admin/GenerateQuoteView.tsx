@@ -31,7 +31,6 @@ import {
   FileText,
   Shield,
   MapPin,
-  RefreshCw,
   Landmark,
   Receipt,
   Check,
@@ -79,7 +78,6 @@ export default function GenerateQuoteView() {
 
   // Document & Contract Identifiers (Page 1 Details Box)
   const [contractDate, setContractDate] = useState("01.10.2026");
-  const [tripNumber, setTripNumber] = useState("PEU842-001");
   const [accountNumber, setAccountNumber] = useState("ACC-21737");
   const [quoteExpirationDate, setQuoteExpirationDate] = useState("02.10.2026, 19:53z");
   const [tripType, setTripType] = useState<TripType>("round_trip");
@@ -265,11 +263,6 @@ export default function GenerateQuoteView() {
         setAccountNumber(found.accountNumber);
       }
     }
-  };
-
-  const handleRegenerateNumbers = () => {
-    const randomSuffix = Math.floor(100 + Math.random() * 900);
-    setTripNumber(`PEU${randomSuffix}-001`);
   };
 
   // Helper to add leg with default respective FBOs
@@ -507,19 +500,19 @@ export default function GenerateQuoteView() {
 
   // Helper to build official Booking record
   const createBookingObject = (isBookedFlight: boolean): Booking => {
-    // Callsign and Trip Number only created on confirmed booking!
-    const generatedTripNumber = isBookedFlight ? (tripNumber || `ORB-${Math.floor(100 + Math.random() * 900)}`) : "";
-    const quoteRef = tripNumber ? `QTE-${tripNumber.replace("PEU", "").replace("ORB-", "")}` : `QTE-${Date.now().toString().slice(-6)}`;
-    const uniqueInvoiceNumber = `INV-2026-${Date.now().toString().slice(-6)}`;
     const statusVal = isBookedFlight ? "confirmed" : (quoteStatus === "Sent" ? "quote_sent" : "draft");
     const quoteStatusVal = isBookedFlight ? "accepted" : (quoteStatus.toLowerCase() as any);
     const cardFee = calculateCardFee(effectivePricing.totalFlightPrice);
 
     return {
-      id: `booking-${Date.now()}`,
-      tripNumber: generatedTripNumber,
-      quoteReference: quoteRef,
-      invoiceNumber: uniqueInvoiceNumber,
+      id: "",
+      tripId: "",
+      quoteGroupId: "",
+      quoteId: "",
+      tripNumber: "",
+      quoteReference: "",
+      invoiceNumber: "",
+      isBooked: isBookedFlight,
       accountNumber,
       contractDate,
       quoteExpirationDate,
@@ -551,7 +544,7 @@ export default function GenerateQuoteView() {
       },
       legs: compiledLegs.map(l => ({
         ...l,
-        flightNumber: isBookedFlight ? (generatedTripNumber || "ORB-101") : "" // Callsign only on booked contract!
+        flightNumber: ""
       })),
       pricing: effectivePricing,
       services,
@@ -571,10 +564,9 @@ export default function GenerateQuoteView() {
     };
   };
 
-  const handleGenerateQuote = (e: React.FormEvent) => {
+  const handleGenerateQuote = async (e: React.FormEvent) => {
     e.preventDefault();
-    const newBooking = createBookingObject(false);
-    addBooking(newBooking);
+    const newBooking = await addBooking(createBookingObject(false));
     addAuditEntry({
       userEmail: currentUser?.email || "admin@orbelo.com",
       userName: currentUser?.name || "Operations Team",
@@ -588,9 +580,8 @@ export default function GenerateQuoteView() {
   };
 
   // Flow Step 2: Quote -> Contract
-  const handleProceedToContract = () => {
-    const newBooking = createBookingObject(false);
-    addBooking(newBooking);
+  const handleProceedToContract = async () => {
+    const newBooking = await addBooking(createBookingObject(false));
     addAuditEntry({
       userEmail: currentUser?.email || "admin@orbelo.com",
       userName: currentUser?.name || "Operations Team",
@@ -606,9 +597,8 @@ export default function GenerateQuoteView() {
   };
 
   // Flow Step 3: Direct to Booked Contract
-  const handleConfirmAndBookFlight = () => {
-    const newBooking = createBookingObject(true);
-    addBooking(newBooking);
+  const handleConfirmAndBookFlight = async () => {
+    const newBooking = await addBooking(createBookingObject(true));
     addAuditEntry({
       userEmail: currentUser?.email || "admin@orbelo.com",
       userName: currentUser?.name || "Operations Team",
@@ -658,15 +648,6 @@ export default function GenerateQuoteView() {
             </select>
           </div>
 
-          <button
-            type="button"
-            onClick={handleRegenerateNumbers}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#F5F2EC] hover:bg-[#EAE6DE] border border-[#E0DAD0] text-xs font-mono font-bold text-[#0F1420]"
-            title="Generate a new quote reference"
-          >
-            <RefreshCw className="w-3.5 h-3.5 text-[#C9A052]" />
-            <span>Regenerate IDs</span>
-          </button>
         </div>
       </div>
 
@@ -749,13 +730,12 @@ export default function GenerateQuoteView() {
 
             <div>
               <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                Quote Reference
+                Quote ID (assigned on save)
               </label>
               <input
                 type="text"
-                value={tripNumber}
-                onChange={(e) => setTripNumber(e.target.value)}
-                required
+                value="Assigned by the server when saved"
+                readOnly
                 className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
               />
             </div>

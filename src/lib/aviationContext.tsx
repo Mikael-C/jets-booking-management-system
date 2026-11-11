@@ -39,6 +39,7 @@ import { fleetData } from "@/data/fleet";
 import { findAirportByCode } from "@/data/airports";
 import { calculatePricing, calculateDistanceNm, estimateFlightTimeMinutes, formatFlightTime } from "@/lib/pricingCalculator";
 import { api } from "@/lib/api";
+import { getQuoteIterationGroupKey } from "@/lib/quoteIterations";
 
 export type DocumentType = "quotation" | "invoice" | "flight_brief" | "charter_agreement" | "passenger_manifest" | "credit_note";
 
@@ -459,16 +460,15 @@ export const resolveAircraft = (rawAircraft: any): Aircraft => {
 };
 
 export const normalizeBooking = (b: any): Booking => {
-  const id = String(b?.id || b?._id || `booking-${Date.now()}`);
-  const tripNumber = String(b?.tripNumber || `PEU${Math.floor(100 + Math.random() * 899)}-001`);
-  const tripNumDigits = tripNumber.replace(/\D/g, "").slice(0, 3) || "842";
-  const tripId = String(b?.tripId || `TRIP-2026-${tripNumDigits}`);
+  const id = String(b?.id || b?._id || "");
+  const tripNumber = String(b?.tripNumber || "");
+  const tripId = String(b?.tripId || "");
   const isBooked = Boolean(
     b?.isBooked || ["confirmed", "dispatched", "in_flight", "completed"].includes(b?.status)
   );
   const quoteVersion = Number(b?.quoteVersion || 1);
-  const quoteId = String(b?.quoteId || b?.quoteReference || `QUO-${tripNumDigits}-0${quoteVersion}`);
-  const bookingRevisionId = String(b?.bookingRevisionId || `BK-${tripNumDigits}-01`);
+  const quoteId = String(b?.quoteId || b?.quoteReference || "");
+  const bookingRevisionId = String(b?.bookingRevisionId || "");
   
   // Resolve aircraft
   const aircraft = resolveAircraft(b?.aircraft);
@@ -709,6 +709,20 @@ export const normalizeBooking = (b: any): Booking => {
   };
 };
 
+const normalizeAgentRequest = (request: any): AgentRequest => ({
+  ...request,
+  id: String(request?.id || request?._id || ""),
+  returnFlightDate: request?.returnFlightDate || request?.returnDate || undefined,
+  aircraftPreference: request?.aircraftPreference || request?.preferredAircraft || undefined,
+  specialRequests: request?.specialRequests || request?.notes || undefined,
+  budgetNotes: request?.budgetNotes || undefined,
+  multiLegs: Array.isArray(request?.multiLegs)
+    ? request.multiLegs
+    : Array.isArray(request?.additionalLegs)
+      ? request.additionalLegs
+      : undefined,
+});
+
 interface AviationContextType {
   // Auth state
   isAuthenticated: boolean;
@@ -756,21 +770,22 @@ interface AviationContextType {
   closeChecklist: () => void;
   openNewQuoteModal: () => void;
   closeNewQuoteModal: () => void;
-  addBooking: (booking: Booking) => void;
+  addBooking: (booking: Booking) => Promise<Booking>;
   updateBookingStatus: (bookingId: string, status: BookingStatus) => void;
   updateBookingPaymentStatus: (bookingId: string, paymentStatus: Booking["paymentStatus"]) => void;
   toggleChecklistItem: (bookingId: string, stepId: string) => void;
-  convertQuoteToBooked: (bookingId: string, booking?: Booking) => void;
+  convertQuoteToBooked: (bookingId: string, booking?: Booking) => Promise<void>;
   sendQuoteToAgent: (bookingId: string) => void;
 
   // Agent Requests
   agentRequests: AgentRequest[];
-  addAgentRequest: (reqData: Omit<AgentRequest, "id" | "createdAt" | "status">) => AgentRequest;
+  refreshAgentRequests: () => Promise<AgentRequest[]>;
+  addAgentRequest: (reqData: Omit<AgentRequest, "id" | "createdAt" | "status">) => Promise<AgentRequest>;
   updateAgentRequestStatus: (reqId: string, status: RequestStatus, bookingId?: string, adminNotes?: string) => void;
   updateAgentRequestAvinodeId: (reqId: string, avInodeId: string) => void;
   addSourcingOption: (reqId: string, option: Omit<SourcingOption, "id" | "createdAt">) => void;
   addMessage: (reqId: string, message: Omit<RequestMessage, "id" | "timestamp">) => void;
-  fulfillRequest: (req: AgentRequest) => void;
+  fulfillRequest: (req: AgentRequest) => Promise<void>;
 
   // Clients
   clients: ClientRecord[];
@@ -796,7 +811,7 @@ interface AviationContextType {
     newLegs: FlightLeg[],
     reason: string,
     pricingOverrides?: Partial<PricingBreakdown>
-  ) => void;
+  ) => Promise<void>;
 
   // Credit Notes
   issueCreditNote: (
@@ -817,7 +832,7 @@ interface AviationContextType {
 
   // Agent Quote confirmation & Super Admin Approval
   agentConfirmQuote: (bookingId: string) => void;
-  superAdminConfirmQuote: (bookingId: string) => void;
+  superAdminConfirmQuote: (bookingId: string) => Promise<void>;
   signCharterContract: (bookingId: string, signatoryName?: string) => void;
   bookingToRevise: Booking | null;
   setBookingToRevise: (b: Booking | null) => void;
@@ -1042,7 +1057,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       setIsBookingsLoading(true);
       api.bookings.list({ limit: 100 })
         .then((res) => {
-          if (res?.data && Array.isArray(res.data) && res.data.length > 0) {
+          if (Array.isArray(res?.data)) {
             const normalized = res.data.map(normalizeBooking);
             setBookings(normalized);
             setBookingsSource("backend");
@@ -1081,8 +1096,8 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
 
       api.agentRequests.list({ limit: 100 })
         .then((res) => {
-          if (res?.data && res.data.length > 0) {
-            setAgentRequests(res.data.map((r: any) => ({ ...r, id: r.id || r._id })));
+          if (Array.isArray(res?.data)) {
+            setAgentRequests(res.data.map(normalizeAgentRequest));
           }
         })
         .catch(() => {});
@@ -1597,26 +1612,22 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     setIsNewQuoteModalOpen(false);
   };
 
-  const addBooking = (newBooking: Booking) => {
-    setBookings((prev) => [newBooking, ...prev]);
-    api.bookings.create(newBooking)
-      .then((response) => {
-        const persisted = normalizeBooking(response.data);
-        setBookings((prev) => prev.map((booking) =>
-          booking.id === newBooking.id ? persisted : booking
-        ));
-      })
-      .catch((err) => console.log("Backend sync note:", err.message));
+  const addBooking = async (newBooking: Booking): Promise<Booking> => {
+    const response = await api.bookings.create(newBooking);
+    const persisted = normalizeBooking(response?.data || response);
+    setBookings((prev) => [persisted, ...prev.filter((booking) => booking.id !== persisted.id)]);
+    setBookingsSource("backend");
     if (currentUser) {
       addAuditEntry({
         userEmail: currentUser.email,
         userName: currentUser.name,
         action: "BOOKING_CREATED",
         entityType: "Booking",
-        entityId: newBooking.tripNumber,
-        details: `Created charter booking ${newBooking.tripNumber} (${newBooking.client.fullName})`
+        entityId: persisted.tripNumber,
+        details: `Created charter booking ${persisted.tripNumber} (${persisted.client.fullName})`
       });
     }
+    return persisted;
   };
 
   const updateBookingStatus = (bookingId: string, status: BookingStatus) => {
@@ -1754,73 +1765,32 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const convertQuoteToBooked = (bookingId: string, bookingCandidate?: Booking) => {
+  const convertQuoteToBooked = async (bookingId: string, bookingCandidate?: Booking): Promise<void> => {
     const target = bookings.find((booking) => booking.id === bookingId) || bookingCandidate;
     if (!target || target.isCancelled) return;
 
-    const tripDigits = (target.tripId || target.tripNumber || "").replace(/\D/g, "");
-    const tripSuffix = tripDigits.slice(-3) || "001";
-    const tripId = target.tripId || `TRIP-${new Date().getFullYear()}-${tripSuffix}`;
-    const sameTrip = (booking: Booking) => booking.id === bookingId ||
-      (target.tripId
-        ? booking.tripId === target.tripId || booking.tripNumber === target.tripNumber
-        : booking.tripNumber === target.tripNumber);
-    if (bookings.some((booking) =>
-      booking.id !== bookingId && sameTrip(booking) && booking.isBooked && !booking.isCancelled
-    )) return;
-    const latestVersion = Math.max(
-      0,
-      ...bookings.filter(sameTrip).map((booking) => Number(booking.quoteVersion) || 1)
-    );
-    if ((Number(target.quoteVersion) || 1) < latestVersion) return;
-    const storedTripNumber = target.tripNumber?.trim() || "";
-    const officialTripNumber = storedTripNumber && !/^(QTE|QUO|REV)[-_]/i.test(storedTripNumber)
-      ? storedTripNumber
-      : `PEU${tripSuffix}-001`;
-    const updatedBooking: Booking = {
-      ...target,
-      tripId,
-      quoteId: target.quoteId || `QUO-${tripSuffix}-${String(target.quoteVersion || 1).padStart(2, "0")}`,
-      bookingRevisionId: target.bookingRevisionId || `BK-${tripSuffix}-01`,
-      invoiceNumber: target.invoiceNumber || `INV-${tripSuffix}-Q${String(target.quoteVersion || 1).padStart(2, "0")}`,
-      isBooked: true,
-      tripNumber: officialTripNumber,
-      status: "confirmed",
-      quoteStatus: "accepted",
-      legs: (target.legs || []).map((leg) => ({
-        ...leg,
-        flightNumber: leg.flightNumber?.trim() || `PEU${tripSuffix}`
-      })),
-      updatedAt: new Date().toISOString()
-    };
-
-    setBookings((prev) =>
-      prev.map((booking) => {
-        if (booking.id === bookingId) return updatedBooking;
-        if (sameTrip(booking) && !booking.isCancelled && !booking.isBooked) {
-          return {
-            ...booking,
-            tripId,
-            isCancelled: true,
-            status: "cancelled",
-            quoteStatus: "expired",
-            cancellationReason: `Superseded by booked revision ${updatedBooking.bookingRevisionId}`,
-            supersededBy: updatedBooking.id,
-            updatedAt: new Date().toISOString()
-          };
-        }
-        return booking;
-      })
-    );
-    if (selectedBookingForDetail?.id === bookingId) setSelectedBookingForDetail(updatedBooking);
-    if (activeBooking?.id === bookingId) setActiveBooking(updatedBooking);
-
-    api.quotes.convertToBooking(bookingId)
-      .then((response) => {
-        const persisted = normalizeBooking(response.data);
-        setBookings((prev) => prev.map((booking) => booking.id === bookingId ? persisted : booking));
-      })
-      .catch((err) => console.warn("Backend booking conversion notice:", err.message));
+    const response = await api.quotes.convertToBooking(bookingId);
+    const persisted = normalizeBooking(response.data);
+    const familyKey = getQuoteIterationGroupKey(target);
+    const updatedAt = new Date().toISOString();
+    setBookings((prev) => prev.map((booking) => {
+      if (booking.id === persisted.id) return persisted;
+      if (getQuoteIterationGroupKey(booking) !== familyKey) return booking;
+      return {
+        ...booking,
+        quoteGroupId: persisted.quoteGroupId,
+        tripId: persisted.tripId,
+        isBooked: false,
+        isCancelled: true,
+        status: "cancelled",
+        quoteStatus: "expired",
+        cancellationReason: `Superseded by booked revision ${persisted.bookingRevisionId}`,
+        supersededBy: persisted.id,
+        updatedAt
+      };
+    }));
+    if (selectedBookingForDetail?.id === bookingId) setSelectedBookingForDetail(persisted);
+    if (activeBooking?.id === bookingId) setActiveBooking(persisted);
     setActiveNav("bookings");
   };
 
@@ -1845,7 +1815,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     setIsBookingsLoading(true);
     try {
       const res = await api.bookings.list({ limit: 100 });
-      if (res?.data && Array.isArray(res.data) && res.data.length > 0) {
+      if (Array.isArray(res?.data)) {
         const normalized = res.data.map(normalizeBooking);
         setBookings(normalized);
         setBookingsSource("backend");
@@ -1859,45 +1829,63 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     return bookings;
   };
 
-  const addAgentRequest = (reqData: Omit<AgentRequest, "id" | "createdAt" | "status">): AgentRequest => {
-    const newReq: AgentRequest = {
-      ...reqData,
-      id: `req-${Date.now()}`,
-      priority: reqData.priority || "normal",
-      sourcingOptions: reqData.sourcingOptions || [],
-      messages: reqData.messages || [],
-      createdAt: new Date().toLocaleString("de-DE", {
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit"
-      }),
-      status: "pending"
-    };
-    setAgentRequests((prev) => [newReq, ...prev]);
+  const refreshAgentRequests = async (): Promise<AgentRequest[]> => {
+    try {
+      const response = await api.agentRequests.list({ limit: 100 });
+      if (!Array.isArray(response?.data)) throw new Error("Backend returned an invalid agent request list.");
+      const normalized = response.data.map(normalizeAgentRequest);
+      setAgentRequests(normalized);
+      return normalized;
+    } catch (error) {
+      console.warn("Backend agent requests fetch notice:", error);
+      return agentRequests;
+    }
+  };
 
-    api.agentRequests.create({
-      type: newReq.type,
-      title: newReq.title || `Quote Request: ${newReq.route}`,
-      agentName: newReq.agentName,
-      agentEmail: newReq.agentEmail,
-      clientName: newReq.clientName,
-      clientEmail: newReq.clientEmail,
-      clientPhone: newReq.clientPhone,
-      route: newReq.route,
-      originIcao: newReq.originIcao,
-      destIcao: newReq.destIcao,
-      flightDate: newReq.flightDate,
-      returnDate: newReq.returnFlightDate,
-      paxCount: newReq.paxCount,
-      tripType: newReq.tripType,
+  const addAgentRequest = async (
+    reqData: Omit<AgentRequest, "id" | "createdAt" | "status">
+  ): Promise<AgentRequest> => {
+    const airportCodes = reqData.route.match(/\b[A-Z]{4}\b/g) || [];
+    const response = await api.agentRequests.create({
+      type: reqData.type,
+      title: reqData.title || `Quote Request: ${reqData.route}`,
+      agentName: reqData.agentName,
+      agentEmail: reqData.agentEmail,
+      clientName: reqData.clientName,
+      clientEmail: reqData.clientEmail,
+      clientPhone: reqData.clientPhone,
+      route: reqData.route,
+      originIcao: reqData.originIcao || airportCodes[0] || "LSGG",
+      destIcao: reqData.destIcao || airportCodes[airportCodes.length - 1] || "LFMN",
+      flightDate: reqData.flightDate || new Date().toISOString().slice(0, 10),
+      returnDate: reqData.returnFlightDate,
+      paxCount: reqData.paxCount || 1,
+      tripType: reqData.tripType,
       aircraftCategory: "any",
-      preferredAircraft: newReq.aircraftPreference || "",
+      preferredAircraft: reqData.aircraftPreference || "",
       budget: 0,
-      priority: newReq.priority,
-      notes: newReq.specialRequests || newReq.budgetNotes || "",
-    }).catch((err) => console.log("Backend sync note:", err.message));
+      priority: reqData.priority || "normal",
+      notes: reqData.specialRequests || reqData.budgetNotes || "",
+      companyName: reqData.companyName,
+      clientAddress: reqData.clientAddress,
+      clientCityCountry: reqData.clientCityCountry,
+      clientVatNumber: reqData.clientVatNumber,
+      departureTime: reqData.departureTime,
+      budgetNotes: reqData.budgetNotes,
+      luggageCount: reqData.luggageCount,
+      hasPets: reqData.hasPets,
+      specialNeeds: reqData.specialNeeds,
+      isFlexibleTime: reqData.isFlexibleTime,
+      limousineService: reqData.limousineService,
+      luxuryCarRental: reqData.luxuryCarRental,
+      helicopterService: reqData.helicopterService,
+      deicingInsurance: reqData.deicingInsurance,
+      carbonOffset: reqData.carbonOffset,
+      cancellationInsurance: reqData.cancellationInsurance,
+      additionalLegs: reqData.multiLegs,
+    });
+    const newReq = normalizeAgentRequest(response.data);
+    setAgentRequests((prev) => [newReq, ...prev.filter((request) => request.id !== newReq.id)]);
 
     // Create a notification for admin
     const newNotif: Notification = {
@@ -2022,7 +2010,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const fulfillRequest = (req: AgentRequest) => {
+  const fulfillRequest = async (req: AgentRequest): Promise<void> => {
     const existingBooking = bookings.find((b) => b.id === req.bookingId || b.id === req.generatedBookingId);
     if (existingBooking) {
       updateAgentRequestStatus(req.id, "completed", existingBooking.id, "Generated & dispatched to agent");
@@ -2045,8 +2033,6 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     const flightMinutes = estimateFlightTimeMinutes(dist);
 
     const randomSuffix = Math.floor(100 + Math.random() * 900);
-    const newTripNumber = `PEU${randomSuffix}-001`;
-    const newInvoiceNumber = `0010${Math.floor(6000 + Math.random() * 3000)}`;
     const newAccountNumber = `${Math.floor(200000 + Math.random() * 800000)}`;
 
     const matchedAircraft =
@@ -2141,9 +2127,13 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     );
 
     const newBooking: Booking = {
-      id: `booking-${Date.now()}`,
-      tripNumber: newTripNumber,
-      invoiceNumber: newInvoiceNumber,
+      id: "",
+      tripId: "",
+      quoteGroupId: "",
+      quoteId: "",
+      quoteReference: "",
+      tripNumber: "",
+      invoiceNumber: "",
       accountNumber: newAccountNumber,
       contractDate: new Date().toLocaleDateString("de-DE"),
       quoteExpirationDate: new Date(Date.now() + 86400000 * 2).toLocaleDateString("de-DE") + ", 18:00z",
@@ -2190,8 +2180,18 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       updatedAt: new Date().toISOString()
     };
 
-    addBooking(newBooking);
-    updateAgentRequestStatus(req.id, "completed", newBooking.id, "Admin generated official document");
+    const response = await api.agentRequests.fulfill(req.id, newBooking);
+    const persistedBooking = normalizeBooking(response.data?.booking);
+    const persistedRequest = response.data?.request;
+    setBookings((prev) => [persistedBooking, ...prev.filter((booking) => booking.id !== persistedBooking.id)]);
+    setBookingsSource("backend");
+    if (persistedRequest) {
+      setAgentRequests((prev) => prev.map((request) =>
+        request.id === req.id
+          ? { ...persistedRequest, id: persistedRequest.id || persistedRequest._id }
+          : request
+      ));
+    }
     const docType: DocumentType =
       req.type === "quote" ? "quotation" : req.type === "flight_brief" ? "flight_brief" : "invoice";
 
@@ -2202,21 +2202,21 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       recipientEmail: req.agentEmail,
       recipientName: req.agentName,
       recipientRole: "agent",
-      content: `Official ${docName} compiled and delivered for ${req.clientName} (${req.route}). Booking reference: ${newBooking.tripNumber}.`,
-      tripNumber: newBooking.tripNumber,
+      content: `Official ${docName} compiled and delivered for ${req.clientName} (${req.route}). Booking reference: ${persistedBooking.tripNumber}.`,
+      tripNumber: persistedBooking.tripNumber,
       requestId: req.id,
       attachments: [
         {
-          name: `Official_${docName}_${newBooking.tripNumber}.pdf`,
+          name: `Official_${docName}_${persistedBooking.tripNumber}.pdf`,
           type: req.type === "quote" ? "quotation" : req.type === "flight_brief" ? "flight_brief" : "invoice",
-          tripNumber: newBooking.tripNumber,
+          tripNumber: persistedBooking.tripNumber,
           docType: docType,
           fileSize: "285 KB"
         }
       ]
     }).catch(() => {});
 
-    openDocument(newBooking, docType);
+    openDocument(persistedBooking, docType);
   };
 
   const addClient = (client: ClientRecord) => {
@@ -2301,108 +2301,33 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     api.contacts.delete(id).catch((err) => console.warn("Backend contact delete notice:", err.message));
   };
 
-  const reviseBookingRoute = (
+  const reviseBookingRoute = async (
     bookingId: string,
     newLegs: FlightLeg[],
     reason: string,
     pricingOverrides?: Partial<PricingBreakdown>
-  ) => {
-    let targetBooking: Booking | null = null;
-    setBookings((prev) =>
-      prev.map((b) => {
-        if (b.id !== bookingId) return b;
-        const currentActiveLegs = b.legs.filter((l) => !l.isCancelled);
-        const cancelledOldLegs: FlightLeg[] = currentActiveLegs.map((l) => ({
-          ...l,
-          isCancelled: true,
-          cancellationReason: reason,
-          cancelledAt: new Date().toISOString()
-        }));
-
-        const recalculatedPricing: PricingBreakdown = pricingOverrides
-          ? { ...b.pricing, ...pricingOverrides }
-          : calculatePricing(b.aircraft, newLegs, b.services, b.pricing.currency || "EUR");
-
-        const currentRevNum = parseInt((b.bookingRevisionId || "").split("-").pop() || "1", 10) || ((b.routeRevisions?.length || 0) + 1);
-        const nextRevNum = currentRevNum + 1;
-        const tripNumDigits = (b.tripNumber || b.tripId || "842").replace(/\D/g, "").slice(0, 3) || "842";
-        const nextBookingRevisionId = `BK-${tripNumDigits}-${String(nextRevNum).padStart(2, "0")}`;
-
-        const priceDifference = recalculatedPricing.totalFlightPrice - b.pricing.totalFlightPrice;
-        const autoCreditNotes = [...(b.creditNotes || [])];
-
-        if (priceDifference !== 0) {
-          const creditNoteNumber = `CR-${Math.floor(100000 + Math.random() * 900000)}`;
-          const todayFormatted = new Date().toLocaleDateString("de-DE");
-          autoCreditNotes.unshift({
-            id: `cn-${Date.now()}`,
-            number: creditNoteNumber,
-            creditNoteNumber,
-            date: todayFormatted,
-            issueDate: todayFormatted,
-            amount: Math.abs(priceDifference),
-            reason: `Booking revision ${nextBookingRevisionId} adjustment: ${reason}`,
-            originalTotal: b.pricing.totalFlightPrice,
-            newTotal: recalculatedPricing.totalFlightPrice,
-            netBalance: priceDifference,
-            clientOwes: priceDifference > 0 ? priceDifference : 0,
-            weOweClient: priceDifference < 0 ? Math.abs(priceDifference) : 0,
-          });
-        }
-
-        const revisionId = `REV-${Date.now()}`;
-        const revisionRecord = {
-          id: revisionId,
-          date: new Date().toISOString().split("T")[0],
-          author: currentUser?.name || "Operations Desk",
-          reason,
-          supersededLegs: cancelledOldLegs,
-          newLegs,
-          previousPrice: b.pricing.totalFlightPrice,
-          newPrice: recalculatedPricing.totalFlightPrice,
-          docRef: nextBookingRevisionId
-        };
-
-        const updatedAudit = [
-          {
-            id: `act-${Date.now()}`,
-            action: "ROUTE_REVISED",
-            details: `Trip itinerary altered (${nextBookingRevisionId}): ${reason}. Superseded ${currentActiveLegs.length} leg(s). New flight price recognized: €${recalculatedPricing.totalFlightPrice.toLocaleString()}.${priceDifference !== 0 ? ` Credit adjustment note generated.` : ""}`,
-            timestamp: new Date().toLocaleString(),
-            author: currentUser?.name || "Operations Team",
-            docType: "quotation"
-          },
-          ...(b.tripActionAudit || [])
-        ];
-
-        const updated: Booking = {
-          ...b,
-          bookingRevisionId: nextBookingRevisionId,
-          legs: [...newLegs, ...cancelledOldLegs, ...b.legs.filter((l) => l.isCancelled)],
-          pricing: recalculatedPricing,
-          quoteVersion: (b.quoteVersion || 1) + 1,
-          routeRevisions: [revisionRecord, ...(b.routeRevisions || [])],
-          creditNotes: autoCreditNotes,
-          tripActionAudit: updatedAudit,
-          updatedAt: new Date().toISOString()
-        };
-        targetBooking = updated;
-        return updated;
-      })
-    );
-
-    if (targetBooking) {
-      if (selectedBookingForDetail?.id === bookingId) setSelectedBookingForDetail(targetBooking);
-      if (activeBooking?.id === bookingId) setActiveBooking(targetBooking);
-    }
-
+  ): Promise<void> => {
+    const original = bookings.find((booking) => booking.id === bookingId);
+    if (!original) throw new Error("The booking could not be found.");
+    const pricing: PricingBreakdown = pricingOverrides
+      ? { ...original.pricing, ...pricingOverrides }
+      : calculatePricing(original.aircraft, newLegs, original.services, original.pricing.currency || "EUR");
+    const response = await api.bookings.revise(bookingId, {
+      legs: newLegs,
+      pricing,
+      revisionReason: reason,
+    });
+    const revised = normalizeBooking(response.data);
+    setBookings((prev) => [revised, ...prev]);
+    if (selectedBookingForDetail?.id === bookingId) setSelectedBookingForDetail(revised);
+    if (activeBooking?.id === bookingId) setActiveBooking(revised);
     addAuditEntry({
       userEmail: currentUser?.email || "ops@orbelo.com",
       userName: currentUser?.name || "Flight Operations",
       action: "TRIP_ROUTE_REVISED",
       entityType: "Booking",
-      entityId: bookingId,
-      details: `Altered trip route for ${bookingId}: ${reason}. Accounting adjusted to recognize only the revised route revenue.`
+      entityId: revised.bookingRevisionId || revised.id,
+      details: `Altered trip route for ${revised.bookingRevisionId || revised.tripId}: ${reason}.`
     });
   };
 
@@ -2417,18 +2342,6 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     );
     if (!original || original.isCancelled || !originalIsBooked) return null;
 
-    const related = bookings.filter((booking) =>
-      original.tripId ? booking.tripId === original.tripId : booking.tripNumber === original.tripNumber
-    );
-    const nextRevision = related.reduce((latest, booking) => {
-      const current = Number((booking.bookingRevisionId || "").split("-").pop()) || 0;
-      return Math.max(latest, current);
-    }, 0) + 1;
-    const currentRevision = Number((original.bookingRevisionId || "").split("-").pop()) || 1;
-    if (currentRevision < nextRevision - 1) return null;
-    const digits = (original.tripId || original.tripNumber || "").replace(/\D/g, "");
-    const suffix = digits.slice(-3) || "001";
-    const revisionId = `BK-${suffix}-${String(nextRevision).padStart(2, "0")}`;
     const nextPricing = overrides.pricing
       ? { ...original.pricing, ...overrides.pricing }
       : original.pricing;
@@ -2446,8 +2359,8 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       userName: currentUser?.name || "Operations Desk",
       action: "BOOKING_REVISED",
       entityType: "Booking",
-      entityId: revised.bookingRevisionId || revisionId,
-      details: `Created booking revision ${revised.bookingRevisionId || revisionId} for trip ${revised.tripId}. ${delta === 0 ? (revised.creditNotes?.length ? "Line adjustments recorded with no net price change." : "No price adjustment.") : `Credit note ${revised.creditNotes?.[0]?.creditNoteNumber || "generated"}: ${delta > 0 ? "client owes" : "refund due"} ${Math.abs(delta)}.`} ${reason}`
+      entityId: revised.bookingRevisionId || revised.id,
+      details: `Created booking revision ${revised.bookingRevisionId || revised.id} for trip ${revised.tripId}. ${delta === 0 ? (revised.creditNotes?.length ? "Line adjustments recorded with no net price change." : "No price adjustment.") : `Credit note ${revised.creditNotes?.[0]?.creditNoteNumber || "generated"}: ${delta > 0 ? "client owes" : "refund due"} ${Math.abs(delta)}.`} ${reason}`
     });
     return revised;
   };
@@ -2529,12 +2442,16 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     }
 
     const related = bookings.filter((booking) =>
-      baseBooking.tripId
-        ? booking.tripId === baseBooking.tripId
-        : booking.tripNumber === baseBooking.tripNumber
+      getQuoteIterationGroupKey(booking) === getQuoteIterationGroupKey(baseBooking)
     );
-    const latestVersion = Math.max(0, ...related.map((booking) => Number(booking.quoteVersion) || 1));
-    if ((Number(baseBooking.quoteVersion) || 1) < latestVersion) {
+    const getVersion = (booking: Booking) => {
+      const explicitVersion = Number(booking.quoteVersion);
+      if (Number.isFinite(explicitVersion) && explicitVersion > 0) return explicitVersion;
+      const match = (booking.quoteId || booking.quoteReference || "").match(/-(?:V)?(\d+)$/i);
+      return match ? Number(match[1]) : 1;
+    };
+    const latestVersion = Math.max(0, ...related.map(getVersion));
+    if (getVersion(baseBooking) < latestVersion) {
       throw new Error("Only the latest quote iteration can be revised.");
     }
 
@@ -2542,23 +2459,29 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     const revised = normalizeBooking(response?.data || response);
     const isBooked = Boolean(revised.isBooked);
     const now = new Date().toISOString();
+    const quoteFamilyKey = getQuoteIterationGroupKey(baseBooking);
     setBookings((prev) => [
       revised,
       ...prev.map((booking) => {
-        const sameTrip = baseBooking.tripId
-          ? booking.tripId === baseBooking.tripId || booking.tripNumber === baseBooking.tripNumber
-          : booking.tripNumber === baseBooking.tripNumber;
-        if (isBooked && sameTrip && booking.id !== revised.id && !booking.isCancelled && !booking.isBooked) {
+        if (getQuoteIterationGroupKey(booking) === quoteFamilyKey && booking.id !== revised.id) {
+          if (isBooked && !booking.isCancelled && !booking.isBooked) {
+            return {
+              ...booking,
+              quoteGroupId: revised.quoteGroupId,
+              tripId: revised.tripId,
+              isBooked: false,
+              isCancelled: true,
+              status: "cancelled" as const,
+              quoteStatus: "expired" as const,
+              cancellationReason: `Superseded by booked revision ${revised.quoteId}`,
+              supersededBy: revised.id,
+              updatedAt: now
+            };
+          }
           return {
             ...booking,
+            quoteGroupId: revised.quoteGroupId,
             tripId: revised.tripId,
-            isBooked: false,
-            isCancelled: true,
-            status: "cancelled" as const,
-            quoteStatus: "expired" as const,
-            cancellationReason: `Superseded by booked revision ${revised.quoteId}`,
-            supersededBy: revised.id,
-            updatedAt: now
           };
         }
         return booking;
@@ -2765,42 +2688,33 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     ]);
   };
 
-  const superAdminConfirmQuote = (bookingId: string) => {
-    let targetBooking: Booking | null = null;
-    setBookings((prev) =>
-      prev.map((b) => {
-        if (b.id !== bookingId) return b;
-        const officialTripNumber = b.tripNumber && b.tripNumber.trim() !== "" ? b.tripNumber : `PEU${Math.floor(100 + Math.random() * 899)}-001`;
-        const updatedAudit = [
-          {
-            id: `act-${Date.now()}`,
-            action: "SUPER_ADMIN_CONFIRMED",
-            details: `Super Admin authorized booking confirmation. Assigned Trip ${officialTripNumber}. Flight is booked and contract agreement ready for execution.`,
-            timestamp: new Date().toLocaleString(),
-            author: currentUser?.name || "Super Admin",
-            docType: "charter_agreement"
-          },
-          ...(b.tripActionAudit || [])
-        ];
-        const updated: Booking = {
-          ...b,
-          tripNumber: officialTripNumber,
+  const superAdminConfirmQuote = async (bookingId: string): Promise<void> => {
+    try {
+      await convertQuoteToBooked(bookingId);
+    } catch (error) {
+      setNotifications((prev) => [{
+        id: `notif-booking-failed-${Date.now()}`,
+        type: "error",
+        title: "Booking could not be confirmed",
+        message: error instanceof Error ? error.message : "The backend could not confirm this quote.",
+        timestamp: "Just now",
+        read: false,
+        entityId: bookingId,
+        entityType: "booking"
+      }, ...prev]);
+      return;
+    }
+
+    const updatedAt = new Date().toISOString();
+    setBookings((prev) => prev.map((booking) => booking.id === bookingId
+      ? {
+          ...booking,
           isSuperAdminConfirmed: true,
           agentConfirmedPendingSuperAdmin: false,
-          status: "confirmed",
-          quoteStatus: "accepted",
-          tripActionAudit: updatedAudit,
-          updatedAt: new Date().toISOString()
-        };
-        targetBooking = updated;
-        return updated;
-      })
-    );
-
-    if (targetBooking) {
-      if (selectedBookingForDetail?.id === bookingId) setSelectedBookingForDetail(targetBooking);
-      if (activeBooking?.id === bookingId) setActiveBooking(targetBooking);
-    }
+          updatedAt
+        }
+      : booking
+    ));
   };
 
   const signCharterContract = (bookingId: string, signatoryName?: string) => {
@@ -2853,78 +2767,23 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
   };
 
   const createInvoice = async (invoiceData: Partial<Booking> | any): Promise<Booking> => {
-    const bookingId = invoiceData.id || `booking-inv-${Date.now()}`;
-    const invoiceNum = invoiceData.invoiceNumber || `0010${Math.floor(6020 + Math.random() * 3970)}`;
-    const tripNum = invoiceData.tripNumber || `PEU${Math.floor(100 + Math.random() * 899)}-001`;
-
-    const newBooking: Booking = {
-      id: bookingId,
-      tripNumber: tripNum,
-      invoiceNumber: invoiceNum,
-      accountNumber: invoiceData.accountNumber || "ACC-21737",
-      contractDate: invoiceData.contractDate || new Date().toLocaleDateString("de-DE"),
-      quoteExpirationDate: invoiceData.quoteExpirationDate || "05.10.2026, 18:00z",
-      paymentDueDate: invoiceData.paymentDueDate || "03.10.2026",
-      status: invoiceData.status || "confirmed",
-      quoteStatus: invoiceData.quoteStatus || "accepted",
-      paymentStatus: invoiceData.paymentStatus || "unpaid",
-      tripType: invoiceData.tripType || "round_trip",
-      aircraft: invoiceData.aircraft || fleetData[0],
-      client: invoiceData.client,
-      operator: invoiceData.operator || defaultOperator,
-      legs: invoiceData.legs || [],
-      pricing: invoiceData.pricing,
-      services: invoiceData.services || {
-        limousineService: false,
-        luxuryCarRental: false,
-        helicopterService: false,
-        deicingInsurance: "none",
-        deicingCostPerLeg: 0,
-        carbonOffset: "none",
-        carbonOffsetRatePerHour: 0
-      },
-      checklist: invoiceData.checklist || [],
-      tripActionAudit: [
-        {
-          id: `act-${Date.now()}`,
-          action: "INVOICE_GENERATED",
-          details: `Commercial Tax Invoice INV-${invoiceNum} compiled and registered for client ${invoiceData.client?.fullName}.`,
-          timestamp: new Date().toLocaleString(),
-          author: currentUser?.name || "Operations Desk",
-          docType: "invoice"
-        },
-        ...(invoiceData.tripActionAudit || [])
-      ],
-      createdAt: invoiceData.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-
-    setBookings((prev) => {
-      const idx = prev.findIndex((b) => b.id === bookingId || b.invoiceNumber === invoiceNum);
-      if (idx >= 0) {
-        const copy = [...prev];
-        copy[idx] = { ...copy[idx], ...newBooking };
-        return copy;
-      }
-      return [newBooking, ...prev];
-    });
-
-    try {
-      await api.invoices.create(newBooking);
-    } catch (e: any) {
-      console.log("Backend invoice sync:", e.message);
-    }
+    const response = await api.invoices.create(invoiceData);
+    const persistedBooking = normalizeBooking(response.data);
+    setBookings((prev) => [
+      persistedBooking,
+      ...prev.filter((booking) => booking.id !== persistedBooking.id),
+    ]);
 
     addAuditEntry({
       userEmail: currentUser?.email || "ops@orbelo.com",
       userName: currentUser?.name || "Operations Desk",
       action: "INVOICE_CREATED",
       entityType: "Invoice",
-      entityId: invoiceNum,
-      details: `Generated commercial tax invoice INV-${invoiceNum} for trip ${tripNum} (${invoiceData.client?.fullName})`
+      entityId: persistedBooking.invoiceNumber,
+      details: `Generated commercial tax invoice INV-${persistedBooking.invoiceNumber} for trip ${persistedBooking.tripNumber} (${invoiceData.client?.fullName})`
     });
 
-    return newBooking;
+    return persistedBooking;
   };
 
   const getFlightBriefs = (): Booking[] => {
@@ -2932,82 +2791,29 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
   };
 
   const createFlightBrief = async (briefData: Partial<Booking> | any): Promise<Booking> => {
-    const bookingId = briefData.id || `booking-brief-${Date.now()}`;
-    const tripNum = briefData.tripNumber || `PEU${Math.floor(100 + Math.random() * 899)}-001`;
-
-    const newBooking: Booking = {
-      id: bookingId,
-      tripNumber: tripNum,
-      invoiceNumber: briefData.invoiceNumber || `0010${Math.floor(6020 + Math.random() * 3970)}`,
-      accountNumber: briefData.accountNumber || "ACC-21737",
-      contractDate: briefData.contractDate || new Date().toLocaleDateString("de-DE"),
-      quoteExpirationDate: briefData.quoteExpirationDate || "05.10.2026, 18:00z",
-      paymentDueDate: briefData.paymentDueDate || "03.10.2026",
-      status: briefData.status || "confirmed",
-      quoteStatus: briefData.quoteStatus || "accepted",
-      paymentStatus: briefData.paymentStatus || "unpaid",
-      tripType: briefData.tripType || "round_trip",
-      aircraft: briefData.aircraft || fleetData[0],
-      client: briefData.client,
-      operator: briefData.operator || defaultOperator,
-      legs: briefData.legs || [],
-      pricing: briefData.pricing,
-      services: briefData.services || {
-        limousineService: false,
-        luxuryCarRental: false,
-        helicopterService: false,
-        deicingInsurance: "none",
-        deicingCostPerLeg: 0,
-        carbonOffset: "none",
-        carbonOffsetRatePerHour: 0
-      },
-      checklist: briefData.checklist || [],
-      tripActionAudit: [
-        {
-          id: `act-${Date.now()}`,
-          action: "FLIGHT_BRIEF_GENERATED",
-          details: `Flight Operations Brief for Trip ${tripNum} compiled with ${briefData.legs?.length || 1} leg(s) and assigned crew.`,
-          timestamp: new Date().toLocaleString(),
-          author: currentUser?.name || "Dispatch Command",
-          docType: "flight_brief"
-        },
-        ...(briefData.tripActionAudit || [])
-      ],
-      createdAt: briefData.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-
-    setBookings((prev) => {
-      const idx = prev.findIndex((b) => b.id === bookingId || b.tripNumber === tripNum);
-      if (idx >= 0) {
-        const copy = [...prev];
-        copy[idx] = { ...copy[idx], ...newBooking };
-        return copy;
-      }
-      return [newBooking, ...prev];
-    });
-
-    try {
-      const response = await api.flightBriefs.create(newBooking);
-      const contactResponse = await api.flightBriefs.syncPassengers(
-        response?.data?.id || newBooking.id,
-        (newBooking.legs || []).flatMap((leg) => leg.passengers || []),
-        newBooking.accountNumber
-      );
-      if (contactResponse?.data?.length) {
-        setContacts((prev) => {
-          const synced = contactResponse.data.map((contact: any) => ({
-            ...contact,
-            id: contact.id || contact._id
-          }));
-          const syncedIds = new Set(synced.map((contact: ContactRecord) => contact.id));
-          const next = [...synced, ...prev.filter((contact) => !syncedIds.has(contact.id))];
-          try { localStorage.setItem("orbelo_contacts_v2", JSON.stringify(next)); } catch {}
-          return next;
-        });
-      }
-    } catch (e: any) {
-      console.warn("Backend flight brief/passenger sync notice:", e.message);
+    const response = await api.flightBriefs.create(briefData);
+    const persistedBooking = normalizeBooking(response.data);
+    setBookings((prev) => [
+      persistedBooking,
+      ...prev.filter((booking) => booking.id !== persistedBooking.id),
+    ]);
+    setBookingsSource("backend");
+    const contactResponse = await api.flightBriefs.syncPassengers(
+      persistedBooking.id,
+      (persistedBooking.legs || []).flatMap((leg) => leg.passengers || []),
+      persistedBooking.accountNumber
+    );
+    if (contactResponse?.data?.length) {
+      setContacts((prev) => {
+        const synced = contactResponse.data.map((contact: any) => ({
+          ...contact,
+          id: contact.id || contact._id
+        }));
+        const syncedIds = new Set(synced.map((contact: ContactRecord) => contact.id));
+        const next = [...synced, ...prev.filter((contact) => !syncedIds.has(contact.id))];
+        try { localStorage.setItem("orbelo_contacts_v2", JSON.stringify(next)); } catch {}
+        return next;
+      });
     }
 
     addAuditEntry({
@@ -3015,11 +2821,11 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       userName: currentUser?.name || "Dispatch Command",
       action: "FLIGHT_BRIEF_CREATED",
       entityType: "FlightBrief",
-      entityId: tripNum,
-      details: `Generated flight operations brief for Trip ${tripNum} (${briefData.client?.fullName})`
+      entityId: persistedBooking.tripNumber,
+      details: `Generated flight operations brief for Trip ${persistedBooking.tripNumber} (${briefData.client?.fullName})`
     });
 
-    return newBooking;
+    return persistedBooking;
   };
 
   const getContracts = (): Booking[] => {
@@ -3027,71 +2833,26 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
   };
 
   const createContract = async (contractData: Partial<Booking> | any): Promise<Booking> => {
-    const bookingId = contractData.id || `booking-ca-${Date.now()}`;
-    const tripNum = contractData.tripNumber || `PEU${Math.floor(100 + Math.random() * 899)}-001`;
-    const contractRef = `CA-${tripNum}`;
-
-    const newBooking: Booking = {
-      id: bookingId,
-      tripNumber: tripNum,
-      invoiceNumber: contractData.invoiceNumber || "00106020",
-      quoteReference: contractData.quoteReference || `QTE-${tripNum}`,
-      accountNumber: contractData.accountNumber || "ACC-21737",
-      contractDate: contractData.contractDate || new Date().toLocaleDateString("de-DE"),
-      quoteExpirationDate: contractData.quoteExpirationDate || "05.10.2026, 18:00z",
-      paymentDueDate: contractData.paymentDueDate || "03.10.2026",
-      status: contractData.status || "confirmed",
-      quoteStatus: "accepted",
-      paymentStatus: contractData.paymentStatus || "unpaid",
-      tripType: contractData.tripType || "round_trip",
-      aircraft: contractData.aircraft || fleetData[0],
-      client: contractData.client,
-      operator: contractData.operator || defaultOperator,
-      legs: contractData.legs || [],
-      pricing: contractData.pricing,
-      services: contractData.services || {
-        limousineService: false,
-        luxuryCarRental: false,
-        helicopterService: false,
-        deicingInsurance: "none",
-        deicingCostPerLeg: 0,
-        carbonOffset: "none",
-        carbonOffsetRatePerHour: 0
-      },
-      checklist: contractData.checklist || [],
-      isContractSigned: contractData.isContractSigned ?? false,
-      contractSignedDate: contractData.contractSignedDate,
-      contractSignedBy: contractData.contractSignedBy,
-      tripActionAudit: [
-        {
-          id: `act-${Date.now()}`,
-          action: "CONTRACT_CREATED",
-          details: `Master Charter Agreement ${contractRef} compiled under Austrian Law for ${contractData.client?.fullName}.`,
-          timestamp: new Date().toLocaleString(),
-          author: currentUser?.name || "Legal Operations",
-          docType: "charter_agreement"
-        },
-        ...(contractData.tripActionAudit || [])
-      ],
-      createdAt: contractData.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-
-    setBookings((prev) => {
-      const idx = prev.findIndex((b) => b.id === bookingId || b.tripNumber === tripNum);
-      if (idx >= 0) {
-        const copy = [...prev];
-        copy[idx] = { ...copy[idx], ...newBooking };
-        return copy;
-      }
-      return [newBooking, ...prev];
-    });
-
-    try {
-      await api.contracts.create(newBooking);
-    } catch (e: any) {
-      console.log("Backend contract sync:", e.message);
+    let contractRecord = contractData;
+    const existing = bookings.find((booking) => booking.id && booking.id === contractData.id);
+    if (existing?.quoteId && !existing.isBooked) {
+      const conversion = await api.quotes.convertToBooking(existing.id);
+      contractRecord = { ...contractData, ...conversion.data };
     }
+
+    const response = await api.contracts.create({
+      ...contractRecord,
+      isBooked: true,
+      status: "confirmed",
+      quoteStatus: "accepted",
+    });
+    const persistedBooking = normalizeBooking(response.data);
+    const contractRef = `CA-${persistedBooking.tripNumber}`;
+    setBookings((prev) => [
+      persistedBooking,
+      ...prev.filter((booking) => booking.id !== persistedBooking.id),
+    ]);
+    setBookingsSource("backend");
 
     addAuditEntry({
       userEmail: currentUser?.email || "legal@orbelo.com",
@@ -3099,10 +2860,10 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       action: "CONTRACT_CREATED",
       entityType: "Contract",
       entityId: contractRef,
-      details: `Generated aircraft charter agreement ${contractRef} for trip ${tripNum} (${contractData.client?.fullName})`
+      details: `Generated aircraft charter agreement ${contractRef} for trip ${persistedBooking.tripNumber} (${persistedBooking.client?.fullName})`
     });
 
-    return newBooking;
+    return persistedBooking;
   };
 
   const addOperator = (op: OperatorRecord) => {
@@ -3534,6 +3295,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
         selectedBookingForDetail,
         setSelectedBookingForDetail,
         refreshBookings,
+        refreshAgentRequests,
         isBookingsLoading,
         bookingsSource,
         searchQuery,

@@ -376,6 +376,7 @@ export interface Booking {
   id: string;
   tripId?: string; // Global consistent trip ID e.g. "TRIP-2026-842"
   quoteId?: string; // e.g. "QUO-842-01"
+  quoteGroupId?: string;
   bookingRevisionId?: string; // e.g. "BK-842-01"
   revisionAdjustments?: Array<{
     id: string;

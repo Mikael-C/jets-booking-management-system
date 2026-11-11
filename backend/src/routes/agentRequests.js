@@ -7,6 +7,7 @@ const { authorize } = require('../middleware/auth');
 const { v4: uuidv4 } = require('uuid');
 const { createAuditEntry } = require('../services/auditService');
 const { sendAgentNotificationEmail } = require('../services/emailService');
+const { createBookingIdentifiers } = require('../services/bookingIdentifiers');
 
 // Helper to look up agent requests by Mongo _id, custom id, or requestNumber
 const getAgentRequestFilter = (id) => {
@@ -82,10 +83,12 @@ router.get('/:id', async (req, res) => {
 
 // POST /api/agent-requests
 router.post('/', async (req, res) => {
+  const { id, requestNumber, status, isDeleted, ...submittedData } = req.body;
   const requestData = {
-    ...req.body,
-    agentName: req.body.agentName || req.user.name,
-    agentEmail: req.body.agentEmail || req.user.email,
+    ...submittedData,
+    agentName: req.user.name,
+    agentEmail: req.user.email,
+    status: 'pending',
   };
 
   const request = await AgentRequest.create(requestData);
@@ -242,12 +245,17 @@ router.post('/:id/fulfill', authorize('super_admin', 'admin', 'operations'), asy
     }
   }
 
-  // Build booking from request data
+  const isQuote = request.type === 'quote';
+  const identifiers = await createBookingIdentifiers({ isQuote, isBooked: Boolean(req.body.isBooked) });
   const bookingData = {
+    ...req.body,
+    ...identifiers,
+    source: 'agent_request',
+    sourceAgentRequestId: request._id,
     status: 'quoted',
     tripType: req.body.tripType || request.tripType || 'one_way',
-    aircraft: req.body.aircraft,
-    client: {
+    aircraft: req.body.aircraft || {},
+    client: req.body.client || {
       fullName: request.clientName,
       email: request.clientEmail,
       phone: request.clientPhone || '',
@@ -267,7 +275,10 @@ router.post('/:id/fulfill', authorize('super_admin', 'admin', 'operations'), asy
     agentEmail: request.agentEmail,
     sourcingOptions: request.sourcingOptions,
     avInodeTripId: request.avInodeTripId,
-    notes: request.notes,
+    notes: req.body.notes || request.notes,
+    agentName: request.agentName,
+    agentEmail: request.agentEmail,
+    quoteStatus: isQuote ? (req.body.quoteStatus || 'draft') : undefined,
   };
 
   const booking = await Booking.create(bookingData);

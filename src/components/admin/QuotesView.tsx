@@ -15,6 +15,7 @@ import {
   calculateDistanceNm
 } from "@/lib/pricingCalculator";
 import { calculateLegArrivalAndTz } from "@/lib/aviationTimezones";
+import { getQuoteIterationGroupKey } from "@/lib/quoteIterations";
 import {
   FileText,
   Search,
@@ -66,6 +67,7 @@ export default function QuotesView() {
     contacts,
     currentUser,
     addAuditEntry,
+    refreshBookings,
     bookingToRevise,
     setBookingToRevise,
     clients,
@@ -79,6 +81,10 @@ export default function QuotesView() {
 
   const [expandedTripIds, setExpandedTripIds] = useState<Set<string>>(new Set());
 
+  useEffect(() => {
+    void refreshBookings();
+  }, []);
+
   // Active quotes: has quoteReference/status and NOT yet booked as a confirmed booking
   const quotesList = useMemo(() => {
     return bookings.filter((b) =>
@@ -87,11 +93,11 @@ export default function QuotesView() {
     );
   }, [bookings]);
 
-  // Group active quotes by tripId - latest revision per tripId
+  // Quote iterations are grouped by their quote family, never by the collision-prone trip suffix.
   const tripGroupedQuotes = useMemo(() => {
     const tripMap = new Map<string, { latest: Booking; allRevisions: Booking[] }>();
     for (const b of quotesList) {
-      const tId = b.tripId || b.id;
+      const tId = getQuoteIterationGroupKey(b);
       const existing = tripMap.get(tId);
       if (!existing) {
         tripMap.set(tId, { latest: b, allRevisions: [b] });
@@ -373,7 +379,7 @@ export default function QuotesView() {
   useEffect(() => {
     if (bookingToRevise) {
       setActiveTab("builder");
-      setQuoteReference(`REV-${bookingToRevise.quoteReference || bookingToRevise.tripNumber}`);
+      setQuoteReference(bookingToRevise.quoteReference || bookingToRevise.quoteId || "");
       setClientName(bookingToRevise.client.fullName);
       setCompanyName(bookingToRevise.client.companyName || "Brinkmann Capital SAM");
       setVatNumber(bookingToRevise.client.vatNumber || "US-8492041");
@@ -428,7 +434,7 @@ export default function QuotesView() {
         );
       }
     } else {
-      setQuoteReference(`PEU${Math.floor(100 + Math.random() * 900)}-001`);
+      setQuoteReference("");
     }
   }, [bookingToRevise]);
 
@@ -460,11 +466,6 @@ export default function QuotesView() {
       setAccountNumber(foundAcc.accountNumber);
       if (foundAcc.vatTaxNumber) setVatNumber(foundAcc.vatTaxNumber);
     }
-  };
-
-  const handleRegenerateIds = () => {
-    const randomSuffix = Math.floor(100 + Math.random() * 900);
-    setQuoteReference(`PEU${randomSuffix}-001`);
   };
 
   // Add Leg with default FBOs
@@ -689,33 +690,22 @@ export default function QuotesView() {
 
   // Helper to build booking record
   const createBookingRecord = (isBookedFlight: boolean, advanceToContract: boolean = false): Booking => {
-    const quoteRef = quoteReference.trim() || `QTE-2026-${Math.floor(100 + Math.random() * 899)}`;
-    const tripNum = isBookedFlight
-      ? (bookingToRevise?.tripNumber || `PEU${Math.floor(100 + Math.random() * 899)}-001`)
-      : (bookingToRevise?.tripNumber || quoteRef);
-    const tripDigits = (bookingToRevise?.tripId || tripNum || quoteRef).replace(/\D/g, "");
-    const tripSuffix = tripDigits.slice(-3) || String(Math.floor(100 + Math.random() * 899));
-    const tripId = bookingToRevise?.tripId || `TRIP-${new Date().getFullYear()}-${tripSuffix}`;
-    const quoteVersion = bookingToRevise ? (bookingToRevise.quoteVersion || 1) + 1 : 1;
-    const invoiceNum = isBookedFlight
-      ? `INV-${tripSuffix}-Q${String(quoteVersion).padStart(2, "0")}`
-      : "";
-
     return {
-      id: bookingToRevise ? bookingToRevise.id : `booking-qte-${Date.now()}`,
-      tripId,
-      quoteId: bookingToRevise?.quoteId || `QUO-${tripSuffix}-01`,
+      id: "",
+      tripId: "",
+      quoteGroupId: "",
+      quoteId: "",
       isBooked: isBookedFlight,
-      tripNumber: tripNum,
-      quoteReference: quoteRef,
-      invoiceNumber: invoiceNum,
+      tripNumber: "",
+      quoteReference: "",
+      invoiceNumber: "",
       accountNumber: accountNumber || "ACC-21737",
       contractDate,
       quoteExpirationDate,
       paymentDueDate: "10.10.2026",
       status: isBookedFlight ? "confirmed" : advanceToContract ? "contract_sent" : (quoteStatus === "Sent" ? "quote_sent" : "draft"),
       quoteStatus: isBookedFlight ? "accepted" : (advanceToContract ? "accepted" : (quoteStatus.toLowerCase() as any)),
-      quoteVersion,
+      quoteVersion: 1,
       paymentStatus: "unpaid",
       tripType,
       aircraft: effectiveAircraft,
@@ -736,7 +726,7 @@ export default function QuotesView() {
       operator: defaultOperator,
       legs: compiledLegs.map((l) => ({
         ...l,
-        flightNumber: isBookedFlight ? tripNum : ""
+        flightNumber: ""
       })),
       pricing: effectivePricing,
       services: {
@@ -758,7 +748,7 @@ export default function QuotesView() {
         {
           id: `act-${Date.now()}`,
           action: isBookedFlight ? "QUOTE_CONFIRMED_BOOKED" : (bookingToRevise ? "QUOTE_REVISED" : "QUOTE_GENERATED"),
-          details: `${bookingToRevise ? "Revised" : "Generated"} Quotation [${quoteRef}] for ${clientName}. Total: ${formatCurrency(effectivePricing.totalFlightPrice, currency)}. Customized aircraft images and station FBOs attached.`,
+          details: `${bookingToRevise ? "Revised" : "Generated"} Quotation for ${clientName}. Total: ${formatCurrency(effectivePricing.totalFlightPrice, currency)}. Customized aircraft images and station FBOs attached.`,
           timestamp: new Date().toLocaleString(),
           author: currentUser?.name || "Operations Desk",
           docType: isBookedFlight ? "charter_agreement" : "quotation"
@@ -775,7 +765,6 @@ export default function QuotesView() {
     e.preventDefault();
     const errors: string[] = [];
 
-    if (!quoteReference.trim()) errors.push("Quote Reference ID is required.");
     if (!clientName.trim()) errors.push("Client / Account Name is required.");
     if (!clientEmail.trim() || !clientEmail.includes("@")) errors.push("Valid Client Email is required.");
     if (!clientPhone.trim()) errors.push("Client Telephone is required.");
@@ -796,8 +785,9 @@ export default function QuotesView() {
     try {
       const wasRevising = Boolean(bookingToRevise);
       const draft = createBookingRecord(false, false);
-      const newBooking = bookingToRevise ? await reviseQuote(bookingToRevise.id, draft) : draft;
-      if (!bookingToRevise) addBooking(newBooking);
+      const newBooking = bookingToRevise
+        ? await reviseQuote(bookingToRevise.id, draft)
+        : await addBooking(draft);
       addAuditEntry({
         userEmail: currentUser?.email || "admin@orbelo.com",
         userName: currentUser?.name || "Operations Team",
@@ -823,8 +813,9 @@ export default function QuotesView() {
     try {
       const wasRevising = Boolean(bookingToRevise);
       const draft = createBookingRecord(false, true);
-      const newBooking = bookingToRevise ? await reviseQuote(bookingToRevise.id, draft) : draft;
-      if (!bookingToRevise) addBooking(newBooking);
+      const newBooking = bookingToRevise
+        ? await reviseQuote(bookingToRevise.id, draft)
+        : await addBooking(draft);
       addAuditEntry({
         userEmail: currentUser?.email || "admin@orbelo.com",
         userName: currentUser?.name || "Operations Team",
@@ -850,8 +841,9 @@ export default function QuotesView() {
     try {
       const wasRevising = Boolean(bookingToRevise);
       const draft = createBookingRecord(true, false);
-      const newBooking = bookingToRevise ? await reviseQuote(bookingToRevise.id, draft) : draft;
-      if (!bookingToRevise) addBooking(newBooking);
+      const newBooking = bookingToRevise
+        ? await reviseQuote(bookingToRevise.id, draft)
+        : await addBooking(draft);
       addAuditEntry({
         userEmail: currentUser?.email || "admin@orbelo.com",
         userName: currentUser?.name || "Operations Team",
@@ -871,9 +863,14 @@ export default function QuotesView() {
   };
 
   // Convert Quote directly to Confirmed Booking from list view
-  const handleBookQuote = (b: Booking) => {
-    convertQuoteToBooked(b.id);
-    setActiveNav("bookings");
+  const handleBookQuote = async (b: Booking) => {
+    try {
+      await convertQuoteToBooked(b.id);
+      setActiveNav("bookings");
+    } catch (error) {
+      setValidationErrors([error instanceof Error ? error.message : "The quote could not be booked."]);
+      setActiveTab("builder");
+    }
   };
 
   // Revise Quote action
@@ -1003,11 +1000,11 @@ export default function QuotesView() {
                         <div className="flex flex-wrap items-center gap-2">
                           {/* Trip ID */}
                           <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded bg-[#0F1420] text-[#C9A052]">
-                            {quote.tripId || `TRIP-${quote.tripNumber}`}
+                            {quote.tripId || "Pending server assignment"}
                           </span>
                           {/* Latest Quote ID */}
                           <span className="font-mono text-xs font-black text-[#0F1420] px-2.5 py-0.5 rounded bg-[#F5F2EC] border border-[#E0DAD0]">
-                            {quote.quoteId || quote.quoteReference || `QUO-${quote.tripNumber}`}
+                            {quote.quoteId || quote.quoteReference || "Pending server assignment"}
                           </span>
                           {quote.quoteVersion && quote.quoteVersion > 1 && (
                             <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-300">
@@ -1310,15 +1307,6 @@ export default function QuotesView() {
                 </select>
               </div>
 
-              <button
-                type="button"
-                onClick={handleRegenerateIds}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#F5F2EC] hover:bg-[#EAE6DE] border border-[#E0DAD0] text-xs font-mono font-bold text-[#0F1420] cursor-pointer"
-                title="Generate a new quote reference"
-              >
-                <RefreshCw className="w-3.5 h-3.5 text-[#C9A052]" />
-                <span>Regenerate IDs</span>
-              </button>
             </div>
           </div>
 
@@ -1389,13 +1377,12 @@ export default function QuotesView() {
 
               <div>
                 <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                  Quote Reference
+                  Quote ID (assigned on save)
                 </label>
                 <input
                   type="text"
-                  value={quoteReference}
-                  onChange={(e) => setQuoteReference(e.target.value)}
-                  required
+                  value={quoteReference || "Assigned by the server when saved"}
+                  readOnly
                   className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
                 />
               </div>

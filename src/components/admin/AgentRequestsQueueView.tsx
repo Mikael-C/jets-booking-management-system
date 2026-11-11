@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useAviation } from "@/lib/aviationContext";
 import { AgentRequest, SourcingOption, RequestMessage } from "@/types/aviation";
 import {
@@ -46,8 +46,13 @@ export default function AgentRequestsQueueView() {
     addSourcingOption,
     addMessage,
     currentUser,
-    bookings
+    bookings,
+    refreshAgentRequests
   } = useAviation();
+
+  useEffect(() => {
+    void refreshAgentRequests();
+  }, []);
 
   const [filter, setFilter] = useState<"all" | "pending" | "in_sourcing" | "completed">("all");
   const [viewMode, setViewMode] = useState<"list" | "board">("list");

@@ -11,6 +11,7 @@ const { generateInvoiceNumber } = require('../utils/generateId');
 const { logBookingAction, logStatusChange } = require('../services/auditService');
 const { createNotification } = require('../services/notificationService');
 const { sendStatusUpdateEmail } = require('../services/emailService');
+const { createBookingIdentifiers, createTripNumber } = require('../services/bookingIdentifiers');
 
 // Helper to look up bookings by Mongo _id, custom id, or tripNumber
 const getBookingFilter = (id) => {
@@ -194,13 +195,24 @@ router.get('/:id', async (req, res) => {
 
 // POST /api/bookings
 router.post('/', async (req, res) => {
+  const isBooked = Boolean(req.body.isBooked || ['confirmed', 'dispatched', 'in_flight', 'completed', 'flown'].includes(req.body.status));
+  const isQuote = Boolean(
+    req.body.quoteId ||
+    req.body.quoteReference ||
+    req.body.quoteStatus ||
+    ['draft', 'quoted', 'quote_sent', 'client_review', 'contract_sent'].includes(req.body.status)
+  );
+  const identifiers = await createBookingIdentifiers({ isQuote, isBooked });
   const bookingData = {
     ...req.body,
+    ...identifiers,
+    isBooked,
+    legs: (req.body.legs || []).map((leg) => ({
+      ...leg,
+      flightNumber: isBooked ? (leg.flightNumber || identifiers.tripNumber) : (leg.flightNumber || ''),
+    })),
     checklist: req.body.checklist?.length ? req.body.checklist : [...DEFAULT_CHECKLIST],
   };
-  if (!bookingData.isBooked) {
-    bookingData.tripNumber = await createUniqueTripNumber(bookingData.tripNumber);
-  }
 
   // Auto-generate invoice number if not provided
   if (!bookingData.invoiceNumber && bookingData.status !== 'draft') {
@@ -374,24 +386,34 @@ router.post('/:id/revise', authorize('super_admin', 'admin', 'operations'), asyn
     ...siblings.map((item) => Number((item.bookingRevisionId || '').split('-').pop()) || 0)
   ) + 1;
   const suffix = tripSuffix(original);
-  const revisionId = `BK-${suffix}-${String(nextRevision).padStart(2, '0')}`;
+  const identifiers = await createBookingIdentifiers({
+    quoteGroupId: original.quoteGroupId || original.tripId || original.id || original._id.toString(),
+    quoteVersion: nextRevision,
+    isQuote: Boolean(original.quoteId),
+    isBooked: true,
+  });
   const revisedData = original.toObject();
   delete revisedData._id;
   delete revisedData.__v;
   delete revisedData.createdAt;
   delete revisedData.updatedAt;
   Object.assign(revisedData, req.body || {});
-  revisedData.id = `booking-revision-${Date.now()}`;
-  revisedData.tripId = original.tripId || `TRIP-${new Date().getFullYear()}-${suffix}`;
-  revisedData.tripNumber = await createUniqueTripNumber();
-  revisedData.bookingRevisionId = revisionId;
+  Object.assign(revisedData, identifiers);
+  revisedData.id = identifiers.id;
+  revisedData.tripId = original.tripId || identifiers.tripId;
+  revisedData.tripNumber = await createTripNumber(identifiers.tripNumber);
+  revisedData.quoteGroupId = original.quoteGroupId || identifiers.quoteGroupId;
+  revisedData.quoteId = original.quoteId;
+  revisedData.quoteReference = original.quoteReference;
+  revisedData.quoteVersion = original.quoteVersion;
+  revisedData.bookingRevisionId = identifiers.bookingRevisionId;
   revisedData.isCancelled = false;
   revisedData.cancellationReason = '';
   revisedData.supersededBy = '';
   revisedData.isBooked = true;
   revisedData.status = req.body?.status || original.status;
   revisedData.quoteStatus = 'accepted';
-  revisedData.invoiceNumber = `INV-${suffix}-B${String(nextRevision).padStart(2, '0')}`;
+  revisedData.invoiceNumber = identifiers.invoiceNumber;
 
   const oldTotal = Number(original.pricing?.totalFlightPrice || 0);
   const newTotal = Number(revisedData.pricing?.totalFlightPrice || 0);
@@ -400,12 +422,12 @@ router.post('/:id/revise', authorize('super_admin', 'admin', 'operations'), asyn
     revisedData.revisionAdjustments.length > 0;
   revisedData.creditNotes = delta === 0 && !hasLineAdjustments ? [] : [{
     id: `cn-${Date.now()}`,
-    number: `CN-${suffix}-${String(nextRevision).padStart(2, '0')}`,
-    creditNoteNumber: `CN-${suffix}-${String(nextRevision).padStart(2, '0')}`,
+    number: `CN-${identifiers.bookingRevisionId.replace(/^BK-/, '')}`,
+    creditNoteNumber: `CN-${identifiers.bookingRevisionId.replace(/^BK-/, '')}`,
     date: new Date().toISOString().slice(0, 10),
     issueDate: new Date().toISOString().slice(0, 10),
     amount: Math.abs(delta),
-    reason: req.body?.revisionReason || `Booking price adjustment for ${revisionId}`,
+    reason: req.body?.revisionReason || `Booking price adjustment for ${identifiers.bookingRevisionId}`,
     originalTotal: oldTotal,
     newTotal,
     netBalance: delta,

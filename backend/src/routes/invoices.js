@@ -3,6 +3,7 @@ const router = express.Router();
 const mongoose = require('mongoose');
 const Booking = require('../models/Booking');
 const { createAuditEntry } = require('../services/auditService');
+const { createBookingIdentifiers, createTripNumber } = require('../services/bookingIdentifiers');
 
 // Safe Booking finder supporting ObjectId and custom ID strings
 const findBooking = async (id) => {
@@ -110,16 +111,28 @@ router.post('/', async (req, res) => {
   try {
     const body = req.body || {};
 
-    const bookingId = body.id || `booking-inv-${Date.now()}`;
-    const invoiceNumber = body.invoiceNumber || `0010${Math.floor(6020 + Math.random() * 3970)}`;
-    const tripNumber = body.tripNumber || `ORB-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 899)}`;
-
     // Try finding existing booking by ID, tripNumber, or invoiceNumber
     let booking = await findBooking(body.id || body.tripNumber || body.invoiceNumber);
 
     if (booking) {
+      if (!booking.tripId || !booking.bookingRevisionId || !booking.tripNumber || !booking.invoiceNumber) {
+        const identifiers = await createBookingIdentifiers({
+          quoteGroupId: booking.quoteGroupId || booking.id || booking._id.toString(),
+          quoteVersion: Number(booking.quoteVersion) || 1,
+          isQuote: Boolean(booking.quoteId),
+          isBooked: true,
+        });
+        booking.id = booking.id || identifiers.id;
+        booking.tripId = booking.tripId || identifiers.tripId;
+        booking.quoteGroupId = booking.quoteGroupId || identifiers.quoteGroupId;
+        booking.quoteId = booking.quoteId || identifiers.quoteId;
+        booking.quoteReference = booking.quoteReference || booking.quoteId;
+        booking.bookingRevisionId = booking.bookingRevisionId || identifiers.bookingRevisionId;
+        booking.tripNumber = booking.tripNumber || await createTripNumber(identifiers.tripNumber);
+        booking.invoiceNumber = booking.invoiceNumber || identifiers.invoiceNumber;
+      }
       // Update existing record
-      booking.invoiceNumber = invoiceNumber;
+      booking.invoiceNumber = body.invoiceNumber || booking.invoiceNumber;
       if (body.accountNumber) booking.accountNumber = body.accountNumber;
       if (body.contractDate) booking.contractDate = body.contractDate;
       if (body.paymentDueDate) booking.paymentDueDate = body.paymentDueDate;
@@ -141,10 +154,14 @@ router.post('/', async (req, res) => {
       await booking.save();
     } else {
       // Create new booking document with invoice details
+      const identifiers = await createBookingIdentifiers({ isQuote: true, isBooked: true });
+      const tripNumber = await createTripNumber(identifiers.tripNumber);
       booking = new Booking({
         ...body,
-        id: bookingId,
-        invoiceNumber,
+        ...identifiers,
+        id: identifiers.id,
+        isBooked: true,
+        invoiceNumber: identifiers.invoiceNumber,
         tripNumber,
         accountNumber: body.accountNumber || 'ACC-21737',
         contractDate: body.contractDate || new Date().toLocaleDateString('de-DE'),
@@ -163,14 +180,14 @@ router.post('/', async (req, res) => {
       user: req.user,
       action: 'INVOICE_GENERATED',
       entityType: 'Invoice',
-      entityId: invoiceNumber,
-      details: `Generated commercial tax invoice #${invoiceNumber} for trip ${tripNumber} (${booking.client?.fullName || 'Client'})`,
+      entityId: booking.invoiceNumber,
+      details: `Generated commercial tax invoice #${booking.invoiceNumber} for trip ${booking.tripNumber} (${booking.client?.fullName || 'Client'})`,
       req,
     }).catch(() => {});
 
     res.status(201).json({
       success: true,
-      message: `Commercial Invoice #${invoiceNumber} successfully compiled and recorded.`,
+      message: `Commercial Invoice #${booking.invoiceNumber} successfully compiled and recorded.`,
       data: booking,
     });
   } catch (error) {

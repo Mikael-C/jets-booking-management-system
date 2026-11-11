@@ -180,6 +180,7 @@ const bookingSchema = new mongoose.Schema(
     id: { type: String, index: true },
     tripId: { type: String, default: '', index: true },
     quoteId: { type: String, default: '', index: true },
+    quoteGroupId: { type: String, default: '', index: true },
     bookingRevisionId: { type: String, default: '', index: true },
     isCancelled: { type: Boolean, default: false, index: true },
     cancellationReason: { type: String, default: '' },

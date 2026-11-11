@@ -44,7 +44,7 @@ export default function AgentRequestInvoiceView() {
 
     const title = `Invoice Request: ${selectedBooking?.tripNumber || "Flight Charter"} (${clientName})`;
 
-    addAgentRequest({
+    await addAgentRequest({
       type: "invoice",
       title,
       agentName: currentUser?.name || "Marcus Vance",

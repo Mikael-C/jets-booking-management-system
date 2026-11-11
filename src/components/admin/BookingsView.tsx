@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { useAviation } from "@/lib/aviationContext";
 import { formatCurrency } from "@/lib/pricingCalculator";
 import { Booking } from "@/types/aviation";
+import { getQuoteIterationGroupKey } from "@/lib/quoteIterations";
 import {
   FileText,
   Receipt,
@@ -52,9 +53,11 @@ export default function BookingsView() {
   const getIterationGroupKey = (booking: Booking) => {
     const isBookedRecord = booking.isBooked ||
       ["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(booking.status);
-    return isBookedRecord || booking.quoteId || booking.quoteReference
+    return isBookedRecord
       ? booking.tripId || booking.tripNumber || booking.id
-      : booking.id;
+      : booking.quoteId || booking.quoteReference
+        ? getQuoteIterationGroupKey(booking)
+        : booking.id;
   };
   const countAll = new Set(visibleBookings.map(getIterationGroupKey)).size;
   const countConfirmed = new Set(visibleBookings

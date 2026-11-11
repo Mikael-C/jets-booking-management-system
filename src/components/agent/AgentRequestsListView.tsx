@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useAviation } from "@/lib/aviationContext";
 import { AgentRequest, SourcingOption, RequestMessage, Booking } from "@/types/aviation";
 import { formatCurrency } from "@/lib/pricingCalculator";
@@ -30,6 +30,7 @@ import {
 export default function AgentRequestsListView() {
   const {
     agentRequests,
+    refreshAgentRequests,
     openDocument,
     bookings,
     setActiveNav,
@@ -37,6 +38,10 @@ export default function AgentRequestsListView() {
     addAgentRequest,
     currentUser
   } = useAviation();
+
+  useEffect(() => {
+    void refreshAgentRequests();
+  }, []);
 
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [expandedMessages, setExpandedMessages] = useState<Record<string, boolean>>({});
@@ -56,16 +61,13 @@ export default function AgentRequestsListView() {
     openDocument(b, docType);
   };
 
-  const handleDuplicateRequest = (req: AgentRequest) => {
-    const duplicated: AgentRequest = {
-      ...req,
-      id: `req-${Date.now()}`,
+  const handleDuplicateRequest = async (req: AgentRequest) => {
+    const { id, ...requestData } = req;
+    await addAgentRequest({
+      ...requestData,
       title: `${req.title} (Duplicate)`,
-      createdAt: new Date().toISOString().split("T")[0],
-      status: "pending",
       messages: []
-    };
-    addAgentRequest(duplicated);
+    });
   };
 
   const handleSendMessage = (reqId: string) => {

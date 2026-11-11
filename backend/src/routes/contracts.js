@@ -3,6 +3,7 @@ const router = express.Router();
 const mongoose = require('mongoose');
 const Booking = require('../models/Booking');
 const { createAuditEntry } = require('../services/auditService');
+const { createBookingIdentifiers, createTripNumber } = require('../services/bookingIdentifiers');
 
 // Safe Booking finder supporting ObjectId and custom ID strings
 const findBooking = async (id) => {
@@ -104,12 +105,25 @@ router.post('/', async (req, res) => {
   try {
     const body = req.body || {};
 
-    const bookingId = body.id || `booking-ca-${Date.now()}`;
-    const tripNumber = body.tripNumber || `ORB-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 899)}`;
-
     let booking = await findBooking(body.id || body.tripNumber);
 
     if (booking) {
+      if (!booking.tripId || !booking.bookingRevisionId || !booking.tripNumber) {
+        const identifiers = await createBookingIdentifiers({
+          quoteGroupId: booking.quoteGroupId || booking.id || booking._id.toString(),
+          quoteVersion: Number(booking.quoteVersion) || 1,
+          isQuote: !booking.quoteId,
+          isBooked: true,
+        });
+        booking.id = booking.id || identifiers.id;
+        booking.tripId = booking.tripId || identifiers.tripId;
+        booking.quoteGroupId = booking.quoteGroupId || identifiers.quoteGroupId;
+        booking.quoteId = booking.quoteId || identifiers.quoteId;
+        booking.quoteReference = booking.quoteReference || booking.quoteId;
+        booking.bookingRevisionId = booking.bookingRevisionId || identifiers.bookingRevisionId;
+        booking.tripNumber = booking.tripNumber || await createTripNumber(identifiers.tripNumber);
+        booking.invoiceNumber = booking.invoiceNumber || identifiers.invoiceNumber;
+      }
       if (body.contractDate) booking.contractDate = body.contractDate;
       if (body.quoteExpirationDate) booking.quoteExpirationDate = body.quoteExpirationDate;
       if (body.paymentDueDate) booking.paymentDueDate = body.paymentDueDate;
@@ -124,6 +138,9 @@ router.post('/', async (req, res) => {
         if (body.contractSignedDate) booking.contractSignedDate = body.contractSignedDate;
         if (body.contractSignedBy) booking.contractSignedBy = body.contractSignedBy;
       }
+      booking.isBooked = true;
+      booking.status = body.status || 'confirmed';
+      booking.quoteStatus = 'accepted';
       if (body.tripActionAudit) {
         booking.tripActionAudit = [
           ...(body.tripActionAudit || []),
@@ -133,14 +150,17 @@ router.post('/', async (req, res) => {
       booking.updatedAt = new Date();
       await booking.save();
     } else {
+      const identifiers = await createBookingIdentifiers({ isQuote: true, isBooked: true });
+      const tripNumber = await createTripNumber(identifiers.tripNumber);
       booking = new Booking({
         ...body,
-        id: bookingId,
+        ...identifiers,
+        id: identifiers.id,
         tripNumber,
-        quoteReference: body.quoteReference || `QTE-${tripNumber}`,
+        isBooked: true,
+        quoteStatus: 'accepted',
         contractDate: body.contractDate || new Date().toLocaleDateString('de-DE'),
         status: body.status || 'confirmed',
-        quoteStatus: 'accepted',
         isDeleted: false,
       });
       await booking.save();
@@ -150,14 +170,14 @@ router.post('/', async (req, res) => {
       user: req.user,
       action: 'CONTRACT_GENERATED',
       entityType: 'Contract',
-      entityId: tripNumber,
-      details: `Generated charter agreement for trip ${tripNumber} (${booking.client?.fullName || 'Client'})`,
+      entityId: booking.tripNumber,
+      details: `Generated charter agreement for trip ${booking.tripNumber} (${booking.client?.fullName || 'Client'})`,
       req,
     }).catch(() => {});
 
     res.status(201).json({
       success: true,
-      message: `Master Charter Agreement for Trip #${tripNumber} successfully prepared and recorded.`,
+      message: `Master Charter Agreement for Trip #${booking.tripNumber} successfully prepared and recorded.`,
       data: booking,
     });
   } catch (error) {

@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
-const { randomUUID } = require('crypto');
+const { createHash } = require('crypto');
 const Booking = require('../models/Booking');
 const AgentRequest = require('../models/AgentRequest');
 const Aircraft = require('../models/Aircraft');
@@ -12,6 +12,7 @@ const { sendQuoteEmail } = require('../services/emailService');
 const { generateQuotePdf } = require('../services/pdfService');
 const { calculatePricing } = require('../services/pricingService');
 const { findAirportByCode } = require('../utils/airportData');
+const { createBookingIdentifiers, createTripNumber } = require('../services/bookingIdentifiers');
 
 // Safe query helpers supporting ObjectId and custom ID strings
 const findAgentRequest = async (id) => {
@@ -59,29 +60,45 @@ const findBooking = async (id) => {
   });
 };
 
-const getTripFilter = (booking) => ({
-  isDeleted: false,
-  $or: [
-    ...(booking.tripId ? [{ tripId: booking.tripId }] : []),
-    ...(booking.tripNumber ? [{ tripNumber: booking.tripNumber }] : [])
-  ]
-});
+const getQuoteFamilyStem = (booking) => {
+  const identifier = booking.quoteId || booking.quoteReference || '';
+  return identifier.replace(/-(?:V)?\d+$/i, '');
+};
 
-const getTripSuffix = (booking) =>
-  (booking.tripId || booking.tripNumber || '').replace(/\D/g, '').slice(-3) || '001';
+const getQuoteVersion = (booking) => {
+  const explicitVersion = Number(booking.quoteVersion);
+  if (Number.isFinite(explicitVersion) && explicitVersion > 0) return explicitVersion;
+  const match = (booking.quoteId || booking.quoteReference || '').match(/-(?:V)?(\d+)$/i);
+  return match ? Number(match[1]) : 1;
+};
+
+const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const getQuoteFamilyFilter = (booking) => {
+  if (booking.quoteGroupId) {
+    return { isDeleted: false, quoteGroupId: booking.quoteGroupId };
+  }
+
+  const stem = getQuoteFamilyStem(booking);
+  if (stem) {
+    const filter = {
+      isDeleted: false,
+      quoteGroupId: { $in: ['', null] },
+      $or: [
+        { quoteId: { $regex: `^${escapeRegex(stem)}-(?:V)?\\d+$`, $options: 'i' } },
+        { quoteReference: { $regex: `^${escapeRegex(stem)}-(?:V)?\\d+$`, $options: 'i' } }
+      ]
+    };
+    if (booking.client?.email) filter['client.email'] = booking.client.email;
+    else if (booking.client?.fullName) filter['client.fullName'] = booking.client.fullName;
+    return filter;
+  }
+
+  return { isDeleted: false, _id: booking._id };
+};
 
 const isBookedStatus = (booking) =>
   booking.isBooked || ['confirmed', 'dispatched', 'in_flight', 'completed', 'flown'].includes(booking.status);
-
-const createUniqueTripNumber = async (preferred) => {
-  if (preferred && !(await Booking.exists({ tripNumber: preferred }))) return preferred;
-
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    const candidate = `QTE-${new Date().getFullYear()}-${randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()}`;
-    if (!(await Booking.exists({ tripNumber: candidate }))) return candidate;
-  }
-  throw new Error('Unable to allocate a unique quote trip number');
-};
 
 const reviseQuote = async (req, res) => {
   const original = await findBooking(req.params.id);
@@ -90,73 +107,61 @@ const reviseQuote = async (req, res) => {
     return res.status(409).json({ message: 'Cancelled or booked quote iterations cannot be revised' });
   }
 
-  const siblings = await Booking.find(getTripFilter(original)).sort({ quoteVersion: -1 });
+  const siblings = await Booking.find(getQuoteFamilyFilter(original)).sort({ quoteVersion: -1 });
+  const quoteGroupId = original.quoteGroupId || original.id || original._id.toString();
   if (siblings.some((quote) => isBookedStatus(quote) && !quote.isCancelled)) {
     return res.status(409).json({ message: 'A booked trip cannot be revised as a quote' });
   }
-  const latestVersion = Math.max(0, ...siblings.map((quote) => Number(quote.quoteVersion) || 0));
-  if ((Number(original.quoteVersion) || 1) < latestVersion) {
+  const latestVersion = Math.max(0, ...siblings.map(getQuoteVersion));
+  if (getQuoteVersion(original) < latestVersion) {
     return res.status(409).json({ message: 'Only the latest quote iteration can be revised' });
   }
-  const nextVersion = Math.max(
-    0,
-    ...siblings.map((quote) => Number(quote.quoteVersion) || 0),
-    ...siblings.map((quote) => Number((quote.quoteId || '').split('-').pop()) || 0)
-  ) + 1;
-  const tripId = original.tripId || `TRIP-${new Date().getFullYear()}-${getTripSuffix(original)}`;
-  const tripSuffix = getTripSuffix({ ...original.toObject(), tripId });
-  const quoteId = `QUO-${tripSuffix}-${String(nextVersion).padStart(2, '0')}`;
+  const nextVersion = latestVersion + 1;
+  const bookImmediately = req.body?.isBooked === true;
+  const identifiers = await createBookingIdentifiers({
+    quoteGroupId,
+    quoteVersion: nextVersion,
+    isQuote: true,
+    isBooked: bookImmediately,
+  });
+  const tripId = identifiers.tripId;
   const revised = original.toObject();
   delete revised._id;
   delete revised.__v;
   delete revised.createdAt;
   delete revised.updatedAt;
   Object.assign(revised, req.body || {});
-  const bookImmediately = req.body?.isBooked === true;
-  revised.id = `booking-quote-${Date.now()}`;
-  revised.tripId = tripId;
-  revised.tripNumber = bookImmediately
-    ? await createUniqueTripNumber(req.body?.tripNumber)
-    : await createUniqueTripNumber();
-  revised.quoteId = quoteId;
-  revised.quoteReference = quoteId;
-  revised.quoteVersion = nextVersion;
+  Object.assign(revised, identifiers);
   revised.isCancelled = false;
   revised.cancellationReason = '';
   revised.supersededBy = '';
   revised.isBooked = bookImmediately;
   revised.quoteStatus = bookImmediately ? 'accepted' : (req.body?.quoteStatus || 'draft');
   revised.status = bookImmediately ? 'confirmed' : (req.body?.status || 'quoted');
-  revised.invoiceNumber = bookImmediately
-    ? `INV-${tripSuffix}-Q${String(nextVersion).padStart(2, '0')}`
-    : '';
-  if (bookImmediately) {
-    revised.bookingRevisionId = `BK-${tripSuffix}-01`;
-  }
   revised.createdAt = new Date();
   revised.updatedAt = new Date();
 
-  const booking = await Booking.create(revised);
-  if (bookImmediately) {
-    for (const quote of siblings) {
-      if (quote._id.equals(original._id) || (!quote.isCancelled && !isBookedStatus(quote))) {
-        quote.tripId = tripId;
-        quote.isBooked = false;
-        quote.isCancelled = true;
-        quote.cancellationReason = `Superseded by booked revision ${quoteId}`;
-        quote.supersededBy = booking.id || booking._id.toString();
-        quote.quoteStatus = 'expired';
-        quote.status = 'cancelled';
-        await quote.save();
-      }
+  for (const quote of siblings) {
+    quote.quoteGroupId = quoteGroupId;
+    quote.tripId = tripId;
+    if (bookImmediately) {
+      quote.isBooked = false;
+      quote.isCancelled = true;
+      quote.cancellationReason = `Superseded by booked revision ${identifiers.quoteId}`;
+      quote.supersededBy = revised.id;
+      quote.quoteStatus = 'expired';
+      quote.status = 'cancelled';
     }
+    await quote.save();
   }
+
+  const booking = await Booking.create(revised);
   await createAuditEntry({
     user: req.user,
     action: 'QUOTE_NEW_VERSION',
     entityType: 'Quote',
-    entityId: quoteId,
-    details: `${bookImmediately ? 'Booked' : 'Created'} quote revision ${quoteId} for trip ${tripId}`
+    entityId: identifiers.quoteId,
+    details: `${bookImmediately ? 'Booked' : 'Created'} quote revision ${identifiers.quoteId} for trip ${identifiers.tripId}`
   });
   return res.status(201).json(booking);
 };
@@ -169,44 +174,49 @@ router.post('/:id/convert-to-booking', authorize('super_admin', 'admin', 'operat
   if (booking.isCancelled) return res.status(409).json({ message: 'Cancelled quote iterations cannot be booked' });
 
   if (isBookedStatus(booking)) return res.json({ success: true, data: booking });
-  if (!booking.tripId) {
-    booking.tripId = `TRIP-${new Date().getFullYear()}-${getTripSuffix(booking)}`;
-  }
-  const siblings = await Booking.find(getTripFilter(booking));
+  const quoteGroupId = booking.quoteGroupId || booking.id || booking._id.toString();
+  const groupToken = createHash('sha256').update(quoteGroupId).digest('hex').slice(0, 10).toUpperCase();
+  const tripId = `TRIP-${new Date().getFullYear()}-${groupToken}`;
+  const siblings = await Booking.find(getQuoteFamilyFilter(booking));
   if (siblings.some((sibling) => isBookedStatus(sibling) && !sibling.isCancelled)) {
     return res.status(409).json({ message: 'A quote from this trip has already been booked' });
   }
-  const latestVersion = Math.max(0, ...siblings.map((sibling) => Number(sibling.quoteVersion) || 0));
-  if ((Number(booking.quoteVersion) || 1) < latestVersion) {
+  const latestVersion = Math.max(0, ...siblings.map(getQuoteVersion));
+  if (getQuoteVersion(booking) < latestVersion) {
     return res.status(409).json({ message: 'Only the latest quote iteration can be booked' });
   }
-  if (!booking.tripNumber || /^(QTE|QUO|REV)[-_]/i.test(booking.tripNumber)) {
-    booking.tripNumber = await createUniqueTripNumber(`PEU${getTripSuffix(booking)}-001`);
-  }
-  if (!booking.quoteId) {
-    booking.quoteId = `QUO-${getTripSuffix(booking)}-${String(booking.quoteVersion || 1).padStart(2, '0')}`;
-  }
+  const identifiers = await createBookingIdentifiers({
+    quoteGroupId,
+    quoteVersion: getQuoteVersion(booking),
+    isQuote: false,
+    isBooked: true,
+  });
+  booking.id = booking.id || identifiers.id;
+  booking.quoteGroupId = quoteGroupId;
+  booking.tripId = tripId;
+  booking.tripNumber = await createTripNumber(`PEU${groupToken}-001`);
+  booking.quoteId = booking.quoteId || identifiers.quoteId;
+  booking.quoteReference = booking.quoteReference || booking.quoteId;
   booking.isBooked = true;
   booking.quoteStatus = 'accepted';
   booking.status = 'confirmed';
-  booking.bookingRevisionId = booking.bookingRevisionId || `BK-${getTripSuffix(booking)}-01`;
-  booking.invoiceNumber = booking.invoiceNumber ||
-    `INV-${getTripSuffix(booking)}-Q${String(booking.quoteVersion || 1).padStart(2, '0')}`;
+  booking.bookingRevisionId = booking.bookingRevisionId || identifiers.bookingRevisionId;
+  booking.invoiceNumber = booking.invoiceNumber || identifiers.invoiceNumber;
   booking.contractDate = booking.contractDate || new Date().toISOString().slice(0, 10);
   await booking.save();
 
-  const priorQuotes = siblings.filter((sibling) =>
-    !sibling._id.equals(booking._id) && !sibling.isCancelled && !isBookedStatus(sibling)
-  );
-  for (const prior of priorQuotes) {
-    prior.tripId = booking.tripId;
-    prior.isBooked = false;
-    prior.isCancelled = true;
-    prior.cancellationReason = `Superseded by booked revision ${booking.bookingRevisionId}`;
-    prior.supersededBy = booking.id || booking._id.toString();
-    prior.quoteStatus = 'expired';
-    prior.status = 'cancelled';
-    await prior.save();
+  for (const sibling of siblings) {
+    sibling.quoteGroupId = quoteGroupId;
+    sibling.tripId = tripId;
+    if (!sibling._id.equals(booking._id) && !sibling.isCancelled && !isBookedStatus(sibling)) {
+      sibling.isBooked = false;
+      sibling.isCancelled = true;
+      sibling.cancellationReason = `Superseded by booked revision ${booking.bookingRevisionId}`;
+      sibling.supersededBy = booking.id || booking._id.toString();
+      sibling.quoteStatus = 'expired';
+      sibling.status = 'cancelled';
+    }
+    await sibling.save();
   }
 
   await createAuditEntry({
@@ -281,18 +291,11 @@ router.post('/generate', authorize('super_admin', 'admin', 'operations'), async 
   });
 
   // Trip number
-  const year = new Date().getFullYear();
-  const tripNumber = await createUniqueTripNumber();
-  const sequence = tripNumber.split('-').pop();
-  const tripId = `TRIP-${year}-${sequence}`;
-  const quoteId = `QUO-${sequence}-01`;
+  const identifiers = await createBookingIdentifiers();
 
   const booking = new Booking({
-    tripId,
-    quoteId,
+    ...identifiers,
     quoteVersion: 1,
-    tripNumber,
-    quoteReference: quoteId,
     contractDate: new Date().toISOString().split('T')[0],
     quoteExpirationDate: quoteExpirationDate || new Date(Date.now() + 48 * 3600 * 1000).toISOString().split('T')[0],
     paymentDueDate: paymentDueDate || new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString().split('T')[0],
@@ -318,7 +321,7 @@ router.post('/generate', authorize('super_admin', 'admin', 'operations'), async 
   await booking.save();
 
   // Update agent request status
-  agentRequest.status = 'quote_ready';
+  agentRequest.status = 'processing';
   agentRequest.fulfilledBookingId = booking._id;
   await agentRequest.save();
 
