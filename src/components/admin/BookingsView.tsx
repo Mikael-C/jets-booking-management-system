@@ -5,22 +5,7 @@ import { useAviation } from "@/lib/aviationContext";
 import { formatCurrency } from "@/lib/pricingCalculator";
 import { Booking } from "@/types/aviation";
 import { getQuoteIterationGroupKey } from "@/lib/quoteIterations";
-import {
-  FileText,
-  Receipt,
-  Compass,
-  ScrollText,
-  CheckSquare,
-  Plane,
-  Eye,
-  Filter,
-  ArrowRight,
-  Clock,
-  CheckCircle2,
-  AlertCircle,
-  RefreshCw,
-  RotateCcw
-} from "lucide-react";
+import { Eye, RefreshCw } from "lucide-react";
 
 export default function BookingsView() {
   const {
@@ -28,7 +13,6 @@ export default function BookingsView() {
     searchQuery,
     openDocument,
     setSelectedBookingForDetail,
-    convertQuoteToBooked,
     refreshBookings,
     isBookingsLoading,
     bookingsSource,
@@ -141,83 +125,6 @@ export default function BookingsView() {
       group.revisions.some((revision) => revision.id === booking.id)
     ));
   })();
-
-  const getStatusBadge = (status: Booking["status"]) => {
-    switch (status) {
-      case "confirmed":
-        return (
-          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1 w-max">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
-            CONFIRMED
-          </span>
-        );
-      case "dispatched":
-        return (
-          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-indigo-100 text-indigo-800 border border-indigo-300 flex items-center gap-1 w-max">
-            <span className="h-1.5 w-1.5 rounded-full bg-indigo-600" />
-            DISPATCHED
-          </span>
-        );
-      case "in_flight":
-        return (
-          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-sky-100 text-sky-800 border border-sky-300 flex items-center gap-1 w-max animate-pulse">
-            <Plane className="w-2.5 h-2.5" />
-            IN FLIGHT
-          </span>
-        );
-      case "completed":
-        return (
-          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-gray-200 text-gray-700 border border-gray-300 flex items-center gap-1 w-max">
-            COMPLETED
-          </span>
-        );
-      default:
-        return (
-          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1 w-max">
-            <Clock className="w-2.5 h-2.5" />
-            {status.toUpperCase().replace("_", " ")}
-          </span>
-        );
-    }
-  };
-
-  const getQuoteBadge = (b: Booking) => {
-    const isBooked = ["confirmed", "dispatched", "in_flight", "completed"].includes(b.status);
-    if (isBooked) {
-      return (
-        <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-          BOOKED FLIGHT
-        </span>
-      );
-    }
-    const qStatus = (b.quoteStatus || (b.status === "quote_sent" ? "sent" : b.status === "client_review" ? "undecided" : "draft")).toLowerCase();
-    switch (qStatus) {
-      case "sent":
-        return (
-          <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-blue-100 text-blue-800 border border-blue-300">
-            QUOTE: SENT
-          </span>
-        );
-      case "pending":
-        return (
-          <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-amber-100 text-amber-800 border border-amber-300">
-            QUOTE: PENDING
-          </span>
-        );
-      case "undecided":
-        return (
-          <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-purple-100 text-purple-800 border border-purple-300">
-            QUOTE: UNDECIDED
-          </span>
-        );
-      default:
-        return (
-          <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-gray-100 text-gray-700 border border-gray-300">
-            QUOTE: DRAFT
-          </span>
-        );
-    }
-  };
 
   return (
     <div className="space-y-6">
@@ -356,30 +263,25 @@ export default function BookingsView() {
           <table className="w-full text-left text-xs">
             <thead className="bg-[#F5F2EC] text-[#0F1420]/70 font-mono text-[11px] uppercase tracking-wider border-b border-[#E0DAD0]">
               <tr>
-                <th className="py-3 px-4 font-bold">Trip & Status</th>
-                <th className="py-3 px-4 font-bold">Client / Account</th>
-                <th className="py-3 px-4 font-bold">Aircraft & Tail</th>
-                <th className="py-3 px-4 font-bold">Routing & Schedule</th>
+                <th className="py-3 px-4 font-bold">Trip ID</th>
+                <th className="py-3 px-4 font-bold">Route</th>
+                <th className="py-3 px-4 font-bold">Account</th>
+                <th className="py-3 px-4 font-bold">Pax</th>
                 <th className="py-3 px-4 font-bold">Total Price</th>
-                <th className="py-3 px-4 font-bold">Dispatch Checklist</th>
-                <th className="py-3 px-4 font-bold text-right">Actions & Documents</th>
+                <th className="py-3 px-4 font-bold text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#E0DAD0]">
               {filteredBookings.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-gray-500 text-xs">
+                  <td colSpan={6} className="py-12 text-center text-gray-500 text-xs">
                     No bookings found matching current tab and search query.
                   </td>
                 </tr>
               ) : (
                 bookingGroups.map(({ tripKey, revisions, latest: latestRevision, primary: booking }) => {
-                  const totalChecklist = (booking.checklist || []).length;
-                  const completedChecklist = (booking.checklist || []).filter((c) => c.isCompleted || (c as any).completed).length;
-                  const isAllReady = totalChecklist > 0 && completedChecklist === totalChecklist;
                   const isBookedRecord = booking.isBooked ||
                     ["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(booking.status);
-                  const isInProgress = !isBookedRecord;
                   const hasIterations = revisions.length > 1;
                   const isExpanded = expandedTripIds.has(tripKey);
 
@@ -389,7 +291,7 @@ export default function BookingsView() {
                         onClick={() => setSelectedBookingForDetail(booking)}
                         className="hover:bg-[#F5F2EC]/60 transition-colors cursor-pointer group"
                       >
-                      {/* Trip & Status */}
+                      {/* Trip ID */}
                       <td className="py-4 px-4">
                         <div className="flex flex-col gap-1">
                           {isBookedRecord ? (
@@ -409,8 +311,6 @@ export default function BookingsView() {
                             </div>
                           )}
                           <div className="flex items-center gap-1 flex-wrap">
-                            {getStatusBadge(booking.status)}
-                            {getQuoteBadge(booking)}
                             {hasIterations && (
                               <button
                                 type="button"
@@ -432,49 +332,32 @@ export default function BookingsView() {
                         </div>
                       </td>
 
-                      {/* Client / Account */}
+                      {/* Route */}
                       <td className="py-4 px-4">
-                        <div className="flex flex-col">
-                          <span className="font-bold text-[#0F1420] text-xs">{booking.client?.fullName || "Private Client"}</span>
-                          {booking.client?.companyName && (
-                            <span className="text-[11px] text-gray-600">{booking.client.companyName}</span>
-                          )}
-                          <span className="text-[10px] text-gray-400 font-mono">Acc: {booking.accountNumber || booking.client?.accountNumber || "ACC-001"}</span>
-                        </div>
-                      </td>
-
-                      {/* Aircraft & Tail */}
-                      <td className="py-4 px-4">
-                        <div className="flex flex-col">
-                          <span className="font-bold text-[#0F1420]">{booking.aircraft?.name || "Jet"}</span>
-                          <span className="text-[11px] font-mono font-bold text-[#C9A052]">
-                            Tail: {booking.aircraft?.registration || "OE-FFB"}
-                          </span>
-                          <span className="text-[10px] text-gray-500">
-                            {booking.aircraft?.passengers || 4} Seats • {booking.aircraft?.categoryLabel || "Jet"}
-                          </span>
-                        </div>
-                      </td>
-
-                      {/* Routing & Schedule */}
-                      <td className="py-4 px-4">
-                        <div className="flex flex-col gap-1 max-w-[210px]">
+                        <div className="flex flex-col gap-1 max-w-[190px]">
                           {(booking.legs || []).map((leg, lIdx) => (
-                            <div key={leg.legNumber || lIdx} className="text-[11px] flex items-center justify-between gap-2">
-                              <span className="font-extrabold text-[#0F1420] font-mono flex items-center gap-1">
-                                <span>{leg.origin?.icao || "---"}</span>
-                                <span className="text-[#C9A052]">→</span>
-                                <span>{leg.destination?.icao || "---"}</span>
-                              </span>
-                              <span className="text-[10px] text-gray-500 font-mono">
-                                {leg.flightDate ? leg.flightDate.slice(5) : "---"} • {leg.departureTimeLocal || "10:00"}
-                              </span>
-                            </div>
+                            <span key={leg.legNumber || lIdx} className="font-bold text-[#0F1420] font-mono text-[11px]">
+                              {leg.origin?.icao || "---"} <span className="text-[#C9A052]">→</span> {leg.destination?.icao || "---"}
+                            </span>
                           ))}
-                          <span className="text-[10px] text-gray-500">
-                            {(booking.legs || []).length} {(booking.legs || []).length > 1 ? "legs" : "leg"} • {(booking.legs || [])[0]?.paxCount || 2} Pax
+                        </div>
+                      </td>
+
+                      {/* Account */}
+                      <td className="py-4 px-4">
+                        <div className="flex flex-col">
+                          <span className="font-bold text-[#0F1420] text-xs">
+                            {booking.client?.companyName || booking.client?.fullName || "Private Client"}
+                          </span>
+                          <span className="text-[10px] text-gray-400 font-mono">
+                            Acc: {booking.accountNumber || booking.client?.accountNumber || "ACC-001"}
                           </span>
                         </div>
+                      </td>
+
+                      {/* Passengers */}
+                      <td className="py-4 px-4 font-mono text-[#0F1420]">
+                        {(booking.legs || [])[0]?.paxCount ?? "—"}
                       </td>
 
                       {/* Price */}
@@ -487,123 +370,53 @@ export default function BookingsView() {
                         </div>
                       </td>
 
-                      {/* Dispatch Checklist Badge */}
-                      <td className="py-4 px-4">
-                        <div
-                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[11px] font-mono font-bold w-max ${
-                            isAllReady
-                              ? "bg-emerald-50 border-emerald-300 text-emerald-800"
-                              : "bg-amber-50 border-amber-300 text-amber-800"
-                          }`}
-                        >
-                          <CheckSquare className="w-3.5 h-3.5" />
-                          <span>
-                            {completedChecklist}/{totalChecklist} Cleared
-                          </span>
-                        </div>
-                      </td>
-
-                      {/* Actions & Documents: Lifecycle flow Quote -> Contract -> Booked Contract */}
-                      <td className="py-4 px-4 text-right" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                          {/* Booked Contract Actions: Generate Flight Brief, Invoice, Credit Note */}
-                          {!isInProgress ? (
-                            <>
-                              {/* Flight Brief */}
-                              <button
-                                onClick={() => openDocument(booking, "flight_brief")}
-                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] text-[11px] font-bold transition-all shadow-sm"
-                                title="Generate & View Flight Brief"
-                              >
-                                <Compass className="w-3.5 h-3.5" />
-                                <span>Brief</span>
-                              </button>
-
-                              {/* Tax Invoice */}
-                              <button
-                                onClick={() => openDocument(booking, "invoice")}
-                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] text-[11px] font-bold transition-all shadow-sm"
-                                title="Generate & View Tax Invoice"
-                              >
-                                <Receipt className="w-3.5 h-3.5" />
-                                <span>Invoice</span>
-                              </button>
-
-                              {/* Charter Contract */}
-                              <button
-                                onClick={() => openDocument(booking, "charter_agreement")}
-                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#141A29] hover:bg-[#1E2638] text-[#C9A052] text-[11px] font-bold transition-all shadow-sm"
-                                title="View Executed Charter Contract Agreement"
-                              >
-                                <ScrollText className="w-3.5 h-3.5" />
-                                <span>Contract</span>
-                              </button>
-
-                              {/* Credit Note */}
-                              {booking.creditNotes?.length ? (
-                                <button
-                                  onClick={() => openDocument(booking, "credit_note")}
-                                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-100 hover:bg-red-200 text-red-900 border border-red-300 text-[11px] font-bold transition-all shadow-sm"
-                                  title="View the credit note for this iteration"
-                                >
-                                  <RotateCcw className="w-3.5 h-3.5 text-red-700" />
-                                  <span>Credit Note</span>
-                                </button>
-                              ) : null}
-
-                              <button
-                                onClick={() => {
-                                  setSelectedBookingForDetail(latestRevision);
-                                  setBookingToRevise(latestRevision);
-                                  setActiveNav("quotes");
-                                }}
-                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#F5F2EC] hover:bg-[#EBE5DB] text-[#0F1420] text-[11px] font-bold transition-all shadow-sm"
-                                title="Open the quotation form to add a priced booking revision"
-                              >
-                                <RotateCcw className="w-3.5 h-3.5" />
-                                <span>Revise</span>
-                              </button>
-                            </>
-                          ) : (
-                            /* Quote / Contract in progress actions */
-                            <>
-                              {/* Quote */}
-                              <button
-                                onClick={() => openDocument(booking, "quotation")}
-                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] text-[11px] font-bold transition-all shadow-sm"
-                                title="Generate & View Quotation"
-                              >
-                                <FileText className="w-3.5 h-3.5" />
-                                <span>Quote</span>
-                              </button>
-
-                              {/* Proceed to Contract */}
-                              <button
-                                onClick={() => setActiveNav("generate_contract")}
-                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#141A29] hover:bg-[#1E2638] text-[#C9A052] text-[11px] font-bold transition-all shadow-sm"
-                                title="Proceed to Contract Generation"
-                              >
-                                <ScrollText className="w-3.5 h-3.5" />
-                                <span>Contract</span>
-                              </button>
-
-                              {/* Lock in & Confirm Booking */}
-                              <button
-                                onClick={() => convertQuoteToBooked(booking.id)}
-                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition-all shadow-sm"
-                                title="Confirm Contract & Book Flight"
-                              >
-                                <CheckCircle2 className="w-3.5 h-3.5" />
-                                <span>Confirm</span>
-                              </button>
-                            </>
-                          )}
+                      {/* Actions */}
+                      <td className="py-4 px-4" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-end gap-2 whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => openDocument(booking, "quotation")}
+                            className="rounded-lg bg-[#C9A052] hover:bg-[#B88F42] px-2.5 py-1.5 text-[11px] font-bold text-[#0F1420] shadow-sm"
+                            title="Generate or view the quotation"
+                          >
+                            Generate Quote
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedBookingForDetail(latestRevision);
+                              setBookingToRevise(latestRevision);
+                              setActiveNav("quotes");
+                            }}
+                            className="rounded-lg border border-[#E0DAD0] bg-[#F5F2EC] hover:bg-[#EBE5DB] px-2.5 py-1.5 text-[11px] font-bold text-[#0F1420]"
+                            title="Revise this trip or its booking"
+                          >
+                            Revise Trip
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openDocument(booking, "invoice")}
+                            disabled={!isBookedRecord}
+                            className="rounded-lg bg-[#C9A052] hover:bg-[#B88F42] disabled:cursor-not-allowed disabled:opacity-45 px-2.5 py-1.5 text-[11px] font-bold text-[#0F1420] shadow-sm"
+                            title={isBookedRecord ? "Generate or view the invoice" : "Available after booking"}
+                          >
+                            Invoice
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openDocument(booking, "flight_brief")}
+                            disabled={!isBookedRecord}
+                            className="rounded-lg bg-[#C9A052] hover:bg-[#B88F42] disabled:cursor-not-allowed disabled:opacity-45 px-2.5 py-1.5 text-[11px] font-bold text-[#0F1420] shadow-sm"
+                            title={isBookedRecord ? "Generate or view the flight brief" : "Available after booking"}
+                          >
+                            Flight Brief
+                          </button>
                         </div>
                       </td>
                       </tr>
                       {hasIterations && isExpanded && (
                         <tr className="bg-[#FAF8F5]">
-                          <td colSpan={7} className="px-5 py-3">
+                          <td colSpan={6} className="px-5 py-3">
                             <div className="space-y-2 border-l-2 border-[#C9A052] pl-4">
                               <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-gray-500">
                                 Booking history · {tripKey}

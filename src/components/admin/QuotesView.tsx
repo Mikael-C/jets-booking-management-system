@@ -1036,13 +1036,25 @@ export default function QuotesView() {
           </div>
 
           {/* Quotes Trip Groups */}
-          <div className="space-y-4">
+          <div className="overflow-x-auto">
+            <div className="min-w-[980px]">
+              <div className="grid grid-cols-[minmax(130px,1fr)_minmax(110px,1fr)_minmax(145px,1.2fr)_52px_minmax(100px,auto)_270px] items-center gap-3 rounded-t-xl border border-[#E0DAD0] bg-[#F5F2EC] px-5 py-3 text-[10px] font-mono font-bold uppercase tracking-wider text-[#0F1420]/70">
+                <span>Trip ID</span>
+                <span>Route</span>
+                <span>Account</span>
+                <span>Pax</span>
+                <span>Price</span>
+                <span className="text-right">Actions</span>
+              </div>
+              <div className="space-y-2">
             {filteredTripGroups.map(({ latest: quote, allRevisions }) => {
               const tId = quote.tripId || quote.id;
               const isExpanded = expandedTripIds.has(tId);
               const hasMultipleRevisions = allRevisions.length > 1;
               const isLatestCancelled = quote.isCancelled;
               const isContractSent = quote.status === "contract_sent";
+              const isBooked = quote.isBooked ||
+                ["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(quote.status);
 
               return (false ? (
                 <div key={tId} className="bg-white border border-[#E0DAD0] hover:border-[#C9A052]/60 rounded-2xl shadow-sm hover:shadow-md transition-all overflow-hidden">
@@ -1287,26 +1299,60 @@ export default function QuotesView() {
                 </div>
               ) : (
                 <div key={tId} className="overflow-hidden rounded-xl border border-[#E0DAD0] bg-white">
-                  <button
-                    type="button"
-                    onClick={() => toggleTripExpand(tId)}
-                    aria-expanded={isExpanded}
-                    className="flex w-full flex-wrap items-center gap-x-3 gap-y-2 px-5 py-4 text-left hover:bg-[#FAF8F5]"
-                  >
-                    <span className="font-semibold text-[#0F1420]">
-                      Trip ID ({quote.tripId || "Pending assignment"})
-                    </span>
-                    <span className="text-gray-500">{quote.quoteId || quote.quoteReference}</span>
-                    <span className="text-gray-500">
-                      {quote.legs[0]?.origin.icao || "—"} - {quote.legs[quote.legs.length - 1]?.destination.icao || "—"}
-                    </span>
-                    <span className="min-w-0 flex-1 text-gray-700">
-                      {quote.client.companyName || quote.client.fullName || "Account unavailable"}
-                    </span>
-                    <span className="font-mono font-bold text-[#0F1420]">
-                      {formatCurrency(quote.pricing.totalFlightPrice, quote.pricing.currency || "EUR")}
-                    </span>
-                  </button>
+                  <div className="grid grid-cols-[minmax(130px,1fr)_minmax(110px,1fr)_minmax(145px,1.2fr)_52px_minmax(100px,auto)_270px] items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => toggleTripExpand(tId)}
+                      aria-expanded={isExpanded}
+                      className="col-span-5 grid grid-cols-[minmax(130px,1fr)_minmax(110px,1fr)_minmax(145px,1.2fr)_52px_minmax(100px,auto)] items-center gap-3 px-5 py-4 text-left hover:bg-[#FAF8F5]"
+                    >
+                      <span className="flex min-w-0 flex-col font-semibold text-[#0F1420]">
+                        <span className="truncate">Trip ID ({quote.tripId || "Pending assignment"})</span>
+                        <span className="truncate text-[10px] font-normal text-gray-500">
+                          {quote.quoteId || quote.quoteReference || "Quote ID pending"}
+                          {hasMultipleRevisions && ` · ${allRevisions.length} iterations`}
+                        </span>
+                      </span>
+                      <span className="truncate text-gray-600">
+                        {quote.legs[0]?.origin.icao || "—"} - {quote.legs[quote.legs.length - 1]?.destination.icao || "—"}
+                      </span>
+                      <span className="truncate text-gray-700">
+                        {quote.client.companyName || quote.client.fullName || "Account unavailable"}
+                      </span>
+                      <span className="font-mono text-gray-700">{quote.legs[0]?.paxCount ?? "—"}</span>
+                      <span className="truncate font-mono font-bold text-[#0F1420]">
+                        {formatCurrency(quote.pricing.totalFlightPrice, quote.pricing.currency || "EUR")}
+                      </span>
+                    </button>
+                    <div className="flex items-center justify-end gap-1 whitespace-nowrap pr-2">
+                      <button
+                        type="button"
+                        onClick={() => openDocument(quote, "quotation")}
+                        className="rounded-lg bg-[#C9A052] px-2 py-1.5 text-[9px] font-bold text-[#0F1420] hover:bg-[#B88F42]"
+                        title="Generate or view the quotation"
+                      >
+                        Generate Quote
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleStartRevise(quote)}
+                        disabled={isLatestCancelled}
+                        className="rounded-lg border border-[#E0DAD0] bg-[#F5F2EC] px-2 py-1.5 text-[9px] font-bold text-[#0F1420] hover:bg-[#EBE5DB] disabled:cursor-not-allowed disabled:opacity-45"
+                        title={isLatestCancelled ? "Cancelled quotes cannot be revised" : "Revise this quote"}
+                      >
+                        Revise Quote
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleBookQuote(quote)}
+                        disabled={isLatestCancelled || isBooked}
+                        className="rounded-lg bg-emerald-600 px-2 py-1.5 text-[9px] font-bold text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-45"
+                        title={isBooked ? "This quote is already booked" : "Book this quote"}
+                      >
+                        Book
+                      </button>
+                    </div>
+                  </div>
                   {isExpanded && (
                     <div className="border-t border-[#E0DAD0] bg-[#FAF8F5]">
                       {allRevisions.map((revision) => {
@@ -1321,6 +1367,9 @@ export default function QuotesView() {
                             <span className="text-gray-500">{route}</span>
                             <span className="min-w-0 flex-1 text-gray-700">
                               {revision.client.companyName || revision.client.fullName || "Account unavailable"}
+                            </span>
+                            <span className="font-mono text-gray-600">
+                              {revision.legs[0]?.paxCount ?? "—"} Pax
                             </span>
                             <span className="font-mono font-bold text-[#0F1420]">
                               {formatCurrency(revision.pricing.totalFlightPrice, revision.pricing.currency || "EUR")}
@@ -1350,6 +1399,8 @@ export default function QuotesView() {
                 </div>
               ));
             })}
+          </div>
+            </div>
           </div>
 
           {filteredTripGroups.length === 0 && (
