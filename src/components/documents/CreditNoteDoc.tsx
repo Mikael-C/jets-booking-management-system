@@ -3,23 +3,28 @@
 import React from "react";
 import { Booking } from "@/types/aviation";
 import { formatCurrency } from "@/lib/pricingCalculator";
-import { ShieldCheck, RotateCcw } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 
 interface CreditNoteDocProps {
   booking: Booking;
 }
 
 export default function CreditNoteDoc({ booking }: CreditNoteDocProps) {
-  const { client, operator, pricing, tripNumber, invoiceNumber, contractDate } = booking;
+  const { client, operator, pricing, tripNumber, invoiceNumber } = booking;
+  const creditNote = booking.creditNotes?.[0];
 
-  const creditNoteNumber = `CR-${invoiceNumber || "00106020"}`;
-  const creditDate = new Date().toLocaleDateString("de-DE", {
+  const creditNoteNumber = creditNote?.creditNoteNumber || creditNote?.number || `CR-${invoiceNumber || "00106020"}`;
+  const creditDate = creditNote?.issueDate || creditNote?.date || new Date().toLocaleDateString("de-DE", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric"
   });
-  // Default sample credit calculation (e.g. airport fee rebate or cancellation refund)
-  const creditAmount = pricing.airportFees || 1140;
+  const creditAmount = creditNote?.amount || 0;
+  const netBalance = creditNote?.netBalance ?? 0;
+  const displayedAdjustment = netBalance > 0
+    ? (creditNote?.clientOwes ?? creditAmount)
+    : -(creditNote?.weOweClient ?? creditAmount);
+  const adjustmentColor = displayedAdjustment > 0 ? "text-amber-800" : "text-red-700";
 
   return (
     <div className="credit-note-document text-gray-900 bg-transparent font-sans max-w-[850px] mx-auto">
@@ -71,7 +76,7 @@ export default function CreditNoteDoc({ booking }: CreditNoteDocProps) {
                 <span className="text-gray-500">Date of Credit:</span>
                 <span className="font-medium text-gray-900">{creditDate}</span>
                 <span className="text-gray-500">Original Invoice:</span>
-                <span className="font-mono text-gray-900">INV-{invoiceNumber}</span>
+                <span className="font-mono text-gray-900">{invoiceNumber || "Not issued"}</span>
                 <span className="text-gray-500">Trip No.:</span>
                 <span className="font-bold text-gray-900 font-mono">{tripNumber}</span>
               </div>
@@ -85,7 +90,7 @@ export default function CreditNoteDoc({ booking }: CreditNoteDocProps) {
               Reason for Credit Adjustment
             </h3>
             <p className="text-xs text-red-800">
-              Adjustment for waiver of arrival slot handling surcharge and de-icing deposit credit as confirmed by FBO dispatch. Credit balance will be refunded to original payment method or offset against next charter booking.
+              {creditNote?.reason || "No price adjustment has been recorded for this booking iteration."}
             </p>
           </div>
 
@@ -100,18 +105,18 @@ export default function CreditNoteDoc({ booking }: CreditNoteDocProps) {
                   <th className="p-2 border-b">Item</th>
                   <th className="p-2 border-b">Description</th>
                   <th className="p-2 border-b">VAT Rate</th>
-                  <th className="p-2 border-b text-right">Credit Amount</th>
+                  <th className="p-2 border-b text-right">Adjustment Amount</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
                 <tr>
                   <td className="p-2 font-mono font-bold text-gray-700">1</td>
                   <td className="p-2 font-medium text-gray-900">
-                    FBO Airport Handling Fee Reimbursement (Geneva LSGG)
+                    {creditNote?.reason || "No booking adjustment recorded"}
                   </td>
                   <td className="p-2 font-mono text-gray-500">0% (VAT free §6 Abs. 1 Zif. 3 UStG)</td>
-                  <td className="p-2 text-right font-mono font-bold text-red-700">
-                    -{formatCurrency(creditAmount, pricing.currency)}
+                  <td className={`p-2 text-right font-mono font-bold ${adjustmentColor}`}>
+                    {formatCurrency(displayedAdjustment, pricing.currency)}
                   </td>
                 </tr>
               </tbody>
@@ -122,16 +127,16 @@ export default function CreditNoteDoc({ booking }: CreditNoteDocProps) {
           <div className="flex justify-end mb-6">
             <div className="w-80 bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-2 text-xs">
               <div className="flex justify-between py-1 border-b border-gray-200">
-                <span className="text-gray-600">Net Credit</span>
-                <span className="font-mono font-bold text-red-700">-{formatCurrency(creditAmount, pricing.currency)}</span>
+                <span className="text-gray-600">Net Adjustment</span>
+                <span className={`font-mono font-bold ${adjustmentColor}`}>{formatCurrency(displayedAdjustment, pricing.currency)}</span>
               </div>
               <div className="flex justify-between py-1 border-b border-gray-200 text-gray-500 text-[11px]">
                 <span>VAT (0%)</span>
                 <span className="font-mono">{formatCurrency(0, pricing.currency)}</span>
               </div>
               <div className="flex justify-between py-2 border-t-2 border-gray-900 font-extrabold text-sm text-gray-900 bg-red-100/50 px-2 rounded">
-                <span>TOTAL CREDIT REFUND</span>
-                <span className="font-mono text-red-800">-{formatCurrency(creditAmount, pricing.currency)}</span>
+                <span>BOOKING ADJUSTMENT</span>
+                <span className={`font-mono ${adjustmentColor}`}>{formatCurrency(displayedAdjustment, pricing.currency)}</span>
               </div>
             </div>
           </div>

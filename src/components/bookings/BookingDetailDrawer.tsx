@@ -59,6 +59,8 @@ export default function BookingDetailDrawer() {
   const [showBookingRevisionModal, setShowBookingRevisionModal] = useState(false);
   const [bookingRevisionReason, setBookingRevisionReason] = useState("");
   const [revisionAdjustments, setRevisionAdjustments] = useState<Array<{ id: string; label: string; amount: number }>>([]);
+  const [isSavingBookingRevision, setIsSavingBookingRevision] = useState(false);
+  const [bookingRevisionError, setBookingRevisionError] = useState("");
   const [consolidatedInvoiceError, setConsolidatedInvoiceError] = useState("");
   const [creditRevTotal, setCreditRevTotal] = useState<number>(booking?.pricing.totalFlightPrice || 15000);
   const [cancellationFeeInput, setCancellationFeeInput] = useState<number>(0);
@@ -990,6 +992,7 @@ export default function BookingDetailDrawer() {
                   onClick={() => {
                     setBookingRevisionReason("");
                     setRevisionAdjustments([]);
+                    setBookingRevisionError("");
                     setShowBookingRevisionModal(true);
                   }}
                   className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-extrabold bg-[#F5F2EC] hover:bg-[#EBE5DB] text-[#0F1420] border border-[#E0DAD0] transition-all"
@@ -1143,18 +1146,21 @@ export default function BookingDetailDrawer() {
                   </div>
                 </section>
                 <p className="text-[11px] text-gray-500">A new booking iteration will be created. A price change automatically generates the corresponding credit/debit note.</p>
+                {bookingRevisionError && (
+                  <p role="alert" className="text-xs text-red-700">{bookingRevisionError}</p>
+                )}
               </div>
               <div className="px-5 py-4 bg-[#F5F2EC] border-t border-[#E0DAD0] flex justify-end gap-2">
-                <button type="button" onClick={() => setShowBookingRevisionModal(false)} className="px-4 py-2 rounded-xl text-xs font-bold text-gray-600 hover:bg-white">Cancel</button>
+                <button type="button" disabled={isSavingBookingRevision} onClick={() => setShowBookingRevisionModal(false)} className="px-4 py-2 rounded-xl text-xs font-bold text-gray-600 hover:bg-white disabled:opacity-50">Cancel</button>
                 <button
                   type="button"
-                  disabled={
+                  disabled={isSavingBookingRevision ||
                     !bookingRevisionReason.trim() ||
                     !Number.isFinite(booking.pricing.totalFlightPrice + revisionAdjustments.reduce((sum, item) => sum + item.amount, 0)) ||
                     booking.pricing.totalFlightPrice + revisionAdjustments.reduce((sum, item) => sum + item.amount, 0) < 0 ||
                     revisionAdjustments.some((item) => !item.label.trim() || !Number.isFinite(item.amount))
                   }
-                  onClick={() => {
+                  onClick={async () => {
                     const netAdjustment = revisionAdjustments.reduce((sum, item) => sum + item.amount, 0);
                     const total = booking.pricing.totalFlightPrice + netAdjustment;
                     const updatedPricing = {
@@ -1162,16 +1168,35 @@ export default function BookingDetailDrawer() {
                       totalFlightPrice: total,
                       subtotal: Math.max(0, (booking.pricing.subtotal || booking.pricing.totalFlightPrice) + netAdjustment)
                     };
-                    const revised = reviseBookingWithCreditNote(
-                      booking.id,
-                      { pricing: updatedPricing, revisionAdjustments },
-                      bookingRevisionReason.trim()
-                    );
-                    if (revised) setShowBookingRevisionModal(false);
+                    setBookingRevisionError("");
+                    setIsSavingBookingRevision(true);
+                    try {
+                      const adjustmentDetails = revisionAdjustments.map((item) =>
+                        `${item.label.trim()}: ${formatCurrency(item.amount, booking.pricing.currency)}`
+                      );
+                      const revisionReason = [
+                        bookingRevisionReason.trim(),
+                        adjustmentDetails.length ? adjustmentDetails.join("; ") : ""
+                      ].filter(Boolean).join(" — ");
+                      const revised = await reviseBookingWithCreditNote(
+                        booking.id,
+                        { pricing: updatedPricing, revisionAdjustments },
+                        revisionReason
+                      );
+                      if (revised) {
+                        setShowBookingRevisionModal(false);
+                      } else {
+                        setBookingRevisionError("Only the latest active booking iteration can be revised.");
+                      }
+                    } catch (error) {
+                      setBookingRevisionError(error instanceof Error ? error.message : "The booking revision could not be saved.");
+                    } finally {
+                      setIsSavingBookingRevision(false);
+                    }
                   }}
                   className="px-5 py-2 rounded-xl text-xs font-extrabold bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] disabled:bg-gray-200 disabled:text-gray-400"
                 >
-                  Create Booking Revision
+                  {isSavingBookingRevision ? "Saving Revision..." : "Create Booking Revision"}
                 </button>
               </div>
             </div>

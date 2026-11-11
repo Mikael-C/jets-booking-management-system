@@ -821,12 +821,12 @@ interface AviationContextType {
   signCharterContract: (bookingId: string, signatoryName?: string) => void;
   bookingToRevise: Booking | null;
   setBookingToRevise: (b: Booking | null) => void;
-  reviseQuote: (quoteIdOrTripId: string, overrides?: Partial<Booking>) => Booking | null;
+  reviseQuote: (quoteIdOrTripId: string, overrides?: Partial<Booking>) => Promise<Booking>;
   reviseBookingWithCreditNote: (
     bookingId: string,
     overrides: Partial<Booking>,
     reason: string
-  ) => Booking | null;
+  ) => Promise<Booking | null>;
   syncPassengerToContact: (
     passenger: any,
     associatedAccountId?: string,
@@ -1754,6 +1754,18 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     const tripDigits = (target.tripId || target.tripNumber || "").replace(/\D/g, "");
     const tripSuffix = tripDigits.slice(-3) || "001";
     const tripId = target.tripId || `TRIP-${new Date().getFullYear()}-${tripSuffix}`;
+    const sameTrip = (booking: Booking) => booking.id === bookingId ||
+      (target.tripId
+        ? booking.tripId === target.tripId || booking.tripNumber === target.tripNumber
+        : booking.tripNumber === target.tripNumber);
+    if (bookings.some((booking) =>
+      booking.id !== bookingId && sameTrip(booking) && booking.isBooked && !booking.isCancelled
+    )) return;
+    const latestVersion = Math.max(
+      0,
+      ...bookings.filter(sameTrip).map((booking) => Number(booking.quoteVersion) || 1)
+    );
+    if ((Number(target.quoteVersion) || 1) < latestVersion) return;
     const storedTripNumber = target.tripNumber?.trim() || "";
     const officialTripNumber = storedTripNumber && !/^(QTE|QUO|REV)[-_]/i.test(storedTripNumber)
       ? storedTripNumber
@@ -1763,6 +1775,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       tripId,
       quoteId: target.quoteId || `QUO-${tripSuffix}-${String(target.quoteVersion || 1).padStart(2, "0")}`,
       bookingRevisionId: target.bookingRevisionId || `BK-${tripSuffix}-01`,
+      invoiceNumber: target.invoiceNumber || `INV-${tripSuffix}-Q${String(target.quoteVersion || 1).padStart(2, "0")}`,
       isBooked: true,
       tripNumber: officialTripNumber,
       status: "confirmed",
@@ -1776,14 +1789,14 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
 
     setBookings((prev) =>
       prev.map((booking) => {
-        const sameTrip = booking.tripId === target.tripId ||
-          (!target.tripId && booking.tripNumber === target.tripNumber);
         if (booking.id === bookingId) return updatedBooking;
-        if (sameTrip && !booking.isCancelled) {
+        if (sameTrip(booking) && !booking.isCancelled && !booking.isBooked) {
           return {
             ...booking,
             tripId,
             isCancelled: true,
+            status: "cancelled",
+            quoteStatus: "expired",
             cancellationReason: `Superseded by booked revision ${updatedBooking.bookingRevisionId}`,
             supersededBy: updatedBooking.id,
             updatedAt: new Date().toISOString()
@@ -1797,10 +1810,8 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
 
     api.quotes.convertToBooking(bookingId)
       .then((response) => {
-        if (response?.data) {
-          const persisted = normalizeBooking(response.data);
-          setBookings((prev) => prev.map((booking) => booking.id === bookingId ? persisted : booking));
-        }
+        const persisted = normalizeBooking(response.data);
+        setBookings((prev) => prev.map((booking) => booking.id === bookingId ? persisted : booking));
       })
       .catch((err) => console.warn("Backend booking conversion notice:", err.message));
     setActiveNav("bookings");
@@ -2388,11 +2399,11 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
-  const reviseBookingWithCreditNote = (
+  const reviseBookingWithCreditNote = async (
     bookingId: string,
     overrides: Partial<Booking>,
     reason: string
-  ): Booking | null => {
+  ): Promise<Booking | null> => {
     const original = bookings.find((booking) => booking.id === bookingId);
     const originalIsBooked = original && (
       original.isBooked || ["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(original.status)
@@ -2406,6 +2417,8 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       const current = Number((booking.bookingRevisionId || "").split("-").pop()) || 0;
       return Math.max(latest, current);
     }, 0) + 1;
+    const currentRevision = Number((original.bookingRevisionId || "").split("-").pop()) || 1;
+    if (currentRevision < nextRevision - 1) return null;
     const digits = (original.tripId || original.tripNumber || "").replace(/\D/g, "");
     const suffix = digits.slice(-3) || "001";
     const revisionId = `BK-${suffix}-${String(nextRevision).padStart(2, "0")}`;
@@ -2415,69 +2428,19 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     const previousTotal = original.pricing.totalFlightPrice || 0;
     const nextTotal = nextPricing.totalFlightPrice || 0;
     const delta = nextTotal - previousTotal;
-    const date = new Date().toISOString().slice(0, 10);
-    const creditNoteNumber = `CN-${suffix}-${String((original.creditNotes?.length || 0) + 1).padStart(2, "0")}`;
-    const creditNote = delta === 0 ? undefined : {
-      id: `cn-${Date.now()}`,
-      number: creditNoteNumber,
-      creditNoteNumber,
-      date,
-      issueDate: date,
-      amount: Math.abs(delta),
-      reason,
-      originalTotal: previousTotal,
-      newTotal: nextTotal,
-      netBalance: delta,
-      clientOwes: Math.max(delta, 0),
-      weOweClient: Math.max(-delta, 0)
-    };
-    const revised: Booking = {
-      ...original,
-      ...overrides,
-      id: `booking-revision-${Date.now()}`,
-      tripId: original.tripId || `TRIP-${new Date().getFullYear()}-${suffix}`,
-      bookingRevisionId: revisionId,
-      isCancelled: false,
-      cancellationReason: undefined,
-      supersededBy: undefined,
-      isBooked: true,
-      status: overrides.status || original.status,
-      quoteStatus: "accepted",
-      pricing: nextPricing,
-      creditNotes: creditNote ? [creditNote, ...(original.creditNotes || [])] : original.creditNotes,
-      updatedAt: new Date().toISOString()
-    };
-    const archived: Booking = {
-      ...original,
-      isCancelled: true,
-      cancellationReason: `Superseded by booking revision ${revisionId}`,
-      supersededBy: revised.id,
-      updatedAt: new Date().toISOString()
-    };
-
-    setBookings((prev) => [revised, ...prev.map((booking) => booking.id === bookingId ? archived : booking)]);
+    const response = await api.bookings.revise(bookingId, { ...overrides, revisionReason: reason });
+    const revised = normalizeBooking(response.data);
+    setBookings((prev) => [revised, ...prev]);
     if (selectedBookingForDetail?.id === bookingId) setSelectedBookingForDetail(revised);
     if (activeBooking?.id === bookingId) setActiveBooking(revised);
-    api.bookings.revise(bookingId, { ...overrides, revisionReason: reason })
-      .then((response) => {
-        if (response?.data) {
-          const persisted = normalizeBooking(response.data);
-          setBookings((prev) => prev.map((booking) =>
-            booking.bookingRevisionId === revisionId ? persisted : booking
-          ));
-          if (selectedBookingForDetail?.id === bookingId) setSelectedBookingForDetail(persisted);
-          if (activeBooking?.id === bookingId) setActiveBooking(persisted);
-        }
-      })
-      .catch((err) => console.warn("Backend booking revision notice:", err.message));
 
     addAuditEntry({
       userEmail: currentUser?.email || "ops@orbelo.com",
       userName: currentUser?.name || "Operations Desk",
       action: "BOOKING_REVISED",
       entityType: "Booking",
-      entityId: revisionId,
-      details: `Created booking revision ${revisionId} for trip ${revised.tripId}. ${delta === 0 ? "No price adjustment." : `Credit note ${creditNoteNumber}: ${delta > 0 ? "client owes" : "refund due"} ${Math.abs(delta)}.`} ${reason}`
+      entityId: revised.bookingRevisionId || revisionId,
+      details: `Created booking revision ${revised.bookingRevisionId || revisionId} for trip ${revised.tripId}. ${delta === 0 ? (revised.creditNotes?.length ? "Line adjustments recorded with no net price change." : "No price adjustment.") : `Credit note ${revised.creditNotes?.[0]?.creditNoteNumber || "generated"}: ${delta > 0 ? "client owes" : "refund due"} ${Math.abs(delta)}.`} ${reason}`
     });
     return revised;
   };
@@ -2550,103 +2513,62 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
-  const reviseQuote = (quoteIdOrTripId: string, overrides?: Partial<Booking>): Booking | null => {
-    let newQuote: Booking | null = null;
+  const reviseQuote = async (quoteIdOrTripId: string, overrides?: Partial<Booking>): Promise<Booking> => {
     const baseBooking = bookings.find(
       (b) => b.quoteId === quoteIdOrTripId || b.id === quoteIdOrTripId || b.tripId === quoteIdOrTripId
     ) || null;
-    setBookings((prev) => {
-      const base = prev.find(
-        (b) => b.quoteId === quoteIdOrTripId || b.id === quoteIdOrTripId || b.tripId === quoteIdOrTripId
-      );
-      if (!base || base.isCancelled || base.isBooked) return prev;
-
-      const currentVer = base.quoteVersion || parseInt((base.quoteId || "").split("-").pop() || "1", 10) || 1;
-      const tripDigits = (base.tripId || base.tripNumber || "").replace(/\D/g, "");
-      const tripNumDigits = tripDigits.slice(-3) || "001";
-      const tripId = base.tripId || `TRIP-${new Date().getFullYear()}-${tripNumDigits}`;
-      const nextVer = Math.max(currentVer, ...prev
-        .filter((booking) => booking.tripId === base.tripId || (!base.tripId && booking.tripNumber === base.tripNumber))
-        .map((booking) => booking.quoteVersion || 0)) + 1;
-      const nextQuoteId = `QUO-${tripNumDigits}-${String(nextVer).padStart(2, "0")}`;
-      const newBookingId = `booking-quote-${Date.now()}`;
-
-      const cancelledPrev: Booking = {
-        ...base,
-        tripId,
-        isCancelled: true,
-        cancellationReason: `Superseded by revision ${nextQuoteId}`,
-        supersededBy: nextQuoteId,
-        quoteStatus: "expired",
-        status: "cancelled",
-        updatedAt: new Date().toISOString()
-      };
-
-      const pricingMerged = overrides?.pricing
-        ? { ...base.pricing, ...overrides.pricing }
-        : base.pricing;
-
-      const legsMerged = overrides?.legs || base.legs;
-
-      const generatedQuote: Booking = {
-        ...base,
-        ...overrides,
-        id: newBookingId,
-        tripId,
-        quoteId: nextQuoteId,
-        quoteReference: nextQuoteId,
-        quoteVersion: nextVer,
-        bookingRevisionId: base.bookingRevisionId || `BK-${tripNumDigits}-01`,
-        isCancelled: false,
-        cancellationReason: undefined,
-        isBooked: Boolean(overrides?.isBooked),
-        status: overrides?.status || "draft",
-        quoteStatus: overrides?.quoteStatus || "pending",
-        pricing: pricingMerged,
-        legs: legsMerged,
-        tripActionAudit: [
-          {
-            id: `act-${Date.now()}`,
-            action: "QUOTE_REVISED",
-            details: `Created quote revision ${nextQuoteId} (Iteration ${nextVer}) under Trip ${base.tripId}. Prior revision ${base.quoteId} superseded.`,
-            timestamp: new Date().toLocaleString(),
-            author: currentUser?.name || "Charter Broker",
-            docType: "quotation"
-          },
-          ...(base.tripActionAudit || [])
-        ],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-
-      newQuote = generatedQuote;
-      return [generatedQuote, ...prev.map((b) => (b.id === base.id ? cancelledPrev : b))];
-    });
-
-    if (newQuote) {
-      setActiveBooking(newQuote);
-      setSelectedBookingForDetail(newQuote);
-      addAuditEntry({
-        userEmail: currentUser?.email || "broker@orbelo.com",
-        userName: currentUser?.name || "Charter Broker",
-        action: "QUOTE_REVISED",
-        entityType: "Quote",
-        entityId: (newQuote as Booking).quoteId || (newQuote as Booking).id,
-        details: `Issued quote revision ${(newQuote as Booking).quoteId || "—"} under Trip ${(newQuote as Booking).tripId || "—"}.`
-      });
-      if (baseBooking) {
-        api.quotes.revise(baseBooking.id, overrides)
-          .then((response) => {
-            const persisted = normalizeBooking(response?.data || response);
-            setBookings((prev) => prev.map((booking) =>
-              booking.quoteId === newQuote?.quoteId ? persisted : booking
-            ));
-          })
-          .catch((err) => console.warn("Backend quote revision notice:", err.message));
-      }
+    if (!baseBooking || baseBooking.isCancelled || baseBooking.isBooked) {
+      throw new Error("This quote iteration is no longer available for revision.");
     }
 
-    return newQuote;
+    const related = bookings.filter((booking) =>
+      baseBooking.tripId
+        ? booking.tripId === baseBooking.tripId
+        : booking.tripNumber === baseBooking.tripNumber
+    );
+    const latestVersion = Math.max(0, ...related.map((booking) => Number(booking.quoteVersion) || 1));
+    if ((Number(baseBooking.quoteVersion) || 1) < latestVersion) {
+      throw new Error("Only the latest quote iteration can be revised.");
+    }
+
+    const response = await api.quotes.revise(baseBooking.id, overrides);
+    const revised = normalizeBooking(response?.data || response);
+    const isBooked = Boolean(revised.isBooked);
+    const now = new Date().toISOString();
+    setBookings((prev) => [
+      revised,
+      ...prev.map((booking) => {
+        const sameTrip = baseBooking.tripId
+          ? booking.tripId === baseBooking.tripId || booking.tripNumber === baseBooking.tripNumber
+          : booking.tripNumber === baseBooking.tripNumber;
+        if (isBooked && sameTrip && booking.id !== revised.id && !booking.isCancelled && !booking.isBooked) {
+          return {
+            ...booking,
+            tripId: revised.tripId,
+            isBooked: false,
+            isCancelled: true,
+            status: "cancelled" as const,
+            quoteStatus: "expired" as const,
+            cancellationReason: `Superseded by booked revision ${revised.quoteId}`,
+            supersededBy: revised.id,
+            updatedAt: now
+          };
+        }
+        return booking;
+      })
+    ]);
+    setActiveBooking(revised);
+    setSelectedBookingForDetail(revised);
+    addAuditEntry({
+      userEmail: currentUser?.email || "broker@orbelo.com",
+      userName: currentUser?.name || "Charter Broker",
+      action: "QUOTE_REVISED",
+      entityType: "Quote",
+      entityId: revised.quoteId || revised.id,
+      details: `Issued quote revision ${revised.quoteId || "—"} under Trip ${revised.tripId || "—"}.`
+    });
+
+    return revised;
   };
 
   const getTripRevisions = (tripId: string): Booking[] => {

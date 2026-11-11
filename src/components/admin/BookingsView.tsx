@@ -44,20 +44,28 @@ export default function BookingsView() {
   >("all");
   const [expandedTripIds, setExpandedTripIds] = useState<Set<string>>(new Set());
 
-  const countAll = new Set(bookings.map((booking) => {
+  const visibleBookings = bookings.filter((booking) =>
+    !((booking.isCancelled || booking.status === "cancelled") &&
+      !booking.isBooked &&
+      (booking.quoteId || booking.quoteReference))
+  );
+  const getIterationGroupKey = (booking: Booking) => {
     const isBookedRecord = booking.isBooked ||
       ["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(booking.status);
-    return isBookedRecord ? booking.tripId || booking.tripNumber || booking.id : booking.id;
-  })).size;
-  const countConfirmed = new Set(bookings
+    return isBookedRecord || booking.quoteId || booking.quoteReference
+      ? booking.tripId || booking.tripNumber || booking.id
+      : booking.id;
+  };
+  const countAll = new Set(visibleBookings.map(getIterationGroupKey)).size;
+  const countConfirmed = new Set(visibleBookings
     .filter((booking) => ["confirmed", "dispatched", "in_flight"].includes(booking.status))
     .map((booking) => booking.tripId || booking.tripNumber || booking.id)).size;
-  const countQuotesSent = bookings.filter((b) => b.quoteStatus === "sent" || b.status === "quote_sent").length;
-  const countQuotesPending = bookings.filter((b) => b.quoteStatus === "pending").length;
-  const countQuotesUndecided = bookings.filter((b) => b.quoteStatus === "undecided" || b.status === "client_review").length;
-  const countCompleted = bookings.filter((b) => b.status === "completed").length;
+  const countQuotesSent = visibleBookings.filter((b) => b.quoteStatus === "sent" || b.status === "quote_sent").length;
+  const countQuotesPending = visibleBookings.filter((b) => b.quoteStatus === "pending").length;
+  const countQuotesUndecided = visibleBookings.filter((b) => b.quoteStatus === "undecided" || b.status === "client_review").length;
+  const countCompleted = visibleBookings.filter((b) => b.status === "completed").length;
 
-  const filteredBookings = bookings.filter((b) => {
+  const filteredBookings = visibleBookings.filter((b) => {
     // Status filter
     if (activeTab === "confirmed") {
       if (!["confirmed", "dispatched", "in_flight"].includes(b.status)) return false;
@@ -94,17 +102,19 @@ export default function BookingsView() {
 
   const bookingGroups = (() => {
     const groups = new Map<string, Booking[]>();
-    bookings.forEach((booking) => {
-      const isBookedRecord = booking.isBooked ||
-        ["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(booking.status);
-      const tripKey = isBookedRecord
-        ? booking.tripId || booking.tripNumber || booking.id
-        : booking.id;
+    visibleBookings.forEach((booking) => {
+      const tripKey = getIterationGroupKey(booking);
       groups.set(tripKey, [...(groups.get(tripKey) || []), booking]);
     });
 
     return Array.from(groups.entries()).map(([tripKey, revisions]) => {
       const byVersion = (a: Booking, b: Booking) => {
+        const bothQuotes = !a.isBooked && !b.isBooked &&
+          Boolean(a.quoteId || a.quoteReference) && Boolean(b.quoteId || b.quoteReference);
+        if (bothQuotes) {
+          const quoteVersionDifference = (a.quoteVersion || 1) - (b.quoteVersion || 1);
+          if (quoteVersionDifference !== 0) return quoteVersionDifference;
+        }
         const aVersion = Number((a.bookingRevisionId || "").split("-").pop()) || 1;
         const bVersion = Number((b.bookingRevisionId || "").split("-").pop()) || 1;
         const versionDifference = aVersion - bVersion;
@@ -355,7 +365,9 @@ export default function BookingsView() {
                   const totalChecklist = (booking.checklist || []).length;
                   const completedChecklist = (booking.checklist || []).filter((c) => c.isCompleted || (c as any).completed).length;
                   const isAllReady = totalChecklist > 0 && completedChecklist === totalChecklist;
-                  const isInProgress = ["draft", "quote_sent", "client_review"].includes(booking.status);
+                  const isBookedRecord = booking.isBooked ||
+                    ["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(booking.status);
+                  const isInProgress = !isBookedRecord;
                   const hasIterations = revisions.length > 1;
                   const isExpanded = expandedTripIds.has(tripKey);
 
@@ -368,7 +380,7 @@ export default function BookingsView() {
                       {/* Trip & Status */}
                       <td className="py-4 px-4">
                         <div className="flex flex-col gap-1">
-                          {["confirmed", "dispatched", "in_flight", "completed"].includes(booking.status) ? (
+                          {isBookedRecord ? (
                             <span className="font-extrabold text-[#0F1420] font-mono text-sm tracking-wide group-hover:text-[#C9A052] transition-colors flex items-center gap-1.5">
                               Trip #{booking.tripNumber}
                               <Eye className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity text-[#C9A052]" />
@@ -516,14 +528,16 @@ export default function BookingsView() {
                               </button>
 
                               {/* Credit Note */}
-                              <button
-                                onClick={() => openDocument(booking, "credit_note")}
-                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-100 hover:bg-red-200 text-red-900 border border-red-300 text-[11px] font-bold transition-all shadow-sm"
-                                title="Generate & View Credit Note"
-                              >
-                                <RotateCcw className="w-3.5 h-3.5 text-red-700" />
-                                <span>Credit Note</span>
-                              </button>
+                              {booking.creditNotes?.length ? (
+                                <button
+                                  onClick={() => openDocument(booking, "credit_note")}
+                                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-100 hover:bg-red-200 text-red-900 border border-red-300 text-[11px] font-bold transition-all shadow-sm"
+                                  title="View the credit note for this iteration"
+                                >
+                                  <RotateCcw className="w-3.5 h-3.5 text-red-700" />
+                                  <span>Credit Note</span>
+                                </button>
+                              ) : null}
                             </>
                           ) : (
                             /* Quote / Contract in progress actions */
@@ -570,27 +584,55 @@ export default function BookingsView() {
                                 Booking history · {tripKey}
                               </p>
                               {revisions.map((revision) => (
-                                <button
+                                <div
                                   key={revision.id}
-                                  type="button"
-                                  onClick={() => setSelectedBookingForDetail(revision)}
-                                  className={`w-full flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left text-xs ${
+                                  className={`w-full flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs ${
                                     revision.id === booking.id
                                       ? "border-emerald-300 bg-emerald-50"
-                                      : "border-[#E0DAD0] bg-white hover:border-[#C9A052]"
+                                      : "border-[#E0DAD0] bg-white"
                                   }`}
                                 >
-                                  <span className="font-mono font-bold text-[#0F1420]">
-                                    {revision.bookingRevisionId || revision.tripNumber}
-                                    {revision.id === booking.id && <span className="ml-2 text-emerald-700">Current</span>}
-                                    {(revision.isCancelled || revision.status === "cancelled") && <span className="ml-2 text-red-600">Archived</span>}
-                                  </span>
-                                  <span className="text-gray-500">{revision.updatedAt || revision.createdAt || "Date unavailable"}</span>
-                                  <span className="font-mono font-bold text-[#0F1420]">
-                                    {formatCurrency(revision.pricing.totalFlightPrice, revision.pricing.currency)}
-                                  </span>
-                                  <span className="text-gray-600">{revision.cancellationReason || revision.status.replace("_", " ")}</span>
-                                </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedBookingForDetail(revision)}
+                                    className="flex flex-1 flex-wrap items-center justify-between gap-2 text-left min-w-[220px]"
+                                  >
+                                    <span className="font-mono font-bold text-[#0F1420]">
+                                      {revision.isBooked
+                                        ? revision.bookingRevisionId || revision.tripNumber
+                                        : revision.quoteId || revision.quoteReference || revision.tripNumber}
+                                      {revision.id === booking.id && <span className="ml-2 text-emerald-700">Current</span>}
+                                      {(revision.isCancelled || revision.status === "cancelled") && <span className="ml-2 text-red-600">Archived</span>}
+                                    </span>
+                                    <span className="text-gray-500">{revision.updatedAt || revision.createdAt || "Date unavailable"}</span>
+                                    <span className="font-mono font-bold text-[#0F1420]">
+                                      {formatCurrency(revision.pricing.totalFlightPrice, revision.pricing.currency)}
+                                    </span>
+                                    <span className="text-gray-600">{revision.cancellationReason || revision.status.replace("_", " ")}</span>
+                                  </button>
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => openDocument(revision, revision.isBooked ? "invoice" : "quotation")}
+                                      className="text-[11px] font-bold text-[#9A7A35] hover:text-[#0F1420]"
+                                      title={revision.isBooked
+                                        ? `View invoice ${revision.invoiceNumber || ""} for this iteration`
+                                        : `View quote ${revision.quoteReference || ""} for this iteration`}
+                                    >
+                                      {revision.isBooked ? "Invoice" : "Quote"}
+                                    </button>
+                                    {revision.isBooked && revision.creditNotes?.length ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => openDocument(revision, "credit_note")}
+                                        className="text-[11px] font-bold text-red-700 hover:text-red-900"
+                                        title={`View credit note for ${revision.bookingRevisionId || "this iteration"}`}
+                                      >
+                                        Credit Note
+                                      </button>
+                                    ) : null}
+                                  </div>
+                                </div>
                               ))}
                             </div>
                           </td>

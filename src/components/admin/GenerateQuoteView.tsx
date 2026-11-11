@@ -270,7 +270,6 @@ export default function GenerateQuoteView() {
   const handleRegenerateNumbers = () => {
     const randomSuffix = Math.floor(100 + Math.random() * 900);
     setTripNumber(`PEU${randomSuffix}-001`);
-    setAccountNumber(`ACC-${Math.floor(20000 + Math.random() * 80000)}`);
   };
 
   // Helper to add leg with default respective FBOs
@@ -663,7 +662,7 @@ export default function GenerateQuoteView() {
             type="button"
             onClick={handleRegenerateNumbers}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#F5F2EC] hover:bg-[#EAE6DE] border border-[#E0DAD0] text-xs font-mono font-bold text-[#0F1420]"
-            title="Generate new Quote & Account numbers"
+            title="Generate a new quote reference"
           >
             <RefreshCw className="w-3.5 h-3.5 text-[#C9A052]" />
             <span>Regenerate IDs</span>
@@ -768,9 +767,10 @@ export default function GenerateQuoteView() {
               <input
                 type="text"
                 value={accountNumber}
-                onChange={(e) => setAccountNumber(e.target.value)}
+                readOnly
                 required
-                className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                title="Account number is assigned to the selected client"
+                className="w-full bg-gray-100 border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-[#0F1420] cursor-not-allowed"
               />
             </div>
 

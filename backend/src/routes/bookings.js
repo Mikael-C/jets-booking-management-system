@@ -316,75 +316,10 @@ router.post('/:id/convert-to-confirmed', authorize('super_admin', 'admin', 'oper
       success: false,
       message: 'Booking must be in accepted or paid status to confirm',
     });
-
-    // POST /api/bookings/:id/revise
-    router.post('/:id/revise', authorize('super_admin', 'admin', 'operations'), async (req, res) => {
-      const original = await Booking.findOne(getBookingFilter(req.params.id));
-      if (!original) return res.status(404).json({ success: false, message: 'Booking not found' });
-      const isBooked = original.isBooked || ['confirmed', 'dispatched', 'in_flight', 'completed', 'flown'].includes(original.status);
-      if (original.isCancelled || !isBooked) {
-        return res.status(409).json({ success: false, message: 'Only the active booked iteration can be revised' });
-      }
-
-      const siblings = await Booking.find(getTripFilter(original)).sort({ createdAt: 1 });
-      const nextRevision = Math.max(
-        0,
-        ...siblings.map((item) => Number((item.bookingRevisionId || '').split('-').pop()) || 0)
-      ) + 1;
-      const suffix = tripSuffix(original);
-      const revisionId = `BK-${suffix}-${String(nextRevision).padStart(2, '0')}`;
-      const revisedData = original.toObject();
-      delete revisedData._id;
-      delete revisedData.__v;
-      delete revisedData.createdAt;
-      delete revisedData.updatedAt;
-      Object.assign(revisedData, req.body || {});
-      revisedData.id = `booking-revision-${Date.now()}`;
-      revisedData.tripId = original.tripId || `TRIP-${new Date().getFullYear()}-${suffix}`;
-      revisedData.bookingRevisionId = revisionId;
-      revisedData.isCancelled = false;
-      revisedData.cancellationReason = '';
-      revisedData.supersededBy = '';
-      revisedData.isBooked = true;
-      revisedData.status = req.body?.status || original.status;
-      revisedData.quoteStatus = 'accepted';
-      revisedData.invoiceNumber = `INV-${suffix}-${String(nextRevision).padStart(2, '0')}`;
-
-      const oldTotal = Number(original.pricing?.totalFlightPrice || 0);
-      const newTotal = Number(revisedData.pricing?.totalFlightPrice || 0);
-      const delta = newTotal - oldTotal;
-      if (delta !== 0) {
-        const existingNotes = revisedData.creditNotes || [];
-        const noteSequence = existingNotes.length + 1;
-        const creditNoteNumber = `CN-${suffix}-${String(noteSequence).padStart(2, '0')}`;
-        revisedData.creditNotes = [{
-          id: `cn-${Date.now()}`,
-          number: creditNoteNumber,
-          creditNoteNumber,
-          date: new Date().toISOString().slice(0, 10),
-          issueDate: new Date().toISOString().slice(0, 10),
-          amount: Math.abs(delta),
-          reason: req.body?.revisionReason || `Booking price adjustment for ${revisionId}`,
-          originalTotal: oldTotal,
-          newTotal,
-          netBalance: delta,
-          clientOwes: Math.max(delta, 0),
-          weOweClient: Math.max(-delta, 0)
-        }, ...existingNotes];
-      }
-
-      original.isCancelled = true;
-      original.cancellationReason = `Superseded by booking revision ${revisionId}`;
-      original.supersededBy = revisedData.id;
-      await original.save();
-      const revised = await Booking.create(revisedData);
-      await logBookingAction(req.user, 'booking_revised', revised, req);
-
-      return res.status(201).json({ success: true, data: revised });
-    });
   }
 
   booking.status = 'confirmed';
+  booking.isBooked = true;
   if (!booking.invoiceNumber) {
     booking.invoiceNumber = generateInvoiceNumber(booking.tripNumber);
   }
@@ -393,6 +328,80 @@ router.post('/:id/convert-to-confirmed', authorize('super_admin', 'admin', 'oper
   await logBookingAction(req.user, 'booking_confirmed', booking, req);
 
   res.json({ success: true, data: booking, message: 'Booking confirmed successfully' });
+});
+
+// POST /api/bookings/:id/revise
+router.post('/:id/revise', authorize('super_admin', 'admin', 'operations'), async (req, res) => {
+  const original = await Booking.findOne(getBookingFilter(req.params.id));
+  if (!original) return res.status(404).json({ success: false, message: 'Booking not found' });
+  const isBooked = original.isBooked || ['confirmed', 'dispatched', 'in_flight', 'completed', 'flown'].includes(original.status);
+  if (original.isCancelled || !isBooked) {
+    return res.status(409).json({ success: false, message: 'Only an active booked iteration can be revised' });
+  }
+
+  const siblings = await Booking.find(getTripFilter(original));
+  const activeBookedSiblings = siblings.filter((item) =>
+    (item.isBooked || ['confirmed', 'dispatched', 'in_flight', 'completed', 'flown'].includes(item.status)) &&
+    !item.isCancelled
+  );
+  const currentRevision = Number((original.bookingRevisionId || '').split('-').pop()) || 1;
+  const latestRevision = Math.max(
+    0,
+    ...activeBookedSiblings.map((item) =>
+      Number((item.bookingRevisionId || '').split('-').pop()) || 1
+    )
+  );
+  if (currentRevision < latestRevision) {
+    return res.status(409).json({ success: false, message: 'Only the latest booking iteration can be revised' });
+  }
+
+  const nextRevision = Math.max(
+    0,
+    ...siblings.map((item) => Number((item.bookingRevisionId || '').split('-').pop()) || 0)
+  ) + 1;
+  const suffix = tripSuffix(original);
+  const revisionId = `BK-${suffix}-${String(nextRevision).padStart(2, '0')}`;
+  const revisedData = original.toObject();
+  delete revisedData._id;
+  delete revisedData.__v;
+  delete revisedData.createdAt;
+  delete revisedData.updatedAt;
+  Object.assign(revisedData, req.body || {});
+  revisedData.id = `booking-revision-${Date.now()}`;
+  revisedData.tripId = original.tripId || `TRIP-${new Date().getFullYear()}-${suffix}`;
+  revisedData.bookingRevisionId = revisionId;
+  revisedData.isCancelled = false;
+  revisedData.cancellationReason = '';
+  revisedData.supersededBy = '';
+  revisedData.isBooked = true;
+  revisedData.status = req.body?.status || original.status;
+  revisedData.quoteStatus = 'accepted';
+  revisedData.invoiceNumber = `INV-${suffix}-B${String(nextRevision).padStart(2, '0')}`;
+
+  const oldTotal = Number(original.pricing?.totalFlightPrice || 0);
+  const newTotal = Number(revisedData.pricing?.totalFlightPrice || 0);
+  const delta = newTotal - oldTotal;
+  const hasLineAdjustments = Array.isArray(revisedData.revisionAdjustments) &&
+    revisedData.revisionAdjustments.length > 0;
+  revisedData.creditNotes = delta === 0 && !hasLineAdjustments ? [] : [{
+    id: `cn-${Date.now()}`,
+    number: `CN-${suffix}-${String(nextRevision).padStart(2, '0')}`,
+    creditNoteNumber: `CN-${suffix}-${String(nextRevision).padStart(2, '0')}`,
+    date: new Date().toISOString().slice(0, 10),
+    issueDate: new Date().toISOString().slice(0, 10),
+    amount: Math.abs(delta),
+    reason: req.body?.revisionReason || `Booking price adjustment for ${revisionId}`,
+    originalTotal: oldTotal,
+    newTotal,
+    netBalance: delta,
+    clientOwes: Math.max(delta, 0),
+    weOweClient: Math.max(-delta, 0)
+  }];
+
+  const revised = await Booking.create(revisedData);
+  await logBookingAction(req.user, 'booking_revised', revised, req);
+
+  return res.status(201).json({ success: true, data: revised });
 });
 
 // GET /api/bookings/:id/checklist

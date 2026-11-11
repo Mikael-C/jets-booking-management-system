@@ -465,7 +465,6 @@ export default function QuotesView() {
   const handleRegenerateIds = () => {
     const randomSuffix = Math.floor(100 + Math.random() * 900);
     setQuoteReference(`PEU${randomSuffix}-001`);
-    setAccountNumber(`ACC-${Math.floor(20000 + Math.random() * 80000)}`);
   };
 
   // Add Leg with default FBOs
@@ -694,10 +693,13 @@ export default function QuotesView() {
     const tripNum = isBookedFlight
       ? (bookingToRevise?.tripNumber || `PEU${Math.floor(100 + Math.random() * 899)}-001`)
       : (bookingToRevise?.tripNumber || quoteRef);
-    const invoiceNum = bookingToRevise?.invoiceNumber || `INV-${Math.floor(100000 + Math.random() * 900000)}`;
     const tripDigits = (bookingToRevise?.tripId || tripNum || quoteRef).replace(/\D/g, "");
     const tripSuffix = tripDigits.slice(-3) || String(Math.floor(100 + Math.random() * 899));
     const tripId = bookingToRevise?.tripId || `TRIP-${new Date().getFullYear()}-${tripSuffix}`;
+    const quoteVersion = bookingToRevise ? (bookingToRevise.quoteVersion || 1) + 1 : 1;
+    const invoiceNum = isBookedFlight
+      ? `INV-${tripSuffix}-Q${String(quoteVersion).padStart(2, "0")}`
+      : "";
 
     return {
       id: bookingToRevise ? bookingToRevise.id : `booking-qte-${Date.now()}`,
@@ -713,7 +715,7 @@ export default function QuotesView() {
       paymentDueDate: "10.10.2026",
       status: isBookedFlight ? "confirmed" : advanceToContract ? "contract_sent" : (quoteStatus === "Sent" ? "quote_sent" : "draft"),
       quoteStatus: isBookedFlight ? "accepted" : (advanceToContract ? "accepted" : (quoteStatus.toLowerCase() as any)),
-      quoteVersion: bookingToRevise ? (bookingToRevise.quoteVersion || 1) + 1 : 1,
+      quoteVersion,
       paymentStatus: "unpaid",
       tripType,
       aircraft: effectiveAircraft,
@@ -769,7 +771,7 @@ export default function QuotesView() {
   };
 
   // Submit & Generate Quote
-  const handleGenerateQuoteSubmit = (e: React.FormEvent) => {
+  const handleGenerateQuoteSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const errors: string[] = [];
 
@@ -789,56 +791,83 @@ export default function QuotesView() {
       return;
     }
 
-    const draft = createBookingRecord(false, false);
-    const newBooking = bookingToRevise ? reviseQuote(bookingToRevise.id, draft) : draft;
-    if (!newBooking) return;
-    if (!bookingToRevise) addBooking(newBooking);
-    addAuditEntry({
-      userEmail: currentUser?.email || "admin@orbelo.com",
-      userName: currentUser?.name || "Operations Team",
-      action: bookingToRevise ? "QUOTE_REVISED" : "QUOTE_GENERATED",
-      entityType: "Quote",
-      entityId: newBooking.quoteReference || newBooking.id,
-      details: `${bookingToRevise ? "Revised" : "Generated"} official quotation for ${clientName} (${newBooking.quoteReference}), Total: ${formatCurrency(effectivePricing.totalFlightPrice, currency)}`
-    });
-    setBookingToRevise(null);
-    openDocument(newBooking, "quotation");
+    setValidationErrors([]);
+    setIsSubmitting(true);
+    try {
+      const wasRevising = Boolean(bookingToRevise);
+      const draft = createBookingRecord(false, false);
+      const newBooking = bookingToRevise ? await reviseQuote(bookingToRevise.id, draft) : draft;
+      if (!bookingToRevise) addBooking(newBooking);
+      addAuditEntry({
+        userEmail: currentUser?.email || "admin@orbelo.com",
+        userName: currentUser?.name || "Operations Team",
+        action: wasRevising ? "QUOTE_REVISED" : "QUOTE_GENERATED",
+        entityType: "Quote",
+        entityId: newBooking.quoteReference || newBooking.id,
+        details: `${wasRevising ? "Revised" : "Generated"} official quotation for ${clientName} (${newBooking.quoteReference}), Total: ${formatCurrency(effectivePricing.totalFlightPrice, currency)}`
+      });
+      if (wasRevising) setActiveTab("list");
+      setBookingToRevise(null);
+      openDocument(newBooking, "quotation");
+    } catch (error) {
+      setValidationErrors([error instanceof Error ? error.message : "The revised quote could not be saved. Please try again."]);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Advance Quote -> Contract
-  const handleProceedToContract = () => {
-    const draft = createBookingRecord(false, true);
-    const newBooking = bookingToRevise ? reviseQuote(bookingToRevise.id, draft) : draft;
-    if (!newBooking) return;
-    if (!bookingToRevise) addBooking(newBooking);
-    addAuditEntry({
-      userEmail: currentUser?.email || "admin@orbelo.com",
-      userName: currentUser?.name || "Operations Team",
-      action: "QUOTE_ADVANCED_TO_CONTRACT",
-      entityType: "Contract",
-      entityId: newBooking.quoteReference || newBooking.id,
-      details: `Quotation ${newBooking.quoteReference} advanced to Contract stage for ${clientName}.`
-    });
-    setBookingToRevise(null);
-    openDocument(newBooking, "charter_agreement");
+  const handleProceedToContract = async () => {
+    setValidationErrors([]);
+    setIsSubmitting(true);
+    try {
+      const wasRevising = Boolean(bookingToRevise);
+      const draft = createBookingRecord(false, true);
+      const newBooking = bookingToRevise ? await reviseQuote(bookingToRevise.id, draft) : draft;
+      if (!bookingToRevise) addBooking(newBooking);
+      addAuditEntry({
+        userEmail: currentUser?.email || "admin@orbelo.com",
+        userName: currentUser?.name || "Operations Team",
+        action: "QUOTE_ADVANCED_TO_CONTRACT",
+        entityType: "Contract",
+        entityId: newBooking.quoteReference || newBooking.id,
+        details: `Quotation ${newBooking.quoteReference} advanced to Contract stage for ${clientName}.`
+      });
+      if (wasRevising) setActiveTab("list");
+      setBookingToRevise(null);
+      openDocument(newBooking, "charter_agreement");
+    } catch (error) {
+      setValidationErrors([error instanceof Error ? error.message : "The revised quote could not be saved. Please try again."]);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Convert Quote directly to Confirmed Booking
-  const handleConfirmAndBookFlight = () => {
-    const draft = createBookingRecord(true, false);
-    const newBooking = bookingToRevise ? reviseQuote(bookingToRevise.id, draft) : draft;
-    if (!newBooking) return;
-    if (!bookingToRevise) addBooking(newBooking);
-    addAuditEntry({
-      userEmail: currentUser?.email || "admin@orbelo.com",
-      userName: currentUser?.name || "Operations Team",
-      action: "QUOTE_CONVERTED_TO_BOOKING",
-      entityType: "Booking",
-      entityId: newBooking.tripNumber || newBooking.id,
-      details: `Locked in confirmed flight booking [${newBooking.tripNumber}] for ${clientName}. Total: ${formatCurrency(effectivePricing.totalFlightPrice, currency)}`
-    });
-    setBookingToRevise(null);
-    setActiveNav("bookings");
+  const handleConfirmAndBookFlight = async () => {
+    setValidationErrors([]);
+    setIsSubmitting(true);
+    try {
+      const wasRevising = Boolean(bookingToRevise);
+      const draft = createBookingRecord(true, false);
+      const newBooking = bookingToRevise ? await reviseQuote(bookingToRevise.id, draft) : draft;
+      if (!bookingToRevise) addBooking(newBooking);
+      addAuditEntry({
+        userEmail: currentUser?.email || "admin@orbelo.com",
+        userName: currentUser?.name || "Operations Team",
+        action: "QUOTE_CONVERTED_TO_BOOKING",
+        entityType: "Booking",
+        entityId: newBooking.tripNumber || newBooking.id,
+        details: `Locked in confirmed flight booking [${newBooking.tripNumber}] for ${clientName}. Total: ${formatCurrency(effectivePricing.totalFlightPrice, currency)}`
+      });
+      if (wasRevising) setActiveTab("list");
+      setBookingToRevise(null);
+      setActiveNav("bookings");
+    } catch (error) {
+      setValidationErrors([error instanceof Error ? error.message : "The revised quote could not be saved. Please try again."]);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Convert Quote directly to Confirmed Booking from list view
@@ -1285,7 +1314,7 @@ export default function QuotesView() {
                 type="button"
                 onClick={handleRegenerateIds}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#F5F2EC] hover:bg-[#EAE6DE] border border-[#E0DAD0] text-xs font-mono font-bold text-[#0F1420] cursor-pointer"
-                title="Generate new Quote & Account numbers"
+                title="Generate a new quote reference"
               >
                 <RefreshCw className="w-3.5 h-3.5 text-[#C9A052]" />
                 <span>Regenerate IDs</span>
@@ -1378,9 +1407,10 @@ export default function QuotesView() {
                 <input
                   type="text"
                   value={accountNumber}
-                  onChange={(e) => setAccountNumber(e.target.value)}
+                  readOnly
                   required
-                  className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                  title="Account number is assigned to the selected client or account"
+                  className="w-full bg-gray-100 border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-[#0F1420] cursor-not-allowed"
                 />
               </div>
 
@@ -2597,17 +2627,19 @@ export default function QuotesView() {
                 {/* Action 1: Generate Quote PDF */}
                 <button
                   type="submit"
+                  disabled={isSubmitting}
                   className="py-3 px-5 rounded-xl bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] font-black text-xs uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
                   title="Save Quotation and Open Official PDF Document"
                 >
                   <FileText className="w-4 h-4" />
-                  <span>{bookingToRevise ? "Compile Revised Quote" : "Generate Quote PDF"}</span>
+                  <span>{isSubmitting ? "Saving Quote..." : bookingToRevise ? "Compile Revised Quote" : "Generate Quote PDF"}</span>
                 </button>
 
                 {/* Action 2: Advance Quote -> Contract */}
                 <button
                   type="button"
                   onClick={handleProceedToContract}
+                  disabled={isSubmitting}
                   className="py-3 px-4 rounded-xl bg-[#1C2436] hover:bg-[#28324a] text-white border border-gray-600 font-bold text-xs uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
                   title="Save Quote and Advance to Contract Agreement"
                 >
@@ -2620,6 +2652,7 @@ export default function QuotesView() {
                 <button
                   type="button"
                   onClick={handleConfirmAndBookFlight}
+                  disabled={isSubmitting}
                   className="py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs uppercase tracking-wider transition-all shadow-lg flex items-center justify-center gap-1.5 cursor-pointer"
                   title="Lock in Confirmed Booking with Assigned Call Sign & Trip ID"
                 >

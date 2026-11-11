@@ -221,81 +221,73 @@ export default function AgentsView() {
         </div>
       </div>
 
-      {/* Agents Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+      {/* Agents List */}
+      <div className="space-y-3">
         {filteredAgents.map((agent) => (
           <div
-            key={agent.id}
-            className="bg-white border border-[#E0DAD0] hover:border-[#C9A052] rounded-2xl p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between space-y-4 group"
+            key={`${agent.type}-${agent.id}`}
+            className="bg-white border border-[#E0DAD0] hover:border-[#C9A052] rounded-2xl p-4 sm:p-5 shadow-sm hover:shadow-md transition-all flex flex-col xl:flex-row xl:items-center gap-4 xl:gap-6 group"
           >
-            <div className="space-y-3">
-              {/* Header: Name & Badges */}
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-[#0F1420] text-[#C9A052]">
-                      {agent.referenceId}
-                    </span>
-                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">
-                      {agent.status}
-                    </span>
-                  </div>
-                  <h3 className="text-base font-black text-[#0F1420] group-hover:text-[#C9A052] transition-colors">
-                    {agent.name}
-                  </h3>
-                  <p className="text-xs text-gray-600 font-semibold flex items-center gap-1 mt-0.5">
-                    <Building2 className="w-3.5 h-3.5 text-gray-400" />
-                    <span>{agent.agencyName}</span>
-                  </p>
-                </div>
-
-                <div className="p-2 rounded-xl bg-[#F5F2EC] text-center flex-shrink-0">
-                  <span className="text-[9px] font-mono text-gray-500 uppercase block">Comm.</span>
-                  <span className="text-sm font-black font-mono text-[#0F1420]">{agent.commissionPct}%</span>
-                </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-[#0F1420] text-[#C9A052]">
+                  {agent.referenceId}
+                </span>
+                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">
+                  {agent.status}
+                </span>
               </div>
+              <h3 className="text-base font-black text-[#0F1420] group-hover:text-[#C9A052] transition-colors truncate">
+                {agent.name}
+              </h3>
+              <p className="text-xs text-gray-600 font-semibold flex items-center gap-1 mt-0.5 min-w-0">
+                <Building2 className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                <span className="truncate">{agent.agencyName}</span>
+              </p>
+            </div>
 
-              {/* Location & Contact info */}
-              <div className="p-3 rounded-xl bg-[#F5F2EC] border border-[#E0DAD0] space-y-1.5 text-xs font-mono">
-                <div className="flex items-center gap-2 text-gray-700 truncate">
-                  <Mail className="w-3.5 h-3.5 text-[#C9A052] flex-shrink-0" />
-                  <span className="truncate">{agent.email}</span>
-                </div>
-                <div className="flex items-center gap-2 text-gray-700 truncate">
-                  <Phone className="w-3.5 h-3.5 text-[#C9A052] flex-shrink-0" />
-                  <span className="truncate">{agent.phone}</span>
-                </div>
-                <div className="flex items-center gap-2 text-gray-700 truncate">
-                  <Globe className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                  <span className="truncate">{agent.country}</span>
-                </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-2 flex-[1.4] min-w-0 text-xs font-mono">
+              <div className="flex items-center gap-2 text-gray-700 min-w-0">
+                <Mail className="w-3.5 h-3.5 text-[#C9A052] flex-shrink-0" />
+                <span className="truncate">{agent.email}</span>
               </div>
-
-              {/* Financial & Token metrics */}
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="p-2.5 rounded-xl border border-gray-200 bg-white">
-                  <span className="text-[10px] text-gray-500 font-mono block">TOTAL BOOKINGS</span>
-                  <p className="text-sm font-black font-mono text-[#0F1420]">
-                    {agent.totalBookings} Flights
-                  </p>
-                </div>
-
-                <div className="p-2.5 rounded-xl border border-gray-200 bg-white">
-                  <span className="text-[10px] text-gray-500 font-mono flex items-center gap-1">
-                    <Coins className="w-3 h-3 text-[#C9A052]" /> TOKENS
-                  </span>
-                  <p className="text-sm font-black font-mono text-[#C9A052]">
-                    {agent.tokenBalance?.toLocaleString() || "2,000"} pts
-                  </p>
-                </div>
+              <div className="flex items-center gap-2 text-gray-700 min-w-0">
+                <Phone className="w-3.5 h-3.5 text-[#C9A052] flex-shrink-0" />
+                <span className="truncate">{agent.phone}</span>
+              </div>
+              <div className="flex items-center gap-2 text-gray-700 min-w-0 sm:col-span-2">
+                <Globe className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                <span className="truncate">{agent.country}</span>
               </div>
             </div>
 
-            {/* Footer Quick Action */}
-            <div className="pt-3 border-t border-[#E0DAD0] flex items-center justify-between text-xs">
-              <span className="text-[11px] font-mono text-gray-500">
-                Source: {agent.type === "account" ? "Account Registry" : "Contact Directory"}
-              </span>
+            <div className="flex items-stretch gap-2 flex-shrink-0">
+              <div className="p-2.5 rounded-xl border border-gray-200 bg-white min-w-[112px]">
+                <span className="text-[10px] text-gray-500 font-mono block">TOTAL BOOKINGS</span>
+                <p className="text-sm font-black font-mono text-[#0F1420]">
+                  {agent.totalBookings} Flights
+                </p>
+              </div>
+
+              <div className="p-2.5 rounded-xl border border-gray-200 bg-white min-w-[112px]">
+                <span className="text-[10px] text-gray-500 font-mono flex items-center gap-1">
+                  <Coins className="w-3 h-3 text-[#C9A052]" /> TOKENS
+                </span>
+                <p className="text-sm font-black font-mono text-[#C9A052]">
+                  {agent.tokenBalance?.toLocaleString() || "2,000"} pts
+                </p>
+              </div>
+            </div>
+
+            <div className="flex xl:flex-col items-center xl:items-end justify-between xl:justify-center gap-2 xl:border-l xl:border-[#E0DAD0] xl:pl-5 text-xs flex-shrink-0">
+              <div className="flex flex-col items-start xl:items-end gap-1">
+                <span className="text-[11px] font-mono text-gray-500">
+                  Source: {agent.type === "account" ? "Account Registry" : "Contact Directory"}
+                </span>
+                <span className="text-[11px] font-mono text-gray-500">
+                  Commission: <strong className="text-[#0F1420]">{agent.commissionPct}%</strong>
+                </span>
+              </div>
               <button
                 onClick={() => setActiveNav("generate_quote")}
                 className="text-xs font-bold text-[#C9A052] hover:text-[#0F1420] flex items-center gap-1 transition-colors"
