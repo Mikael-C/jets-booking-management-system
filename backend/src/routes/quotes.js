@@ -14,6 +14,25 @@ const { calculatePricing } = require('../services/pricingService');
 const { findAirportByCode } = require('../utils/airportData');
 const { createBookingIdentifiers, createTripNumber } = require('../services/bookingIdentifiers');
 
+const quoteEditableFields = [
+  'accountNumber', 'contractDate', 'quoteExpirationDate', 'paymentDueDate',
+  'tripType', 'aircraft', 'aircraftCustomImages', 'client', 'operator', 'legs',
+  'pricing', 'services', 'checklist', 'agentName', 'agentEmail',
+  'commissionPercentage', 'paymentStatus', 'paymentReason',
+  'paymentMethodChoice', 'cardFeePercentage', 'cardFeeAmount',
+  'totalWithCardFee', 'adminMarginType', 'adminMarginValue',
+  'agentMarginType', 'agentMarginValue', 'manualServices', 'sourcingOptions',
+  'avInodeTripId', 'notes', 'internalNotes', 'tripActionAudit'
+];
+
+const applyQuoteEdits = (booking, updates) => {
+  for (const field of quoteEditableFields) {
+    if (Object.prototype.hasOwnProperty.call(updates || {}, field)) {
+      booking.set(field, updates[field]);
+    }
+  }
+};
+
 // Safe query helpers supporting ObjectId and custom ID strings
 const findAgentRequest = async (id) => {
   if (!id) return null;
@@ -166,6 +185,33 @@ const reviseQuote = async (req, res) => {
 
 router.post('/:id/revise', authorize('super_admin', 'admin', 'operations'), reviseQuote);
 
+router.post('/:id/advance-to-contract', authorize('super_admin', 'admin', 'operations'), async (req, res) => {
+  const booking = await findBooking(req.params.id);
+  if (!booking) return res.status(404).json({ message: 'Quote not found' });
+  if (booking.isCancelled || isBookedStatus(booking)) {
+    return res.status(409).json({ message: 'Cancelled or booked quotes cannot be advanced to contract' });
+  }
+
+  const siblings = await Booking.find(getQuoteFamilyFilter(booking));
+  const latestVersion = Math.max(0, ...siblings.map(getQuoteVersion));
+  if (getQuoteVersion(booking) < latestVersion) {
+    return res.status(409).json({ message: 'Only the latest quote iteration can be advanced to contract' });
+  }
+
+  applyQuoteEdits(booking, req.body);
+  booking.status = 'contract_sent';
+  booking.quoteStatus = 'accepted';
+  await booking.save();
+  await createAuditEntry({
+    user: req.user,
+    action: 'QUOTE_ADVANCED_TO_CONTRACT',
+    entityType: 'Quote',
+    entityId: booking.quoteId || booking.id,
+    details: `Quote ${booking.quoteId || booking.id} advanced to contract stage`
+  });
+  return res.json({ success: true, data: booking });
+});
+
 router.post('/:id/convert-to-booking', authorize('super_admin', 'admin', 'operations'), async (req, res) => {
   const booking = await findBooking(req.params.id);
   if (!booking) return res.status(404).json({ message: 'Quote not found' });
@@ -174,7 +220,7 @@ router.post('/:id/convert-to-booking', authorize('super_admin', 'admin', 'operat
   if (isBookedStatus(booking)) return res.json({ success: true, data: booking });
   const quoteGroupId = booking.quoteGroupId || booking.id || booking._id.toString();
   const groupToken = createHash('sha256').update(quoteGroupId).digest('hex').slice(0, 10).toUpperCase();
-  const tripId = `TRIP-${new Date().getFullYear()}-${groupToken}`;
+  const tripId = booking.tripId || `TRIP-${new Date().getFullYear()}-${groupToken}`;
   const siblings = await Booking.find(getQuoteFamilyFilter(booking));
   if (siblings.some((sibling) => isBookedStatus(sibling) && !sibling.isCancelled)) {
     return res.status(409).json({ message: 'A quote from this trip has already been booked' });
@@ -183,6 +229,7 @@ router.post('/:id/convert-to-booking', authorize('super_admin', 'admin', 'operat
   if (getQuoteVersion(booking) < latestVersion) {
     return res.status(409).json({ message: 'Only the latest quote iteration can be booked' });
   }
+  applyQuoteEdits(booking, req.body);
   const identifiers = await createBookingIdentifiers({
     quoteGroupId,
     quoteVersion: getQuoteVersion(booking),

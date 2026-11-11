@@ -784,7 +784,7 @@ interface AviationContextType {
   updateBookingStatus: (bookingId: string, status: BookingStatus) => void;
   updateBookingPaymentStatus: (bookingId: string, paymentStatus: Booking["paymentStatus"]) => void;
   toggleChecklistItem: (bookingId: string, stepId: string) => void;
-  convertQuoteToBooked: (bookingId: string, booking?: Booking) => Promise<void>;
+  convertQuoteToBooked: (bookingId: string, booking?: Booking) => Promise<Booking>;
   sendQuoteToAgent: (bookingId: string) => void;
 
   // Agent Requests
@@ -847,6 +847,7 @@ interface AviationContextType {
   bookingToRevise: Booking | null;
   setBookingToRevise: (b: Booking | null) => void;
   reviseQuote: (quoteIdOrTripId: string, overrides?: Partial<Booking>) => Promise<Booking>;
+  advanceQuoteToContract: (quoteId: string, overrides: Partial<Booking>) => Promise<Booking>;
   reviseBookingWithCreditNote: (
     bookingId: string,
     overrides: Partial<Booking>,
@@ -1775,11 +1776,11 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const convertQuoteToBooked = async (bookingId: string, bookingCandidate?: Booking): Promise<void> => {
+  const convertQuoteToBooked = async (bookingId: string, bookingCandidate?: Booking): Promise<Booking> => {
     const target = bookings.find((booking) => booking.id === bookingId) || bookingCandidate;
-    if (!target || target.isCancelled) return;
+    if (!target || target.isCancelled) throw new Error("This quote iteration cannot be booked.");
 
-    const response = await api.quotes.convertToBooking(bookingId);
+    const response = await api.quotes.convertToBooking(bookingId, bookingCandidate);
     const persisted = normalizeBooking(response.data);
     const familyKey = getQuoteIterationGroupKey(target);
     const updatedAt = new Date().toISOString();
@@ -1799,9 +1800,10 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
         updatedAt
       };
     }));
-    if (selectedBookingForDetail?.id === bookingId) setSelectedBookingForDetail(persisted);
+    setSelectedBookingForDetail(persisted);
     if (activeBooking?.id === bookingId) setActiveBooking(persisted);
     setActiveNav("bookings");
+    return persisted;
   };
 
   const sendQuoteToAgent = (bookingId: string) => {
@@ -2509,6 +2511,15 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     });
 
     return revised;
+  };
+
+  const advanceQuoteToContract = async (quoteId: string, overrides: Partial<Booking>): Promise<Booking> => {
+    const response = await api.quotes.advanceToContract(quoteId, overrides);
+    const advanced = normalizeBooking(response.data);
+    setBookings((prev) => prev.map((booking) => booking.id === advanced.id ? advanced : booking));
+    if (selectedBookingForDetail?.id === advanced.id) setSelectedBookingForDetail(advanced);
+    if (activeBooking?.id === advanced.id) setActiveBooking(advanced);
+    return advanced;
   };
 
   const getTripRevisions = (tripId: string): Booking[] => {
@@ -3352,6 +3363,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
         bookingToRevise,
         setBookingToRevise,
         reviseQuote,
+        advanceQuoteToContract,
         syncPassengerToContact,
         getTripHistoryForContact,
         getTripRevisions,

@@ -72,7 +72,8 @@ export default function QuotesView() {
     setBookingToRevise,
     clients,
     reviseQuote,
-    reviseBookingWithCreditNote
+    reviseBookingWithCreditNote,
+    advanceQuoteToContract
   } = useAviation();
 
   const [activeTab, setActiveTab] = useState<"list" | "builder">("list");
@@ -882,7 +883,7 @@ export default function QuotesView() {
       const wasRevising = Boolean(bookingToRevise);
       const draft = createBookingRecord(false, true);
       const newBooking = bookingToRevise
-        ? await reviseQuote(bookingToRevise.id, draft)
+        ? await advanceQuoteToContract(bookingToRevise.id, draft)
         : await addBooking(draft);
       addAuditEntry({
         userEmail: currentUser?.email || "admin@orbelo.com",
@@ -907,21 +908,20 @@ export default function QuotesView() {
     setValidationErrors([]);
     setIsSubmitting(true);
     try {
-      const wasRevising = Boolean(bookingToRevise);
       const draft = createBookingRecord(true, false);
       const newBooking = bookingToRevise
-        ? await reviseQuote(bookingToRevise.id, draft)
+        ? await convertQuoteToBooked(bookingToRevise.id, draft)
         : await addBooking(draft);
       addAuditEntry({
         userEmail: currentUser?.email || "admin@orbelo.com",
         userName: currentUser?.name || "Operations Team",
         action: "QUOTE_CONVERTED_TO_BOOKING",
         entityType: "Booking",
-        entityId: newBooking.tripNumber || newBooking.id,
-        details: `Locked in confirmed flight booking [${newBooking.tripNumber}] for ${clientName}. Total: ${formatCurrency(effectivePricing.totalFlightPrice, currency)}`
+        entityId: newBooking.tripId || newBooking.tripNumber || newBooking.id,
+        details: `Locked in confirmed flight booking [${newBooking.tripId || newBooking.tripNumber}] for ${clientName}. Total: ${formatCurrency(effectivePricing.totalFlightPrice, currency)}`
       });
-      if (wasRevising) setActiveTab("list");
       setBookingToRevise(null);
+      setSelectedBookingForDetail(newBooking);
       setActiveNav("bookings");
     } catch (error) {
       setValidationErrors([error instanceof Error ? error.message : "The revised quote could not be saved. Please try again."]);

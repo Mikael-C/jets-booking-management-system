@@ -431,9 +431,15 @@ export const api = {
         method: "POST",
         body: JSON.stringify(overrides || {}),
       }),
-    convertToBooking: (id: string) =>
+    advanceToContract: (id: string, booking: any) =>
+      request<{ success: boolean; data: any }>(`/quotes/${id}/advance-to-contract`, {
+        method: "POST",
+        body: JSON.stringify(booking),
+      }),
+    convertToBooking: (id: string, booking?: any) =>
       request<{ success: boolean; data: any }>(`/quotes/${id}/convert-to-booking`, {
         method: "POST",
+        body: JSON.stringify(booking || {}),
       }),
   },
 
