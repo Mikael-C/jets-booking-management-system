@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
+const { randomUUID } = require('crypto');
 const Booking = require('../models/Booking');
 const AgentRequest = require('../models/AgentRequest');
 const Aircraft = require('../models/Aircraft');
@@ -72,6 +73,16 @@ const getTripSuffix = (booking) =>
 const isBookedStatus = (booking) =>
   booking.isBooked || ['confirmed', 'dispatched', 'in_flight', 'completed', 'flown'].includes(booking.status);
 
+const createUniqueTripNumber = async (preferred) => {
+  if (preferred && !(await Booking.exists({ tripNumber: preferred }))) return preferred;
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const candidate = `QTE-${new Date().getFullYear()}-${randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()}`;
+    if (!(await Booking.exists({ tripNumber: candidate }))) return candidate;
+  }
+  throw new Error('Unable to allocate a unique quote trip number');
+};
+
 const reviseQuote = async (req, res) => {
   const original = await findBooking(req.params.id);
   if (!original) return res.status(404).json({ message: 'Quote not found' });
@@ -104,6 +115,9 @@ const reviseQuote = async (req, res) => {
   const bookImmediately = req.body?.isBooked === true;
   revised.id = `booking-quote-${Date.now()}`;
   revised.tripId = tripId;
+  revised.tripNumber = bookImmediately
+    ? await createUniqueTripNumber(req.body?.tripNumber)
+    : await createUniqueTripNumber();
   revised.quoteId = quoteId;
   revised.quoteReference = quoteId;
   revised.quoteVersion = nextVersion;
@@ -167,7 +181,7 @@ router.post('/:id/convert-to-booking', authorize('super_admin', 'admin', 'operat
     return res.status(409).json({ message: 'Only the latest quote iteration can be booked' });
   }
   if (!booking.tripNumber || /^(QTE|QUO|REV)[-_]/i.test(booking.tripNumber)) {
-    booking.tripNumber = `PEU${getTripSuffix(booking)}-001`;
+    booking.tripNumber = await createUniqueTripNumber(`PEU${getTripSuffix(booking)}-001`);
   }
   if (!booking.quoteId) {
     booking.quoteId = `QUO-${getTripSuffix(booking)}-${String(booking.quoteVersion || 1).padStart(2, '0')}`;
@@ -267,11 +281,11 @@ router.post('/generate', authorize('super_admin', 'admin', 'operations'), async 
   });
 
   // Trip number
-  const count = await Booking.countDocuments();
   const year = new Date().getFullYear();
-  const tripNumber = `ORB-${year}-${String(count + 1).padStart(3, '0')}`;
-  const tripId = `TRIP-${year}-${String(count + 1).padStart(3, '0')}`;
-  const quoteId = `QUO-${String(count + 1).padStart(3, '0')}-01`;
+  const tripNumber = await createUniqueTripNumber();
+  const sequence = tripNumber.split('-').pop();
+  const tripId = `TRIP-${year}-${sequence}`;
+  const quoteId = `QUO-${sequence}-01`;
 
   const booking = new Booking({
     tripId,

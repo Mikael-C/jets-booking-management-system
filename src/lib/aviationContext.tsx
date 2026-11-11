@@ -1599,7 +1599,14 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
 
   const addBooking = (newBooking: Booking) => {
     setBookings((prev) => [newBooking, ...prev]);
-    api.bookings.create(newBooking).catch((err) => console.log("Backend sync note:", err.message));
+    api.bookings.create(newBooking)
+      .then((response) => {
+        const persisted = normalizeBooking(response.data);
+        setBookings((prev) => prev.map((booking) =>
+          booking.id === newBooking.id ? persisted : booking
+        ));
+      })
+      .catch((err) => console.log("Backend sync note:", err.message));
     if (currentUser) {
       addAuditEntry({
         userEmail: currentUser.email,

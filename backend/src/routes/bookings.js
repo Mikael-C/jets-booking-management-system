@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
+const { randomUUID } = require('crypto');
 const Joi = require('joi');
 const Booking = require('../models/Booking');
 const { authorize } = require('../middleware/auth');
@@ -29,6 +30,16 @@ const getTripFilter = (booking) => ({
 
 const tripSuffix = (booking) =>
   (booking.tripId || booking.tripNumber || '').replace(/\D/g, '').slice(-3) || '001';
+
+const createUniqueTripNumber = async (preferred) => {
+  if (preferred && !(await Booking.exists({ tripNumber: preferred }))) return preferred;
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const candidate = `QTE-${new Date().getFullYear()}-${randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()}`;
+    if (!(await Booking.exists({ tripNumber: candidate }))) return candidate;
+  }
+  throw new Error('Unable to allocate a unique booking trip number');
+};
 
 // Valid booking status transitions
 const VALID_TRANSITIONS = {
@@ -187,6 +198,9 @@ router.post('/', async (req, res) => {
     ...req.body,
     checklist: req.body.checklist?.length ? req.body.checklist : [...DEFAULT_CHECKLIST],
   };
+  if (!bookingData.isBooked) {
+    bookingData.tripNumber = await createUniqueTripNumber(bookingData.tripNumber);
+  }
 
   // Auto-generate invoice number if not provided
   if (!bookingData.invoiceNumber && bookingData.status !== 'draft') {
@@ -369,6 +383,7 @@ router.post('/:id/revise', authorize('super_admin', 'admin', 'operations'), asyn
   Object.assign(revisedData, req.body || {});
   revisedData.id = `booking-revision-${Date.now()}`;
   revisedData.tripId = original.tripId || `TRIP-${new Date().getFullYear()}-${suffix}`;
+  revisedData.tripNumber = await createUniqueTripNumber();
   revisedData.bookingRevisionId = revisionId;
   revisedData.isCancelled = false;
   revisedData.cancellationReason = '';
