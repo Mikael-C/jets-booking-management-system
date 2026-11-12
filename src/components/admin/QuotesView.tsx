@@ -28,7 +28,6 @@ import {
   ScrollText,
   Check,
   ChevronRight,
-  Eye,
   Calendar,
   Image as ImageIcon,
   Building,
@@ -48,10 +47,6 @@ import {
   Briefcase,
   Trash2,
   RefreshCw,
-  ChevronDown,
-  ChevronUp,
-  Send,
-  Lock
 } from "lucide-react";
 
 export default function QuotesView() {
@@ -1036,388 +1031,175 @@ export default function QuotesView() {
           </div>
 
           {/* Quotes Trip Groups */}
-          <div className="overflow-x-auto">
-            <div className="min-w-[980px]">
-              <div className="grid grid-cols-[minmax(130px,1fr)_minmax(110px,1fr)_minmax(145px,1.2fr)_52px_minmax(100px,auto)_270px] items-center gap-3 rounded-t-xl border border-[#E0DAD0] bg-[#F5F2EC] px-5 py-3 text-[10px] font-mono font-bold uppercase tracking-wider text-[#0F1420]/70">
-                <span>Trip ID</span>
-                <span>Route</span>
-                <span>Account</span>
-                <span>Pax</span>
-                <span>Price</span>
-                <span className="text-right">Actions</span>
-              </div>
-              <div className="space-y-2">
-            {filteredTripGroups.map(({ latest: quote, allRevisions }) => {
-              const tId = quote.tripId || quote.id;
-              const isExpanded = expandedTripIds.has(tId);
-              const hasMultipleRevisions = allRevisions.length > 1;
-              const isLatestCancelled = quote.isCancelled;
-              const isContractSent = quote.status === "contract_sent";
-              const isBooked = quote.isBooked ||
-                ["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(quote.status);
+          <div className="overflow-x-auto rounded-xl border border-[#E0DAD0]">
+            <table className="w-full min-w-[920px] table-fixed border-collapse text-left text-xs">
+              <colgroup>
+                <col className="w-[18%]" />
+                <col className="w-[15%]" />
+                <col className="w-[21%]" />
+                <col className="w-[6%]" />
+                <col className="w-[14%]" />
+                <col className="w-[26%]" />
+              </colgroup>
+              <thead className="border-b border-[#E0DAD0] bg-[#F5F2EC] text-[10px] font-mono uppercase tracking-wider text-[#0F1420]/70">
+                <tr>
+                  <th className="px-3 py-3 font-bold">Trip ID</th>
+                  <th className="px-3 py-3 font-bold">Route</th>
+                  <th className="px-3 py-3 font-bold">Account</th>
+                  <th className="px-3 py-3 font-bold">Pax</th>
+                  <th className="px-3 py-3 font-bold">Total Price</th>
+                  <th className="px-3 py-3 text-right font-bold">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#E0DAD0]">
+                {filteredTripGroups.map(({ latest: quote, allRevisions }) => {
+                  const tId = quote.tripId || quote.id;
+                  const isExpanded = expandedTripIds.has(tId);
+                  const hasMultipleRevisions = allRevisions.length > 1;
+                  const isLatestCancelled = quote.isCancelled;
+                  const isBooked = quote.isBooked ||
+                    ["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(quote.status);
 
-              return (false ? (
-                <div key={tId} className="bg-white border border-[#E0DAD0] hover:border-[#C9A052]/60 rounded-2xl shadow-sm hover:shadow-md transition-all overflow-hidden">
-                  {/* Main Quote Card */}
-                  <div className="p-5 sm:p-6 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 group">
-                    {/* Left: ID & Route Information */}
-                    <div className="flex items-start gap-4 min-w-0 flex-1">
-                      {/* Aircraft Thumbnail */}
-                      <div className="w-20 h-20 rounded-xl overflow-hidden border border-[#E0DAD0] bg-[#141A29] flex-shrink-0 relative">
-                        <img
-                          src={quote.aircraftCustomImages?.exterior || quote.aircraft.imageExterior}
-                          alt={quote.aircraft.name}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end p-1">
-                          <span className="text-[9px] font-mono font-bold text-white uppercase truncate">
-                            {quote.aircraft.registration || "OE-FFB"}
+                  return (
+                    <React.Fragment key={tId}>
+                      <tr
+                        onClick={() => hasMultipleRevisions && toggleTripExpand(tId)}
+                        aria-expanded={isExpanded}
+                        className={`${hasMultipleRevisions ? "cursor-pointer" : ""} bg-white transition-colors hover:bg-[#FAF8F5]`}
+                      >
+                        <td className="break-all px-3 py-4 align-middle font-semibold text-[#0F1420]">
+                          <span className="font-mono">Trip ID ({quote.tripId || "Pending assignment"})</span>
+                          <span className="mt-1 block break-all text-[10px] font-normal text-gray-500">
+                            {quote.quoteId || quote.quoteReference || "Quote ID pending"}
+                            {hasMultipleRevisions && ` · ${allRevisions.length} iterations ${isExpanded ? "−" : "+"}`}
                           </span>
-                        </div>
-                      </div>
-
-                      <div className="space-y-1.5 min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          {/* Trip ID */}
-                          <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded bg-[#0F1420] text-[#C9A052]">
-                            {quote.tripId || "Pending server assignment"}
-                          </span>
-                          {/* Latest Quote ID */}
-                          <span className="font-mono text-xs font-black text-[#0F1420] px-2.5 py-0.5 rounded bg-[#F5F2EC] border border-[#E0DAD0]">
-                            {quote.quoteId || quote.quoteReference || "Pending server assignment"}
-                          </span>
-                          {(quote.quoteVersion ?? 1) > 1 && (
-                            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-300">
-                              Rev. {quote.quoteVersion}
-                            </span>
-                          )}
-                          <span className={`text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full border ${
-                            isLatestCancelled
-                              ? "bg-red-100 text-red-800 border-red-300"
-                              : isContractSent
-                              ? "bg-blue-100 text-blue-800 border-blue-300"
-                              : "bg-amber-100 text-amber-800 border-amber-300"
-                          }`}>
-                            {isLatestCancelled ? "CANCELLED / SUPERSEDED" : isContractSent ? "CONTRACT ISSUED" : "QUOTATION ACTIVE"}
-                          </span>
-                          {/* Revisions badge */}
-                          {hasMultipleRevisions && (
+                        </td>
+                        <td className="px-3 py-4 align-middle">
+                          <div className="flex flex-col gap-1">
+                            {(quote.legs || []).map((leg, index) => (
+                              <span key={leg.legNumber || index} className="font-mono text-[11px] font-bold text-[#0F1420]">
+                                {leg.origin?.icao || "—"} <span className="text-[#C9A052]">→</span> {leg.destination?.icao || "—"}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="break-words px-3 py-4 align-middle font-semibold text-[#0F1420]">
+                          {quote.client.companyName || quote.client.fullName || "Account unavailable"}
+                        </td>
+                        <td className="px-3 py-4 align-middle font-mono text-[#0F1420]">
+                          {quote.legs[0]?.paxCount ?? "—"}
+                        </td>
+                        <td className="px-3 py-4 align-middle font-mono font-bold text-[#0F1420]">
+                          {formatCurrency(quote.pricing.totalFlightPrice, quote.pricing.currency || "EUR")}
+                        </td>
+                        <td className="px-2 py-4 align-middle" onClick={(event) => event.stopPropagation()}>
+                          <div className="flex items-center justify-end gap-1 whitespace-nowrap">
                             <button
                               type="button"
-                              onClick={() => toggleTripExpand(tId)}
-                              className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-300 flex items-center gap-1 hover:bg-purple-200 transition-colors"
+                              onClick={() => openDocument(quote, "quotation")}
+                              className="rounded-lg bg-[#C9A052] px-2 py-1.5 text-[9px] font-bold text-[#0F1420] hover:bg-[#B88F42]"
+                              title="Generate or view the quotation"
                             >
-                              {allRevisions.length} Iterations
-                              {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                              Generate Quote
                             </button>
-                          )}
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-base font-extrabold text-[#0F1420]">
-                            {quote.legs[0]?.origin.city || "Geneva"} ({quote.legs[0]?.origin.icao})
-                          </h3>
-                          <span className="text-[#C9A052] font-bold">⇄</span>
-                          <h3 className="text-base font-extrabold text-[#0F1420]">
-                            {quote.legs[quote.legs.length - 1]?.destination.city || "Genoa"} ({quote.legs[quote.legs.length - 1]?.destination.icao})
-                          </h3>
-                          {quote.legs.length > 2 && (
-                            <span className="text-xs text-gray-400 font-mono">+{quote.legs.length - 1} legs</span>
-                          )}
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
-                          <span className="font-semibold text-[#0F1420] flex items-center gap-1">
-                            <User className="w-3.5 h-3.5 text-gray-400" />
-                            <span>{quote.client.fullName}</span>
-                          </span>
-                          <span>•</span>
-                          <span className="font-medium flex items-center gap-1">
-                            <Plane className="w-3.5 h-3.5 text-gray-400" />
-                            <span>{quote.aircraft.name}</span>
-                          </span>
-                          <span>•</span>
-                          <span className="font-mono text-gray-500">
-                            Expires: {quote.quoteExpirationDate || "48 Hours"}
-                          </span>
-                          {quote.agentName && (
-                            <>
-                              <span>•</span>
-                              <span className="font-mono text-[#C9A052]">Agent: {quote.agentName}</span>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Right: Price & Action Buttons */}
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 w-full lg:w-auto justify-between lg:justify-end border-t lg:border-t-0 pt-3 lg:pt-0 border-gray-100">
-                      <div className="text-left sm:text-right">
-                        <span className="text-[10px] font-mono text-gray-500 uppercase block">Total Flight Price</span>
-                        <div className="text-xl font-black font-mono text-[#0F1420]">
-                          {formatCurrency(quote.pricing.totalFlightPrice, quote.pricing.currency || "EUR")}
-                        </div>
-                        <span className="text-[10px] font-mono text-emerald-700">0% VAT §6 Abs. 1 Zif. 3</span>
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-2">
-                        {/* Send Quote to Agent */}
-                        {!isLatestCancelled && (
-                          <button
-                            onClick={() => {
-                              sendQuoteToAgent(quote.id);
-                            }}
-                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] font-extrabold text-xs shadow-sm transition-all cursor-pointer"
-                            title="Email the quotation PDF to the assigned agent"
-                          >
-                            <Send className="w-3.5 h-3.5" />
-                            <span>Send to Agent</span>
-                          </button>
-                        )}
-
-                        {/* Contract Agreement Button */}
-                        <button
-                          onClick={() => openDocument(quote, "charter_agreement")}
-                          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#141A29] hover:bg-[#1C2436] text-[#C9A052] font-bold text-xs shadow-sm transition-all cursor-pointer"
-                          title="Open or execute Master Charter Agreement"
-                        >
-                          <ScrollText className="w-3.5 h-3.5" />
-                          <span>Contract</span>
-                        </button>
-
-                        {/* Book Button */}
-                        {!isLatestCancelled && (
-                          <button
-                            onClick={() => handleBookQuote(quote)}
-                            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow-sm transition-all cursor-pointer"
-                            title="Convert quotation to confirmed booking"
-                          >
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>Book</span>
-                          </button>
-                        )}
-
-                        {/* Revise Button */}
-                        {!isLatestCancelled && (
-                          <button
-                            onClick={() => handleStartRevise(quote)}
-                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#F5F2EC] hover:bg-[#EBE5DB] text-[#0F1420] border border-[#E0DAD0] font-bold text-xs shadow-sm transition-all cursor-pointer"
-                            title="Revise route, aircraft images, and pricing"
-                          >
-                            <RotateCcw className="w-3.5 h-3.5 text-[#C9A052]" />
-                            <span>Revise</span>
-                          </button>
-                        )}
-
-                        {/* View Documents */}
-                        <button
-                          onClick={() => setSelectedQuoteForDocs(quote)}
-                          className="p-2 rounded-xl bg-[#F5F2EC] hover:bg-[#EBE5DB] text-[#0F1420] border border-[#E0DAD0] transition-colors"
-                          title="View documents (Briefs, Invoices, Agreements, Credit Notes)"
-                        >
-                          <FileText className="w-4 h-4 text-[#C9A052]" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Expandable Revisions Sublevel */}
-                  {hasMultipleRevisions && isExpanded && (
-                    <div className="border-t border-[#E0DAD0] bg-[#FAFAF8]">
-                      <div className="px-5 py-2.5 flex items-center gap-2 text-[11px] font-mono font-bold uppercase text-gray-400 tracking-wider border-b border-[#E0DAD0]">
-                        <Clock className="w-3.5 h-3.5 text-[#C9A052]" />
-                        All Iterations for Trip {quote.tripId || quote.tripNumber}
-                      </div>
-                      <div className="divide-y divide-[#E0DAD0]">
-                        {allRevisions.map((rev) => {
-                          const isActive = !rev.isCancelled;
-                          const isLatest = rev.id === quote.id;
-                          return (
-                            <div key={rev.id} className={`px-6 py-3 flex items-center justify-between gap-4 text-xs transition-colors ${!isActive ? "opacity-60 bg-gray-50" : "bg-white hover:bg-[#FDFCFA]"}`}>
-                              <div className="flex items-center gap-3 min-w-0 flex-1">
-                                {!isActive ? (
-                                  <Lock className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                                ) : (
-                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
-                                )}
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="font-mono font-bold text-[#0F1420]">
-                                      {rev.quoteId || rev.quoteReference || `Iteration ${rev.quoteVersion || 1}`}
-                                    </span>
-                                    {isLatest && (
-                                      <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300">
-                                        Latest Active
-                                      </span>
-                                    )}
-                                    {!isActive && (
-                                      <span className="text-[10px] font-mono text-red-700 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded">
-                                        Cancelled · {rev.cancellationReason || "Superseded"}
-                                      </span>
-                                    )}
-                                  </div>
-                                  <p className="text-[10px] text-gray-400 font-mono mt-0.5 truncate">
-                                    Created: {new Date(rev.createdAt || "").toLocaleDateString()} · {formatCurrency(rev.pricing.totalFlightPrice, rev.pricing.currency || "EUR")}
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2 flex-shrink-0">
-                                {/* Always: view PDF */}
-                                <button
-                                  onClick={() => openDocument(rev, "quotation")}
-                                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#F5F2EC] hover:bg-[#EBE5DB] text-[#0F1420] font-bold text-[11px] border border-[#E0DAD0] transition-colors"
-                                >
-                                  <Eye className="w-3 h-3 text-[#C9A052]" />
-                                  View PDF
-                                </button>
-                                {/* Only latest active can be acted on */}
-                                {isLatest && isActive && (
-                                  <>
-                                    <button
-                                      onClick={() => handleStartRevise(rev)}
-                                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#0F1420] text-[#C9A052] font-bold text-[11px] border border-[#1C2436] hover:bg-[#1C2436] transition-colors"
-                                    >
-                                      <RotateCcw className="w-3 h-3" />
-                                      Revise
-                                    </button>
-                                    <button
-                                      onClick={() => handleBookQuote(rev)}
-                                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] transition-colors"
-                                    >
-                                      <CheckCircle2 className="w-3 h-3" />
-                                      Book
-                                    </button>
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div key={tId} className="overflow-hidden rounded-xl border border-[#E0DAD0] bg-white">
-                  <div className="grid grid-cols-[minmax(130px,1fr)_minmax(110px,1fr)_minmax(145px,1.2fr)_52px_minmax(100px,auto)_270px] items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() => toggleTripExpand(tId)}
-                      aria-expanded={isExpanded}
-                      className="col-span-5 grid grid-cols-[minmax(130px,1fr)_minmax(110px,1fr)_minmax(145px,1.2fr)_52px_minmax(100px,auto)] items-center gap-3 px-5 py-4 text-left hover:bg-[#FAF8F5]"
-                    >
-                      <span className="flex min-w-0 flex-col font-semibold text-[#0F1420]">
-                        <span className="truncate">Trip ID ({quote.tripId || "Pending assignment"})</span>
-                        <span className="truncate text-[10px] font-normal text-gray-500">
-                          {quote.quoteId || quote.quoteReference || "Quote ID pending"}
-                          {hasMultipleRevisions && ` · ${allRevisions.length} iterations`}
-                        </span>
-                      </span>
-                      <span className="truncate text-gray-600">
-                        {quote.legs[0]?.origin.icao || "—"} - {quote.legs[quote.legs.length - 1]?.destination.icao || "—"}
-                      </span>
-                      <span className="truncate text-gray-700">
-                        {quote.client.companyName || quote.client.fullName || "Account unavailable"}
-                      </span>
-                      <span className="font-mono text-gray-700">{quote.legs[0]?.paxCount ?? "—"}</span>
-                      <span className="truncate font-mono font-bold text-[#0F1420]">
-                        {formatCurrency(quote.pricing.totalFlightPrice, quote.pricing.currency || "EUR")}
-                      </span>
-                    </button>
-                    <div className="flex items-center justify-end gap-1 whitespace-nowrap pr-2">
-                      <button
-                        type="button"
-                        onClick={() => openDocument(quote, "quotation")}
-                        className="rounded-lg bg-[#C9A052] px-2 py-1.5 text-[9px] font-bold text-[#0F1420] hover:bg-[#B88F42]"
-                        title="Generate or view the quotation"
-                      >
-                        Generate Quote
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleStartRevise(quote)}
-                        disabled={isLatestCancelled}
-                        className="rounded-lg border border-[#E0DAD0] bg-[#F5F2EC] px-2 py-1.5 text-[9px] font-bold text-[#0F1420] hover:bg-[#EBE5DB] disabled:cursor-not-allowed disabled:opacity-45"
-                        title={isLatestCancelled ? "Cancelled quotes cannot be revised" : "Revise this quote"}
-                      >
-                        Revise Quote
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleBookQuote(quote)}
-                        disabled={isLatestCancelled || isBooked}
-                        className="rounded-lg bg-emerald-600 px-2 py-1.5 text-[9px] font-bold text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-45"
-                        title={isBooked ? "This quote is already booked" : "Book this quote"}
-                      >
-                        Book
-                      </button>
-                    </div>
-                  </div>
-                  {isExpanded && (
-                    <div className="border-t border-[#E0DAD0] bg-[#FAF8F5]">
-                      {allRevisions.map((revision) => {
-                        const isLatest = revision.id === quote.id;
-                        const route = `${revision.legs[0]?.origin.icao || "—"} - ${revision.legs[revision.legs.length - 1]?.destination.icao || "—"}`;
-                        return (
-                          <div key={revision.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-[#E0DAD0] px-5 py-3 last:border-b-0">
-                            <span className="font-semibold text-[#0F1420]">
-                              Trip ID ({revision.tripId || quote.tripId || "Pending assignment"})
-                            </span>
-                            <span className="text-gray-500">{revision.quoteId || revision.quoteReference}</span>
-                            <span className="text-gray-500">{route}</span>
-                            <span className="min-w-0 flex-1 text-gray-700">
-                              {revision.client.companyName || revision.client.fullName || "Account unavailable"}
-                            </span>
-                            <span className="font-mono text-gray-600">
-                              {revision.legs[0]?.paxCount ?? "—"} Pax
-                            </span>
-                            <span className="font-mono font-bold text-[#0F1420]">
-                              {formatCurrency(revision.pricing.totalFlightPrice, revision.pricing.currency || "EUR")}
-                            </span>
-                            {isLatest ? (
-                              <button
-                                type="button"
-                                onClick={() => handleStartRevise(revision)}
-                                className="rounded-lg border border-[#E0DAD0] bg-white px-3 py-1.5 text-xs font-bold text-[#0F1420] hover:border-[#C9A052]"
-                              >
-                                Revise
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => openDocument(revision, "quotation")}
-                                className="rounded-lg border border-[#E0DAD0] bg-white px-3 py-1.5 text-xs font-bold text-[#0F1420] hover:border-[#C9A052]"
-                              >
-                                View PDF
-                              </button>
-                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleStartRevise(quote)}
+                              disabled={isLatestCancelled}
+                              className="rounded-lg border border-[#E0DAD0] bg-[#F5F2EC] px-2 py-1.5 text-[9px] font-bold text-[#0F1420] hover:bg-[#EBE5DB] disabled:cursor-not-allowed disabled:opacity-45"
+                              title={isLatestCancelled ? "Cancelled quotes cannot be revised" : "Revise this quote"}
+                            >
+                              Revise Quote
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleBookQuote(quote)}
+                              disabled={isLatestCancelled || isBooked}
+                              className="rounded-lg bg-emerald-600 px-2 py-1.5 text-[9px] font-bold text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-45"
+                              title={isBooked ? "This quote is already booked" : "Book this quote"}
+                            >
+                              Book
+                            </button>
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              ));
-            })}
-          </div>
-            </div>
+                        </td>
+                      </tr>
+                      {hasMultipleRevisions && isExpanded && (
+                        <tr className="bg-[#FAF8F5]">
+                          <td colSpan={6} className="px-5 py-3">
+                            <div className="space-y-2 border-l-2 border-[#C9A052] pl-4">
+                              <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-gray-500">
+                                Quote history · {quote.tripId || quote.id}
+                              </p>
+                              {allRevisions.map((revision) => {
+                                const isLatest = revision.id === quote.id;
+                                return (
+                                  <div
+                                    key={revision.id}
+                                    className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs ${
+                                      revision.isCancelled ? "bg-gray-50 opacity-70" : "bg-white"
+                                    } border-[#E0DAD0]`}
+                                  >
+                                    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-1">
+                                      <span className="font-mono font-bold text-[#0F1420]">
+                                        {revision.quoteId || revision.quoteReference || `Iteration ${revision.quoteVersion || 1}`}
+                                      </span>
+                                      <span className="text-gray-600">
+                                        {(revision.legs || []).map((leg) => `${leg.origin?.icao || "—"} → ${leg.destination?.icao || "—"}`).join(" · ")}
+                                      </span>
+                                      <span className="break-words text-gray-700">
+                                        {revision.client.companyName || revision.client.fullName || "Account unavailable"}
+                                      </span>
+                                      <span className="font-mono text-gray-600">{revision.legs[0]?.paxCount ?? "—"} Pax</span>
+                                      <span className="font-mono font-bold text-[#0F1420]">
+                                        {formatCurrency(revision.pricing.totalFlightPrice, revision.pricing.currency || "EUR")}
+                                      </span>
+                                      {revision.isCancelled && (
+                                        <span className="text-red-700">Cancelled · {revision.cancellationReason || "Superseded"}</span>
+                                      )}
+                                      {isLatest && !revision.isCancelled && (
+                                        <span className="text-emerald-700">Latest</span>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      {isLatest && !revision.isCancelled ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleStartRevise(revision)}
+                                          className="rounded-lg border border-[#E0DAD0] bg-white px-3 py-1.5 text-xs font-bold text-[#0F1420] hover:border-[#C9A052]"
+                                        >
+                                          Revise
+                                        </button>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={() => openDocument(revision, "quotation")}
+                                          className="rounded-lg border border-[#E0DAD0] bg-white px-3 py-1.5 text-xs font-bold text-[#0F1420] hover:border-[#C9A052]"
+                                        >
+                                          View PDF
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+                {filteredTripGroups.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="py-12 text-center text-gray-500">
+                      No quotation records found matching current filters.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
 
-          {filteredTripGroups.length === 0 && (
-            <div className="bg-white border border-[#E0DAD0] rounded-2xl p-12 text-center space-y-3">
-              <FileText className="w-10 h-10 text-gray-300 mx-auto" />
-              <h3 className="text-base font-bold text-[#0F1420]">No active quotes matching filters</h3>
-              <p className="text-xs text-gray-500 max-w-md mx-auto">
-                No quotation records found. Booked proposals appear in Bookings. Click below to create a new quote.
-              </p>
-              <button
-                onClick={() => setActiveTab("builder")}
-                className="px-4 py-2 rounded-xl bg-[#0F1420] text-white text-xs font-bold"
-              >
-                + Create New Quote
-              </button>
-            </div>
-          )}
         </div>
       ) : (
         /* ================= QUOTE BUILDER & REVISION VIEW ================= */

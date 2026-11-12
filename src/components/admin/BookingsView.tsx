@@ -5,14 +5,13 @@ import { useAviation } from "@/lib/aviationContext";
 import { formatCurrency } from "@/lib/pricingCalculator";
 import { Booking } from "@/types/aviation";
 import { getQuoteIterationGroupKey } from "@/lib/quoteIterations";
-import { Eye, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 
 export default function BookingsView() {
   const {
     bookings,
     searchQuery,
     openDocument,
-    setSelectedBookingForDetail,
     refreshBookings,
     isBookingsLoading,
     bookingsSource,
@@ -288,7 +287,15 @@ export default function BookingsView() {
                   return (
                     <React.Fragment key={tripKey}>
                       <tr
-                        onClick={() => setSelectedBookingForDetail(booking)}
+                        onClick={() => {
+                          if (!hasIterations) return;
+                          setExpandedTripIds((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(tripKey)) next.delete(tripKey);
+                            else next.add(tripKey);
+                            return next;
+                          });
+                        }}
                         className="hover:bg-[#F5F2EC]/60 transition-colors cursor-pointer group"
                       >
                       {/* Trip ID */}
@@ -297,13 +304,13 @@ export default function BookingsView() {
                           {isBookedRecord ? (
                             <span className="font-extrabold text-[#0F1420] font-mono text-sm tracking-wide group-hover:text-[#C9A052] transition-colors flex items-center gap-1.5">
                               Trip ID ({booking.tripId || "Pending assignment"})
-                              <Eye className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity text-[#C9A052]" />
+                              {hasIterations && <span className="text-[10px] text-[#C9A052]">{isExpanded ? "−" : "+"}</span>}
                             </span>
                           ) : (
                             <div className="flex flex-col">
                               <span className="font-bold text-[#9A7A35] font-mono text-xs tracking-wide group-hover:text-[#C9A052] transition-colors flex items-center gap-1.5">
                                 Trip ID ({booking.tripId || "Pending assignment"})
-                                <Eye className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity text-[#C9A052]" />
+                                {hasIterations && <span className="text-[10px] text-[#C9A052]">{isExpanded ? "−" : "+"}</span>}
                               </span>
                               <span className="text-[10px] text-gray-400 font-mono italic">
                                 {booking.quoteId || booking.quoteReference || "Quote ID pending"}
@@ -384,7 +391,6 @@ export default function BookingsView() {
                           <button
                             type="button"
                             onClick={() => {
-                              setSelectedBookingForDetail(latestRevision);
                               setBookingToRevise(latestRevision);
                               setActiveNav("quotes");
                             }}
@@ -430,11 +436,7 @@ export default function BookingsView() {
                                       : "border-[#E0DAD0] bg-white"
                                   }`}
                                 >
-                                  <button
-                                    type="button"
-                                    onClick={() => setSelectedBookingForDetail(revision)}
-                                    className="flex flex-1 flex-wrap items-center justify-between gap-2 text-left min-w-[220px]"
-                                  >
+                                  <div className="flex flex-1 flex-wrap items-center justify-between gap-2 text-left min-w-[220px]">
                                     <span className="font-mono font-bold text-[#0F1420]">
                                       {revision.isBooked
                                         ? revision.bookingRevisionId || revision.tripNumber
@@ -453,7 +455,7 @@ export default function BookingsView() {
                                       {formatCurrency(revision.pricing.totalFlightPrice, revision.pricing.currency)}
                                     </span>
                                     <span className="text-gray-600">{revision.cancellationReason || revision.status.replace("_", " ")}</span>
-                                  </button>
+                                  </div>
                                   <div className="flex items-center gap-2">
                                     <button
                                       type="button"
