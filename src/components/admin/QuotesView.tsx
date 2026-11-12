@@ -75,8 +75,7 @@ export default function QuotesView() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [selectedQuoteForDocs, setSelectedQuoteForDocs] = useState<Booking | null>(null);
-
-  const [expandedTripIds, setExpandedTripIds] = useState<Set<string>>(new Set());
+  const [selectedQuoteGroupKey, setSelectedQuoteGroupKey] = useState<string | null>(null);
 
   useEffect(() => {
     void refreshBookings();
@@ -114,14 +113,23 @@ export default function QuotesView() {
         // Latest = highest quoteVersion, or most recently created
         const curVer = getVersion(b);
         const prevVer = getVersion(existing.latest);
-        if (curVer > prevVer) existing.latest = b;
+        const curDate = Date.parse(b.createdAt || "");
+        const prevDate = Date.parse(existing.latest.createdAt || "");
+        if (curVer > prevVer || (curVer === prevVer && curDate > prevDate)) existing.latest = b;
       }
     }
-    return Array.from(tripMap.values()).map(g => ({
-      ...g,
-      allRevisions: g.allRevisions.sort((a, b) => getVersion(b) - getVersion(a)),
+    return Array.from(tripMap.entries()).map(([groupKey, group]) => ({
+      groupKey,
+      ...group,
+      allRevisions: group.allRevisions.sort((a, b) => {
+        const versionDifference = getVersion(a) - getVersion(b);
+        if (versionDifference !== 0) return versionDifference;
+        return Date.parse(a.createdAt || "") - Date.parse(b.createdAt || "");
+      }),
     }));
   }, [quotesList]);
+
+  const selectedQuoteGroup = tripGroupedQuotes.find((group) => group.groupKey === selectedQuoteGroupKey);
 
   const filteredTripGroups = useMemo(() => {
     return tripGroupedQuotes.filter(({ latest: b }) => {
@@ -150,14 +158,6 @@ export default function QuotesView() {
       return true;
     });
   }, [tripGroupedQuotes, statusFilter, searchQuery]);
-
-  const toggleTripExpand = (tripId: string) => {
-    setExpandedTripIds(prev => {
-      const next = new Set(prev);
-      if (next.has(tripId)) next.delete(tripId); else next.add(tripId);
-      return next;
-    });
-  };
 
   // ================= QUOTE BUILDER & REVISION STATE =================
   const [quoteReference, setQuoteReference] = useState("");
@@ -967,6 +967,7 @@ export default function QuotesView() {
           <button
             onClick={() => {
               setBookingToRevise(null);
+              setSelectedQuoteGroupKey(null);
               setActiveTab("list");
             }}
             className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
@@ -987,7 +988,108 @@ export default function QuotesView() {
         </div>
       </div>
 
-      {activeTab === "list" ? (
+      {activeTab === "list" ? selectedQuoteGroup ? (
+        <section className="space-y-5">
+          <button
+            type="button"
+            onClick={() => setSelectedQuoteGroupKey(null)}
+            className="rounded-lg border border-[#E0DAD0] bg-white px-3 py-2 text-xs font-bold text-[#0F1420] hover:border-[#C9A052]"
+          >
+            ← Back to Quotes
+          </button>
+          <div className="rounded-2xl border border-[#E0DAD0] bg-white p-5 shadow-sm">
+            <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#9A7A35]">
+              Quote Iterations
+            </p>
+            <h2 className="mt-1 break-all text-xl font-black text-[#0F1420]">
+              Trip ID ({selectedQuoteGroup.latest.tripId || "Pending assignment"})
+            </h2>
+          </div>
+          {selectedQuoteGroup.allRevisions.length <= 1 && (
+            <p className="rounded-xl border border-[#E0DAD0] bg-white px-4 py-5 text-sm text-gray-600">
+              No revised versions of this quote are available.
+            </p>
+          )}
+          <div className="overflow-x-auto rounded-xl border border-[#E0DAD0]">
+            <table className="w-full min-w-[920px] table-fixed border-collapse text-left text-xs">
+              <colgroup>
+                <col className="w-[18%]" />
+                <col className="w-[15%]" />
+                <col className="w-[21%]" />
+                <col className="w-[6%]" />
+                <col className="w-[14%]" />
+                <col className="w-[26%]" />
+              </colgroup>
+              <thead className="border-b border-[#E0DAD0] bg-[#F5F2EC] text-[10px] font-mono uppercase tracking-wider text-[#0F1420]/70">
+                <tr>
+                  <th className="px-3 py-3 font-bold">Trip ID</th>
+                  <th className="px-3 py-3 font-bold">Route</th>
+                  <th className="px-3 py-3 font-bold">Account</th>
+                  <th className="px-3 py-3 font-bold">Pax</th>
+                  <th className="px-3 py-3 font-bold">Total Price</th>
+                  <th className="px-3 py-3 text-right font-bold">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#E0DAD0]">
+                {selectedQuoteGroup.allRevisions.map((revision) => {
+                  const isLatest = revision.id === selectedQuoteGroup.latest.id;
+                  const isCancelled = Boolean(revision.isCancelled || revision.status === "cancelled");
+                  return (
+                    <tr key={revision.id} className="bg-white">
+                      <td className="break-all px-3 py-4 align-middle font-semibold text-[#0F1420]">
+                        <span className="font-mono">Trip ID ({revision.tripId || selectedQuoteGroup.latest.tripId || "Pending assignment"})</span>
+                        <span className="mt-1 block break-all text-[10px] font-normal text-gray-500">
+                          {revision.quoteId || revision.quoteReference || `Iteration ${revision.quoteVersion || 1}`}
+                          {isLatest && !isCancelled && " · Latest"}
+                          {isCancelled && " · Cancelled"}
+                        </span>
+                      </td>
+                      <td className="px-3 py-4 align-middle">
+                        <div className="flex flex-col gap-1">
+                          {(revision.legs || []).map((leg, index) => (
+                            <span key={leg.legNumber || index} className="font-mono text-[11px] font-bold text-[#0F1420]">
+                              {leg.origin?.icao || "—"} <span className="text-[#C9A052]">→</span> {leg.destination?.icao || "—"}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="break-words px-3 py-4 align-middle font-semibold text-[#0F1420]">
+                        {revision.client.companyName || revision.client.fullName || "Account unavailable"}
+                      </td>
+                      <td className="px-3 py-4 align-middle font-mono text-[#0F1420]">
+                        {revision.legs[0]?.paxCount ?? "—"}
+                      </td>
+                      <td className="px-3 py-4 align-middle font-mono font-bold text-[#0F1420]">
+                        {formatCurrency(revision.pricing.totalFlightPrice, revision.pricing.currency || "EUR")}
+                      </td>
+                      <td className="px-2 py-4 align-middle">
+                        <div className="flex items-center justify-end gap-2 whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => openDocument(revision, "quotation")}
+                            className="rounded-lg bg-[#C9A052] px-3 py-1.5 text-[10px] font-bold text-[#0F1420] hover:bg-[#B88F42]"
+                          >
+                            Generate Quote
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleStartRevise(revision)}
+                            disabled={!isLatest || isCancelled}
+                            className="rounded-lg border border-[#E0DAD0] bg-[#F5F2EC] px-3 py-1.5 text-[10px] font-bold text-[#0F1420] hover:bg-[#EBE5DB] disabled:cursor-not-allowed disabled:opacity-45"
+                            title={!isLatest ? "This quote was superseded and cannot be revised" : isCancelled ? "Cancelled quotes cannot be revised" : "Revise latest quote"}
+                          >
+                            Revise Quote
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : (
         <div className="space-y-5">
           {/* Search & Status Filters */}
           <div className="bg-white border border-[#E0DAD0] rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
@@ -1052,26 +1154,28 @@ export default function QuotesView() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E0DAD0]">
-                {filteredTripGroups.map(({ latest: quote, allRevisions }) => {
-                  const tId = quote.tripId || quote.id;
-                  const isExpanded = expandedTripIds.has(tId);
-                  const hasMultipleRevisions = allRevisions.length > 1;
+                {filteredTripGroups.map(({ groupKey, latest: quote }) => {
                   const isLatestCancelled = quote.isCancelled;
                   const isBooked = quote.isBooked ||
                     ["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(quote.status);
 
                   return (
-                    <React.Fragment key={tId}>
+                    <React.Fragment key={groupKey}>
                       <tr
-                        onClick={() => hasMultipleRevisions && toggleTripExpand(tId)}
-                        aria-expanded={isExpanded}
-                        className={`${hasMultipleRevisions ? "cursor-pointer" : ""} bg-white transition-colors hover:bg-[#FAF8F5]`}
+                        onClick={() => setSelectedQuoteGroupKey(groupKey)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            setSelectedQuoteGroupKey(groupKey);
+                          }
+                        }}
+                        tabIndex={0}
+                        className="cursor-pointer bg-white transition-colors hover:bg-[#FAF8F5] focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[#C9A052]"
                       >
                         <td className="break-all px-3 py-4 align-middle font-semibold text-[#0F1420]">
                           <span className="font-mono">Trip ID ({quote.tripId || "Pending assignment"})</span>
                           <span className="mt-1 block break-all text-[10px] font-normal text-gray-500">
                             {quote.quoteId || quote.quoteReference || "Quote ID pending"}
-                            {hasMultipleRevisions && ` · ${allRevisions.length} iterations ${isExpanded ? "−" : "+"}`}
                           </span>
                         </td>
                         <td className="px-3 py-4 align-middle">
@@ -1123,69 +1227,6 @@ export default function QuotesView() {
                           </div>
                         </td>
                       </tr>
-                      {hasMultipleRevisions && isExpanded && (
-                        <tr className="bg-[#FAF8F5]">
-                          <td colSpan={6} className="px-5 py-3">
-                            <div className="space-y-2 border-l-2 border-[#C9A052] pl-4">
-                              <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-gray-500">
-                                Quote history · {quote.tripId || quote.id}
-                              </p>
-                              {allRevisions.map((revision) => {
-                                const isLatest = revision.id === quote.id;
-                                return (
-                                  <div
-                                    key={revision.id}
-                                    className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs ${
-                                      revision.isCancelled ? "bg-gray-50 opacity-70" : "bg-white"
-                                    } border-[#E0DAD0]`}
-                                  >
-                                    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-1">
-                                      <span className="font-mono font-bold text-[#0F1420]">
-                                        {revision.quoteId || revision.quoteReference || `Iteration ${revision.quoteVersion || 1}`}
-                                      </span>
-                                      <span className="text-gray-600">
-                                        {(revision.legs || []).map((leg) => `${leg.origin?.icao || "—"} → ${leg.destination?.icao || "—"}`).join(" · ")}
-                                      </span>
-                                      <span className="break-words text-gray-700">
-                                        {revision.client.companyName || revision.client.fullName || "Account unavailable"}
-                                      </span>
-                                      <span className="font-mono text-gray-600">{revision.legs[0]?.paxCount ?? "—"} Pax</span>
-                                      <span className="font-mono font-bold text-[#0F1420]">
-                                        {formatCurrency(revision.pricing.totalFlightPrice, revision.pricing.currency || "EUR")}
-                                      </span>
-                                      {revision.isCancelled && (
-                                        <span className="text-red-700">Cancelled · {revision.cancellationReason || "Superseded"}</span>
-                                      )}
-                                      {isLatest && !revision.isCancelled && (
-                                        <span className="text-emerald-700">Latest</span>
-                                      )}
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                      {isLatest && !revision.isCancelled ? (
-                                        <button
-                                          type="button"
-                                          onClick={() => handleStartRevise(revision)}
-                                          className="rounded-lg border border-[#E0DAD0] bg-white px-3 py-1.5 text-xs font-bold text-[#0F1420] hover:border-[#C9A052]"
-                                        >
-                                          Revise
-                                        </button>
-                                      ) : (
-                                        <button
-                                          type="button"
-                                          onClick={() => openDocument(revision, "quotation")}
-                                          className="rounded-lg border border-[#E0DAD0] bg-white px-3 py-1.5 text-xs font-bold text-[#0F1420] hover:border-[#C9A052]"
-                                        >
-                                          View PDF
-                                        </button>
-                                      )}
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </td>
-                        </tr>
-                      )}
                     </React.Fragment>
                   );
                 })}

@@ -27,7 +27,8 @@ export default function BookingsView() {
   const [activeTab, setActiveTab] = useState<
     "all" | "confirmed" | "quotes_sent" | "quotes_pending" | "quotes_undecided" | "completed"
   >("all");
-  const [expandedTripIds, setExpandedTripIds] = useState<Set<string>>(new Set());
+  const [selectedTripKey, setSelectedTripKey] = useState<string | null>(null);
+  const [historyTab, setHistoryTab] = useState<"bookings" | "quotes">("bookings");
 
   const bookedFamilies = new Set(bookings
     .filter((booking) => booking.isBooked || ["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(booking.status))
@@ -92,7 +93,7 @@ export default function BookingsView() {
     return true;
   });
 
-  const bookingGroups = (() => {
+  const allBookingGroups = (() => {
     const groups = new Map<string, Booking[]>();
     visibleBookings.forEach((booking) => {
       const tripKey = getIterationGroupKey(booking);
@@ -120,10 +121,22 @@ export default function BookingsView() {
       const primary = currentRevisions.find((revision) => revision.isBooked && !revision.isSupplementalRevision)
         || currentRevisions[0];
       return { tripKey, revisions: ordered, latest, primary };
-    }).filter((group) => filteredBookings.some((booking) =>
-      group.revisions.some((revision) => revision.id === booking.id)
-    ));
+    });
   })();
+  const bookingGroups = allBookingGroups.filter((group) =>
+    filteredBookings.some((booking) =>
+      group.revisions.some((revision) => revision.id === booking.id)
+    )
+  );
+  const selectedTripGroup = allBookingGroups.find((group) => group.tripKey === selectedTripKey);
+  const selectedTripBookings = selectedTripGroup?.revisions.filter((revision) =>
+    revision.isBooked || ["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(revision.status)
+  ) || [];
+  const selectedTripQuotes = selectedTripGroup?.revisions.filter((revision) =>
+    !revision.isBooked &&
+    !["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(revision.status) &&
+    Boolean(revision.quoteId || revision.quoteReference)
+  ) || [];
 
   return (
     <div className="space-y-6">
@@ -219,11 +232,200 @@ export default function BookingsView() {
         </div>
 
         <div className="text-xs text-[#0F1420]/60 hidden md:block">
-          Click any row to open the full flight record and live dispatch checklist.
+          Click any trip to view its booking and quote history.
         </div>
       </div>
 
-      {/* Main Bookings Table Card */}
+      {selectedTripGroup ? (
+        <section className="space-y-5">
+          <button
+            type="button"
+            onClick={() => setSelectedTripKey(null)}
+            className="rounded-lg border border-[#E0DAD0] bg-white px-3 py-2 text-xs font-bold text-[#0F1420] hover:border-[#C9A052]"
+          >
+            ← Back to Bookings
+          </button>
+          <div className="rounded-2xl border border-[#E0DAD0] bg-white p-5 shadow-sm">
+            <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#9A7A35]">
+              Trip History
+            </p>
+            <h2 className="mt-1 break-all text-xl font-black text-[#0F1420]">
+              Trip ID ({selectedTripGroup.primary.tripId || "Pending assignment"})
+            </h2>
+          </div>
+
+          <div className="flex flex-wrap gap-2 rounded-xl border border-[#E0DAD0] bg-white p-3">
+            <button
+              type="button"
+              onClick={() => setHistoryTab("bookings")}
+              className={`rounded-lg px-4 py-2 text-xs font-bold ${
+                historyTab === "bookings" ? "bg-[#0F1420] text-white" : "bg-[#F5F2EC] text-[#0F1420] hover:bg-[#EBE5DB]"
+              }`}
+            >
+              Booking revisions ({selectedTripBookings.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setHistoryTab("quotes")}
+              className={`rounded-lg px-4 py-2 text-xs font-bold ${
+                historyTab === "quotes" ? "bg-[#0F1420] text-white" : "bg-[#F5F2EC] text-[#0F1420] hover:bg-[#EBE5DB]"
+              }`}
+            >
+              Revised quotes ({selectedTripQuotes.length})
+            </button>
+          </div>
+
+          {historyTab === "quotes" ? (
+            selectedTripQuotes.length ? (
+              <div className="overflow-x-auto rounded-xl border border-[#E0DAD0] bg-white">
+                <table className="w-full min-w-[820px] table-fixed border-collapse text-left text-xs">
+                  <colgroup>
+                    <col className="w-[18%]" />
+                    <col className="w-[18%]" />
+                    <col className="w-[24%]" />
+                    <col className="w-[7%]" />
+                    <col className="w-[15%]" />
+                    <col className="w-[18%]" />
+                  </colgroup>
+                  <thead className="border-b border-[#E0DAD0] bg-[#F5F2EC] text-[10px] font-mono uppercase tracking-wider text-[#0F1420]/70">
+                    <tr>
+                      <th className="px-3 py-3 font-bold">Quote ID</th>
+                      <th className="px-3 py-3 font-bold">Route</th>
+                      <th className="px-3 py-3 font-bold">Account</th>
+                      <th className="px-3 py-3 font-bold">Pax</th>
+                      <th className="px-3 py-3 font-bold">Total Price</th>
+                      <th className="px-3 py-3 text-right font-bold">Status / Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#E0DAD0]">
+                    {selectedTripQuotes.map((revision) => (
+                      <tr key={revision.id} className="bg-white">
+                        <td className="break-all px-3 py-4 align-middle font-mono font-bold text-[#0F1420]">
+                          {revision.quoteId || revision.quoteReference || "Quote iteration"}
+                        </td>
+                        <td className="px-3 py-4 align-middle">
+                          <div className="flex flex-col gap-1">
+                            {(revision.legs || []).map((leg, index) => (
+                              <span key={leg.legNumber || index} className="font-mono text-[11px] font-bold text-[#0F1420]">
+                                {leg.origin?.icao || "—"} <span className="text-[#C9A052]">→</span> {leg.destination?.icao || "—"}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="break-words px-3 py-4 align-middle font-semibold text-[#0F1420]">
+                          {revision.client?.companyName || revision.client?.fullName || "Account unavailable"}
+                        </td>
+                        <td className="px-3 py-4 align-middle font-mono text-[#0F1420]">{revision.legs[0]?.paxCount ?? "—"}</td>
+                        <td className="px-3 py-4 align-middle font-mono font-bold text-[#0F1420]">
+                          {formatCurrency(revision.pricing.totalFlightPrice, revision.pricing.currency)}
+                        </td>
+                        <td className="px-3 py-4 align-middle">
+                          <div className="flex items-center justify-end gap-2 whitespace-nowrap">
+                            <span className="rounded-full border border-red-200 bg-red-50 px-2 py-1 text-[10px] font-bold text-red-700">
+                              Cancelled
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => openDocument(revision, "quotation")}
+                              className="rounded-lg border border-[#E0DAD0] bg-[#F5F2EC] px-3 py-1.5 text-[10px] font-bold text-[#0F1420] hover:border-[#C9A052]"
+                            >
+                              View PDF
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="rounded-xl border border-[#E0DAD0] bg-white px-4 py-5 text-sm text-gray-600">
+                No revised quotes are available for this trip.
+              </p>
+            )
+          ) : selectedTripBookings.length ? (
+            <div className="overflow-x-auto rounded-xl border border-[#E0DAD0] bg-white">
+              <table className="w-full min-w-[820px] table-fixed border-collapse text-left text-xs">
+                <colgroup>
+                  <col className="w-[18%]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[24%]" />
+                  <col className="w-[7%]" />
+                  <col className="w-[15%]" />
+                  <col className="w-[18%]" />
+                </colgroup>
+                <thead className="border-b border-[#E0DAD0] bg-[#F5F2EC] text-[10px] font-mono uppercase tracking-wider text-[#0F1420]/70">
+                  <tr>
+                    <th className="px-3 py-3 font-bold">Booking Revision</th>
+                    <th className="px-3 py-3 font-bold">Route</th>
+                    <th className="px-3 py-3 font-bold">Account</th>
+                    <th className="px-3 py-3 font-bold">Pax</th>
+                    <th className="px-3 py-3 font-bold">Total Price</th>
+                    <th className="px-3 py-3 text-right font-bold">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#E0DAD0]">
+                  {selectedTripBookings.map((revision) => {
+                    const isLatestActiveBooking = revision.id === selectedTripGroup.latest.id &&
+                      !revision.isCancelled && revision.status !== "cancelled";
+                    return (
+                      <tr key={revision.id} className="bg-white">
+                        <td className="break-all px-3 py-4 align-middle font-mono font-bold text-[#0F1420]">
+                          {revision.bookingRevisionId || "Initial booking"}
+                          {revision.isSupplementalRevision && <span className="mt-1 block text-[10px] font-sans font-normal text-blue-700">Additional</span>}
+                        </td>
+                        <td className="px-3 py-4 align-middle">
+                          <div className="flex flex-col gap-1">
+                            {(revision.legs || []).map((leg, index) => (
+                              <span key={leg.legNumber || index} className="font-mono text-[11px] font-bold text-[#0F1420]">
+                                {leg.origin?.icao || "—"} <span className="text-[#C9A052]">→</span> {leg.destination?.icao || "—"}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="break-words px-3 py-4 align-middle font-semibold text-[#0F1420]">
+                          {revision.client?.companyName || revision.client?.fullName || "Account unavailable"}
+                        </td>
+                        <td className="px-3 py-4 align-middle font-mono text-[#0F1420]">{revision.legs[0]?.paxCount ?? "—"}</td>
+                        <td className="px-3 py-4 align-middle font-mono font-bold text-[#0F1420]">
+                          {formatCurrency(revision.pricing.totalFlightPrice, revision.pricing.currency)}
+                        </td>
+                        <td className="px-3 py-4 align-middle">
+                          <div className="flex items-center justify-end gap-2 whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => openDocument(revision, "invoice")}
+                              className="rounded-lg border border-[#E0DAD0] bg-[#F5F2EC] px-3 py-1.5 text-[10px] font-bold text-[#0F1420] hover:border-[#C9A052]"
+                            >
+                              Invoice
+                            </button>
+                            {isLatestActiveBooking && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setBookingToRevise(revision);
+                                  setActiveNav("quotes");
+                                }}
+                                className="rounded-lg bg-[#0F1420] px-3 py-1.5 text-[10px] font-bold text-[#C9A052] hover:bg-[#1C2436]"
+                              >
+                                Revise Trip
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="rounded-xl border border-[#E0DAD0] bg-white px-4 py-5 text-sm text-gray-600">
+              No booking revisions are available for this trip.
+            </p>
+          )}
+        </section>
+      ) : (
       <div className="bg-white border border-[#E0DAD0] rounded-2xl shadow-sm overflow-hidden">
         
         <div className="p-4 bg-[#F5F2EC]/80 border-b border-[#E0DAD0] flex items-center justify-between flex-wrap gap-3">
@@ -282,20 +484,22 @@ export default function BookingsView() {
                   const isBookedRecord = booking.isBooked ||
                     ["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(booking.status);
                   const hasIterations = revisions.length > 1;
-                  const isExpanded = expandedTripIds.has(tripKey);
 
                   return (
                     <React.Fragment key={tripKey}>
                       <tr
                         onClick={() => {
-                          if (!hasIterations) return;
-                          setExpandedTripIds((prev) => {
-                            const next = new Set(prev);
-                            if (next.has(tripKey)) next.delete(tripKey);
-                            else next.add(tripKey);
-                            return next;
-                          });
+                          setSelectedTripKey(tripKey);
+                          setHistoryTab("bookings");
                         }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            setSelectedTripKey(tripKey);
+                            setHistoryTab("bookings");
+                          }
+                        }}
+                        tabIndex={0}
                         className="hover:bg-[#F5F2EC]/60 transition-colors cursor-pointer group"
                       >
                       {/* Trip ID */}
@@ -304,38 +508,19 @@ export default function BookingsView() {
                           {isBookedRecord ? (
                             <span className="font-extrabold text-[#0F1420] font-mono text-sm tracking-wide group-hover:text-[#C9A052] transition-colors flex items-center gap-1.5">
                               Trip ID ({booking.tripId || "Pending assignment"})
-                              {hasIterations && <span className="text-[10px] text-[#C9A052]">{isExpanded ? "−" : "+"}</span>}
+                              {hasIterations && <span className="text-[10px] text-[#C9A052]">{revisions.length} Iterations</span>}
                             </span>
                           ) : (
                             <div className="flex flex-col">
                               <span className="font-bold text-[#9A7A35] font-mono text-xs tracking-wide group-hover:text-[#C9A052] transition-colors flex items-center gap-1.5">
                                 Trip ID ({booking.tripId || "Pending assignment"})
-                                {hasIterations && <span className="text-[10px] text-[#C9A052]">{isExpanded ? "−" : "+"}</span>}
+                                {hasIterations && <span className="text-[10px] text-[#C9A052]">{revisions.length} Iterations</span>}
                               </span>
                               <span className="text-[10px] text-gray-400 font-mono italic">
                                 {booking.quoteId || booking.quoteReference || "Quote ID pending"}
                               </span>
                             </div>
                           )}
-                          <div className="flex items-center gap-1 flex-wrap">
-                            {hasIterations && (
-                              <button
-                                type="button"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  setExpandedTripIds((prev) => {
-                                    const next = new Set(prev);
-                                    if (next.has(tripKey)) next.delete(tripKey);
-                                    else next.add(tripKey);
-                                    return next;
-                                  });
-                                }}
-                                className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-purple-100 text-purple-800 border border-purple-300 hover:bg-purple-200"
-                              >
-                                {revisions.length} Iterations {isExpanded ? "−" : "+"}
-                              </button>
-                            )}
-                          </div>
                         </div>
                       </td>
 
@@ -420,70 +605,6 @@ export default function BookingsView() {
                         </div>
                       </td>
                       </tr>
-                      {hasIterations && isExpanded && (
-                        <tr className="bg-[#FAF8F5]">
-                          <td colSpan={6} className="px-5 py-3">
-                            <div className="space-y-2 border-l-2 border-[#C9A052] pl-4">
-                              <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-gray-500">
-                                Booking history · {tripKey}
-                              </p>
-                              {revisions.map((revision) => (
-                                <div
-                                  key={revision.id}
-                                  className={`w-full flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs ${
-                                    revision.id === booking.id
-                                      ? "border-emerald-300 bg-emerald-50"
-                                      : "border-[#E0DAD0] bg-white"
-                                  }`}
-                                >
-                                  <div className="flex flex-1 flex-wrap items-center justify-between gap-2 text-left min-w-[220px]">
-                                    <span className="font-mono font-bold text-[#0F1420]">
-                                      {revision.isBooked
-                                        ? revision.bookingRevisionId || revision.tripNumber
-                                        : revision.quoteId || revision.quoteReference || revision.tripNumber}
-                                      {revision.isSupplementalRevision && <span className="ml-2 text-blue-700">Additional</span>}
-                                      {revision.id === booking.id && <span className="ml-2 text-emerald-700">Initial booking</span>}
-                                      {revision.id === latestRevision?.id && revision.id !== booking.id && <span className="ml-2 text-blue-700">Latest</span>}
-                                      {(revision.isCancelled || revision.status === "cancelled") && (
-                                        <span className="ml-2 text-red-600">
-                                          {revision.isBooked ? "Archived" : "Cancelled"}
-                                        </span>
-                                      )}
-                                    </span>
-                                    <span className="text-gray-500">{revision.updatedAt || revision.createdAt || "Date unavailable"}</span>
-                                    <span className="font-mono font-bold text-[#0F1420]">
-                                      {formatCurrency(revision.pricing.totalFlightPrice, revision.pricing.currency)}
-                                    </span>
-                                    <span className="text-gray-600">{revision.cancellationReason || revision.status.replace("_", " ")}</span>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={() => openDocument(revision, revision.isBooked ? "invoice" : "quotation")}
-                                      className="text-[11px] font-bold text-[#9A7A35] hover:text-[#0F1420]"
-                                      title={revision.isBooked
-                                        ? `View invoice ${revision.invoiceNumber || ""} for this iteration`
-                                        : `View quote ${revision.quoteReference || ""} for this iteration`}
-                                    >
-                                      {revision.isBooked ? "Invoice" : "Quote"}
-                                    </button>
-                                    {revision.isBooked && revision.creditNotes?.length ? (
-                                      <button
-                                        type="button"
-                                        onClick={() => openDocument(revision, "credit_note")}
-                                        className="text-[11px] font-bold text-red-700 hover:text-red-900"
-                                        title={`View credit note for ${revision.bookingRevisionId || "this iteration"}`}
-                                      >
-                                        Credit Note
-                                      </button>
-                                    ) : null}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </td>
-                        </tr>
-                      )}
                     </React.Fragment>
                   );
                 })
@@ -492,6 +613,7 @@ export default function BookingsView() {
           </table>
         </div>
       </div>
+      )}
     </div>
   );
 }
