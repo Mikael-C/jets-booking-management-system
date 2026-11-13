@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { airportsData } from "@/data/airports";
 import { Airport } from "@/types/aviation";
+import { prepareAirportSearch } from "@/lib/airportSearch";
 import { setRuntimeAirportDirectory } from "@/lib/airportDirectoryStore";
 
 const STORAGE_KEY = "orbelo_airport_directory_v2";
@@ -89,6 +90,7 @@ function loadBaseAirportDirectory(): Promise<Airport[]> {
           throw new Error("The imported OurAirports file is missing or invalid.");
         }
         baseAirportDirectory = mergeAirportDirectory(data.airports as Airport[]);
+        prepareAirportSearch(baseAirportDirectory);
         return baseAirportDirectory;
       })
       .catch((error: unknown) => {

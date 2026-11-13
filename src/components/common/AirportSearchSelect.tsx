@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useRef, useEffect } from "react";
+import React, { useState, useMemo, useRef, useEffect, useDeferredValue } from "react";
 import { useAirportDirectory } from "@/lib/airportDirectory";
 import { rankAirports } from "@/lib/airportSearch";
 import { Search, X, ChevronDown, Check, MapPin } from "lucide-react";
@@ -24,6 +24,8 @@ export default function AirportSearchSelect({
   const isDisabled = disabled || !directoryLoaded;
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+  const isSearchPending = searchQuery !== deferredSearchQuery;
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -37,8 +39,8 @@ export default function AirportSearchSelect({
   }, [value, airportsData]);
 
   const filteredAirports = useMemo(() => {
-    return rankAirports(airportsData, searchQuery, true);
-  }, [searchQuery, airportsData]);
+    return rankAirports(airportsData, deferredSearchQuery, true);
+  }, [deferredSearchQuery, airportsData]);
   const visibleAirports = filteredAirports.slice(0, 100);
 
   // Click outside listener
@@ -130,8 +132,9 @@ export default function AirportSearchSelect({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(event) => {
-                if (event.key === "Enter" && filteredAirports.length > 0) {
+                if (event.key === "Enter") {
                   event.preventDefault();
+                  if (isSearchPending || filteredAirports.length === 0) return;
                   handleSelectAirport(filteredAirports[0].icao);
                 }
               }}
@@ -153,7 +156,9 @@ export default function AirportSearchSelect({
           {/* Quick Stats / Filter Info */}
           <div className="flex items-center justify-between px-1 pb-1.5 text-[10px] font-mono text-gray-400 border-b border-[#E0DAD0]/60 mb-1">
             <span>
-              Showing {visibleAirports.length} of {filteredAirports.length} matches
+              {isSearchPending
+                ? "Searching airports…"
+                : `Showing ${visibleAirports.length} of ${filteredAirports.length} matches`}
             </span>
             <span className="text-[9px] uppercase tracking-wider">
               CODE • IATA • CITY
@@ -161,8 +166,15 @@ export default function AirportSearchSelect({
           </div>
 
           {/* Scrollable Airports List */}
-          <div className="max-h-60 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
-            {filteredAirports.length === 0 ? (
+          <div
+            aria-busy={isSearchPending}
+            className="max-h-60 overflow-y-auto space-y-1 pr-1 custom-scrollbar"
+          >
+            {isSearchPending ? (
+              <div className="py-6 text-center text-xs text-gray-500">
+                Searching airports…
+              </div>
+            ) : filteredAirports.length === 0 ? (
               <div className="py-6 text-center text-xs text-gray-400">
                 <MapPin className="w-6 h-6 text-gray-300 mx-auto mb-1.5" />
                 <p className="font-semibold text-gray-600">No airports found</p>

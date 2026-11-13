@@ -6,10 +6,12 @@ interface AirportSearchRecord {
   name: string;
   city: string;
   country: string;
+  airportDetails: string;
   fboDetails: string[];
 }
 
 const searchRecordCache = new WeakMap<Airport, AirportSearchRecord>();
+const preparedDirectories = new WeakSet<Airport[]>();
 const CODE_SCORES = [0, 10, 20, 40];
 const NAME_SCORES = [1, 20, 25, 50];
 const CITY_SCORES = [2, 30, 35, 60];
@@ -29,21 +31,41 @@ function getSearchRecord(airport: Airport): AirportSearchRecord {
   const cached = searchRecordCache.get(airport);
   if (cached) return cached;
 
+  const icao = normalize(airport.icao || "");
+  const iata = normalize(airport.iata || "");
+  const name = normalize(airport.name || "");
+  const city = normalize(airport.city || "");
+  const country = normalize(airport.country || "");
+  const fboDetails = (airport.fbos || []).flatMap((fbo) => [
+    normalize(fbo.name || ""),
+    normalize(fbo.phone || ""),
+    normalize(fbo.email || ""),
+    ...(fbo.languages || []).map(normalize),
+  ]);
   const record: AirportSearchRecord = {
-    icao: normalize(airport.icao || ""),
-    iata: normalize(airport.iata || ""),
-    name: normalize(airport.name || ""),
-    city: normalize(airport.city || ""),
-    country: normalize(airport.country || ""),
-    fboDetails: (airport.fbos || []).flatMap((fbo) => [
-      normalize(fbo.name || ""),
-      normalize(fbo.phone || ""),
-      normalize(fbo.email || ""),
-      ...(fbo.languages || []).map(normalize),
-    ]),
+    icao,
+    iata,
+    name,
+    city,
+    country,
+    airportDetails: [icao, iata, name, city, country].join("\u0000"),
+    fboDetails,
   };
   searchRecordCache.set(airport, record);
   return record;
+}
+
+export function prepareAirportSearch(airports: Airport[]): void {
+  if (preparedDirectories.has(airports)) return;
+  preparedDirectories.add(airports);
+
+  let index = 0;
+  const prepareChunk = () => {
+    const end = Math.min(index + 1000, airports.length);
+    for (; index < end; index += 1) getSearchRecord(airports[index]);
+    if (index < airports.length) setTimeout(prepareChunk, 0);
+  };
+  setTimeout(prepareChunk, 0);
 }
 
 function matchScore(value: string, query: string, scores: number[]): number | null {
@@ -99,6 +121,24 @@ function scoreAirport(
   return tokenScore;
 }
 
+function mayMatch(
+  record: AirportSearchRecord,
+  query: string,
+  queryTokens: string[],
+  includeFboDetails: boolean,
+): boolean {
+  if (record.airportDetails.includes(query)) return true;
+  if (includeFboDetails && record.fboDetails.some((value) => value.includes(query))) {
+    return true;
+  }
+
+  return queryTokens.every(
+    (token) =>
+      record.airportDetails.includes(token) ||
+      (includeFboDetails && record.fboDetails.some((value) => value.includes(token))),
+  );
+}
+
 export function rankAirports(
   airports: Airport[],
   searchQuery: string,
@@ -109,10 +149,11 @@ export function rankAirports(
 
   const queryTokens = query.split(/\s+/);
   const matchesByScore = new Map<number, Airport[]>();
-  const exactCodeCities = new Set<string>();
+  const exactCodeLocations = new Set<string>();
 
   for (const airport of airports) {
     const record = getSearchRecord(airport);
+    if (!mayMatch(record, query, queryTokens, includeFboDetails)) continue;
     const score = scoreAirport(record, query, queryTokens, includeFboDetails);
     if (score === null) continue;
 
@@ -124,11 +165,11 @@ export function rankAirports(
     }
 
     if ((record.icao === query || record.iata === query) && record.city) {
-      exactCodeCities.add(record.city);
+      exactCodeLocations.add(`${record.city}\u0000${record.country}`);
     }
   }
 
-  if (exactCodeCities.size > 0) {
+  if (exactCodeLocations.size > 0) {
     const matchedAirports = new Set<Airport>();
     for (const matches of Array.from(matchesByScore.values())) {
       for (const airport of matches) matchedAirports.add(airport);
@@ -136,7 +177,8 @@ export function rankAirports(
 
     for (const airport of airports) {
       const record = getSearchRecord(airport);
-      if (!matchedAirports.has(airport) && exactCodeCities.has(record.city)) {
+      const location = `${record.city}\u0000${record.country}`;
+      if (!matchedAirports.has(airport) && exactCodeLocations.has(location)) {
         const relatedMatches = matchesByScore.get(5);
         if (relatedMatches) {
           relatedMatches.push(airport);
@@ -147,7 +189,17 @@ export function rankAirports(
     }
   }
 
-  return Array.from(matchesByScore.keys())
-    .sort((a, b) => a - b)
-    .flatMap((score) => matchesByScore.get(score) || []);
+  const rankedAirports: Airport[] = [];
+  const seenAirportCodes = new Set<string>();
+  const scores = Array.from(matchesByScore.keys()).sort((a, b) => a - b);
+  for (const score of scores) {
+    for (const airport of matchesByScore.get(score) || []) {
+      const code = normalize(airport.icao || "");
+      const uniqueKey = code ? `icao:${code}` : `id:${airport.id}`;
+      if (seenAirportCodes.has(uniqueKey)) continue;
+      seenAirportCodes.add(uniqueKey);
+      rankedAirports.push(airport);
+    }
+  }
+  return rankedAirports;
 }
