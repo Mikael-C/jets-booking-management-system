@@ -6,7 +6,7 @@ import { airportsData, findAirportByCode, getAirportFbos, getDefaultHandlingAgen
 import AirportSearchSelect from "@/components/common/AirportSearchSelect";
 import { fleetData } from "@/data/fleet";
 import { defaultOperator } from "@/data/initialBookings";
-import { Booking, FlightLeg, AdditionalServices, TripType, PetDetails, LuggageDetails, Airport, FboOption } from "@/types/aviation";
+import { Booking, FlightLeg, AdditionalServices, TripType, PetDetails, LuggageDetails, Airport, FboOption, Aircraft } from "@/types/aviation";
 import {
   calculatePricing,
   calculateDistanceNm,
@@ -55,6 +55,7 @@ import {
 interface QuoteLegInput {
   originIcao: string;
   destIcao: string;
+  aircraftId: string;
   flightDate: string;
   departureTime: string;
   arrivalTime: string;
@@ -68,6 +69,99 @@ interface QuoteLegInput {
   pets?: PetDetails;
   luggage?: LuggageDetails;
   durationOverrideMinutes?: number;
+}
+
+const DEFAULT_AIRCRAFT_ID = "cessna-citation-mustang";
+
+function createQuoteLegInput(
+  originIcao: string,
+  destIcao: string,
+  flightDate: string,
+  paxCount: number,
+  aircraftId: string,
+  departureTime: string,
+): QuoteLegInput {
+  const originAirport = findAirportByCode(originIcao);
+  const destinationAirport = findAirportByCode(destIcao);
+  const distance = calculateDistanceNm(
+    originAirport.coordinates?.lat || 46.2,
+    originAirport.coordinates?.lng || 6.1,
+    destinationAirport.coordinates?.lat || 44.4,
+    destinationAirport.coordinates?.lng || 8.8,
+  );
+  const arrivalTime = calculateLegArrivalAndTz(
+    originAirport,
+    destinationAirport,
+    departureTime,
+    estimateFlightTimeMinutes(distance),
+  ).arrivalTimeLocal;
+  const departureFbo = originAirport.fbos?.[0];
+  const arrivalFbo = destinationAirport.fbos?.[0];
+
+  return {
+    originIcao,
+    destIcao,
+    aircraftId,
+    flightDate,
+    departureTime,
+    arrivalTime,
+    paxCount,
+    depHandlerName: departureFbo?.name || `${originAirport.name} FBO`,
+    depHandlerPhone: departureFbo?.phone || "",
+    depHandlerEmail: departureFbo?.email || "",
+    arrHandlerName: arrivalFbo?.name || `${destinationAirport.name} FBO`,
+    arrHandlerPhone: arrivalFbo?.phone || "",
+    arrHandlerEmail: arrivalFbo?.email || "",
+  };
+}
+
+function updateQuoteLegAirport(
+  leg: QuoteLegInput,
+  field: "originIcao" | "destIcao",
+  code: string,
+): QuoteLegInput {
+  const airport = findAirportByCode(code);
+  const fbo = airport.fbos?.[0];
+
+  if (field === "originIcao") {
+    return {
+      ...leg,
+      originIcao: code,
+      depHandlerName: fbo?.name || `${airport.name} FBO`,
+      depHandlerPhone: fbo?.phone || "",
+      depHandlerEmail: fbo?.email || "",
+    };
+  }
+
+  return {
+    ...leg,
+    destIcao: code,
+    arrHandlerName: fbo?.name || `${airport.name} FBO`,
+    arrHandlerPhone: fbo?.phone || "",
+    arrHandlerEmail: fbo?.email || "",
+  };
+}
+
+function updateQuoteLegArrival(leg: QuoteLegInput): QuoteLegInput {
+  const originAirport = findAirportByCode(leg.originIcao);
+  const destinationAirport = findAirportByCode(leg.destIcao);
+  const distance = calculateDistanceNm(
+    originAirport.coordinates?.lat || 46.2,
+    originAirport.coordinates?.lng || 6.1,
+    destinationAirport.coordinates?.lat || 44.4,
+    destinationAirport.coordinates?.lng || 8.8,
+  );
+  const duration = leg.durationOverrideMinutes || estimateFlightTimeMinutes(distance);
+
+  return {
+    ...leg,
+    arrivalTime: calculateLegArrivalAndTz(
+      originAirport,
+      destinationAirport,
+      leg.departureTime || "11:00",
+      duration,
+    ).arrivalTimeLocal,
+  };
 }
 
 export default function GenerateQuoteView() {
@@ -106,7 +200,7 @@ export default function GenerateQuoteView() {
   const [vatNumber, setVatNumber] = useState(prefillClientForQuote?.vatNumber || "US-8492041");
 
   // ================= Aircraft Selection & Manual Overrides =================
-  const [selectedAircraftId, setSelectedAircraftId] = useState("cessna-citation-mustang");
+  const [selectedAircraftId, setSelectedAircraftId] = useState(DEFAULT_AIRCRAFT_ID);
   const [aircraftSearchQuery, setAircraftSearchQuery] = useState("");
   const [isAircraftPickerOpen, setIsAircraftPickerOpen] = useState(false);
 
@@ -172,6 +266,7 @@ export default function GenerateQuoteView() {
     {
       originIcao: "LSGG",
       destIcao: "LIMJ",
+      aircraftId: DEFAULT_AIRCRAFT_ID,
       flightDate: "2026-10-03",
       departureTime: "11:00",
       arrivalTime: "11:55",
@@ -186,6 +281,7 @@ export default function GenerateQuoteView() {
     {
       originIcao: "LIMJ",
       destIcao: "LSGG",
+      aircraftId: DEFAULT_AIRCRAFT_ID,
       flightDate: "2026-10-06",
       departureTime: "15:00",
       arrivalTime: "16:04",
@@ -265,97 +361,93 @@ export default function GenerateQuoteView() {
     }
   };
 
-  // Helper to add leg with default respective FBOs
   const handleAddLeg = () => {
+    if (tripType !== "multi_leg") return;
+
     const lastLeg = legs[legs.length - 1];
     const originIcao = lastLeg ? lastLeg.destIcao : "LSGG";
     const destIcao = "LFPB";
-    const origAirport = findAirportByCode(originIcao);
-    const destAirport = findAirportByCode(destIcao);
-
-    const dist = calculateDistanceNm(
-      origAirport.coordinates?.lat || 46.2,
-      origAirport.coordinates?.lng || 6.1,
-      destAirport.coordinates?.lat || 48.9,
-      destAirport.coordinates?.lng || 2.4
+    const newLeg = createQuoteLegInput(
+      originIcao,
+      destIcao,
+      lastLeg?.flightDate || new Date().toISOString().slice(0, 10),
+      lastLeg?.paxCount || 2,
+      selectedAircraftId,
+      "14:00",
     );
-    const flightMinutes = estimateFlightTimeMinutes(dist);
-
-    const depFbo = (origAirport.fbos && origAirport.fbos[0]) || {
-      name: `${origAirport.name} FBO`,
-      phone: "+41 58 158 1811",
-      email: `ops@${originIcao.toLowerCase()}.handling.aero`
-    };
-
-    const arrFbo = (destAirport.fbos && destAirport.fbos[0]) || {
-      name: `${destAirport.name} FBO`,
-      phone: "+33 1 48 62 00 00",
-      email: `ops@${destIcao.toLowerCase()}.handling.aero`
-    };
-
-    setLegs([
-      ...legs,
-      {
-        originIcao,
-        destIcao,
-        flightDate: lastLeg ? lastLeg.flightDate : new Date().toISOString().split("T")[0],
-        departureTime: "14:00",
-        arrivalTime: "15:15",
-        paxCount: lastLeg ? lastLeg.paxCount : 2,
-        depHandlerName: depFbo.name,
-        depHandlerPhone: depFbo.phone,
-        depHandlerEmail: depFbo.email,
-        arrHandlerName: arrFbo.name,
-        arrHandlerPhone: arrFbo.phone,
-        arrHandlerEmail: arrFbo.email
-      }
-    ]);
+    setLegs((currentLegs) => [...currentLegs, newLeg]);
   };
 
   const handleRemoveLeg = (idx: number) => {
-    if (legs.length <= 1) return;
-    setLegs(legs.filter((_, i) => i !== idx));
+    if (tripType !== "multi_leg" || legs.length <= 2) return;
+    setLegs((currentLegs) => currentLegs.filter((_, i) => i !== idx));
+    setActiveLegTabs({});
+  };
+
+  const handleTripTypeChange = (nextTripType: TripType) => {
+    setTripType(nextTripType);
+    setActiveLegTabs({});
+    setLegs((currentLegs) => {
+      const firstLeg =
+        currentLegs[0] ||
+        createQuoteLegInput("LSGG", "LIMJ", new Date().toISOString().slice(0, 10), 2, selectedAircraftId, "11:00");
+
+      if (nextTripType === "one_way") return [firstLeg];
+
+      const returnLeg =
+        currentLegs[1] ||
+        createQuoteLegInput(
+          firstLeg.destIcao,
+          firstLeg.originIcao,
+          firstLeg.flightDate,
+          firstLeg.paxCount,
+          selectedAircraftId,
+          "15:00",
+        );
+
+      if (nextTripType === "multi_leg") {
+        return [firstLeg, returnLeg, ...currentLegs.slice(2)];
+      }
+
+      const syncedReturnLeg = updateQuoteLegArrival(
+        updateQuoteLegAirport(
+          updateQuoteLegAirport(returnLeg, "originIcao", firstLeg.destIcao),
+          "destIcao",
+          firstLeg.originIcao,
+        ),
+      );
+      return [firstLeg, syncedReturnLeg];
+    });
+  };
+
+  const handleGlobalAircraftChange = (aircraftId: string) => {
+    setSelectedAircraftId(aircraftId);
+    setLegs((currentLegs) =>
+      currentLegs.map((leg) => ({ ...leg, aircraftId })),
+    );
   };
 
   const handleLegChange = (idx: number, field: keyof QuoteLegInput, val: any) => {
     const updated = [...legs];
-    updated[idx] = { ...updated[idx], [field]: val };
+    updated[idx] =
+      field === "originIcao" || field === "destIcao"
+        ? updateQuoteLegAirport(legs[idx], field, val)
+        : { ...legs[idx], [field]: val };
 
-    // Auto-update handling agents and arrival times when origin or dest changes
-    if (field === "originIcao") {
-      const origAirport = findAirportByCode(val);
-      const primaryFbo = origAirport.fbos && origAirport.fbos[0];
-      if (primaryFbo) {
-        updated[idx].depHandlerName = primaryFbo.name;
-        updated[idx].depHandlerPhone = primaryFbo.phone;
-        updated[idx].depHandlerEmail = primaryFbo.email;
-      }
+    const shouldRecalculateArrival =
+      field === "departureTime" ||
+      field === "originIcao" ||
+      field === "destIcao" ||
+      field === "durationOverrideMinutes";
+    if (shouldRecalculateArrival) {
+      updated[idx] = updateQuoteLegArrival(updated[idx]);
     }
 
-    if (field === "destIcao") {
-      const destAirport = findAirportByCode(val);
-      const primaryFbo = destAirport.fbos && destAirport.fbos[0];
-      if (primaryFbo) {
-        updated[idx].arrHandlerName = primaryFbo.name;
-        updated[idx].arrHandlerPhone = primaryFbo.phone;
-        updated[idx].arrHandlerEmail = primaryFbo.email;
-      }
-    }
-
-    if (field === "departureTime" || field === "originIcao" || field === "destIcao" || (field as string) === "durationOverrideMinutes") {
-      const orig = findAirportByCode(field === "originIcao" ? val : updated[idx].originIcao);
-      const dest = findAirportByCode(field === "destIcao" ? val : updated[idx].destIcao);
-      const dist = calculateDistanceNm(
-        orig.coordinates?.lat || 46.2,
-        orig.coordinates?.lng || 6.1,
-        dest.coordinates?.lat || 44.4,
-        dest.coordinates?.lng || 8.8
+    if (tripType === "round_trip" && idx === 0 && (field === "originIcao" || field === "destIcao")) {
+      const returnField = field === "originIcao" ? "destIcao" : "originIcao";
+      updated[1] = updateQuoteLegArrival(
+        updateQuoteLegAirport(updated[1], returnField, val),
       );
-      const defaultMinutes = estimateFlightTimeMinutes(dist);
-      const durationMinutes = updated[idx].durationOverrideMinutes || defaultMinutes;
-      const depTime = field === "departureTime" ? val : updated[idx].departureTime;
-      const tzInfo = calculateLegArrivalAndTz(orig, dest, depTime || "11:00", durationMinutes);
-      updated[idx].arrivalTime = tzInfo.arrivalTimeLocal;
     }
 
     setLegs(updated);
@@ -364,6 +456,7 @@ export default function GenerateQuoteView() {
   // Compile full flight legs (No callsign on quote)
   const compiledLegs: FlightLeg[] = useMemo(() => {
     return legs.map((leg, idx) => {
+      const legAircraft = fleetData.find((aircraft) => aircraft.id === leg.aircraftId) || currentAircraft;
       const originAirport = findAirportByCode(leg.originIcao);
       const destAirport = findAirportByCode(leg.destIcao);
       const dist = calculateDistanceNm(
@@ -397,7 +490,8 @@ export default function GenerateQuoteView() {
         flightTimeFormatted: formatFlightTime(flightMinutes),
         paxCount: leg.paxCount,
         flightNumber: "", // NO callsign on quote without booking!
-        aircraftRegistration: currentAircraft.registration || "",
+        aircraftRegistration: legAircraft.registration || "",
+        aircraftType: legAircraft.name,
         distanceNm: dist,
         pets: leg.pets,
         luggage: leg.luggage,
@@ -424,6 +518,14 @@ export default function GenerateQuoteView() {
       };
     });
   }, [legs, currentAircraft, clientName]);
+
+  const aircraftByLeg = useMemo(() => {
+    return legs.reduce<Record<number, Aircraft>>((selectedAircraft, leg, idx) => {
+      selectedAircraft[idx + 1] =
+        fleetData.find((aircraft) => aircraft.id === leg.aircraftId) || currentAircraft;
+      return selectedAircraft;
+    }, {});
+  }, [legs, currentAircraft]);
 
   // Effective Aircraft with manual overrides
   const effectiveAircraft = useMemo(() => {
@@ -452,8 +554,8 @@ export default function GenerateQuoteView() {
 
   // Pricing calculation
   const autoPricing = useMemo(() => {
-    return calculatePricing(effectiveAircraft, compiledLegs, services, currency);
-  }, [effectiveAircraft, compiledLegs, services, currency]);
+    return calculatePricing(effectiveAircraft, compiledLegs, services, currency, aircraftByLeg);
+  }, [effectiveAircraft, compiledLegs, services, currency, aircraftByLeg]);
 
   const effectivePricing = overridePricing
     ? {
@@ -706,7 +808,7 @@ export default function GenerateQuoteView() {
               </label>
               <select
                 value={tripType}
-                onChange={(e) => setTripType(e.target.value as any)}
+                onChange={(e) => handleTripTypeChange(e.target.value as TripType)}
                 className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 text-xs font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
               >
                 <option value="round_trip">Round Trip</option>
@@ -931,7 +1033,7 @@ export default function GenerateQuoteView() {
                     <div
                       key={jet.id}
                       onClick={() => {
-                        setSelectedAircraftId(jet.id);
+                        handleGlobalAircraftChange(jet.id);
                         setAircraftNameOverride(jet.name);
                         setPassengerSeatsOverride(jet.passengers);
                         setYearOfManufactureOverride(String(jet.yearOfManufacture || "2020"));
@@ -1207,14 +1309,16 @@ export default function GenerateQuoteView() {
               </h3>
             </div>
 
-            <button
-              type="button"
-              onClick={handleAddLeg}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0F1420] text-white hover:bg-[#1A2338] text-xs font-bold transition-all shadow-sm"
-            >
-              <Plus className="w-3.5 h-3.5 text-[#C9A052]" />
-              <span>Add Flight Leg</span>
-            </button>
+            {tripType === "multi_leg" && (
+              <button
+                type="button"
+                onClick={handleAddLeg}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0F1420] text-white hover:bg-[#1A2338] text-xs font-bold transition-all shadow-sm"
+              >
+                <Plus className="w-3.5 h-3.5 text-[#C9A052]" />
+                <span>Add Flight Leg</span>
+              </button>
+            )}
           </div>
 
           <div className="space-y-5">
@@ -1301,7 +1405,7 @@ export default function GenerateQuoteView() {
                         </button>
                       </div>
 
-                      {legs.length > 1 && (
+                      {tripType === "multi_leg" && legs.length > 2 && (
                         <button
                           type="button"
                           onClick={() => handleRemoveLeg(index)}
@@ -1326,7 +1430,11 @@ export default function GenerateQuoteView() {
                           <AirportSearchSelect
                             value={leg.originIcao}
                             onChange={(val) => handleLegChange(index, "originIcao", val)}
+                            disabled={tripType === "round_trip" && index === 1}
                           />
+                          {tripType === "round_trip" && index === 1 && (
+                            <p className="mt-1 text-[10px] text-gray-500">Linked to the outbound destination.</p>
+                          )}
                           <p className="text-[10px] text-gray-500 mt-1 truncate">
                             {origAirport.name} ({origAirport.country})
                           </p>
@@ -1340,7 +1448,11 @@ export default function GenerateQuoteView() {
                           <AirportSearchSelect
                             value={leg.destIcao}
                             onChange={(val) => handleLegChange(index, "destIcao", val)}
+                            disabled={tripType === "round_trip" && index === 1}
                           />
+                          {tripType === "round_trip" && index === 1 && (
+                            <p className="mt-1 text-[10px] text-gray-500">Linked to the outbound origin.</p>
+                          )}
                           <p className="text-[10px] text-gray-500 mt-1 truncate">
                             {destAirport.name} ({destAirport.country})
                           </p>
@@ -1373,6 +1485,26 @@ export default function GenerateQuoteView() {
                             className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1.5 text-xs text-[#0F1420] font-mono font-bold focus:outline-none focus:border-[#C9A052]"
                           />
                         </div>
+                      </div>
+
+                      <div className="max-w-md">
+                        <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
+                          Aircraft for this leg
+                        </label>
+                        <select
+                          value={leg.aircraftId}
+                          onChange={(e) => handleLegChange(index, "aircraftId", e.target.value)}
+                          className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2.5 py-2 text-xs font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                        >
+                          {fleetData.map((aircraft) => (
+                            <option key={aircraft.id} value={aircraft.id}>
+                              {aircraft.name} — {aircraft.passengers} seats (€{aircraft.pricePerHour.toLocaleString()}/hr)
+                            </option>
+                          ))}
+                        </select>
+                        <p className="mt-1 text-[10px] text-gray-500">
+                          This aircraft applies only to Flight Leg #{index + 1}.
+                        </p>
                       </div>
 
                       {/* Station Times, Duration Override, Timezones, and Respective FBO Dropdowns */}

@@ -537,6 +537,7 @@ export const normalizeBooking = (b: any): Booking => {
         paxCount: Number(leg?.paxCount || 2),
         flightNumber: String(leg?.flightNumber || "PEA501"),
         aircraftRegistration: String(leg?.aircraftRegistration || aircraft.registration || "OE-FFB"),
+        aircraftType: leg?.aircraftType ? String(leg.aircraftType) : undefined,
         crew: Array.isArray(leg?.crew) ? leg.crew : [],
         passengers: Array.isArray(leg?.passengers) ? leg.passengers : [],
         departureHandling: leg?.departureHandling || {

@@ -210,6 +210,7 @@ export interface FlightLeg {
   paxCount: number;
   flightNumber: string; // Callsign e.g. "PEA501", "GAC842U"
   aircraftRegistration: string; // Tail e.g. "OE-FFB"
+  aircraftType?: string;
   crew: CrewMember[];
   passengers: PassengerManifestItem[];
   departureHandling: HandlingAgent;

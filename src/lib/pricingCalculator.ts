@@ -30,22 +30,33 @@ export function calculatePricing(
   aircraft: Aircraft,
   legs: FlightLeg[],
   services: AdditionalServices,
-  currency: "EUR" | "USD" | "GBP" | "CHF" = "EUR"
+  currency: "EUR" | "USD" | "GBP" | "CHF" = "EUR",
+  aircraftByLeg?: Record<number, Aircraft>,
 ): PricingBreakdown {
   const totalLegs = Math.max(legs.length, 1);
   let totalFlightMinutes = 0;
   let totalPaxCount = 0;
+  let perLegFlightPrice = 0;
 
   legs.forEach((leg) => {
     totalPaxCount += leg.paxCount || 2;
     const distance = leg.distanceNm || 200;
-    totalFlightMinutes += estimateFlightTimeMinutes(distance);
+    const flightMinutes = aircraftByLeg
+      ? leg.flightTimeMinutes || estimateFlightTimeMinutes(distance)
+      : estimateFlightTimeMinutes(distance);
+    totalFlightMinutes += flightMinutes;
+    if (aircraftByLeg) {
+      const legAircraft = aircraftByLeg[leg.legNumber] || aircraft;
+      perLegFlightPrice += Math.max(flightMinutes / 60, 1.2) * legAircraft.pricePerHour;
+    }
   });
 
   const totalFlightHours = Math.max(totalFlightMinutes / 60, 1.2 * totalLegs);
   
   // Base flight charter rate
-  const flightPrice = Math.round(totalFlightHours * aircraft.pricePerHour);
+  const flightPrice = Math.round(
+    aircraftByLeg ? perLegFlightPrice : totalFlightHours * aircraft.pricePerHour,
+  );
 
   // Airport landing, handling & navigation fees (~€450 - €600 per leg)
   const airportFees = totalLegs * 570;

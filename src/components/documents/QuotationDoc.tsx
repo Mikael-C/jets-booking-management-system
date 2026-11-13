@@ -181,6 +181,7 @@ export default function QuotationDoc({ booking }: QuotationDocProps) {
                   <th className="p-2 border-b">Arrival Station & FBO</th>
                   <th className="p-2 border-b text-center">Schedule (LT)</th>
                   <th className="p-2 border-b text-center">Duration</th>
+                  <th className="p-2 border-b">Aircraft</th>
                   <th className="p-2 border-b text-center">Pax</th>
                 </tr>
               </thead>
@@ -228,6 +229,14 @@ export default function QuotationDoc({ booking }: QuotationDocProps) {
                     </td>
                     <td className="p-2 text-center font-mono text-gray-700 whitespace-nowrap">
                       {leg.flightTimeFormatted || "1h 15m"}
+                    </td>
+                    <td className="p-2 font-semibold text-gray-900">
+                      {leg.aircraftType || aircraft.name}
+                      {leg.aircraftRegistration ? (
+                        <span className="block text-[10px] font-mono text-gray-500">
+                          {leg.aircraftRegistration}
+                        </span>
+                      ) : null}
                     </td>
                     <td className="p-2 text-center font-bold text-gray-900">
                       {leg.paxCount}
