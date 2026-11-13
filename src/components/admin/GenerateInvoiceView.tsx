@@ -3,7 +3,8 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useAviation } from "@/lib/aviationContext";
 import { Booking, FlightLeg, TripType } from "@/types/aviation";
-import { airportsData, findAirportByCode } from "@/data/airports";
+import { findAirportByCode } from "@/data/airports";
+import AirportSearchSelect from "@/components/common/AirportSearchSelect";
 import { defaultOperator } from "@/data/initialBookings";
 import { formatCurrency } from "@/lib/pricingCalculator";
 import { api } from "@/lib/api";
@@ -1328,34 +1329,20 @@ export default function GenerateInvoiceView() {
                   <label className="block text-[10px] font-mono uppercase text-[#0F1420]/70 mb-1">
                     From (ICAO)
                   </label>
-                  <select
+                  <AirportSearchSelect
                     value={leg.originIcao}
-                    onChange={(e) => handleLegChange(index, "originIcao", e.target.value)}
-                    className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1.5 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                  >
-                    {airportsData.map((a) => (
-                      <option key={a.icao} value={a.icao}>
-                        {a.city} ({a.icao})
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(value) => handleLegChange(index, "originIcao", value)}
+                  />
                 </div>
 
                 <div className="md:col-span-2">
                   <label className="block text-[10px] font-mono uppercase text-[#0F1420]/70 mb-1">
                     To (ICAO)
                   </label>
-                  <select
+                  <AirportSearchSelect
                     value={leg.destIcao}
-                    onChange={(e) => handleLegChange(index, "destIcao", e.target.value)}
-                    className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1.5 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                  >
-                    {airportsData.map((a) => (
-                      <option key={a.icao} value={a.icao}>
-                        {a.city} ({a.icao})
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(value) => handleLegChange(index, "destIcao", value)}
+                  />
                 </div>
 
                 <div>

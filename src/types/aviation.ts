@@ -80,7 +80,7 @@ export interface Airport {
   country: string;
   iata: string;
   icao: string;
-  type?: "fbo" | "dedicated" | "airstrip" | "altiport" | "international" | "private";
+  type?: "fbo" | "dedicated" | "airstrip" | "altiport" | "international" | "private" | "airport" | "heliport" | "seaplane_base" | "balloonport";
   typeLabel?: string;
   popular?: boolean;
   region?: string;

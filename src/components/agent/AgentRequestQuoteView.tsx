@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { useAviation } from "@/lib/aviationContext";
-import { airportsData } from "@/data/airports";
+import AirportSearchSelect from "@/components/common/AirportSearchSelect";
 import { fleetData } from "@/data/fleet";
 import { TripType, RequestLegItem } from "@/types/aviation";
 import {
@@ -464,34 +464,20 @@ export default function AgentRequestQuoteView() {
                     <label className="block text-[11px] font-bold text-[#0F1420]/80 uppercase font-mono mb-1">
                       Origin Airport
                     </label>
-                    <select
+                    <AirportSearchSelect
                       value={originIcao}
-                      onChange={(e) => setOriginIcao(e.target.value)}
-                      className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                    >
-                      {airportsData.map((a) => (
-                        <option key={a.icao} value={a.icao}>
-                          {a.icao} - {a.city} ({a.name})
-                        </option>
-                      ))}
-                    </select>
+                      onChange={setOriginIcao}
+                    />
                   </div>
 
                   <div>
                     <label className="block text-[11px] font-bold text-[#0F1420]/80 uppercase font-mono mb-1">
                       Destination Airport
                     </label>
-                    <select
+                    <AirportSearchSelect
                       value={destIcao}
-                      onChange={(e) => setDestIcao(e.target.value)}
-                      className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                    >
-                      {airportsData.map((a) => (
-                        <option key={a.icao} value={a.icao}>
-                          {a.icao} - {a.city} ({a.name})
-                        </option>
-                      ))}
-                    </select>
+                      onChange={setDestIcao}
+                    />
                   </div>
 
                   <div>
@@ -564,34 +550,20 @@ export default function AgentRequestQuoteView() {
                           <span className="text-[10px] font-mono font-bold uppercase text-gray-500 block mb-0.5">
                             Leg {idx + 1} Origin
                           </span>
-                          <select
+                          <AirportSearchSelect
                             value={leg.originIcao}
-                            onChange={(e) => handleMultiLegChange(idx, "originIcao", e.target.value)}
-                            className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1.5 text-xs font-mono font-bold"
-                          >
-                            {airportsData.map((a) => (
-                              <option key={a.icao} value={a.icao}>
-                                {a.icao} ({a.city})
-                              </option>
-                            ))}
-                          </select>
+                            onChange={(value) => handleMultiLegChange(idx, "originIcao", value)}
+                          />
                         </div>
 
                         <div className="sm:col-span-1">
                           <span className="text-[10px] font-mono font-bold uppercase text-gray-500 block mb-0.5">
                             Leg {idx + 1} Destination
                           </span>
-                          <select
+                          <AirportSearchSelect
                             value={leg.destIcao}
-                            onChange={(e) => handleMultiLegChange(idx, "destIcao", e.target.value)}
-                            className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2 py-1.5 text-xs font-mono font-bold"
-                          >
-                            {airportsData.map((a) => (
-                              <option key={a.icao} value={a.icao}>
-                                {a.icao} ({a.city})
-                              </option>
-                            ))}
-                          </select>
+                            onChange={(value) => handleMultiLegChange(idx, "destIcao", value)}
+                          />
                         </div>
 
                         <div className="sm:col-span-1">

@@ -20,7 +20,8 @@ export default function AirportSearchSelect({
   className = "",
   disabled = false,
 }: AirportSearchSelectProps) {
-  const [airportsData] = useAirportDirectory();
+  const [airportsData, , directoryLoaded] = useAirportDirectory();
+  const isDisabled = disabled || !directoryLoaded;
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
@@ -64,6 +65,7 @@ export default function AirportSearchSelect({
       );
     });
   }, [searchQuery, airportsData]);
+  const visibleAirports = filteredAirports.slice(0, 100);
 
   // Click outside listener
   useEffect(() => {
@@ -118,11 +120,11 @@ export default function AirportSearchSelect({
       {/* Closed Trigger Field */}
       <button
         type="button"
-        disabled={disabled}
+        disabled={isDisabled}
         onClick={() => setIsOpen((prev) => !prev)}
         className={`w-full bg-white border border-[#E0DAD0] hover:border-[#C9A052] rounded-lg px-2.5 py-2 text-xs text-[#0F1420] font-mono font-bold focus:outline-none focus:border-[#C9A052] flex items-center justify-between text-left transition-all shadow-sm ${
           isOpen ? "border-[#C9A052] ring-1 ring-[#C9A052]/30" : ""
-        } ${disabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
+        } ${isDisabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
       >
         <div className="flex items-center gap-1.5 min-w-0 flex-1 truncate mr-2">
           {selectedAirport ? (
@@ -159,7 +161,7 @@ export default function AirportSearchSelect({
                   handleSelectAirport(filteredAirports[0].icao);
                 }
               }}
-              placeholder="Search by Airport Name, ICAO code (e.g. LSGG, LFMN), IATA code, or City..."
+              placeholder="Search by airport code, IATA code, name, city, or country..."
               aria-label="Search airports by name, airport code, or city"
               className="w-full pl-9 pr-8 py-2 rounded-lg border border-[#E0DAD0] bg-[#F5F2EC] text-xs text-[#0F1420] font-medium placeholder-gray-400 focus:outline-none focus:border-[#C9A052] focus:bg-white transition-all"
             />
@@ -177,10 +179,10 @@ export default function AirportSearchSelect({
           {/* Quick Stats / Filter Info */}
           <div className="flex items-center justify-between px-1 pb-1.5 text-[10px] font-mono text-gray-400 border-b border-[#E0DAD0]/60 mb-1">
             <span>
-              Showing {filteredAirports.length} of {airportsData.length} airports
+              Showing {visibleAirports.length} of {filteredAirports.length} matches
             </span>
             <span className="text-[9px] uppercase tracking-wider">
-              ICAO • IATA • CITY
+              CODE • IATA • CITY
             </span>
           </div>
 
@@ -191,16 +193,16 @@ export default function AirportSearchSelect({
                 <MapPin className="w-6 h-6 text-gray-300 mx-auto mb-1.5" />
                 <p className="font-semibold text-gray-600">No airports found</p>
                 <p className="text-[11px] mt-0.5 text-gray-400">
-                  Try searching by ICAO (e.g. LSGG), IATA (e.g. GVA), or city
+                  Try searching by airport code (e.g. LSGG), IATA (e.g. GVA), or city
                 </p>
               </div>
             ) : (
-              filteredAirports.map((airport) => {
+              visibleAirports.map((airport) => {
                 const isSelected =
                   airport.icao.toUpperCase() === (value || "").toUpperCase();
                 return (
                   <button
-                    key={airport.icao}
+                    key={airport.id}
                     type="button"
                     onClick={() => handleSelectAirport(airport.icao)}
                     className={`w-full text-left p-2 rounded-lg transition-colors flex items-center justify-between gap-2 cursor-pointer ${
@@ -220,15 +222,17 @@ export default function AirportSearchSelect({
                         >
                           {airport.icao}
                         </span>
-                        <span
-                          className={`px-1 py-0.5 rounded font-mono text-[10px] font-semibold ${
-                            isSelected
-                              ? "bg-white/20 text-white"
-                              : "bg-[#C9A052]/20 text-[#9A7A35] border border-[#C9A052]/40"
-                          }`}
-                        >
-                          {airport.iata}
-                        </span>
+                        {airport.iata && (
+                          <span
+                            className={`px-1 py-0.5 rounded font-mono text-[10px] font-semibold ${
+                              isSelected
+                                ? "bg-white/20 text-white"
+                                : "bg-[#C9A052]/20 text-[#9A7A35] border border-[#C9A052]/40"
+                            }`}
+                          >
+                            {airport.iata}
+                          </span>
+                        )}
                         {airport.popular && (
                           <span
                             className={`text-[9px] font-mono uppercase px-1 py-0.2 rounded font-bold ${

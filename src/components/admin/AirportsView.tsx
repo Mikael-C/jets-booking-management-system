@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useAirportDirectory } from "@/lib/airportDirectory";
 import { Airport, FboOption } from "@/types/aviation";
 import {
@@ -27,13 +27,15 @@ import {
 } from "lucide-react";
 
 export default function AirportsView() {
-  const [airportsData, saveAirportDirectory] = useAirportDirectory();
+  const [airportsData, saveAirportDirectory, directoryLoaded] = useAirportDirectory();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRegion, setSelectedRegion] = useState<string>("all");
   const [selectedType, setSelectedType] = useState<string>("all");
+  const [currentPage, setCurrentPage] = useState(1);
   const [selectedAirportForModal, setSelectedAirportForModal] = useState<Airport | null>(null);
   const [editingFboId, setEditingFboId] = useState<string | null>(null);
   const [fboDraft, setFboDraft] = useState<Partial<FboOption>>({});
+  const pageSize = 50;
 
   // Filtered airports
   const filteredAirports = useMemo(() => {
@@ -81,6 +83,15 @@ export default function AirportsView() {
       return true;
     });
   }, [airportsData, searchQuery, selectedRegion, selectedType]);
+  const pageCount = Math.max(1, Math.ceil(filteredAirports.length / pageSize));
+  const visibleAirports = filteredAirports.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize,
+  );
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedRegion, selectedType]);
 
   const totalFbosCount = useMemo(() => {
     return airportsData.reduce((sum, a) => sum + (a.fbos?.length || 0), 0);
@@ -138,20 +149,20 @@ export default function AirportsView() {
               <Compass className="w-3 h-3" />
               GLOBAL AERODROME DIRECTORY
             </span>
-            <span className="text-gray-400 text-xs font-mono">• {airportsData.length} Executive Airfields & Hubs</span>
+            <span className="text-gray-400 text-xs font-mono">• {airportsData.length} aerodromes</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
             Executive Airports & Private Airfields
           </h1>
           <p className="text-xs text-gray-300 leading-relaxed">
-            Search comprehensive global airport data by Airport Name, 4-Letter ICAO or 3-Letter IATA codes. Inspect operating hours, late-night slot extension possibilities, runway lengths, and designated FBO handlers with contact details and languages.
+            Search global airport and airfield records by name, airport code, IATA code, city, or country. Runway, operating-hour, and handling details are shown only when available in the directory.
           </p>
         </div>
 
         {/* Quick Stats Pill */}
         <div className="flex items-center gap-3">
           <div className="px-4 py-3 rounded-xl bg-[#141A29] border border-[#1C2436] text-right">
-            <div className="text-[10px] font-mono uppercase text-gray-400">Total Airports</div>
+            <div className="text-[10px] font-mono uppercase text-gray-400">Total Aerodromes</div>
             <div className="text-xl font-black font-mono text-[#C9A052]">{airportsData.length}</div>
           </div>
           <div className="px-4 py-3 rounded-xl bg-[#141A29] border border-[#1C2436] text-right">
@@ -211,10 +222,14 @@ export default function AirportsView() {
               className="bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3 py-2.5 text-xs text-[#0F1420] font-semibold focus:outline-none focus:border-[#C9A052]"
             >
               <option value="all">All Airport Types</option>
+              <option value="airport">Large / Medium Airport</option>
+              <option value="airstrip">Small Airport / Airstrip</option>
+              <option value="heliport">Heliport</option>
+              <option value="seaplane_base">Seaplane Base</option>
+              <option value="balloonport">Balloonport</option>
               <option value="dedicated">Dedicated Executive Airport</option>
               <option value="fbo">Executive Terminal (FBO)</option>
               <option value="altiport">Mountain Altiport</option>
-              <option value="airstrip">Private Airstrip</option>
             </select>
           </div>
         </div>
@@ -222,10 +237,7 @@ export default function AirportsView() {
         {/* Results summary */}
         <div className="flex items-center justify-between text-xs text-gray-500 pt-1 border-t border-[#E0DAD0]/60">
           <span>
-            Showing <strong className="text-[#0F1420]">{filteredAirports.length}</strong> of {airportsData.length} executive airports
-          </span>
-          <span className="text-[11px] font-mono text-[#C9A052]">
-            Live Aerodrome Database • EASA & FAA Approved Specifications
+            Showing <strong className="text-[#0F1420]">{filteredAirports.length}</strong> of {airportsData.length} aerodromes
           </span>
         </div>
       </div>
@@ -244,20 +256,22 @@ export default function AirportsView() {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#E0DAD0]">
-        {filteredAirports.map((airport) => (
+        {visibleAirports.map((airport) => (
           <tr
             key={airport.id}
-            onClick={() => setSelectedAirportForModal(airport)}
-            className="hover:bg-[#FAF8F5] cursor-pointer transition-colors"
+            onClick={() => directoryLoaded && setSelectedAirportForModal(airport)}
+            className={`${directoryLoaded ? "cursor-pointer hover:bg-[#FAF8F5]" : "opacity-60"} transition-colors`}
           >
             <td className="px-4 py-3">
               <div className="flex items-center gap-2">
                     <span className="px-2.5 py-1 rounded-lg bg-[#0F1420] text-white font-mono font-black text-sm tracking-wide shadow-sm">
                       {airport.icao}
                     </span>
-                    <span className="px-2 py-0.5 rounded-lg bg-[#C9A052]/20 text-[#9A7A35] font-mono font-bold text-xs border border-[#C9A052]/40">
-                      {airport.iata}
-                    </span>
+                    {airport.iata && (
+                      <span className="px-2 py-0.5 rounded-lg bg-[#C9A052]/20 text-[#9A7A35] font-mono font-bold text-xs border border-[#C9A052]/40">
+                        {airport.iata}
+                      </span>
+                    )}
                     {airport.popular && (
                       <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold border border-emerald-300">
                         Top Hub
@@ -272,7 +286,7 @@ export default function AirportsView() {
             </td>
             <td className="px-4 py-3">
               <div className="font-semibold text-[#0F1420]">{airport.runwayLength || "Runway details unavailable"}</div>
-              <div className="mt-1 text-gray-500">{airport.operatingHours || "06:00 - 22:00 Local"}</div>
+              <div className="mt-1 text-gray-500">{airport.operatingHours || "Operating hours unavailable"}</div>
             </td>
             <td className="px-4 py-3">
               <span className="font-bold text-[#0F1420]">{airport.fbos?.length || 0} FBO{airport.fbos?.length === 1 ? "" : "s"}</span>
@@ -281,11 +295,12 @@ export default function AirportsView() {
             <td className="px-4 py-3 text-right">
               <button
                 type="button"
+                disabled={!directoryLoaded}
                 onClick={(event) => {
                   event.stopPropagation();
                   setSelectedAirportForModal(airport);
                 }}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#0F1420] text-[#C9A052] text-xs font-bold"
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#0F1420] text-[#C9A052] text-xs font-bold disabled:opacity-50"
               >
                 View airport <ChevronRight className="w-3.5 h-3.5" />
               </button>
@@ -297,12 +312,39 @@ export default function AirportsView() {
         </div>
       </div>
 
+      {filteredAirports.length > 0 && (
+        <div className="flex items-center justify-between text-xs text-gray-500">
+          <span>
+            Page {currentPage} of {pageCount}
+            {!directoryLoaded && " · Loading full airport directory…"}
+          </span>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+              disabled={currentPage === 1}
+              className="rounded-lg border border-[#E0DAD0] px-3 py-1.5 font-semibold disabled:opacity-40"
+            >
+              Previous
+            </button>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((page) => Math.min(pageCount, page + 1))}
+              disabled={currentPage === pageCount}
+              className="rounded-lg border border-[#E0DAD0] px-3 py-1.5 font-semibold disabled:opacity-40"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
+
       {filteredAirports.length === 0 && (
         <div className="bg-white border border-[#E0DAD0] rounded-2xl p-12 text-center space-y-3">
           <Plane className="w-10 h-10 text-gray-300 mx-auto transform -rotate-45" />
           <h3 className="text-base font-bold text-[#0F1420]">No aerodromes matching search criteria</h3>
           <p className="text-xs text-gray-500 max-w-md mx-auto">
-            Try searching with another ICAO 4-letter code (e.g. LSGG, LFMN, KTEB, EGGW) or city name.
+            Try another airport code (e.g. LSGG, LFMN, KTEB, EGGW) or search by city name.
           </p>
           <button
             onClick={() => {
@@ -328,9 +370,11 @@ export default function AirportsView() {
                   <span className="px-2.5 py-1 rounded-lg bg-[#C9A052] text-[#0F1420] font-mono font-black text-sm">
                     {selectedAirportForModal.icao}
                   </span>
-                  <span className="px-2 py-0.5 rounded-lg bg-white/20 text-white font-mono font-bold text-xs">
-                    {selectedAirportForModal.iata}
-                  </span>
+                  {selectedAirportForModal.iata && (
+                    <span className="px-2 py-0.5 rounded-lg bg-white/20 text-white font-mono font-bold text-xs">
+                      {selectedAirportForModal.iata}
+                    </span>
+                  )}
                   <span className="text-gray-400 text-xs font-mono">• {selectedAirportForModal.city}, {selectedAirportForModal.country}</span>
                 </div>
                 <h2 className="text-xl font-black text-white">{selectedAirportForModal.name}</h2>
@@ -351,23 +395,23 @@ export default function AirportsView() {
                   <span className="text-[10px] font-mono uppercase text-gray-500 font-bold block mb-1">
                     Runway Specifications
                   </span>
-                  <p className="font-extrabold text-[#0F1420]">{selectedAirportForModal.runwayLength}</p>
-                  <p className="text-[11px] text-gray-500 mt-0.5">{selectedAirportForModal.runwaySurface}</p>
+                  <p className="font-extrabold text-[#0F1420]">{selectedAirportForModal.runwayLength || "Not available"}</p>
+                  <p className="text-[11px] text-gray-500 mt-0.5">{selectedAirportForModal.runwaySurface || "Surface details not available"}</p>
                 </div>
 
                 <div className="p-3.5 rounded-xl bg-[#F5F2EC] border border-[#E0DAD0]">
                   <span className="text-[10px] font-mono uppercase text-gray-500 font-bold block mb-1">
                     Operating Hours
                   </span>
-                  <p className="font-extrabold text-[#0F1420]">{selectedAirportForModal.operatingHours}</p>
-                  <p className="text-[11px] text-gray-500 mt-0.5">Local airport schedule</p>
+                  <p className="font-extrabold text-[#0F1420]">{selectedAirportForModal.operatingHours || "Not available"}</p>
+                  <p className="text-[11px] text-gray-500 mt-0.5">Confirm current hours with the airport operator.</p>
                 </div>
 
                 <div className="p-3.5 rounded-xl bg-[#F5F2EC] border border-[#E0DAD0]">
                   <span className="text-[10px] font-mono uppercase text-gray-500 font-bold block mb-1">
                     Extension Possibilities
                   </span>
-                  <p className="text-[11px] text-gray-700 leading-snug">{selectedAirportForModal.extensionPossibilities}</p>
+                  <p className="text-[11px] text-gray-700 leading-snug">{selectedAirportForModal.extensionPossibilities || "Not available"}</p>
                 </div>
               </div>
 
@@ -405,7 +449,7 @@ export default function AirportsView() {
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="px-2.5 py-1 rounded-full text-[11px] font-mono font-bold bg-[#C9A052]/20 text-[#9A7A35] border border-[#C9A052]/40 w-max">
-                            {fbo.operatingHours || "H24 / 7 days"}
+                            {fbo.operatingHours || "Hours not listed"}
                           </span>
                           <button
                             type="button"

@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "import:airports": "node scripts/import-ourairports.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

@@ -2,7 +2,8 @@
 
 import React, { useState } from "react";
 import { useAviation } from "@/lib/aviationContext";
-import { airportsData, findAirportByCode } from "@/data/airports";
+import { findAirportByCode, getDefaultHandlingAgent } from "@/data/airports";
+import AirportSearchSelect from "@/components/common/AirportSearchSelect";
 import { fleetData } from "@/data/fleet";
 import { defaultOperator } from "@/data/initialBookings";
 import { Booking, FlightLeg, AdditionalServices } from "@/types/aviation";
@@ -113,18 +114,8 @@ export default function NewQuoteModal() {
       passengers: [
         { id: "p1", fullName: clientName || "Guest Passenger 1", isLeadPassenger: true }
       ],
-      departureHandling: {
-        name: `${originAirport.name} FBO`,
-        airportCode: originAirport.icao,
-        phone: "+41 58 158 1811",
-        email: `ops@${originAirport.icao.toLowerCase()}.handling.aero`
-      },
-      arrivalHandling: {
-        name: `${destAirport.name} FBO`,
-        airportCode: destAirport.icao,
-        phone: "+39 010 601 5412",
-        email: `ops@${destAirport.icao.toLowerCase()}.handling.aero`
-      }
+      departureHandling: getDefaultHandlingAgent(originAirport.icao, "dep"),
+      arrivalHandling: getDefaultHandlingAgent(destAirport.icao, "arr")
     };
   });
 
@@ -344,32 +335,18 @@ export default function NewQuoteModal() {
                   <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
                     <div>
                       <label className="block text-gray-400 text-[10px] mb-1">Origin Airport (ICAO/IATA)</label>
-                      <select
+                      <AirportSearchSelect
                         value={leg.originIcao}
-                        onChange={(e) => handleLegChange(idx, "originIcao", e.target.value)}
-                        className="w-full bg-[#0F1420] border border-gray-700 rounded-lg px-2 py-1.5 text-white font-mono text-xs focus:border-gold focus:outline-none"
-                      >
-                        {airportsData.map((a) => (
-                          <option key={a.id} value={a.icao}>
-                            {a.icao} - {a.city} ({a.name})
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(value) => handleLegChange(idx, "originIcao", value)}
+                      />
                     </div>
 
                     <div>
                       <label className="block text-gray-400 text-[10px] mb-1">Destination Airport</label>
-                      <select
+                      <AirportSearchSelect
                         value={leg.destIcao}
-                        onChange={(e) => handleLegChange(idx, "destIcao", e.target.value)}
-                        className="w-full bg-[#0F1420] border border-gray-700 rounded-lg px-2 py-1.5 text-white font-mono text-xs focus:border-gold focus:outline-none"
-                      >
-                        {airportsData.map((a) => (
-                          <option key={a.id} value={a.icao}>
-                            {a.icao} - {a.city} ({a.name})
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(value) => handleLegChange(idx, "destIcao", value)}
+                      />
                     </div>
 
                     <div>

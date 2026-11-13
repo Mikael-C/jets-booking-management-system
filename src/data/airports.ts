@@ -1,4 +1,5 @@
 import { Airport, FboOption, HandlingAgent } from "@/types/aviation";
+import { getRuntimeAirportDirectory } from "@/lib/airportDirectoryStore";
 
 export const airportsData: Airport[] = [
   // ================= EUROPE =================
@@ -3422,6 +3423,8 @@ export const airportsData: Airport[] = [
 ];
 
 function getCurrentAirports(): Airport[] {
+  const runtimeDirectory = getRuntimeAirportDirectory();
+  if (runtimeDirectory) return runtimeDirectory;
   if (typeof window === "undefined") return airportsData;
   try {
     const saved = window.localStorage.getItem("orbelo_airport_directory_v1");
@@ -3488,22 +3491,7 @@ export function findAirportByCode(code: string): Airport {
  */
 export function getAirportFbos(code: string): FboOption[] {
   const airport = findAirportByCode(code);
-  if (airport?.fbos) {
-    return airport.fbos;
-  }
-  return [
-    {
-      id: `default-${code.toLowerCase()}`,
-      name: `${airport.name} Executive Handling`,
-      phone: "+41 58 158 1811",
-      email: `ops@${airport.icao.toLowerCase()}.handling.aero`,
-      vhfFrequency: "131.75 MHz",
-      address: `General Aviation Terminal, ${airport.city}`,
-      operatingHours: airport.operatingHours || "06:00 - 22:00 Local",
-      languages: ["English"],
-      notes: "Primary executive handling station"
-    }
-  ];
+  return airport.fbos || [];
 }
 
 /**
@@ -3538,13 +3526,13 @@ export function getDefaultHandlingAgent(code: string, stationType: "dep" | "arr"
   const primaryFbo = fbos[0];
 
   return {
-    name: primaryFbo ? primaryFbo.name : `${airport.name} Executive FBO`,
+    name: primaryFbo ? primaryFbo.name : "Handling agent to be confirmed",
     airportCode: airport.icao,
-    phone: primaryFbo?.phone || "+41 58 158 1811",
-    email: primaryFbo?.email || `ops@${airport.icao.toLowerCase()}.handling.aero`,
-    vhfFrequency: primaryFbo?.vhfFrequency || "131.75 MHz",
+    phone: primaryFbo?.phone || "",
+    email: primaryFbo?.email || "",
+    vhfFrequency: primaryFbo?.vhfFrequency,
     address: primaryFbo?.address,
-    notes: primaryFbo?.notes
+    notes: primaryFbo?.notes || "No handling agent is listed for this airport; confirm directly with the operator."
   };
 }
 

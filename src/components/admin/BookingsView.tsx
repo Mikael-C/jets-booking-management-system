@@ -480,10 +480,9 @@ export default function BookingsView() {
                   </td>
                 </tr>
               ) : (
-                bookingGroups.map(({ tripKey, revisions, latest: latestRevision, primary: booking }) => {
+                bookingGroups.map(({ tripKey, latest: latestRevision, primary: booking }) => {
                   const isBookedRecord = booking.isBooked ||
                     ["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(booking.status);
-                  const hasIterations = revisions.length > 1;
 
                   return (
                     <React.Fragment key={tripKey}>
@@ -506,15 +505,13 @@ export default function BookingsView() {
                       <td className="py-4 px-4">
                         <div className="flex flex-col gap-1">
                           {isBookedRecord ? (
-                            <span className="font-extrabold text-[#0F1420] font-mono text-sm tracking-wide group-hover:text-[#C9A052] transition-colors flex items-center gap-1.5">
+                            <span className="font-extrabold text-[#0F1420] font-mono text-sm tracking-wide group-hover:text-[#C9A052] transition-colors">
                               Trip ID ({booking.tripId || "Pending assignment"})
-                              {hasIterations && <span className="text-[10px] text-[#C9A052]">{revisions.length} Iterations</span>}
                             </span>
                           ) : (
                             <div className="flex flex-col">
-                              <span className="font-bold text-[#9A7A35] font-mono text-xs tracking-wide group-hover:text-[#C9A052] transition-colors flex items-center gap-1.5">
+                              <span className="font-bold text-[#9A7A35] font-mono text-xs tracking-wide group-hover:text-[#C9A052] transition-colors">
                                 Trip ID ({booking.tripId || "Pending assignment"})
-                                {hasIterations && <span className="text-[10px] text-[#C9A052]">{revisions.length} Iterations</span>}
                               </span>
                               <span className="text-[10px] text-gray-400 font-mono italic">
                                 {booking.quoteId || booking.quoteReference || "Quote ID pending"}

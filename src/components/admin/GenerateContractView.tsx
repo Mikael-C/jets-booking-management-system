@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { useAviation } from "@/lib/aviationContext";
 import { Booking, FlightLeg, TripType } from "@/types/aviation";
 import { airportsData, findAirportByCode, getAirportFbos } from "@/data/airports";
+import AirportSearchSelect from "@/components/common/AirportSearchSelect";
 import { fleetData } from "@/data/fleet";
 import { defaultOperator } from "@/data/initialBookings";
 import { formatCurrency, calculateCardFee } from "@/lib/pricingCalculator";
@@ -920,33 +921,24 @@ export default function GenerateContractView() {
                 {/* Origin Dropdown */}
                 <div className="md:col-span-3 space-y-1.5">
                   <label className="block text-[10px] font-mono uppercase text-gray-400 mb-1">Origin Airport & FBO</label>
-                  <select
+                  <AirportSearchSelect
                     value={leg.origin.icao}
-                    onChange={(e) => {
-                      const found = airportsData.find((a) => a.icao === e.target.value);
-                      if (found) {
-                        const updated = [...legs];
-                        updated[index].origin = found;
-                        const fbos = getAirportFbos(found.icao);
-                        if (fbos.length > 0) {
-                          updated[index].departureHandling = {
-                            name: fbos[0].name,
-                            airportCode: found.icao,
-                            phone: fbos[0].phone || "",
-                            email: fbos[0].email || ""
-                          };
-                        }
-                        setLegs(updated);
+                    onChange={(code) => {
+                      const found = findAirportByCode(code);
+                      const updated = [...legs];
+                      updated[index].origin = found;
+                      const fbos = getAirportFbos(found.icao);
+                      if (fbos.length > 0) {
+                        updated[index].departureHandling = {
+                          name: fbos[0].name,
+                          airportCode: found.icao,
+                          phone: fbos[0].phone || "",
+                          email: fbos[0].email || ""
+                        };
                       }
+                      setLegs(updated);
                     }}
-                    className="w-full bg-white border border-gray-300 rounded-lg px-2.5 py-1.5 font-medium focus:border-[#C9A052] outline-none text-[11px]"
-                  >
-                    {airportsData.map((a) => (
-                      <option key={a.icao} value={a.icao}>
-                        [{a.icao}] {a.city} — {a.name}
-                      </option>
-                    ))}
-                  </select>
+                  />
 
                   {/* FBO Picker */}
                   {getAirportFbos(leg.origin.icao).length > 0 && (
@@ -979,33 +971,24 @@ export default function GenerateContractView() {
                 {/* Destination Dropdown */}
                 <div className="md:col-span-3 space-y-1.5">
                   <label className="block text-[10px] font-mono uppercase text-gray-400 mb-1">Destination Airport & FBO</label>
-                  <select
+                  <AirportSearchSelect
                     value={leg.destination.icao}
-                    onChange={(e) => {
-                      const found = airportsData.find((a) => a.icao === e.target.value);
-                      if (found) {
-                        const updated = [...legs];
-                        updated[index].destination = found;
-                        const fbos = getAirportFbos(found.icao);
-                        if (fbos.length > 0) {
-                          updated[index].arrivalHandling = {
-                            name: fbos[0].name,
-                            airportCode: found.icao,
-                            phone: fbos[0].phone || "",
-                            email: fbos[0].email || ""
-                          };
-                        }
-                        setLegs(updated);
+                    onChange={(code) => {
+                      const found = findAirportByCode(code);
+                      const updated = [...legs];
+                      updated[index].destination = found;
+                      const fbos = getAirportFbos(found.icao);
+                      if (fbos.length > 0) {
+                        updated[index].arrivalHandling = {
+                          name: fbos[0].name,
+                          airportCode: found.icao,
+                          phone: fbos[0].phone || "",
+                          email: fbos[0].email || ""
+                        };
                       }
+                      setLegs(updated);
                     }}
-                    className="w-full bg-white border border-gray-300 rounded-lg px-2.5 py-1.5 font-medium focus:border-[#C9A052] outline-none text-[11px]"
-                  >
-                    {airportsData.map((a) => (
-                      <option key={a.icao} value={a.icao}>
-                        [{a.icao}] {a.city} — {a.name}
-                      </option>
-                    ))}
-                  </select>
+                  />
 
                   {/* FBO Picker */}
                   {getAirportFbos(leg.destination.icao).length > 0 && (
