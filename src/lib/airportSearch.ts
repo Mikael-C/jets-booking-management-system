@@ -1,5 +1,21 @@
 import { Airport } from "@/types/aviation";
 
+interface AirportSearchRecord {
+  icao: string;
+  iata: string;
+  name: string;
+  city: string;
+  country: string;
+  fboDetails: string[];
+}
+
+const searchRecordCache = new WeakMap<Airport, AirportSearchRecord>();
+const CODE_SCORES = [0, 10, 20, 40];
+const NAME_SCORES = [1, 20, 25, 50];
+const CITY_SCORES = [2, 30, 35, 60];
+const COUNTRY_SCORES = [3, 65, 68, 70];
+const FBO_SCORES = [4, 75, 78, 80];
+
 function normalize(value: string): string {
   return value
     .normalize("NFD")
@@ -9,16 +25,78 @@ function normalize(value: string): string {
     .replace(/\s+/g, " ");
 }
 
+function getSearchRecord(airport: Airport): AirportSearchRecord {
+  const cached = searchRecordCache.get(airport);
+  if (cached) return cached;
+
+  const record: AirportSearchRecord = {
+    icao: normalize(airport.icao || ""),
+    iata: normalize(airport.iata || ""),
+    name: normalize(airport.name || ""),
+    city: normalize(airport.city || ""),
+    country: normalize(airport.country || ""),
+    fboDetails: (airport.fbos || []).flatMap((fbo) => [
+      normalize(fbo.name || ""),
+      normalize(fbo.phone || ""),
+      normalize(fbo.email || ""),
+      ...(fbo.languages || []).map(normalize),
+    ]),
+  };
+  searchRecordCache.set(airport, record);
+  return record;
+}
+
 function matchScore(value: string, query: string, scores: number[]): number | null {
-  const normalized = normalize(value);
-  if (!normalized) return null;
-  if (normalized === query) return scores[0];
-  if (normalized.startsWith(query)) return scores[1];
-  if (normalized.split(/\s+/).some((word) => word.startsWith(query))) {
-    return scores[2];
-  }
-  if (normalized.includes(query)) return scores[3];
+  if (!value) return null;
+  if (value === query) return scores[0];
+  if (value.startsWith(query)) return scores[1];
+  if (value.includes(` ${query}`)) return scores[2];
+  if (value.includes(query)) return scores[3];
   return null;
+}
+
+function getBestFieldScore(
+  record: AirportSearchRecord,
+  query: string,
+  includeFboDetails: boolean,
+): number | null {
+  let best: number | null = null;
+  const icaoScore = matchScore(record.icao, query, CODE_SCORES);
+  const iataScore = matchScore(record.iata, query, CODE_SCORES);
+  const nameScore = matchScore(record.name, query, NAME_SCORES);
+  const cityScore = matchScore(record.city, query, CITY_SCORES);
+  const countryScore = matchScore(record.country, query, COUNTRY_SCORES);
+
+  if (icaoScore !== null) best = icaoScore;
+  if (iataScore !== null && (best === null || iataScore < best)) best = iataScore;
+  if (nameScore !== null && (best === null || nameScore < best)) best = nameScore;
+  if (cityScore !== null && (best === null || cityScore < best)) best = cityScore;
+  if (countryScore !== null && (best === null || countryScore < best)) best = countryScore;
+  if (includeFboDetails) {
+    for (const value of record.fboDetails) {
+      const score = matchScore(value, query, FBO_SCORES);
+      if (score !== null && (best === null || score < best)) best = score;
+    }
+  }
+  return best;
+}
+
+function scoreAirport(
+  record: AirportSearchRecord,
+  query: string,
+  queryTokens: string[],
+  includeFboDetails: boolean,
+): number | null {
+  const phraseScore = getBestFieldScore(record, query, includeFboDetails);
+  if (phraseScore !== null) return phraseScore;
+
+  let tokenScore = 90;
+  for (const token of queryTokens) {
+    const bestTokenScore = getBestFieldScore(record, token, includeFboDetails);
+    if (bestTokenScore === null) return null;
+    tokenScore += bestTokenScore;
+  }
+  return tokenScore;
 }
 
 export function rankAirports(
@@ -30,52 +108,21 @@ export function rankAirports(
   if (!query) return airports;
 
   const queryTokens = query.split(/\s+/);
+  const matchesByScore = new Map<number, Airport[]>();
 
-  return airports
-    .map((airport, index) => {
-      const fields: Array<{ value: string; scores: number[] }> = [
-        { value: airport.icao || "", scores: [0, 10, 20, 40] },
-        { value: airport.iata || "", scores: [0, 10, 20, 40] },
-        { value: airport.name || "", scores: [1, 20, 25, 50] },
-        { value: airport.city || "", scores: [2, 30, 35, 60] },
-        { value: airport.country || "", scores: [3, 65, 68, 70] },
-      ];
+  for (const airport of airports) {
+    const score = scoreAirport(getSearchRecord(airport), query, queryTokens, includeFboDetails);
+    if (score === null) continue;
 
-      if (includeFboDetails) {
-        for (const fbo of airport.fbos || []) {
-          fields.push(
-            { value: fbo.name || "", scores: [4, 75, 78, 80] },
-            { value: fbo.phone || "", scores: [4, 75, 78, 80] },
-            { value: fbo.email || "", scores: [4, 75, 78, 80] },
-            ...(fbo.languages || []).map((language) => ({
-              value: language,
-              scores: [4, 75, 78, 80],
-            })),
-          );
-        }
-      }
+    const matches = matchesByScore.get(score);
+    if (matches) {
+      matches.push(airport);
+    } else {
+      matchesByScore.set(score, [airport]);
+    }
+  }
 
-      const phraseScore = fields.reduce<number | null>((best, field) => {
-        const score = matchScore(field.value, query, field.scores);
-        return score === null ? best : best === null ? score : Math.min(best, score);
-      }, null);
-      if (phraseScore !== null) return { airport, index, score: phraseScore };
-
-      const tokenScores = queryTokens.map((token) =>
-        fields.reduce<number | null>((best, field) => {
-          const score = matchScore(field.value, token, field.scores);
-          return score === null ? best : best === null ? score : Math.min(best, score);
-        }, null),
-      );
-      if (tokenScores.some((score) => score === null)) return null;
-
-      return {
-        airport,
-        index,
-        score: 90 + tokenScores.reduce<number>((total, score) => total + (score || 0), 0),
-      };
-    })
-    .filter((match): match is { airport: Airport; index: number; score: number } => match !== null)
-    .sort((a, b) => a.score - b.score || a.index - b.index)
-    .map(({ airport }) => airport);
+  return Array.from(matchesByScore.keys())
+    .sort((a, b) => a - b)
+    .flatMap((score) => matchesByScore.get(score) || []);
 }

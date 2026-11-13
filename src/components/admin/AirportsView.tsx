@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useDeferredValue } from "react";
 import { useAirportDirectory } from "@/lib/airportDirectory";
 import { rankAirports } from "@/lib/airportSearch";
 import { Airport, FboOption } from "@/types/aviation";
@@ -30,6 +30,7 @@ import {
 export default function AirportsView() {
   const [airportsData, saveAirportDirectory, directoryLoaded] = useAirportDirectory();
   const [searchQuery, setSearchQuery] = useState("");
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const [selectedRegion, setSelectedRegion] = useState<string>("all");
   const [selectedType, setSelectedType] = useState<string>("all");
   const [currentPage, setCurrentPage] = useState(1);
@@ -40,7 +41,7 @@ export default function AirportsView() {
 
   // Filtered airports
   const filteredAirports = useMemo(() => {
-    return rankAirports(airportsData, searchQuery, true).filter((a) => {
+    const airportsMatchingFilters = airportsData.filter((a) => {
       // Region filter
       if (selectedRegion !== "all") {
         if (selectedRegion === "north_america" || selectedRegion === "americas") {
@@ -63,7 +64,8 @@ export default function AirportsView() {
 
       return true;
     });
-  }, [airportsData, searchQuery, selectedRegion, selectedType]);
+    return rankAirports(airportsMatchingFilters, deferredSearchQuery, true);
+  }, [airportsData, deferredSearchQuery, selectedRegion, selectedType]);
   const pageCount = Math.max(1, Math.ceil(filteredAirports.length / pageSize));
   const visibleAirports = filteredAirports.slice(
     (currentPage - 1) * pageSize,
