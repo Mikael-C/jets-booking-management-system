@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo, useEffect } from "react";
 import { useAirportDirectory } from "@/lib/airportDirectory";
+import { rankAirports } from "@/lib/airportSearch";
 import { Airport, FboOption } from "@/types/aviation";
 import {
   MapPin,
@@ -39,7 +40,7 @@ export default function AirportsView() {
 
   // Filtered airports
   const filteredAirports = useMemo(() => {
-    return airportsData.filter((a) => {
+    return rankAirports(airportsData, searchQuery, true).filter((a) => {
       // Region filter
       if (selectedRegion !== "all") {
         if (selectedRegion === "north_america" || selectedRegion === "americas") {
@@ -56,26 +57,6 @@ export default function AirportsView() {
         if (selectedType === "private" || selectedType === "airstrip" || selectedType === "altiport") {
           if (a.type !== "private" && a.type !== "airstrip" && a.type !== "altiport") return false;
         } else if (a.type !== selectedType) {
-          return false;
-        }
-      }
-
-      // Text query
-      if (searchQuery.trim() !== "") {
-        const q = searchQuery.toLowerCase().trim();
-        const matchesName = a.name.toLowerCase().includes(q);
-        const matchesIcao = a.icao.toLowerCase().includes(q);
-        const matchesIata = a.iata.toLowerCase().includes(q);
-        const matchesCity = a.city.toLowerCase().includes(q);
-        const matchesCountry = a.country.toLowerCase().includes(q);
-        const matchesFbo = (a.fbos || []).some(
-          (f) =>
-            f.name.toLowerCase().includes(q) ||
-            f.phone.toLowerCase().includes(q) ||
-            f.email.toLowerCase().includes(q) ||
-            (f.languages || []).some((l) => l.toLowerCase().includes(q))
-        );
-        if (!matchesName && !matchesIcao && !matchesIata && !matchesCity && !matchesCountry && !matchesFbo) {
           return false;
         }
       }

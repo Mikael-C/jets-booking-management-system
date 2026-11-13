@@ -1,4 +1,5 @@
 import { Airport, FboOption, HandlingAgent } from "@/types/aviation";
+import { rankAirports } from "@/lib/airportSearch";
 import { getRuntimeAirportDirectory } from "@/lib/airportDirectoryStore";
 
 export const airportsData: Airport[] = [
@@ -3541,16 +3542,5 @@ export function getDefaultHandlingAgent(code: string, stationType: "dep" | "arr"
  */
 export function searchAirports(query: string, limit: number = 30): Airport[] {
   const currentAirports = getCurrentAirports();
-  if (!query || query.trim().length === 0) return currentAirports.slice(0, limit);
-  const q = query.trim().toLowerCase();
-  return currentAirports
-    .filter(
-      (a) =>
-        a.icao.toLowerCase().includes(q) ||
-        a.iata.toLowerCase().includes(q) ||
-        a.name.toLowerCase().includes(q) ||
-        a.city.toLowerCase().includes(q) ||
-        a.country.toLowerCase().includes(q)
-    )
-    .slice(0, limit);
+  return rankAirports(currentAirports, query).slice(0, limit);
 }

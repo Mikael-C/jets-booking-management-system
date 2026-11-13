@@ -2,8 +2,8 @@
 
 import React, { useState, useMemo, useRef, useEffect } from "react";
 import { useAirportDirectory } from "@/lib/airportDirectory";
-import { Airport } from "@/types/aviation";
-import { Search, X, ChevronDown, Check, MapPin, Building } from "lucide-react";
+import { rankAirports } from "@/lib/airportSearch";
+import { Search, X, ChevronDown, Check, MapPin } from "lucide-react";
 
 interface AirportSearchSelectProps {
   value: string;
@@ -36,34 +36,8 @@ export default function AirportSearchSelect({
     );
   }, [value, airportsData]);
 
-  // Filter airports matching the same comprehensive logic as AirportsView
   const filteredAirports = useMemo(() => {
-    if (!searchQuery.trim()) {
-      return airportsData;
-    }
-    const q = searchQuery.toLowerCase().trim();
-    return airportsData.filter((a) => {
-      const matchesName = a.name.toLowerCase().includes(q);
-      const matchesIcao = a.icao.toLowerCase().includes(q);
-      const matchesIata = a.iata.toLowerCase().includes(q);
-      const matchesCity = a.city.toLowerCase().includes(q);
-      const matchesCountry = a.country.toLowerCase().includes(q);
-      const matchesFbo = (a.fbos || []).some(
-        (f) =>
-          f.name.toLowerCase().includes(q) ||
-          f.phone.toLowerCase().includes(q) ||
-          f.email.toLowerCase().includes(q) ||
-          (f.languages || []).some((l) => l.toLowerCase().includes(q))
-      );
-      return (
-        matchesName ||
-        matchesIcao ||
-        matchesIata ||
-        matchesCity ||
-        matchesCountry ||
-        matchesFbo
-      );
-    });
+    return rankAirports(airportsData, searchQuery, true);
   }, [searchQuery, airportsData]);
   const visibleAirports = filteredAirports.slice(0, 100);
 
