@@ -109,9 +109,11 @@ export function rankAirports(
 
   const queryTokens = query.split(/\s+/);
   const matchesByScore = new Map<number, Airport[]>();
+  const exactCodeCities = new Set<string>();
 
   for (const airport of airports) {
-    const score = scoreAirport(getSearchRecord(airport), query, queryTokens, includeFboDetails);
+    const record = getSearchRecord(airport);
+    const score = scoreAirport(record, query, queryTokens, includeFboDetails);
     if (score === null) continue;
 
     const matches = matchesByScore.get(score);
@@ -119,6 +121,29 @@ export function rankAirports(
       matches.push(airport);
     } else {
       matchesByScore.set(score, [airport]);
+    }
+
+    if ((record.icao === query || record.iata === query) && record.city) {
+      exactCodeCities.add(record.city);
+    }
+  }
+
+  if (exactCodeCities.size > 0) {
+    const matchedAirports = new Set<Airport>();
+    for (const matches of Array.from(matchesByScore.values())) {
+      for (const airport of matches) matchedAirports.add(airport);
+    }
+
+    for (const airport of airports) {
+      const record = getSearchRecord(airport);
+      if (!matchedAirports.has(airport) && exactCodeCities.has(record.city)) {
+        const relatedMatches = matchesByScore.get(5);
+        if (relatedMatches) {
+          relatedMatches.push(airport);
+        } else {
+          matchesByScore.set(5, [airport]);
+        }
+      }
     }
   }
 

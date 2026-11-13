@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useRef, useEffect, useDeferredValue } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import { useAirportDirectory } from "@/lib/airportDirectory";
 import { rankAirports } from "@/lib/airportSearch";
 import { Search, X, ChevronDown, Check, MapPin } from "lucide-react";
@@ -24,7 +24,6 @@ export default function AirportSearchSelect({
   const isDisabled = disabled || !directoryLoaded;
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const deferredSearchQuery = useDeferredValue(searchQuery);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -38,8 +37,8 @@ export default function AirportSearchSelect({
   }, [value, airportsData]);
 
   const filteredAirports = useMemo(() => {
-    return rankAirports(airportsData, deferredSearchQuery, true);
-  }, [deferredSearchQuery, airportsData]);
+    return rankAirports(airportsData, searchQuery, true);
+  }, [searchQuery, airportsData]);
   const visibleAirports = filteredAirports.slice(0, 100);
 
   // Click outside listener
