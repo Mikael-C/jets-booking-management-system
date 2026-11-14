@@ -174,7 +174,6 @@ export default function GenerateQuoteView() {
   const [contractDate, setContractDate] = useState("01.10.2026");
   const [accountNumber, setAccountNumber] = useState("ACC-21737");
   const [quoteExpirationDate, setQuoteExpirationDate] = useState("02.10.2026, 19:53z");
-  const [tripType, setTripType] = useState<TripType>("round_trip");
   const [currency, setCurrency] = useState<"EUR" | "USD" | "GBP" | "CHF">("EUR");
 
   // Margin Rules & Commission
@@ -262,38 +261,51 @@ export default function GenerateQuoteView() {
   }, [selectedAircraftId]);
 
   // Initial Legs with airport names and respective FBOs (NO callsign on quote)
-  const [legs, setLegs] = useState<QuoteLegInput[]>([
-    {
-      originIcao: "LSGG",
-      destIcao: "LIMJ",
-      aircraftId: DEFAULT_AIRCRAFT_ID,
-      flightDate: "2026-10-03",
-      departureTime: "11:00",
-      arrivalTime: "11:55",
-      paxCount: 2,
-      depHandlerName: "Jet Aviation Geneva",
-      depHandlerPhone: "+41 58 158 1811",
-      depHandlerEmail: "gvafbo@jetaviation.com",
-      arrHandlerName: "Ags Ops Executive Handling",
-      arrHandlerPhone: "+39 010 601 5412",
-      arrHandlerEmail: "dutymanager@airport.genova.it"
-    },
-    {
-      originIcao: "LIMJ",
-      destIcao: "LSGG",
-      aircraftId: DEFAULT_AIRCRAFT_ID,
-      flightDate: "2026-10-06",
-      departureTime: "15:00",
-      arrivalTime: "16:04",
-      paxCount: 2,
-      depHandlerName: "Ags Ops Executive Handling",
-      depHandlerPhone: "+39 010 601 5412",
-      depHandlerEmail: "dutymanager@airport.genova.it",
-      arrHandlerName: "Jet Aviation Geneva",
-      arrHandlerPhone: "+41 58 158 1811",
-      arrHandlerEmail: "gvafbo@jetaviation.com"
-    }
-  ]);
+  const [routeState, setRouteState] = useState<{
+    tripType: TripType;
+    legs: QuoteLegInput[];
+  }>({
+    tripType: "round_trip",
+    legs: [
+      {
+        originIcao: "LSGG",
+        destIcao: "LIMJ",
+        aircraftId: DEFAULT_AIRCRAFT_ID,
+        flightDate: "2026-10-03",
+        departureTime: "11:00",
+        arrivalTime: "11:55",
+        paxCount: 2,
+        depHandlerName: "Jet Aviation Geneva",
+        depHandlerPhone: "+41 58 158 1811",
+        depHandlerEmail: "gvafbo@jetaviation.com",
+        arrHandlerName: "Ags Ops Executive Handling",
+        arrHandlerPhone: "+39 010 601 5412",
+        arrHandlerEmail: "dutymanager@airport.genova.it"
+      },
+      {
+        originIcao: "LIMJ",
+        destIcao: "LSGG",
+        aircraftId: DEFAULT_AIRCRAFT_ID,
+        flightDate: "2026-10-06",
+        departureTime: "15:00",
+        arrivalTime: "16:04",
+        paxCount: 2,
+        depHandlerName: "Ags Ops Executive Handling",
+        depHandlerPhone: "+39 010 601 5412",
+        depHandlerEmail: "dutymanager@airport.genova.it",
+        arrHandlerName: "Jet Aviation Geneva",
+        arrHandlerPhone: "+41 58 158 1811",
+        arrHandlerEmail: "gvafbo@jetaviation.com"
+      }
+    ]
+  });
+  const { tripType, legs } = routeState;
+
+  const activeLegs = useMemo(() => {
+    if (tripType === "one_way") return legs.slice(0, 1);
+    if (tripType === "round_trip") return legs.slice(0, 2);
+    return legs;
+  }, [legs, tripType]);
 
   // Additional Services (De-icing removed as requested)
   const [services, setServices] = useState<AdditionalServices>({
@@ -364,7 +376,7 @@ export default function GenerateQuoteView() {
   const handleAddLeg = () => {
     if (tripType !== "multi_leg") return;
 
-    const lastLeg = legs[legs.length - 1];
+    const lastLeg = activeLegs[activeLegs.length - 1];
     const originIcao = lastLeg ? lastLeg.destIcao : "LSGG";
     const destIcao = "LFPB";
     const newLeg = createQuoteLegInput(
@@ -375,24 +387,32 @@ export default function GenerateQuoteView() {
       selectedAircraftId,
       "14:00",
     );
-    setLegs((currentLegs) => [...currentLegs, newLeg]);
+    setRouteState((current) => ({
+      ...current,
+      legs: [...current.legs, newLeg],
+    }));
   };
 
   const handleRemoveLeg = (idx: number) => {
-    if (tripType !== "multi_leg" || legs.length <= 2) return;
-    setLegs((currentLegs) => currentLegs.filter((_, i) => i !== idx));
+    if (tripType !== "multi_leg" || activeLegs.length <= 2) return;
+    setRouteState((current) => ({
+      ...current,
+      legs: current.legs.filter((_, i) => i !== idx),
+    }));
     setActiveLegTabs({});
   };
 
   const handleTripTypeChange = (nextTripType: TripType) => {
-    setTripType(nextTripType);
     setActiveLegTabs({});
-    setLegs((currentLegs) => {
+    setRouteState((current) => {
+      const currentLegs = current.legs;
       const firstLeg =
         currentLegs[0] ||
         createQuoteLegInput("LSGG", "LIMJ", new Date().toISOString().slice(0, 10), 2, selectedAircraftId, "11:00");
 
-      if (nextTripType === "one_way") return [firstLeg];
+      if (nextTripType === "one_way") {
+        return { tripType: nextTripType, legs: [firstLeg] };
+      }
 
       const returnLeg =
         currentLegs[1] ||
@@ -406,7 +426,10 @@ export default function GenerateQuoteView() {
         );
 
       if (nextTripType === "multi_leg") {
-        return [firstLeg, returnLeg, ...currentLegs.slice(2)];
+        return {
+          tripType: nextTripType,
+          legs: [firstLeg, returnLeg, ...currentLegs.slice(2)],
+        };
       }
 
       const syncedReturnLeg = updateQuoteLegArrival(
@@ -416,46 +439,56 @@ export default function GenerateQuoteView() {
           firstLeg.originIcao,
         ),
       );
-      return [firstLeg, syncedReturnLeg];
+      return {
+        tripType: nextTripType,
+        legs: [firstLeg, syncedReturnLeg],
+      };
     });
   };
 
   const handleGlobalAircraftChange = (aircraftId: string) => {
     setSelectedAircraftId(aircraftId);
-    setLegs((currentLegs) =>
-      currentLegs.map((leg) => ({ ...leg, aircraftId })),
-    );
+    setRouteState((current) => ({
+      ...current,
+      legs: current.legs.map((leg) => ({ ...leg, aircraftId })),
+    }));
   };
 
   const handleLegChange = (idx: number, field: keyof QuoteLegInput, val: any) => {
-    const updated = [...legs];
-    updated[idx] =
-      field === "originIcao" || field === "destIcao"
-        ? updateQuoteLegAirport(legs[idx], field, val)
-        : { ...legs[idx], [field]: val };
+    setRouteState((current) => {
+      const updated = [...current.legs];
+      updated[idx] =
+        field === "originIcao" || field === "destIcao"
+          ? updateQuoteLegAirport(current.legs[idx], field, val)
+          : { ...current.legs[idx], [field]: val };
 
-    const shouldRecalculateArrival =
-      field === "departureTime" ||
-      field === "originIcao" ||
-      field === "destIcao" ||
-      field === "durationOverrideMinutes";
-    if (shouldRecalculateArrival) {
-      updated[idx] = updateQuoteLegArrival(updated[idx]);
-    }
+      const shouldRecalculateArrival =
+        field === "departureTime" ||
+        field === "originIcao" ||
+        field === "destIcao" ||
+        field === "durationOverrideMinutes";
+      if (shouldRecalculateArrival) {
+        updated[idx] = updateQuoteLegArrival(updated[idx]);
+      }
 
-    if (tripType === "round_trip" && idx === 0 && (field === "originIcao" || field === "destIcao")) {
-      const returnField = field === "originIcao" ? "destIcao" : "originIcao";
-      updated[1] = updateQuoteLegArrival(
-        updateQuoteLegAirport(updated[1], returnField, val),
-      );
-    }
+      if (
+        current.tripType === "round_trip" &&
+        idx === 0 &&
+        (field === "originIcao" || field === "destIcao")
+      ) {
+        const returnField = field === "originIcao" ? "destIcao" : "originIcao";
+        updated[1] = updateQuoteLegArrival(
+          updateQuoteLegAirport(updated[1], returnField, val),
+        );
+      }
 
-    setLegs(updated);
+      return { ...current, legs: updated };
+    });
   };
 
   // Compile full flight legs (No callsign on quote)
   const compiledLegs: FlightLeg[] = useMemo(() => {
-    return legs.map((leg, idx) => {
+    return activeLegs.map((leg, idx) => {
       const legAircraft = fleetData.find((aircraft) => aircraft.id === leg.aircraftId) || currentAircraft;
       const originAirport = findAirportByCode(leg.originIcao);
       const destAirport = findAirportByCode(leg.destIcao);
@@ -517,15 +550,15 @@ export default function GenerateQuoteView() {
         }
       };
     });
-  }, [legs, currentAircraft, clientName]);
+  }, [activeLegs, currentAircraft, clientName]);
 
   const aircraftByLeg = useMemo(() => {
-    return legs.reduce<Record<number, Aircraft>>((selectedAircraft, leg, idx) => {
+    return activeLegs.reduce<Record<number, Aircraft>>((selectedAircraft, leg, idx) => {
       selectedAircraft[idx + 1] =
         fleetData.find((aircraft) => aircraft.id === leg.aircraftId) || currentAircraft;
       return selectedAircraft;
     }, {});
-  }, [legs, currentAircraft]);
+  }, [activeLegs, currentAircraft]);
 
   // Effective Aircraft with manual overrides
   const effectiveAircraft = useMemo(() => {
@@ -810,11 +843,18 @@ export default function GenerateQuoteView() {
                 value={tripType}
                 onChange={(e) => handleTripTypeChange(e.target.value as TripType)}
                 className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 text-xs font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                aria-label="Trip type"
               >
                 <option value="round_trip">Round Trip</option>
                 <option value="one_way">One-Way Charter</option>
                 <option value="multi_leg">Multi-Leg Itinerary</option>
               </select>
+              <p className="mt-1.5 text-[10px] leading-relaxed text-[#0F1420]/70" aria-live="polite">
+                {tripType === "one_way" && "One-way route · 1 flight leg"}
+                {tripType === "round_trip" && "Round trip · 2 legs; return airports follow the outbound route"}
+                {tripType === "multi_leg" &&
+                  `Multi-leg itinerary · ${activeLegs.length} flight legs; airports are flexible and more legs can be added below`}
+              </p>
             </div>
 
             <div>
@@ -1301,12 +1341,15 @@ export default function GenerateQuoteView() {
 
         {/* SECTION 3: Flight Routing, Airport Names & Respective FBOs */}
         <div className="bg-white border border-[#E0DAD0] rounded-2xl p-6 shadow-sm space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-[#E0DAD0]">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-3 border-b border-[#E0DAD0] gap-2">
             <div className="flex items-center gap-2.5">
               <Plane className="w-4 h-4 text-[#C9A052]" />
               <h3 className="text-sm font-bold font-mono uppercase tracking-wider text-[#0F1420]">
                 3. Flight Routing, Airport Names & Respective FBO Handling
               </h3>
+              <span className="text-[10px] font-mono font-bold text-[#9A7A35] bg-[#C9A052]/10 border border-[#C9A052]/20 rounded-full px-2 py-1">
+                {activeLegs.length} {activeLegs.length === 1 ? "LEG" : "LEGS"}
+              </span>
             </div>
 
             {tripType === "multi_leg" && (
@@ -1322,7 +1365,7 @@ export default function GenerateQuoteView() {
           </div>
 
           <div className="space-y-5">
-            {legs.map((leg, index) => {
+            {activeLegs.map((leg, index) => {
               const currentTab = activeLegTabs[index] || "routing";
               const setTab = (tab: "routing" | "pets" | "luggage" | "handling") => {
                 setActiveLegTabs((prev) => ({ ...prev, [index]: tab }));
@@ -1405,7 +1448,7 @@ export default function GenerateQuoteView() {
                         </button>
                       </div>
 
-                      {tripType === "multi_leg" && legs.length > 2 && (
+                      {tripType === "multi_leg" && activeLegs.length > 2 && (
                         <button
                           type="button"
                           onClick={() => handleRemoveLeg(index)}
