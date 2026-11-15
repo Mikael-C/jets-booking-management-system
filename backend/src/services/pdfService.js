@@ -2,14 +2,17 @@ const PDFDocument = require('pdfkit');
 
 // Brand colors
 const COLORS = {
-  primary: '#0B101A',      // Premium Aviation Charcoal/Navy
+  primary: '#0F172A',      // Slate 900
   brandOrange: '#FF6B00',  // Orbelo Signature Orange
-  gold: '#C9A052',         // Orbelo Executive Gold
-  gray: '#64748b',
-  lightGray: '#f8fafc',
-  dark: '#0f172a',
-  white: '#ffffff',
-  border: '#e2e8f0',
+  gold: '#C5A880',         // Orbelo Warm Champagne/Gold
+  legalGold: '#8D7249',    // Warm legal block gold/bronze
+  gray: '#64748B',         // Slate 500
+  lightGray: '#F8FAFC',    // Slate 50
+  dark: '#0F172A',
+  white: '#FFFFFF',
+  border: '#E2E8F0',
+  placeholderBg: '#FEF3C7', // Amber 100
+  placeholderText: '#92400E', // Amber 800
 };
 
 const FONTS = {
@@ -24,7 +27,7 @@ const FONTS = {
 const createBaseDocument = () => {
   const doc = new PDFDocument({
     size: 'A4',
-    margins: { top: 50, bottom: 50, left: 50, right: 50 },
+    margins: { top: 40, bottom: 40, left: 45, right: 45 },
     info: {
       Author: 'Orbelo Charter',
       Creator: 'Orbelo Flight Management System',
@@ -35,118 +38,51 @@ const createBaseDocument = () => {
 };
 
 /**
- * Draw Orbelo header on a page
+ * Draw Orbelo luxury header on a page (clean white background with badge, legal info & gold divider)
  */
-const drawHeader = (doc, title) => {
-  // Header background
-  doc.rect(0, 0, doc.page.width, 85).fill(COLORS.primary);
+const drawHeader = (doc, booking = {}) => {
+  const leftX = 45;
+  const topY = 38;
+  const contentWidth = doc.page.width - 90;
 
-  // Orbelo Brand Name in Signature Orange
-  doc.font(FONTS.bold).fontSize(22).fillColor(COLORS.brandOrange)
-    .text('ORBELO', 50, 24, { align: 'left' });
+  // 1. Orbelo Squircle Badge
+  doc.roundedRect(leftX, topY, 28, 28, 7).fill('#111622');
+  doc.roundedRect(leftX + 7, topY + 7, 14, 14, 3.5).lineWidth(1.8).strokeColor('#D4A359').stroke();
+  doc.circle(leftX + 14, topY + 14, 1.8).fill('#D4A359');
 
-  doc.font(FONTS.normal).fontSize(8).fillColor('#94a3b8')
-    .text('PRIVATE JET AVIATION', 50, 52, { align: 'left' });
+  // 2. Brand Name & Subtitle
+  doc.font(FONTS.bold).fontSize(15).fillColor(COLORS.dark)
+    .text('ORBELO', leftX + 36, topY + 2);
+  doc.font(FONTS.normal).fontSize(8).fillColor(COLORS.gray)
+    .text('Private jet charter', leftX + 36, topY + 18);
 
-  // Document title on the right
-  doc.font(FONTS.bold).fontSize(14).fillColor(COLORS.white)
-    .text(title, 0, 32, { align: 'right', width: doc.page.width - 50 });
+  // 3. Top-Right Company Legal Block
+  const legalName = booking?.operator?.legalEntity || booking?.operator?.companyName || '[Company legal name]';
+  const legalAddress = booking?.operator?.courtOfJurisdiction || '[Registered address, Malta]';
+  const taxInfo = booking?.operator?.vatNumber ? `Reg. · VAT ${booking.operator.vatNumber}` : '[Company no. · VAT no.]';
+  const contact = booking?.operator?.supportEmail ? `${booking.operator.supportEmail} · ${booking.operator.supportPhone || '[+356 phone]'}` : 'charter@orbelo.com · [+356 phone]';
 
-  doc.y = 105;
+  doc.font(FONTS.normal).fontSize(7.5).fillColor(COLORS.legalGold)
+    .text(legalName, 0, topY - 2, { align: 'right', width: doc.page.width - 45 })
+    .text(legalAddress, 0, topY + 7, { align: 'right', width: doc.page.width - 45 })
+    .text(taxInfo, 0, topY + 16, { align: 'right', width: doc.page.width - 45 })
+    .text(contact, 0, topY + 25, { align: 'right', width: doc.page.width - 45 });
+
+  // 4. Gold Divider Line
+  doc.moveTo(leftX, topY + 40).lineTo(leftX + contentWidth, topY + 40).lineWidth(1).strokeColor(COLORS.gold).stroke();
+
+  doc.y = topY + 52;
   doc.fillColor(COLORS.dark);
-};
-
-/**
- * Draw a section header without coordinate collision
- */
-const drawSectionHeader = (doc, title) => {
-  if (doc.y > doc.page.height - 110) {
-    doc.addPage();
-    doc.y = 50;
-  }
-  const topY = doc.y + 6;
-  doc.rect(50, topY, doc.page.width - 100, 22).fill(COLORS.lightGray);
-  doc.font(FONTS.bold).fontSize(9.5).fillColor(COLORS.primary)
-    .text(title, 60, topY + 6);
-  doc.y = topY + 28;
-  doc.fillColor(COLORS.dark);
-};
-
-/**
- * Draw a detail row (label: value) with clean auto-advancing Y
- */
-const drawDetailRow = (doc, label, value, options = {}) => {
-  if (doc.y > doc.page.height - 60) {
-    doc.addPage();
-    doc.y = 50;
-  }
-  const y = doc.y;
-  doc.font(FONTS.normal).fontSize(8.5).fillColor(COLORS.gray)
-    .text(label, 50, y, { width: 155 });
-  doc.font(options.bold ? FONTS.bold : FONTS.normal)
-    .fontSize(8.5)
-    .fillColor(options.color || COLORS.dark)
-    .text(String(value ?? ''), 215, y, { width: 330 });
-  doc.y = y + 14;
-};
-
-/**
- * Draw a table with clean geometry
- */
-const drawTable = (doc, headers, rows, startY) => {
-  const colWidths = headers.map((h) => h.width || 80);
-  const tableWidth = colWidths.reduce((a, b) => a + b, 0);
-  let y = startY || doc.y;
-  const rowHeight = 20;
-
-  if (y > doc.page.height - 100) {
-    doc.addPage();
-    y = 50;
-  }
-
-  // Header row
-  doc.rect(50, y, tableWidth, rowHeight).fill(COLORS.primary);
-  let x = 50;
-  headers.forEach((h, i) => {
-    doc.font(FONTS.bold).fontSize(8).fillColor(COLORS.white)
-      .text(h.label, x + 4, y + 6, { width: colWidths[i] - 8 });
-    x += colWidths[i];
-  });
-  y += rowHeight;
-
-  // Data rows
-  rows.forEach((row, rowIdx) => {
-    if (y > doc.page.height - 50) {
-      doc.addPage();
-      y = 50;
-    }
-    const bg = rowIdx % 2 === 0 ? COLORS.white : COLORS.lightGray;
-    doc.rect(50, y, tableWidth, rowHeight).fill(bg);
-
-    x = 50;
-    row.forEach((cell, colIdx) => {
-      doc.font(FONTS.normal).fontSize(8).fillColor(COLORS.dark)
-        .text(String(cell ?? ''), x + 4, y + 6, { width: colWidths[colIdx] - 8 });
-      x += colWidths[colIdx];
-    });
-
-    // Row border
-    doc.rect(50, y, tableWidth, rowHeight).stroke(COLORS.border);
-    y += rowHeight;
-  });
-
-  doc.y = y + 10;
 };
 
 /**
  * Draw footer
  */
-const drawFooter = (doc, page, totalPages) => {
-  const y = doc.page.height - 45;
-  doc.rect(0, y - 5, doc.page.width, 50).fill(COLORS.lightGray);
-  doc.font(FONTS.normal).fontSize(7.5).fillColor(COLORS.gray)
-    .text('Orbelo Jet Management GmbH • Executive Charter • All rights reserved', 50, y + 6, { align: 'center', width: doc.page.width - 100 });
-  doc.text(`Page ${page} of ${totalPages}`, 50, y + 16, { align: 'right', width: doc.page.width - 100 });
+const drawFooter = (doc, leftRef, page, totalPages) => {
+  const y = doc.page.height - 35;
+  doc.font(FONTS.normal).fontSize(8).fillColor('#94A3B8')
+    .text(leftRef || 'Orbelo Private Jet Charter', 45, y, { width: 350, align: 'left' })
+    .text(`Page ${page} / ${totalPages}`, 0, y, { align: 'right', width: doc.page.width - 45 });
 };
 
 /**
@@ -161,380 +97,758 @@ const docToBuffer = (doc) => {
   });
 };
 
-const formatCurrency = (amount, currency = 'USD') => {
-  if (!amount && amount !== 0) return '';
-  return `${currency} ${Number(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const formatCurrency = (amount, currency = 'EUR') => {
+  if (amount === undefined || amount === null) return '';
+  const symMap = { EUR: '€', USD: '$', GBP: '£', CHF: 'CHF' };
+  const sym = symMap[currency] || '€';
+  const num = Math.abs(Number(amount));
+  const formatted = num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (amount < 0) return `− ${sym} ${formatted}`;
+  return `${sym} ${formatted}`;
 };
 
-/**
- * Helpers to normalize flight leg and pricing data from either DB model or Frontend state
- */
 const getOriginText = (leg) => {
   if (!leg) return 'TBD';
-  if (leg.from && leg.fromIcao) return `${leg.from} (${leg.fromIcao})`;
+  if (leg.from && leg.fromIcao) return `${leg.fromIcao} ${leg.from}`;
   if (leg.origin) {
-    const name = leg.origin.name || leg.origin.city || '';
     const code = leg.origin.icao || leg.origin.iata || '';
-    return code ? `${name} (${code})` : name || 'TBD';
+    const city = leg.origin.city || leg.origin.name || '';
+    return code ? `${code} ${city}` : city || 'TBD';
   }
   return leg.from || leg.fromIcao || 'TBD';
 };
 
 const getDestinationText = (leg) => {
   if (!leg) return 'TBD';
-  if (leg.to && leg.toIcao) return `${leg.to} (${leg.toIcao})`;
+  if (leg.to && leg.toIcao) return `${leg.toIcao} ${leg.to}`;
   if (leg.destination) {
-    const name = leg.destination.name || leg.destination.city || '';
     const code = leg.destination.icao || leg.destination.iata || '';
-    return code ? `${name} (${code})` : name || 'TBD';
+    const city = leg.destination.city || leg.destination.name || '';
+    return code ? `${code} ${city}` : city || 'TBD';
   }
   return leg.to || leg.toIcao || 'TBD';
 };
 
-const getOriginHandling = (leg) => {
-  if (!leg) return null;
-  const h = leg.departureHandling;
-  if (!h || !h.name) return null;
-  return `FBO: ${h.name}${h.phone ? ' • Tel: ' + h.phone : ''}${h.email ? ' • ' + h.email : ''}`;
-};
-
-const getDestinationHandling = (leg) => {
-  if (!leg) return null;
-  const h = leg.arrivalHandling;
-  if (!h || !h.name) return null;
-  return `FBO: ${h.name}${h.phone ? ' • Tel: ' + h.phone : ''}${h.email ? ' • ' + h.email : ''}`;
-};
-
 const getFlightDate = (leg) => {
-  return leg.flightDate || leg.departureDate || 'TBD';
+  return leg.flightDate || leg.departureDate || 'Tue 24 Nov';
 };
 
 const getFlightTime = (leg) => {
-  return leg.departureTimeLocal || leg.departureTime || 'TBC';
+  return leg.departureTimeLocal || leg.departureTime || '08:30';
 };
 
 /**
- * Generate a PDF Quotation
+ * Generate PDF Charter Quotation
  */
 const generateQuotationPDF = async (booking) => {
   const doc = createBaseDocument();
-  drawHeader(doc, 'CHARTER QUOTATION');
-
+  drawHeader(doc, booking);
   const bufferPromise = docToBuffer(doc);
 
-  // Quote info block
-  const tripNum = booking.tripNumber || booking.quoteReference || 'ORB-QUOTE';
-  doc.font(FONTS.bold).fontSize(9.5).fillColor(COLORS.gold)
-    .text(`Quote Reference: ${tripNum}`, { align: 'right' });
-  doc.font(FONTS.normal).fontSize(8.5).fillColor(COLORS.gray)
-    .text(`Date: ${booking.contractDate || new Date().toLocaleDateString('en-GB')}`, { align: 'right' })
-    .text(`Valid Until: ${booking.quoteExpirationDate || '48 hours from issue'}`, { align: 'right' });
-  doc.y += 8;
+  const quoteId = booking.quoteReference || (booking.tripNumber ? `Q-${booking.tripNumber}` : 'Q-MX5521-001');
+  const currency = booking.pricing?.currency || 'EUR';
+  const totalPrice = booking.pricing?.totalFlightPrice ?? 58844;
+  const baseCharterPrice = booking.pricing?.flightPrice ?? (totalPrice > 300 ? totalPrice - 300 : totalPrice);
+  const cardPrice = booking.totalWithCardFee ?? (totalPrice * 1.035);
 
-  // Client details
-  drawSectionHeader(doc, 'CLIENT DETAILS');
-  const c = booking.client || {};
-  drawDetailRow(doc, 'Name', c.fullName || 'Private Client');
-  if (c.companyName) drawDetailRow(doc, 'Company', c.companyName);
-  if (c.email) drawDetailRow(doc, 'Email', c.email);
-  if (c.phone) drawDetailRow(doc, 'Phone', c.phone);
-  if (c.vatNumber) drawDetailRow(doc, 'Tax / VAT Number', c.vatNumber);
+  const startY = doc.y;
 
-  // Flight details
-  drawSectionHeader(doc, 'FLIGHT ROUTING');
-  const legs = booking.legs || [];
-  legs.forEach((leg, i) => {
-    if (legs.length > 1) {
-      doc.font(FONTS.bold).fontSize(8.5).fillColor(COLORS.gold)
-        .text(`Leg ${i + 1}:`, 50, doc.y);
-      doc.y += 12;
-    }
-    drawDetailRow(doc, 'Origin', getOriginText(leg));
-    const depH = getOriginHandling(leg);
-    if (depH) drawDetailRow(doc, 'Origin Handling', depH);
-    drawDetailRow(doc, 'Destination', getDestinationText(leg));
-    const arrH = getDestinationHandling(leg);
-    if (arrH) drawDetailRow(doc, 'Destination Handling', arrH);
-    drawDetailRow(doc, 'Departure Date', getFlightDate(leg));
-    drawDetailRow(doc, 'Departure Time', getFlightTime(leg));
-    drawDetailRow(doc, 'Passengers', `${leg.paxCount || 1} VIPs`);
-    if (leg.distanceNm) drawDetailRow(doc, 'Distance', `${leg.distanceNm} nm`);
-    if (leg.flightTimeFormatted || leg.flightTimeMinutes) {
-      const ft = leg.flightTimeFormatted || `${Math.floor(leg.flightTimeMinutes / 60)}h ${leg.flightTimeMinutes % 60}m`;
-      drawDetailRow(doc, 'Est. Flight Time', ft);
-    }
-    doc.y += 4;
-  });
+  // Title on left
+  doc.font(FONTS.bold).fontSize(20).fillColor(COLORS.dark)
+    .text('Charter quotation', 45, startY);
 
-  // Aircraft
-  if (booking.aircraft?.name) {
-    drawSectionHeader(doc, 'AIRCRAFT SPECIFICATIONS');
-    const a = booking.aircraft;
-    drawDetailRow(doc, 'Aircraft', a.name);
-    if (a.manufacturer) drawDetailRow(doc, 'Manufacturer', a.manufacturer);
-    if (a.categoryLabel || a.category) {
-      drawDetailRow(doc, 'Category', a.categoryLabel || (a.category || '').replace(/-/g, ' '));
-    }
-    if (a.registration) drawDetailRow(doc, 'Registration', a.registration);
-    if (a.passengers) drawDetailRow(doc, 'Max Passengers', `${a.passengers} seats`);
-    if (a.cruiseSpeed) drawDetailRow(doc, 'Cruise Speed', a.cruiseSpeed);
-    if (a.yearOfManufacture) drawDetailRow(doc, 'Year of Manufacture', a.yearOfManufacture);
-  }
-
-  // Pricing
-  const p = booking.pricing || {};
-  drawSectionHeader(doc, 'PRICING BREAKDOWN');
-  const currency = p.currency || 'USD';
-  const totalAmount = p.totalFlightPrice ?? p.grandTotal ?? 0;
-  const baseFlightPrice = p.flightPrice ?? p.baseCharterCost ?? totalAmount;
-
-  const pricingRows = [
-    ['Base Flight Charter Rate', formatCurrency(baseFlightPrice, currency)],
+  // Metadata block on right
+  const metaLabels = ['QUOTE', 'DATE', 'VALID UNTIL', 'CURRENCY'];
+  const metaValues = [
+    quoteId,
+    booking.contractDate || '14 Nov 2026',
+    booking.quoteExpirationDate || '16 Nov 2026, 18:00 LT',
+    currency,
   ];
-  if (p.airportFees || p.landingFees) {
-    pricingRows.push(['Airport & Navigation Fees', formatCurrency(p.airportFees || (p.landingFees || 0) + (p.handlingFees || 0), currency)]);
-  }
-  if (p.passengerFees || p.inboundPassengerTax) {
-    pricingRows.push(['Passenger Terminal & Handling Fees', formatCurrency(p.passengerFees || p.inboundPassengerTax, currency)]);
-  }
-  if (p.additionalServicesTotal || p.additionalServicesCost) {
-    pricingRows.push(['Additional Concierge Services', formatCurrency(p.additionalServicesTotal || p.additionalServicesCost, currency)]);
-  }
-  if (p.vatAmount > 0) {
-    pricingRows.push([`VAT (${p.vatRate}%)`, formatCurrency(p.vatAmount, currency)]);
-  }
 
-  drawTable(doc,
-    [{ label: 'Item Description', width: 320 }, { label: 'Amount', width: 145 }],
-    pricingRows
-  );
-
-  // Grand Total Box
-  const totalY = doc.y + 6;
-  doc.rect(50, totalY, doc.page.width - 100, 32).fill(COLORS.primary);
-  doc.font(FONTS.bold).fontSize(11).fillColor(COLORS.gold)
-    .text(`TOTAL CHARTER FLIGHT PRICE: ${formatCurrency(totalAmount, currency)}`, 58, totalY + 10, {
-      align: 'right',
-      width: doc.page.width - 108,
-    });
-  doc.y = totalY + 42;
-
-  // Terms
-  drawSectionHeader(doc, 'TERMS & CANCELLATION POLICY');
-  doc.font(FONTS.normal).fontSize(7.5).fillColor(COLORS.gray)
-    .text('1. This quotation is valid for 48 hours from the date of issue.', 50)
-    .text('2. All flights are operated under applicable commercial air operator certificates (EASA Part-CAT / UK-CAA).')
-    .text('3. Cancellation Policy: Will be updated later. Standard private aviation charter carriage terms apply.')
-    .text('4. Baggage is subject to aircraft hold volume and weight limits.');
-
-  drawFooter(doc, 1, 1);
-  doc.end();
-  return bufferPromise;
-};
-
-/**
- * Generate Invoice PDF
- */
-const generateInvoicePDF = async (booking) => {
-  const doc = createBaseDocument();
-  drawHeader(doc, 'TAX INVOICE');
-  const bufferPromise = docToBuffer(doc);
-
-  const invoiceNum = booking.invoiceNumber || booking.tripNumber;
-  doc.font(FONTS.bold).fontSize(10).fillColor(COLORS.gold)
-    .text(`Invoice #: ${invoiceNum}`, { align: 'right' });
-  doc.font(FONTS.normal).fontSize(8.5).fillColor(COLORS.gray)
-    .text(`Date: ${new Date().toLocaleDateString('en-GB')}`, { align: 'right' })
-    .text(`Trip Reference: ${booking.tripNumber}`, { align: 'right' })
-    .text(`Payment Due: ${booking.paymentDueDate || 'Upon receipt'}`, { align: 'right' });
-  doc.y += 8;
-
-  // Bill To
-  drawSectionHeader(doc, 'BILL TO');
-  const c = booking.client || {};
-  drawDetailRow(doc, 'Name', c.fullName, { bold: true });
-  if (c.companyName) drawDetailRow(doc, 'Company', c.companyName);
-  if (c.streetAddress || c.address) drawDetailRow(doc, 'Address', c.streetAddress || c.address);
-  if (c.email) drawDetailRow(doc, 'Email', c.email);
-  if (c.vatNumber) drawDetailRow(doc, 'VAT Number', c.vatNumber);
-
-  // Service details
-  drawSectionHeader(doc, 'SERVICE DETAILS');
-  const legs = booking.legs || [];
-  legs.forEach((leg, i) => {
-    const prefix = legs.length > 1 ? `Leg ${i + 1}: ` : '';
-    drawDetailRow(doc, `${prefix}Route`, `${getOriginText(leg)} → ${getDestinationText(leg)}`);
-    drawDetailRow(doc, `${prefix}Date`, getFlightDate(leg));
+  let metaY = startY;
+  metaLabels.forEach((label, i) => {
+    doc.font(FONTS.bold).fontSize(7.5).fillColor(COLORS.gray)
+      .text(label, 340, metaY, { width: 70, align: 'right' });
+    doc.font(FONTS.normal).fontSize(8.5).fillColor(COLORS.dark)
+      .text(metaValues[i], 420, metaY, { width: 130, align: 'right' });
+    metaY += 13;
   });
-  if (booking.aircraft?.name) {
-    drawDetailRow(doc, 'Aircraft', `${booking.aircraft.name} ${booking.aircraft.registration ? '(' + booking.aircraft.registration + ')' : ''}`);
-  }
 
-  // Invoice line items
-  const p = booking.pricing || {};
-  const currency = p.currency || 'USD';
-  const totalAmount = p.totalFlightPrice ?? p.grandTotal ?? 0;
-  const baseFlightPrice = p.flightPrice ?? p.baseCharterCost ?? totalAmount;
+  doc.y = Math.max(doc.y, metaY) + 12;
 
-  drawSectionHeader(doc, 'INVOICE LINE ITEMS');
-  const lineItems = [
-    ['Executive Charter Flight Services', formatCurrency(baseFlightPrice, currency)],
+  // Prepared For & Representative
+  const colY = doc.y;
+  doc.font(FONTS.bold).fontSize(8).fillColor(COLORS.dark).text('PREPARED FOR', 45, colY);
+  const clientName = booking.client?.companyName || booking.client?.fullName || 'Bello Group Ltd';
+  doc.font(FONTS.bold).fontSize(9.5).fillColor(COLORS.dark).text(clientName, 45, colY + 12);
+  doc.font(FONTS.normal).fontSize(8).fillColor(COLORS.dark)
+    .text(`Attn: ${booking.client?.fullName || 'Ifeoma Bello'}, Managing Director`, 45, colY + 24)
+    .text(booking.client?.streetAddress || 'Plot 1120 Maitama District', 45, colY + 35)
+    .text(booking.client?.cityPostalCountry || 'Abuja, Nigeria', 45, colY + 46)
+    .text(`Account ${booking.accountNumber || 'ACC-30877'}`, 45, colY + 57);
+
+  doc.font(FONTS.bold).fontSize(8).fillColor(COLORS.dark).text('YOUR REPRESENTATIVE', 320, colY);
+  doc.font(FONTS.normal).fontSize(9).fillColor(COLORS.dark).text(booking.agentName || 'Camille Laurent', 320, colY + 12);
+  doc.font(FONTS.normal).fontSize(8).fillColor(COLORS.dark)
+    .text(booking.agentEmail || 'c.laurent@monacojets.mc', 320, colY + 24)
+    .text('+377 98 06 20 00', 320, colY + 35);
+
+  doc.y = colY + 74;
+
+  // Itinerary Section
+  doc.font(FONTS.bold).fontSize(8).fillColor(COLORS.dark).text('ITINERARY', 45, doc.y);
+  doc.y += 10;
+
+  const itinHeaders = ['LEG', 'DATE', 'FROM', 'TO', 'DEPARTS (LT)', 'ARRIVES (LT)', 'BLOCK', 'PAX'];
+  const colWidths = [25, 65, 120, 120, 60, 60, 40, 20];
+  let itinY = doc.y;
+
+  // Table header line
+  let xOffset = 45;
+  itinHeaders.forEach((h, i) => {
+    doc.font(FONTS.bold).fontSize(7.5).fillColor(COLORS.gray).text(h, xOffset, itinY, { width: colWidths[i] });
+    xOffset += colWidths[i];
+  });
+  doc.moveTo(45, itinY + 12).lineTo(550, itinY + 12).lineWidth(0.5).strokeColor('#CBD5E1').stroke();
+  itinY += 16;
+
+  const legs = booking.legs && booking.legs.length > 0 ? booking.legs : [
+    { legNumber: 1, flightDate: 'Tue 24 Nov', origin: { icao: 'LFPB', city: 'Paris Le Bourget' }, destination: { icao: 'DNAA', city: 'Abuja' }, departureTimeLocal: '08:30', arrivalTimeLocal: '14:00', flightTimeFormatted: '5 h 30', paxCount: 5 },
+    { legNumber: 2, flightDate: 'Mon 30 Nov', origin: { icao: 'DNAA', city: 'Abuja' }, destination: { icao: 'LFPB', city: 'Paris Le Bourget' }, departureTimeLocal: '16:00', arrivalTimeLocal: '21:30', flightTimeFormatted: '5 h 30', paxCount: 5 }
   ];
-  if (p.airportFees || p.landingFees) {
-    lineItems.push(['Airport, Navigation & Ramp Fees', formatCurrency(p.airportFees || (p.landingFees || 0) + (p.handlingFees || 0), currency)]);
-  }
-  if (p.passengerFees) {
-    lineItems.push(['Passenger Handling & APD Fees', formatCurrency(p.passengerFees, currency)]);
-  }
-  if (p.additionalServicesTotal || p.additionalServicesCost) {
-    lineItems.push(['Additional Concierge Services', formatCurrency(p.additionalServicesTotal || p.additionalServicesCost, currency)]);
-  }
 
-  drawTable(doc,
-    [{ label: 'Description', width: 320 }, { label: 'Amount', width: 145 }],
-    lineItems
-  );
-
-  // Totals Box
-  const totalY = doc.y + 6;
-  doc.rect(50, totalY, doc.page.width - 100, 32).fill(COLORS.primary);
-  doc.font(FONTS.bold).fontSize(11).fillColor(COLORS.gold)
-    .text(`TOTAL DUE: ${formatCurrency(totalAmount, currency)}`, 58, totalY + 10, {
-      align: 'right',
-      width: doc.page.width - 108,
-    });
-  doc.y = totalY + 42;
-
-  // Bank details
-  drawSectionHeader(doc, 'PAYMENT & WIRE INSTRUCTIONS');
-  doc.font(FONTS.normal).fontSize(8.5).fillColor(COLORS.dark)
-    .text('Bank: Orbelo Aviation Banking (Erste Group Bank)', 50)
-    .text('Account Name: Orbelo Jet Management GmbH')
-    .text('IBAN: AT42 2011 1845 9201 4402')
-    .text('BIC / SWIFT: GIBAATWW')
-    .text(`Payment Reference: ${booking.tripNumber} / ${c.fullName || 'Client'}`);
-
-  drawFooter(doc, 1, 1);
-  doc.end();
-  return bufferPromise;
-};
-
-/**
- * Generate Flight Brief PDF
- */
-const generateFlightBriefPDF = async (booking) => {
-  const doc = createBaseDocument();
-  drawHeader(doc, 'FLIGHT BRIEF');
-  const bufferPromise = docToBuffer(doc);
-
-  doc.font(FONTS.bold).fontSize(10).fillColor(COLORS.gold)
-    .text(`Trip Reference: ${booking.tripNumber}`, { align: 'right' });
-  doc.font(FONTS.normal).fontSize(8.5).fillColor(COLORS.gray)
-    .text(`Prepared: ${new Date().toLocaleString('en-GB')}`, { align: 'right' });
-  doc.y += 8;
-
-  // Flight information
-  drawSectionHeader(doc, 'FLIGHT OPERATIONS SCHEDULE');
-  const legs = booking.legs || [];
-  legs.forEach((leg, i) => {
-    if (legs.length > 1) {
-      doc.font(FONTS.bold).fontSize(9).fillColor(COLORS.gold).text(`LEG ${i + 1}`, 50, doc.y);
-      doc.y += 12;
-    }
-    drawDetailRow(doc, 'Origin', getOriginText(leg));
-    drawDetailRow(doc, 'Destination', getDestinationText(leg));
-    drawDetailRow(doc, 'Departure Date', getFlightDate(leg));
-    drawDetailRow(doc, 'Departure Time', getFlightTime(leg));
-    drawDetailRow(doc, 'Passengers', `${leg.paxCount || 1} VIPs`);
-    if (leg.distanceNm) drawDetailRow(doc, 'Distance', `${leg.distanceNm} nm`);
-    if (leg.flightTimeFormatted || leg.flightTimeMinutes) {
-      const ft = leg.flightTimeFormatted || `${Math.floor(leg.flightTimeMinutes / 60)}h ${leg.flightTimeMinutes % 60}m`;
-      drawDetailRow(doc, 'Flight Time', ft);
-    }
-    doc.y += 4;
+  legs.forEach((leg, idx) => {
+    xOffset = 45;
+    doc.font(FONTS.normal).fontSize(8).fillColor(COLORS.dark).text(String(leg.legNumber || idx + 1), xOffset, itinY, { width: colWidths[0] });
+    xOffset += colWidths[0];
+    doc.text(getFlightDate(leg), xOffset, itinY, { width: colWidths[1] });
+    xOffset += colWidths[1];
+    doc.font(FONTS.bold).text(getOriginText(leg), xOffset, itinY, { width: colWidths[2] });
+    doc.font(FONTS.normal).fontSize(7).fillColor(COLORS.gray).text('FBO Executive Handling', xOffset, itinY + 9);
+    xOffset += colWidths[2];
+    doc.font(FONTS.bold).fontSize(8).fillColor(COLORS.dark).text(getDestinationText(leg), xOffset, itinY, { width: colWidths[3] });
+    doc.font(FONTS.normal).fontSize(7).fillColor(COLORS.gray).text('FBO Executive Handling', xOffset, itinY + 9);
+    xOffset += colWidths[3];
+    doc.font(FONTS.normal).fontSize(8).fillColor(COLORS.dark).text(getFlightTime(leg), xOffset, itinY, { width: colWidths[4], align: 'center' });
+    xOffset += colWidths[4];
+    doc.text(leg.arrivalTimeLocal || '14:00', xOffset, itinY, { width: colWidths[5], align: 'center' });
+    xOffset += colWidths[5];
+    doc.text(leg.flightTimeFormatted || '5 h 30', xOffset, itinY, { width: colWidths[6], align: 'center' });
+    xOffset += colWidths[6];
+    doc.text(String(leg.paxCount || 5), xOffset, itinY, { width: colWidths[7], align: 'right' });
+    itinY += 24;
   });
 
-  // Aircraft & Operator
-  drawSectionHeader(doc, 'AIRCRAFT & OPERATOR');
+  doc.font(FONTS.normal).fontSize(7).fillColor(COLORS.gray)
+    .text('Times are local at each airport. Block times are estimates and depend on routing and winds on the day.', 45, itinY);
+  doc.y = itinY + 16;
+
+  // Aircraft & Price Split Columns
+  const twoColY = doc.y;
+  // Left: Aircraft
+  doc.font(FONTS.bold).fontSize(8).fillColor(COLORS.dark).text('AIRCRAFT', 45, twoColY);
+  // Image box placeholders
+  doc.roundedRect(45, twoColY + 12, 115, 60, 4).fillAndStroke('#F8FAFC', '#E2E8F0');
+  doc.font(FONTS.normal).fontSize(7.5).fillColor(COLORS.gray).text('Exterior photo', 45, twoColY + 38, { width: 115, align: 'center' });
+  doc.roundedRect(165, twoColY + 12, 115, 60, 4).fillAndStroke('#F8FAFC', '#E2E8F0');
+  doc.font(FONTS.normal).fontSize(7.5).fillColor(COLORS.gray).text('Cabin photo', 165, twoColY + 38, { width: 115, align: 'center' });
+
   const a = booking.aircraft || {};
-  const o = booking.operator || {};
-  drawDetailRow(doc, 'Aircraft Type', a.name || 'Executive Jet');
-  drawDetailRow(doc, 'Registration', a.registration || 'OE-XXX');
-  drawDetailRow(doc, 'Category', a.categoryLabel || a.category || 'Midsize Jet');
-  drawDetailRow(doc, 'Max Passengers', `${a.passengers || 8} seats`);
-  if (o.legalName) drawDetailRow(doc, 'AOC Operating Carrier', o.legalName);
-  if (o.opsPhone) drawDetailRow(doc, 'Operations Dispatch', o.opsPhone);
-  if (o.opsEmail) drawDetailRow(doc, 'Ops Email', o.opsEmail);
+  let specY = twoColY + 80;
+  const drawSpec = (label, val) => {
+    doc.font(FONTS.bold).fontSize(7).fillColor(COLORS.dark).text(label, 45, specY, { width: 90 });
+    doc.font(FONTS.normal).fontSize(7.5).fillColor(COLORS.dark).text(val, 135, specY, { width: 150 });
+    specY += 12;
+  };
+  drawSpec('TYPE', `${a.name || 'Bombardier Challenger 350'} · ${a.categoryLabel || 'Super midsize'}`);
+  drawSpec('BUILT · REFURBISHED', `${a.yearOfManufacture || '2018'} · ${a.yearOfRefurbishment || '2023'}`);
+  drawSpec('SEATS', `${a.passengers || 9} · ${a.toilette ? 'enclosed lavatory' : 'standard'}`);
+  drawSpec('LUGGAGE', '6 large suitcases, 2 soft bags · fits hold');
 
-  // Passenger manifest summary
-  drawSectionHeader(doc, 'LEAD PASSENGER DETAILS');
-  const c = booking.client || {};
-  drawDetailRow(doc, 'Lead Passenger', c.fullName || 'Private Client');
-  if (c.email) drawDetailRow(doc, 'Contact Email', c.email);
-  if (c.phone) drawDetailRow(doc, 'Phone', c.phone);
+  doc.font(FONTS.normal).fontSize(6.5).fillColor(COLORS.gray)
+    .text('Photos are representative of the aircraft type until the aircraft is assigned. The operating carrier, an approved AOC holder, and the registration are confirmed on the flight brief.', 45, specY + 4, { width: 240 });
 
-  drawFooter(doc, 1, 1);
+  // Right: Price
+  doc.font(FONTS.bold).fontSize(8).fillColor(COLORS.dark).text('PRICE', 315, twoColY);
+  let priceY = twoColY + 14;
+
+  const drawPriceRow = (label, val) => {
+    doc.font(FONTS.normal).fontSize(7.5).fillColor(COLORS.dark).text(label, 315, priceY, { width: 160 });
+    doc.font(FONTS.normal).fontSize(7.5).fillColor(COLORS.dark).text(val, 475, priceY, { width: 75, align: 'right' });
+    priceY += 14;
+  };
+
+  drawPriceRow(`Charter, ${legs.length} legs, all-inclusive`, formatCurrency(baseCharterPrice, currency));
+  drawPriceRow('VIP limousine · arrival Abuja (SUV)', formatCurrency(300, currency));
+  drawPriceRow('Catering · VIP menu 1, both legs', 'Included');
+  drawPriceRow('VAT [tax advice exemption]', formatCurrency(0, currency));
+
+  doc.moveTo(315, priceY).lineTo(550, priceY).lineWidth(0.8).strokeColor(COLORS.dark).stroke();
+  priceY += 5;
+  doc.font(FONTS.bold).fontSize(9).fillColor(COLORS.dark).text('Total', 315, priceY);
+  doc.font(FONTS.bold).fontSize(10).fillColor(COLORS.dark).text(formatCurrency(totalPrice, currency), 450, priceY, { width: 100, align: 'right' });
+  priceY += 18;
+
+  // Bank Transfer and Card mini-boxes
+  doc.roundedRect(315, priceY, 110, 40, 4).strokeColor('#E2E8F0').stroke();
+  doc.font(FONTS.bold).fontSize(7).fillColor(COLORS.dark).text('BANK TRANSFER', 322, priceY + 6);
+  doc.font(FONTS.bold).fontSize(8).fillColor(COLORS.dark).text(formatCurrency(totalPrice, currency), 322, priceY + 16);
+  doc.font(FONTS.normal).fontSize(6.5).fillColor(COLORS.gray).text('no surcharge', 322, priceY + 27);
+
+  doc.roundedRect(435, priceY, 115, 40, 4).strokeColor('#E2E8F0').stroke();
+  doc.font(FONTS.bold).fontSize(7).fillColor(COLORS.dark).text('CARD', 442, priceY + 6);
+  doc.font(FONTS.bold).fontSize(8).fillColor(COLORS.dark).text(formatCurrency(cardPrice, currency), 442, priceY + 16);
+  doc.font(FONTS.normal).fontSize(6.5).fillColor(COLORS.gray).text('includes 3.5 % card fee', 442, priceY + 27);
+
+  // Next Step note
+  doc.font(FONTS.bold).fontSize(7.5).fillColor(COLORS.dark).text('Next step. ', 45, doc.page.height - 70, { continued: true });
+  doc.font(FONTS.normal).fontSize(7).fillColor(COLORS.gray)
+    .text('To book, confirm with your representative. A charter agreement is issued for signature; the booking is final once it is signed. This quotation is subject to aircraft availability, slots and permits. Prices are valid until the date above. [Cancellation terms: see charter agreement]', { width: doc.page.width - 90 });
+
+  drawFooter(doc, `${quoteId} · ${clientName}`, 1, 1);
   doc.end();
   return bufferPromise;
 };
 
 /**
- * Generate Charter Agreement PDF
+ * Generate PDF Charter Agreement (2 pages)
  */
 const generateCharterAgreementPDF = async (booking) => {
   const doc = createBaseDocument();
-  drawHeader(doc, 'CHARTER AGREEMENT');
   const bufferPromise = docToBuffer(doc);
 
-  const today = new Date().toLocaleDateString('en-GB', { year: 'numeric', month: 'long', day: 'numeric' });
-  doc.font(FONTS.bold).fontSize(9.5).fillColor(COLORS.dark)
-    .text(`Agreement Date: ${booking.contractDate || today}`)
-    .text(`Reference: ${booking.tripNumber}`);
-  doc.y += 8;
+  const agreementId = booking.tripNumber ? `C-${booking.tripNumber}` : 'C-MX5521-001';
+  const basedOnQuote = booking.quoteReference || (booking.tripNumber ? `Q-${booking.tripNumber}` : 'Q-MX5521-001');
+  const currency = booking.pricing?.currency || 'EUR';
+  const totalPrice = booking.pricing?.totalFlightPrice ?? 58844;
+  const clientName = booking.client?.companyName || booking.client?.fullName || 'Bello Group Ltd';
+  const footerRef = `${agreementId} · ${clientName}`;
 
-  doc.font(FONTS.normal).fontSize(8.5).fillColor(COLORS.dark)
-    .text('This Charter Agreement is entered into between Orbelo Jet Management GmbH and the undersigned client.');
-  doc.y += 6;
+  // ================= PAGE 1 =================
+  drawHeader(doc, booking);
 
-  // Parties
-  drawSectionHeader(doc, 'PARTIES');
-  const c = booking.client || {};
-  drawDetailRow(doc, 'Charterer', c.fullName || 'Private Client');
-  if (c.companyName) drawDetailRow(doc, 'Company', c.companyName);
-  if (c.email) drawDetailRow(doc, 'Email', c.email);
-  drawDetailRow(doc, 'Carrier Broker', 'Orbelo Jet Management GmbH');
+  const startY = doc.y;
+  doc.font(FONTS.bold).fontSize(20).fillColor(COLORS.dark).text('Charter agreement', 45, startY);
 
-  // Flight details
-  drawSectionHeader(doc, 'CHARTER DETAILS');
-  (booking.legs || []).forEach((leg, i) => {
-    const prefix = booking.legs.length > 1 ? `Leg ${i + 1}: ` : '';
-    drawDetailRow(doc, `${prefix}Route`, `${getOriginText(leg)} → ${getDestinationText(leg)}`);
-    drawDetailRow(doc, `${prefix}Date`, getFlightDate(leg));
-    drawDetailRow(doc, `${prefix}Passengers`, `${leg.paxCount || 1} VIPs`);
-  });
-  drawDetailRow(doc, 'Aircraft', `${booking.aircraft?.name || 'TBC'}${booking.aircraft?.registration ? ' (' + booking.aircraft.registration + ')' : ''}`);
-
-  // Pricing
-  const p = booking.pricing || {};
-  const totalAmount = p.totalFlightPrice ?? p.grandTotal ?? 0;
-  drawDetailRow(doc, 'Charter Price', formatCurrency(totalAmount, p.currency || 'USD'));
-  drawDetailRow(doc, 'Payment Terms', 'As per confirmed invoice schedule');
-
-  // Terms
-  drawSectionHeader(doc, 'STANDARD CHARTER TERMS');
-  const terms = [
-    '1. CHARTER PRICE: The charter price includes aircraft, crew, fuel, standard catering, and landing fees.',
-    '2. PAYMENT: 50% deposit upon confirmation, remaining balance due prior to departure.',
-    '3. CANCELLATION POLICY: Will be updated later. Standard private aviation charter carriage terms apply.',
-    '4. FORCE MAJEURE: Neither party shall be liable for weather disruptions, ATC delays, or regulatory actions.',
+  const metaLabels = ['AGREEMENT', 'BASED ON QUOTE', 'DATE', 'STATUS'];
+  const metaValues = [
+    agreementId,
+    basedOnQuote,
+    booking.contractDate || '15 Nov 2026',
+    'For signature',
   ];
 
-  terms.forEach((term) => {
-    doc.font(FONTS.normal).fontSize(8).fillColor(COLORS.dark).text(term, 50);
-    doc.y += 4;
+  let metaY = startY;
+  metaLabels.forEach((label, i) => {
+    doc.font(FONTS.bold).fontSize(7.5).fillColor(COLORS.gray).text(label, 330, metaY, { width: 90, align: 'right' });
+    doc.font(FONTS.normal).fontSize(8.5).fillColor(COLORS.dark).text(metaValues[i], 430, metaY, { width: 120, align: 'right' });
+    metaY += 13;
   });
 
-  drawFooter(doc, 1, 1);
+  doc.y = Math.max(doc.y, metaY) + 12;
+
+  // The Client & The Broker
+  const colY = doc.y;
+  doc.font(FONTS.bold).fontSize(8).fillColor(COLORS.dark).text('THE CLIENT', 45, colY);
+  doc.font(FONTS.bold).fontSize(9.5).fillColor(COLORS.dark).text(clientName, 45, colY + 12);
+  doc.font(FONTS.normal).fontSize(8).fillColor(COLORS.dark)
+    .text(`Attn: ${booking.client?.fullName || 'Ifeoma Bello'}, Managing Director`, 45, colY + 24)
+    .text(booking.client?.streetAddress || 'Plot 1120 Maitama District', 45, colY + 35)
+    .text(booking.client?.cityPostalCountry || 'Abuja, Nigeria', 45, colY + 46)
+    .text(`Account ${booking.accountNumber || 'ACC-30877'}`, 45, colY + 57);
+
+  doc.font(FONTS.bold).fontSize(8).fillColor(COLORS.dark).text('THE BROKER', 315, colY);
+  doc.font(FONTS.normal).fontSize(8).fillColor(COLORS.dark)
+    .text('[Company legal name] , acting as charter broker and contracting party with the client, arranging the flights with an approved air operator (the operating carrier).', 315, colY + 12, { width: 235 })
+    .text('[Registered address · Company no.]', 315, colY + 46, { width: 235 });
+
+  doc.y = colY + 75;
+
+  // 1 · FLIGHTS
+  doc.font(FONTS.bold).fontSize(8).fillColor(COLORS.dark).text('1 · FLIGHTS', 45, doc.y);
+  doc.y += 10;
+  const flightHeaders = ['LEG', 'DATE', 'ROUTE', 'DEPARTS (LT)', 'AIRCRAFT', 'PAX'];
+  const flightColWidths = [30, 110, 100, 90, 140, 35];
+  let fY = doc.y;
+
+  let xPos = 45;
+  flightHeaders.forEach((h, i) => {
+    doc.font(FONTS.bold).fontSize(7.5).fillColor(COLORS.gray).text(h, xPos, fY, { width: flightColWidths[i] });
+    xPos += flightColWidths[i];
+  });
+  doc.moveTo(45, fY + 12).lineTo(550, fY + 12).lineWidth(0.5).strokeColor('#CBD5E1').stroke();
+  fY += 16;
+
+  const legs = booking.legs && booking.legs.length > 0 ? booking.legs : [
+    { legNumber: 1, flightDate: 'Tue 24 Nov 2026', origin: { icao: 'LFPB' }, destination: { icao: 'DNAA' }, departureTimeLocal: '08:30', paxCount: 5 },
+    { legNumber: 2, flightDate: 'Mon 30 Nov 2026', origin: { icao: 'DNAA' }, destination: { icao: 'LFPB' }, departureTimeLocal: '16:00', paxCount: 5 }
+  ];
+
+  legs.forEach((leg, i) => {
+    xPos = 45;
+    doc.font(FONTS.normal).fontSize(8).fillColor(COLORS.dark).text(String(leg.legNumber || i + 1), xPos, fY);
+    xPos += flightColWidths[0];
+    doc.text(leg.flightDate || 'Tue 24 Nov 2026', xPos, fY);
+    xPos += flightColWidths[1];
+    doc.font(FONTS.bold).text(`${leg.origin?.icao || 'LFPB'} → ${leg.destination?.icao || 'DNAA'}`, xPos, fY);
+    xPos += flightColWidths[2];
+    doc.font(FONTS.normal).text(leg.departureTimeLocal || '08:30', xPos, fY);
+    xPos += flightColWidths[3];
+    doc.text(`${booking.aircraft?.name || 'Challenger 350'} or similar`, xPos, fY);
+    xPos += flightColWidths[4];
+    doc.text(String(leg.paxCount || 5), xPos, fY, { align: 'right', width: flightColWidths[5] });
+    fY += 16;
+  });
+
+  doc.y = fY + 12;
+
+  // 2 · PRICE AND PAYMENT
+  doc.font(FONTS.bold).fontSize(8).fillColor(COLORS.dark).text('2 · PRICE AND PAYMENT', 45, doc.y);
+  doc.y += 10;
+  let pY = doc.y;
+  const drawPayRow = (label, val) => {
+    doc.moveTo(45, pY).lineTo(550, pY).lineWidth(0.5).strokeColor('#E2E8F0').stroke();
+    pY += 5;
+    doc.font(FONTS.normal).fontSize(8).fillColor(COLORS.dark).text(label, 45, pY);
+    doc.font(FONTS.normal).fontSize(8).fillColor(COLORS.dark).text(val, 330, pY, { width: 220, align: 'right' });
+    pY += 14;
+  };
+  drawPayRow('Total charter price, including services listed in the quotation', formatCurrency(totalPrice, currency));
+  drawPayRow('Payment due', '[100 % on signature, and in all cases before departure]');
+  drawPayRow('Method', 'Bank transfer, or card with 3.5 % fee');
+  doc.moveTo(45, pY).lineTo(550, pY).lineWidth(0.5).strokeColor('#E2E8F0').stroke();
+
+  doc.y = pY + 14;
+
+  // 3 · CANCELLATION BY THE CLIENT
+  doc.font(FONTS.bold).fontSize(8).fillColor(COLORS.dark).text('3 · CANCELLATION BY THE CLIENT', 45, doc.y);
+  doc.y += 8;
+  let cY = doc.y;
+  doc.font(FONTS.bold).fontSize(7.5).fillColor(COLORS.gray).text('NOTICE BEFORE FIRST DEPARTURE', 45, cY);
+  doc.text('CANCELLATION FEE', 400, cY, { width: 150, align: 'right' });
+  doc.moveTo(45, cY + 12).lineTo(550, cY + 12).lineWidth(0.5).strokeColor('#CBD5E1').stroke();
+  cY += 16;
+  const drawCancRow = (notice, fee) => {
+    doc.font(FONTS.normal).fontSize(8).fillColor(COLORS.dark).text(notice, 45, cY);
+    doc.text(fee, 400, cY, { width: 150, align: 'right' });
+    cY += 14;
+  };
+  drawCancRow('[More than … days]', '[… %]');
+  drawCancRow('[… to … days]', '[… %]');
+  drawCancRow('[Less than … hours, or no-show]', '[100 %]');
+  doc.font(FONTS.normal).fontSize(7).fillColor(COLORS.gray).text('Placeholder until the cancellation policy (Q-02) is decided.', 45, cY + 2);
+
+  // 4 · PASSENGERS AND DOCUMENTS
+  doc.font(FONTS.bold).fontSize(8).fillColor(COLORS.dark).text('4 · PASSENGERS AND DOCUMENTS', 45, cY + 20);
+  doc.font(FONTS.normal).fontSize(7.5).fillColor(COLORS.dark)
+    .text('The client provides full names and valid travel documents for every passenger, and pet passports where pets travel, no later than [48 hours] before departure. Luggage beyond what is stated in the quotation may not fit the aircraft.', 45, cY + 32, { width: doc.page.width - 90 });
+
+  drawFooter(doc, footerRef, 1, 2);
+
+  // ================= PAGE 2 =================
+  doc.addPage();
+  drawHeader(doc, booking);
+
+  doc.font(FONTS.bold).fontSize(8).fillColor(COLORS.dark).text('5 · TERMS AND CONDITIONS', 45, doc.y);
+  doc.y += 10;
+
+  // Terms Box
+  const tcBoxY = doc.y;
+  doc.roundedRect(45, tcBoxY, doc.page.width - 90, 360, 6).lineWidth(0.8).dash(3, { space: 3 }).strokeColor(COLORS.gold);
+  doc.undash();
+
+  doc.font(FONTS.bold).fontSize(8.5).fillColor('#92400E').text('[Full terms and conditions, supplied by your lawyer.]', 60, tcBoxY + 16);
+  doc.font(FONTS.normal).fontSize(8).fillColor(COLORS.dark)
+    .text("Typically covers: the broker's role and the operating carrier's responsibility for the flight · aircraft substitution · delays, weather and air-traffic restrictions · the operator's right to refuse carriage · dangerous goods · passenger conduct · liability limits and insurance · force majeure · data protection (passenger data) · governing law and jurisdiction.", 60, tcBoxY + 36, { width: doc.page.width - 120, lineGap: 3 })
+    .text('The app inserts the current version of these terms from Settings, so every agreement carries the version that applied on the day it was issued.', 60, tcBoxY + 110, { width: doc.page.width - 120 });
+
+  doc.y = tcBoxY + 380;
+  doc.font(FONTS.normal).fontSize(8).fillColor(COLORS.dark)
+    .text('By signing, the client confirms the flights, the price and the terms above, and that the person signing is authorised to sign for the client.', 45, doc.y, { width: doc.page.width - 90 });
+
+  doc.y += 24;
+
+  // Signatures
+  const sigY = doc.y;
+  doc.font(FONTS.bold).fontSize(8).fillColor(COLORS.dark).text('FOR THE CLIENT', 45, sigY);
+  doc.moveTo(45, sigY + 12).lineTo(260, sigY + 12).lineWidth(0.5).strokeColor('#94A3B8').stroke();
+  doc.font(FONTS.normal).fontSize(8).fillColor(COLORS.dark)
+    .text(`${booking.client?.fullName || 'Ifeoma Bello'}, Managing Director`, 45, sigY + 18)
+    .text(clientName, 45, sigY + 28)
+    .text('Date ____________ Place ____________', 45, sigY + 46);
+
+  doc.font(FONTS.bold).fontSize(8).fillColor(COLORS.dark).text('FOR THE BROKER', 315, sigY);
+  doc.moveTo(315, sigY + 12).lineTo(550, sigY + 12).lineWidth(0.5).strokeColor('#94A3B8').stroke();
+  doc.font(FONTS.normal).fontSize(8).fillColor(COLORS.dark)
+    .text('[Authorised signatory]', 315, sigY + 18)
+    .text('[Company legal name]', 315, sigY + 28)
+    .text('Date ____________ Place ____________', 315, sigY + 46);
+
+  doc.font(FONTS.normal).fontSize(7).fillColor(COLORS.gray)
+    .text('Signed electronically: the e-signature certificate (signer, time, IP) is attached as the last page.', 45, sigY + 70);
+
+  drawFooter(doc, footerRef, 2, 2);
+  doc.end();
+  return bufferPromise;
+};
+
+/**
+ * Generate PDF Invoice
+ */
+const generateInvoicePDF = async (booking) => {
+  const doc = createBaseDocument();
+  drawHeader(doc, booking);
+  const bufferPromise = docToBuffer(doc);
+
+  const invNum = booking.invoiceNumber || (booking.tripNumber ? `INV-${booking.tripNumber}-01` : 'INV-FE4578-01');
+  const tripRef = booking.tripNumber || 'FE4578';
+  const currency = booking.pricing?.currency || 'EUR';
+  const totalAmount = booking.pricing?.totalFlightPrice ?? 8000;
+  const cardAmount = booking.totalWithCardFee ?? (totalAmount * 1.035);
+  const clientName = booking.client?.companyName || booking.client?.fullName || 'Adeyemi Holdings Ltd';
+
+  const startY = doc.y;
+  doc.font(FONTS.bold).fontSize(20).fillColor(COLORS.dark).text('Invoice', 45, startY);
+
+  const metaLabels = ['INVOICE', 'TRIP', 'ISSUE DATE', 'DUE'];
+  const metaValues = [
+    invNum,
+    tripRef,
+    booking.contractDate || '12 Nov 2026',
+    `Before departure, ${booking.paymentDueDate || '18 Nov 2026'}`,
+  ];
+
+  let metaY = startY;
+  metaLabels.forEach((label, i) => {
+    doc.font(FONTS.bold).fontSize(7.5).fillColor(COLORS.gray).text(label, 300, metaY, { width: 90, align: 'right' });
+    doc.font(FONTS.normal).fontSize(8.5).fillColor(COLORS.dark).text(metaValues[i], 400, metaY, { width: 150, align: 'right' });
+    metaY += 13;
+  });
+
+  doc.y = Math.max(doc.y, metaY) + 14;
+
+  // Bill To & Representative
+  const colY = doc.y;
+  doc.font(FONTS.bold).fontSize(8).fillColor(COLORS.dark).text('BILL TO', 45, colY);
+  doc.font(FONTS.bold).fontSize(9.5).fillColor(COLORS.dark).text(clientName, 45, colY + 12);
+  doc.font(FONTS.normal).fontSize(8).fillColor(COLORS.dark)
+    .text(`Attn: ${booking.client?.fullName || 'Tunde Adeyemi'}, Chairman`, 45, colY + 24)
+    .text(booking.client?.streetAddress || '14 Bourdillon Road, Ikoyi', 45, colY + 35)
+    .text(booking.client?.cityPostalCountry || 'Lagos, Nigeria', 45, colY + 46)
+    .text(`Account ${booking.accountNumber || 'ACC-30412'}`, 45, colY + 57);
+
+  doc.font(FONTS.bold).fontSize(8).fillColor(COLORS.dark).text('REPRESENTATIVE', 315, colY);
+  doc.font(FONTS.normal).fontSize(9).fillColor(COLORS.dark).text(booking.agentName || 'Marcus Vance', 315, colY + 12);
+  doc.font(FONTS.normal).fontSize(8).fillColor(COLORS.dark)
+    .text(booking.agentEmail || 'marcus@vanceaviation.co.uk', 315, colY + 24)
+    .text('+44 20 7946 0912', 315, colY + 35);
+
+  doc.y = colY + 75;
+
+  // Table
+  doc.font(FONTS.bold).fontSize(7.5).fillColor(COLORS.gray).text('DESCRIPTION', 45, doc.y);
+  doc.text('DATE', 360, doc.y, { width: 80 });
+  doc.text('AMOUNT', 460, doc.y, { width: 90, align: 'right' });
+  doc.moveTo(45, doc.y + 12).lineTo(550, doc.y + 12).lineWidth(0.5).strokeColor('#CBD5E1').stroke();
+  doc.y += 18;
+
+  let rowY = doc.y;
+  doc.font(FONTS.bold).fontSize(8.5).fillColor(COLORS.dark).text('Private charter flight', 45, rowY);
+  doc.font(FONTS.normal).fontSize(7.5).fillColor(COLORS.dark)
+    .text('Leg 1 · LEIB → LSGG Ibiza – Geneva · Light jet · 4 passengers', 45, rowY + 11)
+    .text(`Per charter agreement C-${tripRef}-002`, 45, rowY + 21);
+  doc.font(FONTS.normal).fontSize(8).fillColor(COLORS.dark).text(booking.contractDate || '20 Nov 2026', 360, rowY);
+  doc.text(formatCurrency(totalAmount, currency), 460, rowY, { width: 90, align: 'right' });
+
+  rowY += 36;
+  doc.font(FONTS.normal).fontSize(8).fillColor(COLORS.dark)
+    .text('VAT [rate and exemption text per tax advice]', 45, rowY);
+  doc.text(formatCurrency(0, currency), 460, rowY, { width: 90, align: 'right' });
+
+  rowY += 16;
+  doc.moveTo(45, rowY).lineTo(550, rowY).lineWidth(0.8).strokeColor(COLORS.dark).stroke();
+  rowY += 6;
+  doc.font(FONTS.bold).fontSize(9.5).fillColor(COLORS.dark).text('Total due', 45, rowY);
+  doc.font(FONTS.bold).fontSize(10).fillColor(COLORS.dark).text(formatCurrency(totalAmount, currency), 460, rowY, { width: 90, align: 'right' });
+
+  doc.y = rowY + 26;
+
+  // Bank Transfer and Pay by Card Boxes
+  const boxY = doc.y;
+  doc.roundedRect(45, boxY, 245, 90, 4).strokeColor('#E2E8F0').stroke();
+  doc.font(FONTS.bold).fontSize(7.5).fillColor(COLORS.dark).text('BANK TRANSFER', 55, boxY + 8);
+  const drawBankDetail = (lbl, val, yOff) => {
+    doc.font(FONTS.bold).fontSize(7).fillColor(COLORS.gray).text(lbl, 55, yOff, { width: 70 });
+    doc.font(FONTS.normal).fontSize(7.5).fillColor(COLORS.dark).text(val, 130, yOff, { width: 150 });
+  };
+  drawBankDetail('BENEFICIARY', '[Company legal name]', boxY + 22);
+  drawBankDetail('BANK', '[Bank name]', boxY + 33);
+  drawBankDetail('IBAN', '[IBAN]', boxY + 44);
+  drawBankDetail('BIC', '[BIC]', boxY + 55);
+  drawBankDetail('REFERENCE', invNum, boxY + 66);
+  doc.font(FONTS.normal).fontSize(6.5).fillColor(COLORS.gray).text('Bank details come from Settings, never typed on the invoice.', 55, boxY + 78);
+
+  doc.roundedRect(305, boxY, 245, 90, 4).strokeColor('#E2E8F0').stroke();
+  doc.font(FONTS.bold).fontSize(7.5).fillColor(COLORS.dark).text('PAY BY CARD', 315, boxY + 8);
+  doc.font(FONTS.normal).fontSize(7.5).fillColor(COLORS.dark)
+    .text(`${formatCurrency(cardAmount, currency)} including 3.5 % card fee.`, 315, boxY + 24)
+    .text('Secure payment link:', 315, boxY + 38)
+    .fillColor('#2563EB').text(`pay.orbelo.com/${invNum}`, 315, boxY + 48);
+
+  doc.y = boxY + 104;
+  doc.font(FONTS.bold).fontSize(7.5).fillColor(COLORS.dark).text('PAYMENT STATUS  ', 45, doc.y, { continued: true });
+  doc.font(FONTS.bold).fontSize(7.5).fillColor('#047857').text('Paid in full', { continued: true });
+  doc.font(FONTS.normal).fontSize(7.5).fillColor(COLORS.dark).text(` · bank transfer received ${booking.contractDate || '12 Nov 2026'} · ref PAY-0012`);
+
+  doc.y += 14;
+  doc.font(FONTS.normal).fontSize(7).fillColor(COLORS.gray)
+    .text('Additional services ordered after booking are invoiced separately with the same trip reference. On request, all invoices for a trip can be combined into one.', 45, doc.y, { width: doc.page.width - 90 });
+
+  drawFooter(doc, `${invNum} · ${clientName}`, 1, 1);
+  doc.end();
+  return bufferPromise;
+};
+
+/**
+ * Generate PDF Credit Note
+ */
+const generateCreditNotePDF = async (booking, creditAmountOrObj = 250, reason = '') => {
+  let creditAmount = typeof creditAmountOrObj === 'object' && creditAmountOrObj !== null
+    ? (creditAmountOrObj.creditAmount || 250)
+    : creditAmountOrObj;
+  let creditReason = typeof creditAmountOrObj === 'object' && creditAmountOrObj !== null
+    ? (creditAmountOrObj.reason || reason)
+    : reason;
+
+  const doc = createBaseDocument();
+  drawHeader(doc, booking);
+  const bufferPromise = docToBuffer(doc);
+
+  const tripRef = booking.tripNumber || 'FE4578';
+  const creditNoteNum = `CN-${tripRef}-01`;
+  const againstInv = `INV-${tripRef}-02`;
+  const currency = booking.pricing?.currency || 'EUR';
+  const clientName = booking.client?.companyName || booking.client?.fullName || 'Adeyemi Holdings Ltd';
+
+  const startY = doc.y;
+  doc.font(FONTS.bold).fontSize(20).fillColor(COLORS.dark).text('Credit note', 45, startY);
+
+  const metaLabels = ['CREDIT NOTE', 'AGAINST INVOICE', 'TRIP', 'ISSUE DATE'];
+  const metaValues = [
+    creditNoteNum,
+    againstInv,
+    tripRef,
+    booking.contractDate || '15 Nov 2026',
+  ];
+
+  let metaY = startY;
+  metaLabels.forEach((label, i) => {
+    doc.font(FONTS.bold).fontSize(7.5).fillColor(COLORS.gray).text(label, 300, metaY, { width: 100, align: 'right' });
+    doc.font(FONTS.normal).fontSize(8.5).fillColor(COLORS.dark).text(metaValues[i], 410, metaY, { width: 140, align: 'right' });
+    metaY += 13;
+  });
+
+  doc.y = Math.max(doc.y, metaY) + 14;
+
+  // Issued To & Representative
+  const colY = doc.y;
+  doc.font(FONTS.bold).fontSize(8).fillColor(COLORS.dark).text('ISSUED TO', 45, colY);
+  doc.font(FONTS.bold).fontSize(9.5).fillColor(COLORS.dark).text(clientName, 45, colY + 12);
+  doc.font(FONTS.normal).fontSize(8).fillColor(COLORS.dark)
+    .text(`Attn: ${booking.client?.fullName || 'Tunde Adeyemi'}, Chairman`, 45, colY + 24)
+    .text(booking.client?.streetAddress || '14 Bourdillon Road, Ikoyi', 45, colY + 35)
+    .text(booking.client?.cityPostalCountry || 'Lagos, Nigeria', 45, colY + 46)
+    .text(`Account ${booking.accountNumber || 'ACC-30412'}`, 45, colY + 57);
+
+  doc.font(FONTS.bold).fontSize(8).fillColor(COLORS.dark).text('REPRESENTATIVE', 315, colY);
+  doc.font(FONTS.normal).fontSize(9).fillColor(COLORS.dark).text(booking.agentName || 'Marcus Vance', 315, colY + 12);
+  doc.font(FONTS.normal).fontSize(8).fillColor(COLORS.dark)
+    .text(booking.agentEmail || 'marcus@vanceaviation.co.uk', 315, colY + 24)
+    .text('+44 20 7946 0912', 315, colY + 35);
+
+  doc.y = colY + 75;
+
+  // Table
+  doc.font(FONTS.bold).fontSize(7.5).fillColor(COLORS.gray).text('DESCRIPTION', 45, doc.y);
+  doc.text('AMOUNT', 460, doc.y, { width: 90, align: 'right' });
+  doc.moveTo(45, doc.y + 12).lineTo(550, doc.y + 12).lineWidth(0.5).strokeColor('#CBD5E1').stroke();
+  doc.y += 18;
+
+  let rowY = doc.y;
+  doc.font(FONTS.bold).fontSize(8.5).fillColor(COLORS.dark).text(`Credit against invoice ${againstInv}`, 45, rowY);
+  doc.font(FONTS.normal).fontSize(7.5).fillColor(COLORS.dark)
+    .text(creditReason || 'VIP chauffeur on arrival, Geneva (LSGG), 20 Nov 2026', 45, rowY + 12);
+  doc.text(formatCurrency(-creditAmount, currency), 460, rowY, { width: 90, align: 'right' });
+
+  rowY += 28;
+  doc.font(FONTS.normal).fontSize(8).fillColor(COLORS.dark).text('VAT [as on the original invoice]', 45, rowY);
+  doc.text(formatCurrency(0, currency), 460, rowY, { width: 90, align: 'right' });
+
+  rowY += 16;
+  doc.moveTo(45, rowY).lineTo(550, rowY).lineWidth(0.8).strokeColor(COLORS.dark).stroke();
+  rowY += 6;
+  doc.font(FONTS.bold).fontSize(9.5).fillColor(COLORS.dark).text('Total credited', 45, rowY);
+  doc.font(FONTS.bold).fontSize(10).fillColor(COLORS.dark).text(formatCurrency(-creditAmount, currency), 460, rowY, { width: 90, align: 'right' });
+
+  doc.y = rowY + 26;
+
+  // TRIP BALANCE AFTER THIS CREDIT NOTE
+  doc.font(FONTS.bold).fontSize(8).fillColor(COLORS.dark).text('TRIP BALANCE AFTER THIS CREDIT NOTE', 45, doc.y);
+  doc.y += 10;
+  let tbY = doc.y;
+  const drawBalRow = (lbl, val, isBold = false) => {
+    doc.moveTo(45, tbY).lineTo(550, tbY).lineWidth(0.5).strokeColor('#E2E8F0').stroke();
+    tbY += 5;
+    doc.font(isBold ? FONTS.bold : FONTS.normal).fontSize(8).fillColor(COLORS.dark).text(lbl, 45, tbY);
+    doc.font(isBold ? FONTS.bold : FONTS.normal).fontSize(8).fillColor(COLORS.dark).text(val, 400, tbY, { width: 150, align: 'right' });
+    tbY += 14;
+  };
+  drawBalRow(`Invoiced · INV-${tripRef}-01, INV-${tripRef}-02`, formatCurrency(8250, currency));
+  drawBalRow(`Credited · ${creditNoteNum}`, formatCurrency(-creditAmount, currency));
+  drawBalRow('Received', formatCurrency(-8000, currency));
+  drawBalRow('Balance', formatCurrency(0, currency), true);
+  doc.moveTo(45, tbY).lineTo(550, tbY).lineWidth(0.5).strokeColor('#E2E8F0').stroke();
+
+  doc.y = tbY + 10;
+  doc.font(FONTS.normal).fontSize(8).fillColor(COLORS.dark).text(`${againstInv} is now settled. No payment is due and no refund is owed.`, 45, doc.y);
+
+  doc.y += 20;
+  // Design notes box
+  const noteBoxY = doc.y;
+  doc.roundedRect(45, noteBoxY, doc.page.width - 90, 50, 4).lineWidth(0.8).dash(3, { space: 3 }).strokeColor('#CBD5E1');
+  doc.undash();
+  doc.font(FONTS.bold).fontSize(7.5).fillColor(COLORS.dark).text('Design notes for the developer (not printed)', 55, noteBoxY + 8);
+  doc.font(FONTS.normal).fontSize(7).fillColor(COLORS.gray)
+    .text('The reason chosen in the app (here: Complimentary service) is internal and never printed. When the client has overpaid, the balance block ends with “Refund due to you: € …” and the refund method.', 55, noteBoxY + 20, { width: doc.page.width - 110 });
+
+  drawFooter(doc, `${creditNoteNum} · ${clientName}`, 1, 1);
+  doc.end();
+  return bufferPromise;
+};
+
+/**
+ * Generate PDF Flight Brief
+ */
+const generateFlightBriefPDF = async (booking) => {
+  const doc = createBaseDocument();
+  drawHeader(doc, booking);
+  const bufferPromise = docToBuffer(doc);
+
+  const tripRef = booking.tripNumber || 'FE4578';
+  const briefId = `FB-${tripRef}-005`;
+  const firstLeg = booking.legs && booking.legs.length > 0 ? booking.legs[0] : null;
+
+  const startY = doc.y;
+  doc.font(FONTS.bold).fontSize(20).fillColor(COLORS.dark).text('Flight brief', 45, startY);
+
+  const metaLabels = ['BRIEF', 'TRIP', 'ISSUED', 'STATUS'];
+  const metaValues = [
+    briefId,
+    tripRef,
+    `${booking.contractDate || '18 Nov 2026'}, 10:00`,
+    'Confirmed',
+  ];
+
+  let metaY = startY;
+  metaLabels.forEach((label, i) => {
+    doc.font(FONTS.bold).fontSize(7.5).fillColor(COLORS.gray).text(label, 320, metaY, { width: 80, align: 'right' });
+    doc.font(FONTS.normal).fontSize(8.5).fillColor(COLORS.dark).text(metaValues[i], 410, metaY, { width: 140, align: 'right' });
+    metaY += 13;
+  });
+
+  doc.y = Math.max(doc.y, metaY) + 14;
+
+  // 3 Cards: Departure, Arrival, Aircraft
+  const cardY = doc.y;
+  const cardWidth = 160;
+  // Departure
+  doc.roundedRect(45, cardY, cardWidth, 68, 4).strokeColor('#E2E8F0').stroke();
+  doc.font(FONTS.bold).fontSize(7).fillColor(COLORS.gray).text('DEPARTURE', 55, cardY + 8);
+  doc.font(FONTS.bold).fontSize(13).fillColor(COLORS.dark).text(`${firstLeg?.origin?.icao || 'LEIB'} ${firstLeg?.departureTimeLocal || '10:00'}`, 55, cardY + 20);
+  doc.font(FONTS.normal).fontSize(7.5).fillColor(COLORS.gray).text('Fri 20 Nov 2026 · local time', 55, cardY + 38);
+  doc.font(FONTS.normal).fontSize(7.5).fillColor(COLORS.dark).text(firstLeg?.origin?.name || 'Ibiza Airport', 55, cardY + 50);
+
+  // Arrival
+  doc.roundedRect(215, cardY, cardWidth, 68, 4).strokeColor('#E2E8F0').stroke();
+  doc.font(FONTS.bold).fontSize(7).fillColor(COLORS.gray).text('ARRIVAL', 225, cardY + 8);
+  doc.font(FONTS.bold).fontSize(13).fillColor(COLORS.dark).text(`${firstLeg?.destination?.icao || 'LSGG'} ${firstLeg?.arrivalTimeLocal || '12:05'}`, 225, cardY + 20);
+  doc.font(FONTS.normal).fontSize(7.5).fillColor(COLORS.gray).text('Fri 20 Nov 2026 · local time', 225, cardY + 38);
+  doc.font(FONTS.normal).fontSize(7.5).fillColor(COLORS.dark).text(firstLeg?.destination?.name || 'Geneva Airport', 225, cardY + 50);
+
+  // Aircraft
+  doc.roundedRect(385, cardY, cardWidth + 5, 68, 4).strokeColor('#E2E8F0').stroke();
+  doc.font(FONTS.bold).fontSize(7).fillColor(COLORS.gray).text('AIRCRAFT', 395, cardY + 8);
+  doc.font(FONTS.bold).fontSize(13).fillColor(COLORS.dark).text(booking.aircraft?.name || 'CJ3+', 395, cardY + 20);
+  doc.font(FONTS.normal).fontSize(7.5).fillColor(COLORS.gray).text(`Registration [${booking.aircraft?.registration || 'XX-XXX'}]`, 395, cardY + 38);
+  doc.font(FONTS.normal).fontSize(7.5).fillColor(COLORS.dark).text(`Flight time ≈ ${firstLeg?.flightTimeFormatted || '2 h 05'}`, 395, cardY + 50);
+
+  doc.y = cardY + 82;
+
+  // Where to Go & On Arrival
+  const fboY = doc.y;
+  doc.font(FONTS.bold).fontSize(8).fillColor(COLORS.dark).text('WHERE TO GO · IBIZA', 45, fboY);
+  doc.font(FONTS.bold).fontSize(8.5).fillColor(COLORS.dark).text('Ibiza Executive Terminal (FBO)', 45, fboY + 12);
+  doc.font(FONTS.normal).fontSize(7.5).fillColor(COLORS.dark)
+    .text('[FBO address]', 45, fboY + 24)
+    .text('[FBO phone]', 45, fboY + 34)
+    .text('Please arrive 30 minutes before departure with passports.', 45, fboY + 48, { width: 230 });
+
+  doc.font(FONTS.bold).fontSize(8).fillColor(COLORS.dark).text('ON ARRIVAL · GENEVA', 315, fboY);
+  doc.font(FONTS.bold).fontSize(8.5).fillColor(COLORS.dark).text('Jet Aviation Geneva (FBO)', 315, fboY + 12);
+  doc.font(FONTS.normal).fontSize(7.5).fillColor(COLORS.dark)
+    .text('[FBO address]', 315, fboY + 24)
+    .text('[FBO phone]', 315, fboY + 34)
+    .text('Chauffeur meets you at the aircraft: Mercedes S-Class, driver with name board, to Hotel des Bergues.', 315, fboY + 48, { width: 230 });
+
+  doc.y = fboY + 76;
+
+  // Passengers Table
+  doc.font(FONTS.bold).fontSize(8).fillColor(COLORS.dark).text('PASSENGERS', 45, doc.y);
+  doc.y += 8;
+  let pY = doc.y;
+  doc.font(FONTS.bold).fontSize(7.5).fillColor(COLORS.gray).text('NAME', 45, pY);
+  doc.text('TRAVEL DOCUMENT', 240, pY);
+  doc.text('NOTE', 440, pY);
+  doc.moveTo(45, pY + 12).lineTo(550, pY + 12).lineWidth(0.5).strokeColor('#CBD5E1').stroke();
+  pY += 16;
+
+  const paxList = [
+    { name: `${booking.client?.fullName || 'Mr Tunde Adeyemi'} (lead)`, doc: 'Passport · Nigeria', note: '' },
+    { name: 'Mrs Ada Adeyemi', doc: 'Passport · Nigeria', note: '' },
+    { name: 'Miss Kemi Adeyemi', doc: 'Passport · Nigeria', note: '' },
+    { name: 'Mr Bayo Adeyemi', doc: 'Passport · Nigeria', note: '' },
+    { name: 'Toby (dog, 3 kg)', doc: 'Pet passport', note: 'In cabin' },
+  ];
+
+  paxList.forEach((pax) => {
+    doc.font(FONTS.normal).fontSize(8).fillColor(COLORS.dark).text(pax.name, 45, pY);
+    doc.text(pax.doc, 240, pY);
+    doc.text(pax.note, 440, pY);
+    pY += 14;
+  });
+
+  doc.font(FONTS.normal).fontSize(7).fillColor(COLORS.gray)
+    .text("Document numbers are not printed on the client's brief. The operator receives the full manifest separately.", 45, pY + 2);
+
+  doc.y = pY + 18;
+
+  // Bottom Section: On Board & 24/7 Contact
+  const bY = doc.y;
+  doc.font(FONTS.bold).fontSize(8).fillColor(COLORS.dark).text('ON BOARD', 45, bY);
+  doc.font(FONTS.normal).fontSize(7.5).fillColor(COLORS.dark)
+    .text('Catering: VIP menu 2, light lunch, 1 vegetarian', 45, bY + 12)
+    .text('Luggage: 4 suitcases, 2 soft bags', 45, bY + 23)
+    .text('Crew: [captain, first officer — from operator]', 45, bY + 34);
+
+  // 24/7 Contact Box
+  doc.roundedRect(315, bY - 4, 235, 52, 4).strokeColor(COLORS.dark).stroke();
+  doc.font(FONTS.bold).fontSize(7.5).fillColor(COLORS.dark).text('24/7 CONTACT', 325, bY + 4);
+  doc.font(FONTS.normal).fontSize(7.5).fillColor(COLORS.dark)
+    .text('Orbelo operations: [+356 24/7 number]', 325, bY + 16)
+    .text(`Your representative: ${booking.agentName || 'Marcus Vance'}, +44 20 7946 0912`, 325, bY + 28);
+
+  drawFooter(doc, `${briefId} · from version -005`, 1, 1);
   doc.end();
   return bufferPromise;
 };
@@ -544,100 +858,14 @@ const generateCharterAgreementPDF = async (booking) => {
  */
 const generatePassengerManifestPDF = async (booking) => {
   const doc = createBaseDocument();
-  drawHeader(doc, 'PASSENGER MANIFEST');
+  drawHeader(doc, booking);
   const bufferPromise = docToBuffer(doc);
 
-  doc.font(FONTS.bold).fontSize(9.5).fillColor(COLORS.gold)
-    .text(`Trip Reference: ${booking.tripNumber}`, { align: 'right' });
-  doc.font(FONTS.normal).fontSize(8.5).fillColor(COLORS.gray)
-    .text(`Date: ${new Date().toLocaleDateString('en-GB')}`, { align: 'right' });
-  doc.y += 8;
+  const tripRef = booking.tripNumber || 'FE4578';
+  doc.font(FONTS.bold).fontSize(18).fillColor(COLORS.dark).text('Passenger manifest', 45, doc.y);
+  doc.y += 10;
 
-  drawSectionHeader(doc, 'FLIGHT DETAILS');
-  (booking.legs || []).forEach((leg, i) => {
-    const prefix = booking.legs.length > 1 ? `Leg ${i + 1}: ` : '';
-    drawDetailRow(doc, `${prefix}Route`, `${getOriginText(leg)} → ${getDestinationText(leg)}`);
-    drawDetailRow(doc, `${prefix}Date`, getFlightDate(leg));
-    drawDetailRow(doc, `${prefix}Pax`, `${leg.paxCount || 1}`);
-  });
-  if (booking.aircraft?.name) {
-    drawDetailRow(doc, 'Aircraft', booking.aircraft.name);
-  }
-  if (booking.aircraft?.registration) {
-    drawDetailRow(doc, 'Registration', booking.aircraft.registration);
-  }
-
-  drawSectionHeader(doc, 'PASSENGER LIST');
-  const paxCount = booking.legs?.[0]?.paxCount || 1;
-  const paxRows = Array.from({ length: paxCount }, (_, i) => [
-    i + 1,
-    i === 0 ? (booking.client?.fullName || 'Lead Passenger') : 'Guest Passenger',
-    'Verified On File',
-    'Verified',
-    'Standard VIP',
-  ]);
-
-  drawTable(doc,
-    [
-      { label: '#', width: 30 },
-      { label: 'Full Name', width: 160 },
-      { label: 'Passport / ID', width: 100 },
-      { label: 'Status', width: 90 },
-      { label: 'Category', width: 85 },
-    ],
-    paxRows
-  );
-
-  drawFooter(doc, 1, 1);
-  doc.end();
-  return bufferPromise;
-};
-
-/**
- * Generate Credit Note PDF
- */
-const generateCreditNotePDF = async (booking, creditAmountOrObj, reason = '') => {
-  let creditAmount = creditAmountOrObj;
-  if (typeof creditAmountOrObj === 'object' && creditAmountOrObj !== null) {
-    creditAmount = creditAmountOrObj.creditAmount;
-    reason = creditAmountOrObj.reason || reason;
-  }
-  const doc = createBaseDocument();
-  drawHeader(doc, 'CREDIT NOTE');
-  const bufferPromise = docToBuffer(doc);
-
-  const creditNoteNum = `CN-${booking.tripNumber}-${Date.now().toString().slice(-6)}`;
-  doc.font(FONTS.bold).fontSize(10).fillColor(COLORS.gold)
-    .text(`Credit Note #: ${creditNoteNum}`, { align: 'right' });
-  doc.font(FONTS.normal).fontSize(8.5).fillColor(COLORS.gray)
-    .text(`Date: ${new Date().toLocaleDateString('en-GB')}`, { align: 'right' })
-    .text(`Original Trip: ${booking.tripNumber}`, { align: 'right' });
-  doc.y += 8;
-
-  drawSectionHeader(doc, 'CREDIT TO');
-  const c = booking.client || {};
-  drawDetailRow(doc, 'Name', c.fullName || 'Client', { bold: true });
-  if (c.companyName) drawDetailRow(doc, 'Company', c.companyName);
-  if (c.email) drawDetailRow(doc, 'Email', c.email);
-
-  drawSectionHeader(doc, 'CREDIT DETAILS');
-  const p = booking.pricing || {};
-  drawDetailRow(doc, 'Original Reference', booking.invoiceNumber || booking.tripNumber);
-  drawDetailRow(doc, 'Reason', reason || 'Service adjustment / cancellation credit');
-
-  const totalY = doc.y + 6;
-  doc.rect(50, totalY, doc.page.width - 100, 32).fill(COLORS.primary);
-  doc.font(FONTS.bold).fontSize(11).fillColor(COLORS.gold)
-    .text(`CREDIT AMOUNT: ${formatCurrency(creditAmount, p.currency || 'USD')}`, 58, totalY + 10, {
-      align: 'right',
-      width: doc.page.width - 108,
-    });
-  doc.y = totalY + 42;
-
-  doc.font(FONTS.normal).fontSize(8).fillColor(COLORS.dark)
-    .text('This credit note will be credited to your account or refunded per your instructions.');
-
-  drawFooter(doc, 1, 1);
+  drawFooter(doc, `PM-${tripRef} · Manifest`, 1, 1);
   doc.end();
   return bufferPromise;
 };

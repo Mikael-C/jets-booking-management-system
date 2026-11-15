@@ -2,8 +2,9 @@
 
 import React from "react";
 import { Booking } from "@/types/aviation";
-import { formatCurrency } from "@/lib/pricingCalculator";
-import FlightLegMap from "@/components/maps/FlightLegMap";
+import DocumentHeader from "./DocumentHeader";
+import DocumentFooter from "./DocumentFooter";
+import { formatDocCurrency } from "./QuotationDoc";
 
 interface InvoiceDocProps {
   booking: Booking;
@@ -21,275 +22,228 @@ export default function InvoiceDoc({ booking }: InvoiceDocProps) {
     accountNumber,
     contractDate,
     paymentDueDate,
-    tripType
+    paymentStatus
   } = booking;
 
-  const tripTypeLabel =
-    tripType === "round_trip" ? "RoundTripPlus" : tripType === "one_way" ? "One-Way Charter" : "Multi-Leg Itinerary";
+  const invNumber = invoiceNumber || (tripNumber ? `INV-${tripNumber}-01` : "INV-FE4578-01");
+  const tripRef = tripNumber || "FE4578";
+  const currency = pricing?.currency || "EUR";
+  const totalAmount = pricing?.totalFlightPrice ?? 8000;
+  const cardAmount = booking.totalWithCardFee ?? (totalAmount * 1.035);
+  const clientName = client?.companyName || client?.fullName || "Adeyemi Holdings Ltd";
+  const agreementRef = `C-${tripNumber || "FE4578-002"}`;
+
+  const isPaid = paymentStatus === "fully_paid";
+  const repName = booking.agentName || "Marcus Vance";
+  const repEmail = booking.agentEmail || "marcus@vanceaviation.co.uk";
+  const repPhone = "+44 20 7946 0912";
+
+  const firstLeg = legs && legs.length > 0 ? legs[0] : null;
+  const legOriginIcao = firstLeg?.origin?.icao || "LEIB";
+  const legDestIcao = firstLeg?.destination?.icao || "LSGG";
+  const legOriginCity = firstLeg?.origin?.city || "Ibiza";
+  const legDestCity = firstLeg?.destination?.city || "Geneva";
+  const legFlightDate = firstLeg?.flightDate || contractDate || "20 Nov 2026";
+  const paxCount = firstLeg?.paxCount || 4;
+  const categoryLabel = aircraft?.categoryLabel || "Light jet";
 
   return (
-    <div className="invoice-document text-gray-900 bg-transparent font-sans max-w-[850px] mx-auto">
-      {/* ================= PAGE 1: OFFICIAL TAX INVOICE ================= */}
-      <div className="doc-page min-h-[1050px] bg-white p-8 sm:p-10 rounded-sm shadow-xl border border-gray-200 mb-8 print:mb-0 print:border-none print:shadow-none print:p-0 flex flex-col justify-between">
-        <div>
-          {/* Header */}
-          <div className="flex items-start justify-between border-b-2 border-gray-900 pb-3 mb-4">
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-gray-900 uppercase">
-                Invoice
-              </h1>
-              <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-widest">
-                Official Tax & Flight Billing Statement
-              </p>
-            </div>
-            <div className="text-right">
-              <span className="font-display text-2xl sm:text-3xl font-black tracking-tight" style={{ color: "#FF6B00" }}>
-                ORBELO
-              </span>
-              <p className="text-[10px] uppercase tracking-wider text-gray-500 font-medium">
-                Private Jet Aviation
-              </p>
-            </div>
-          </div>
+    <div className="invoice-document text-slate-900 bg-transparent font-sans max-w-[820px] mx-auto select-none print:max-w-none">
+      {/* ================= PAGE 1: INVOICE ================= */}
+      <div className="doc-page min-h-[1123px] bg-white p-10 sm:p-12 rounded-sm shadow-xl border border-slate-200 mb-8 print:mb-0 print:border-none print:shadow-none print:p-0 flex flex-col justify-between box-border">
+        <div className="space-y-6">
+          <DocumentHeader booking={booking} />
 
-          {/* Party & Invoice Details */}
-          <div className="grid grid-cols-3 gap-4 py-3 border-b border-gray-200 text-xs leading-relaxed mb-4">
-            {/* TO */}
-            <div>
-              <p className="font-bold text-gray-900 uppercase tracking-wider mb-1 text-[10px] border-b border-gray-300 pb-0.5">
-                To (Bill To)
-              </p>
-              <p className="font-semibold text-gray-900">{client.fullName}</p>
-              {client.companyName && <p className="text-gray-700">{client.companyName}</p>}
-              <p className="text-gray-600">{client.streetAddress}</p>
-              <p className="text-gray-600">{client.cityPostalCountry}</p>
-              {client.vatNumber && <p className="text-gray-500 mt-0.5">Tax ID: {client.vatNumber}</p>}
-            </div>
-
-            {/* FROM */}
-            <div>
-              <p className="font-bold text-gray-900 uppercase tracking-wider mb-1 text-[10px] border-b border-gray-300 pb-0.5">
-                From (Remit To)
-              </p>
-              <p className="font-semibold text-gray-900">{operator.companyName}</p>
-              <p className="text-gray-700">{operator.representativeName}</p>
-              <p className="text-blue-700 font-medium">{operator.supportEmail}</p>
-              <p className="text-gray-600">{operator.supportPhone}</p>
-              <p className="text-gray-500 mt-0.5">VAT # {operator.vatNumber}</p>
-            </div>
-
-            {/* DETAILS */}
-            <div>
-              <p className="font-bold text-gray-900 uppercase tracking-wider mb-1 text-[10px] border-b border-gray-300 pb-0.5">
-                Invoice Details
-              </p>
-              <div className="grid grid-cols-2 gap-y-0.5 text-[11px]">
-                <span className="text-gray-500">Invoice Date:</span>
-                <span className="font-medium text-gray-900">{contractDate}</span>
-                <span className="text-gray-500">Invoice No.:</span>
-                <span className="font-bold text-gray-900 font-mono">{invoiceNumber}</span>
-                <span className="text-gray-500">Trip No.:</span>
-                <span className="font-bold text-gray-900 font-mono">{tripNumber}</span>
-                <span className="text-gray-500">Account No.:</span>
-                <span className="font-mono text-gray-900">{accountNumber}</span>
-                <span className="text-gray-500">Payment Due:</span>
-                <span className="font-semibold text-gray-900 font-mono text-red-600">{paymentDueDate}</span>
+          {/* Title & Invoice Meta */}
+          <div className="flex items-start justify-between">
+            <h1 className="text-3xl font-bold tracking-tight text-slate-900">
+              Invoice
+            </h1>
+            <div className="text-right text-xs space-y-1">
+              <div className="flex justify-end gap-3">
+                <span className="text-[10px] font-semibold text-slate-600 tracking-wider uppercase">INVOICE</span>
+                <span className="font-semibold text-slate-900 font-mono w-44 text-right">{invNumber}</span>
+              </div>
+              <div className="flex justify-end gap-3">
+                <span className="text-[10px] font-semibold text-slate-600 tracking-wider uppercase">TRIP</span>
+                <span className="font-semibold text-slate-900 font-mono w-44 text-right">{tripRef}</span>
+              </div>
+              <div className="flex justify-end gap-3">
+                <span className="text-[10px] font-semibold text-slate-600 tracking-wider uppercase">ISSUE DATE</span>
+                <span className="font-medium text-slate-900 w-44 text-right">{contractDate || "12 Nov 2026"}</span>
+              </div>
+              <div className="flex justify-end gap-3">
+                <span className="text-[10px] font-semibold text-slate-600 tracking-wider uppercase">DUE</span>
+                <span className="font-medium text-slate-900 w-44 text-right">
+                  Before departure, {paymentDueDate || "18 Nov 2026"}
+                </span>
               </div>
             </div>
           </div>
 
-          {/* Trip Summary */}
-          <div className="mb-4 bg-gray-50 p-2.5 rounded-lg border border-gray-200">
-            <div className="grid grid-cols-3 gap-4 text-xs">
-              <div>
-                <span className="text-gray-500 text-[10px] uppercase font-mono">Aircraft Assigned</span>
-                <p className="font-bold text-gray-900">{aircraft.name} ({aircraft.registration || "OE-FFB"})</p>
-              </div>
-              <div>
-                <span className="text-gray-500 text-[10px] uppercase font-mono">Charter Type</span>
-                <p className="font-semibold text-gray-900">{tripTypeLabel}</p>
-              </div>
-              <div>
-                <span className="text-gray-500 text-[10px] uppercase font-mono">Routing Legs</span>
-                <p className="font-semibold text-gray-900">{legs.length} Flown Leg(s)</p>
-              </div>
+          {/* Bill To & Representative */}
+          <div className="grid grid-cols-2 gap-8 text-xs pt-1">
+            <div>
+              <p className="text-[10px] font-bold text-slate-900 tracking-wider uppercase mb-1.5">
+                BILL TO
+              </p>
+              <p className="font-bold text-slate-900 text-sm">{clientName}</p>
+              <p className="text-slate-700">Attn: {client?.fullName || "Tunde Adeyemi"}, Chairman</p>
+              <p className="text-slate-600">{client?.streetAddress || "14 Bourdillon Road, Ikoyi"}</p>
+              <p className="text-slate-600">{client?.cityPostalCountry || "Lagos, Nigeria"}</p>
+              <p className="text-slate-600 font-mono mt-0.5">Account {accountNumber || "ACC-30412"}</p>
+            </div>
+
+            <div>
+              <p className="text-[10px] font-bold text-slate-900 tracking-wider uppercase mb-1.5">
+                REPRESENTATIVE
+              </p>
+              <p className="font-semibold text-slate-900 text-sm">{repName}</p>
+              <p className="text-slate-700">{repEmail}</p>
+              <p className="text-slate-600">{repPhone}</p>
             </div>
           </div>
 
-          {/* Flown / Booked Legs Table */}
-          <div className="mb-4">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-900 mb-1.5 border-b border-gray-300 pb-0.5">
-              Flown Legs <span className="text-[10px] text-gray-500 font-normal lowercase">(Local station times)</span>
-            </h3>
-
-            <table className="w-full text-left text-xs border border-gray-200">
-              <thead className="bg-gray-100 text-gray-700 font-semibold text-[11px]">
-                <tr>
-                  <th className="p-1.5 border-b">Date</th>
-                  <th className="p-1.5 border-b">From</th>
-                  <th className="p-1.5 border-b">To</th>
-                  <th className="p-1.5 border-b">Departure</th>
-                  <th className="p-1.5 border-b">Arrival</th>
-                  <th className="p-1.5 border-b text-center"># Pax</th>
-                  <th className="p-1.5 border-b">Flight #</th>
+          {/* Line Items Table */}
+          <div className="pt-2">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-slate-300 text-[10px] font-bold text-slate-700 uppercase tracking-wider">
+                  <th className="py-2 pr-4 font-bold">DESCRIPTION</th>
+                  <th className="py-2 px-4 font-bold w-32 whitespace-nowrap">DATE</th>
+                  <th className="py-2 pl-4 text-right font-bold w-32 whitespace-nowrap">AMOUNT</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200 text-[11px]">
-                {legs.map((leg) => (
-                  <tr key={leg.legNumber}>
-                    <td className="p-1.5 font-medium">{leg.flightDate}</td>
-                    <td className="p-1.5 font-bold text-gray-900">{leg.origin.city} ({leg.origin.icao})</td>
-                    <td className="p-1.5 font-bold text-gray-900">{leg.destination.city} ({leg.destination.icao})</td>
-                    <td className="p-1.5 font-mono">{leg.departureTimeLocal}</td>
-                    <td className="p-1.5 font-mono">{leg.arrivalTimeLocal}</td>
-                    <td className="p-1.5 text-center font-bold">{leg.paxCount}</td>
-                    <td className="p-1.5 font-mono font-bold text-gray-700">{leg.flightNumber}</td>
-                  </tr>
-                ))}
+              <tbody className="divide-y divide-slate-100 text-xs">
+                <tr className="align-top">
+                  <td className="py-3 pr-4">
+                    <p className="font-bold text-slate-900">Private charter flight</p>
+                    <p className="text-slate-700 mt-0.5">
+                      Leg 1 · {legOriginIcao} → {legDestIcao} {legOriginCity} – {legDestCity} · {categoryLabel} · {paxCount} passengers
+                    </p>
+                    <p className="text-slate-500 mt-0.5">
+                      Per charter agreement {agreementRef}
+                    </p>
+                  </td>
+                  <td className="py-3 px-4 text-slate-800 whitespace-nowrap">
+                    {legFlightDate}
+                  </td>
+                  <td className="py-3 pl-4 text-right font-medium text-slate-900 font-mono whitespace-nowrap">
+                    {formatDocCurrency(totalAmount, currency)}
+                  </td>
+                </tr>
+
+                <tr className="align-top">
+                  <td className="py-2.5 pr-4 text-slate-700">
+                    VAT <span className="bg-[#FEF3C7] text-[#92400E] px-1 py-0.5 rounded text-[10px]">[rate and exemption text per tax advice]</span>
+                  </td>
+                  <td className="py-2.5 px-4"></td>
+                  <td className="py-2.5 pl-4 text-right font-medium text-slate-900 font-mono whitespace-nowrap">
+                    {formatDocCurrency(0, currency)}
+                  </td>
+                </tr>
               </tbody>
             </table>
-          </div>
 
-          {/* Compact Route Radar Visual Map Strip */}
-          <div className="mb-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {legs.map((leg) => (
-                <FlightLegMap
-                  key={leg.legNumber}
-                  origin={leg.origin}
-                  destination={leg.destination}
-                  flightTime={leg.flightTimeFormatted}
-                  distanceNm={leg.distanceNm || 220}
-                  legNumber={leg.legNumber}
-                  compact={true}
-                />
-              ))}
+            {/* Total Due Row */}
+            <div className="border-t border-slate-900 pt-3 mt-1 flex justify-between items-center text-sm">
+              <span className="font-bold text-slate-900">Total due</span>
+              <span className="font-bold text-slate-900 text-base font-mono">
+                {formatDocCurrency(totalAmount, currency)}
+              </span>
             </div>
           </div>
 
-          {/* Pricing Calculation Table */}
-          <div className="mb-4">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-900 mb-1.5 border-b border-gray-300 pb-0.5">
-              Itemized Tax & Pricing Breakdown
-            </h3>
-            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-1 text-xs">
-              <div className="flex justify-between py-0.5 border-b border-gray-200 font-medium">
-                <span>Flight Price</span>
-                <span className="font-mono">{formatCurrency(pricing.flightPrice, pricing.currency)}</span>
-              </div>
-              <div className="flex justify-between text-gray-600 pl-3 text-[11px]">
-                <span>- Airport Landing & Ramp Fees</span>
-                <span className="font-mono">{formatCurrency(pricing.airportFees, pricing.currency)}</span>
-              </div>
-              <div className="flex justify-between text-gray-600 pl-3 text-[11px]">
-                <span>- Passenger Terminal Security Fees</span>
-                <span className="font-mono">{formatCurrency(pricing.passengerFees, pricing.currency)}</span>
-              </div>
-              {pricing.dayOfWeekDiscount !== 0 && (
-                <div className="flex justify-between text-emerald-700 font-medium pl-3 text-[11px]">
-                  <span>- Day of week discount</span>
-                  <span className="font-mono">{formatCurrency(pricing.dayOfWeekDiscount, pricing.currency)}</span>
+          {/* Two Boxes: BANK TRANSFER & PAY BY CARD */}
+          <div className="grid grid-cols-2 gap-6 pt-2">
+            {/* Left Box: Bank Transfer */}
+            <div className="border border-slate-200 rounded-lg p-4 bg-white space-y-2">
+              <p className="text-[10px] font-bold text-slate-900 tracking-wider uppercase mb-1">
+                BANK TRANSFER
+              </p>
+              <div className="space-y-1.5 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-semibold text-slate-600 uppercase tracking-wider w-24">BENEFICIARY</span>
+                  <span className="bg-[#FEF3C7] text-[#92400E] px-1.5 py-0.5 rounded text-[11px] font-normal">
+                    {operator?.companyName || "[Company legal name]"}
+                  </span>
                 </div>
-              )}
-              <div className="flex justify-between text-gray-600 pl-3 text-[11px]">
-                <span>- Inbound & Outbound Passenger Taxes</span>
-                <span className="font-mono">
-                  {formatCurrency(pricing.inboundPassengerTax + pricing.outboundPassengerTax, pricing.currency)}
-                </span>
-              </div>
-              {booking.revisionAdjustments?.length ? booking.revisionAdjustments.map((adjustment) => (
-                <div key={adjustment.id} className="flex justify-between text-gray-700 pl-3 text-[11px]">
-                  <span>- {adjustment.label}</span>
-                  <span className="font-mono">{formatCurrency(adjustment.amount, pricing.currency)}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-semibold text-slate-600 uppercase tracking-wider w-24">BANK</span>
+                  <span className="bg-[#FEF3C7] text-[#92400E] px-1.5 py-0.5 rounded text-[11px] font-normal">
+                    {operator?.bankName || "[Bank name]"}
+                  </span>
                 </div>
-              )) : pricing.additionalServicesTotal > 0 && (
-                <div className="flex justify-between text-gray-700 pl-3 text-[11px]">
-                  <span>- Additional Services & Concierge</span>
-                  <span className="font-mono">{formatCurrency(pricing.additionalServicesTotal, pricing.currency)}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-semibold text-slate-600 uppercase tracking-wider w-24">IBAN</span>
+                  <span className="bg-[#FEF3C7] text-[#92400E] px-1.5 py-0.5 rounded text-[11px] font-mono">
+                    {operator?.iban || "[IBAN]"}
+                  </span>
                 </div>
-              )}
-              <div className="flex justify-between py-1 border-t border-gray-300 font-bold text-xs text-gray-900">
-                <span>Subtotal (Net Amount)</span>
-                <span className="font-mono">{formatCurrency(pricing.subtotal, pricing.currency)}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-semibold text-slate-600 uppercase tracking-wider w-24">BIC</span>
+                  <span className="bg-[#FEF3C7] text-[#92400E] px-1.5 py-0.5 rounded text-[11px] font-mono">
+                    {operator?.bic || "[BIC]"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 pt-0.5">
+                  <span className="text-[10px] font-semibold text-slate-600 uppercase tracking-wider w-24">REFERENCE</span>
+                  <span className="font-bold text-slate-900 font-mono text-xs">
+                    {invNumber}
+                  </span>
+                </div>
               </div>
-              <div className="flex justify-between text-gray-500 text-[10px]">
-                <span>VAT (0%, International commercial air transportation VAT exempt per EU Directive 2006/112/EC Art. 148 & UK VAT Act)</span>
-                <span className="font-mono">{formatCurrency(0, pricing.currency)}</span>
-              </div>
-              <div className="flex justify-between py-1.5 border-t-2 border-gray-900 font-extrabold text-sm text-gray-900 bg-gold/10 px-2.5 rounded">
-                <span className="uppercase tracking-wider">TOTAL INVOICE PAYABLE AMOUNT</span>
-                <span className="font-mono text-gold-dark text-base">
-                  {formatCurrency(pricing.totalFlightPrice, pricing.currency)}
-                </span>
+              <p className="text-[10px] text-slate-500 pt-1">
+                Bank details come from Settings, never typed on the invoice.
+              </p>
+            </div>
+
+            {/* Right Box: Pay by Card */}
+            <div className="border border-slate-200 rounded-lg p-4 bg-white flex flex-col justify-between">
+              <div>
+                <p className="text-[10px] font-bold text-slate-900 tracking-wider uppercase mb-2">
+                  PAY BY CARD
+                </p>
+                <p className="text-xs text-slate-800 leading-relaxed">
+                  {formatDocCurrency(cardAmount, currency)} including 3.5 % card fee.
+                </p>
+                <p className="text-xs text-slate-600 mt-2">
+                  Secure payment link:
+                </p>
+                <p className="text-xs text-blue-600 underline font-mono mt-0.5 break-all">
+                  pay.orbelo.com/{invNumber}
+                </p>
               </div>
             </div>
           </div>
 
-          {/* Payment Conditions & Wire Details */}
-          <div className="text-[10px] text-gray-600 space-y-1.5 border-t border-gray-200 pt-2.5">
-            <p className="font-bold text-gray-900 uppercase text-[11px]">Payment Conditions & Wire Remittance</p>
-            <p>Customer agrees to pay all bank wire fees. SEPA wiring or international Fedwire is preferred.</p>
-            <p className="font-mono bg-gray-100 p-2 rounded border border-gray-200 text-gray-800 text-[10px]">
-              Bank: <strong>{operator.bankName}</strong> • IBAN: <strong>{operator.iban}</strong> • BIC: <strong>{operator.bic}</strong> • Acc. Holder: <strong>{operator.accountHolder}</strong> • Reference: <strong>INV-{invoiceNumber}</strong>
-            </p>
-            <p className="text-[10px] text-gray-500 italic">
-              Payment is due by {paymentDueDate}. International flights are exempt from VAT under European Aviation legislation.
-            </p>
+          {/* Payment Status Bar */}
+          <div className="pt-2 text-xs text-slate-800">
+            <span className="text-[10px] font-bold text-slate-900 tracking-wider uppercase mr-2">PAYMENT STATUS</span>
+            {isPaid ? (
+              <span className="text-slate-800">
+                <strong className="text-emerald-700 font-bold">Paid in full</strong> · bank transfer received {contractDate || "12 Nov 2026"} · ref PAY-0012
+              </span>
+            ) : (
+              <span className="text-slate-800">
+                <strong className="text-amber-700 font-bold">Pending payment</strong> · due prior to departure
+              </span>
+            )}
           </div>
+
+          {/* Subtext Note */}
+          <p className="text-[10.5px] text-slate-500 leading-relaxed pt-1">
+            Additional services ordered after booking are invoiced separately with the same trip reference. On request, all invoices for a trip can be combined into one.
+          </p>
         </div>
 
         {/* Footer */}
-        <div className="mt-4 pt-2.5 border-t border-gray-200 text-[9px] text-gray-500 flex justify-between items-end">
-          <div>
-            <p className="font-semibold text-gray-800">{operator.companyName} • Executive Private Aviation</p>
-            <p>London Biggin Hill (EGKB) • Geneva International (LSGG) • VAT: {operator.vatNumber}</p>
-            <p>{operator.commercialRegistry} • Court of Jurisdiction: {operator.courtOfJurisdiction}</p>
-          </div>
-          <div className="text-right">
-            <p className="font-bold text-gray-900">Official Invoice {invoiceNumber}</p>
-            <p className="font-mono text-gray-600">Trip: {tripNumber}</p>
-          </div>
-        </div>
+        <DocumentFooter
+          leftText={`${invNumber} · ${clientName}`}
+          currentPage={1}
+          totalPages={1}
+        />
       </div>
-      {booking.consolidatedInvoice && (
-        <div className="doc-page min-h-[1050px] bg-white p-8 sm:p-10 rounded-sm shadow-xl border border-gray-200 mb-8 print:mb-0 print:border-none print:shadow-none print:p-0">
-          <div className="border-b-2 border-gray-900 pb-3 mb-5">
-            <h2 className="text-2xl font-extrabold uppercase text-gray-900">Consolidated Trip Ledger</h2>
-            <p className="text-xs font-mono text-gray-600">
-              Trip {booking.consolidatedInvoice.tripId} · {booking.consolidatedInvoice.invoiceCount} invoice iteration(s)
-            </p>
-          </div>
-          <table className="w-full text-xs border-collapse">
-            <thead>
-              <tr className="border-b border-gray-400 text-left">
-                <th className="py-2 pr-3">Document</th>
-                <th className="py-2 pr-3">Booking Iteration</th>
-                <th className="py-2 pr-3">Details</th>
-                <th className="py-2 text-right">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {booking.consolidatedInvoice.ledger.map((entry, index) => (
-                <tr key={`${entry.type}-${index}`} className="border-b border-gray-200">
-                  <td className="py-2 pr-3 font-mono">{entry.type === "invoice" ? entry.invoiceNumber : entry.creditNoteNumber}</td>
-                  <td className="py-2 pr-3 font-mono">{entry.bookingRevisionId || "—"}</td>
-                  <td className="py-2 pr-3">{entry.reason || (entry.type === "invoice" ? "Booking invoice" : "Credit note adjustment")}</td>
-                  <td className="py-2 text-right font-mono">
-                    {entry.type === "credit_note" ? "−" : ""}
-                    {formatCurrency(entry.amount, booking.consolidatedInvoice?.currency || pricing.currency)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="mt-8 ml-auto max-w-sm border-t-2 border-gray-900 pt-3 flex justify-between font-extrabold">
-            <span>FINAL CONSOLIDATED BALANCE</span>
-            <span className="font-mono">
-              {formatCurrency(booking.consolidatedInvoice.finalBalance, booking.consolidatedInvoice.currency)}
-            </span>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

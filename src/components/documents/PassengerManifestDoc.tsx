@@ -2,7 +2,9 @@
 
 import React, { useState } from "react";
 import { Booking } from "@/types/aviation";
-import { Users, Download, Send, CheckCircle2, Shield, Plane, AlertTriangle } from "lucide-react";
+import { Users, Download, Send, CheckCircle2 } from "lucide-react";
+import DocumentHeader from "./DocumentHeader";
+import DocumentFooter from "./DocumentFooter";
 
 interface PassengerManifestDocProps {
   booking: Booking;
@@ -19,6 +21,8 @@ export default function PassengerManifestDoc({ booking }: PassengerManifestDocPr
     { id: "p1", fullName: client.fullName, passportNumber: "P8492019", nationality: "Austrian", dateOfBirth: "12.04.1978", passportExpiry: "18.06.2031", isLeadPassenger: true, specialRequests: "VIP Champagne catering" },
     { id: "p2", fullName: "Sophia Brinkmann", passportNumber: "P7749210", nationality: "Austrian", dateOfBirth: "24.08.1982", passportExpiry: "22.11.2030", isLeadPassenger: false, specialRequests: "None" },
   ];
+
+  const manifestId = `PM-${tripNumber}`;
 
   const handleExportCsv = () => {
     const headers = "Pax #,Full Name,Passport Number,Nationality,Date of Birth,Passport Expiry,Lead Passenger,Special Requests\n";
@@ -50,109 +54,129 @@ export default function PassengerManifestDoc({ booking }: PassengerManifestDocPr
   };
 
   return (
-    <div className="passenger-manifest-document text-gray-900 bg-transparent font-sans max-w-[850px] mx-auto">
-      <div className="doc-page min-h-[1050px] bg-white p-8 sm:p-10 rounded-sm shadow-xl border border-gray-200 mb-8 print:mb-0 print:border-none print:shadow-none print:p-0 flex flex-col justify-between">
-        <div>
-          {/* Header */}
-          <div className="flex items-start justify-between border-b-2 border-gray-900 pb-4 mb-6">
-            <div>
-              <h1 className="text-3xl font-extrabold tracking-tight text-gray-900 uppercase">
-                Passenger Manifest
-              </h1>
-              <p className="text-xs font-semibold text-gold tracking-widest uppercase">
-                General Aviation Declaration & Border Compliance [DOC-5]
-              </p>
-            </div>
-            <div className="text-right">
-              <span className="font-display text-3xl font-black tracking-tight" style={{ color: "#FF6B00" }}>
-                ORBELO
-              </span>
-              <p className="text-[10px] uppercase tracking-wider text-gray-500 font-medium">Flight Operations Command</p>
+    <div className="passenger-manifest-document text-slate-900 bg-transparent font-sans max-w-[820px] mx-auto select-none print:max-w-none">
+      <div className="doc-page min-h-[1123px] bg-white p-10 sm:p-12 rounded-sm shadow-xl border border-slate-200 mb-8 print:mb-0 print:border-none print:shadow-none print:p-0 flex flex-col justify-between box-border">
+        <div className="space-y-5">
+          {/* Shared Document Header */}
+          <DocumentHeader booking={booking} />
+
+          {/* Title & Manifest Meta */}
+          <div className="flex items-start justify-between">
+            <h1 className="text-3xl font-bold tracking-tight text-slate-900">
+              Passenger manifest
+            </h1>
+            <div className="text-right text-xs space-y-1">
+              <div className="flex justify-end gap-3">
+                <span className="text-[10px] font-semibold text-slate-600 tracking-wider uppercase">MANIFEST</span>
+                <span className="font-semibold text-slate-900 font-mono w-36 text-right">{manifestId}</span>
+              </div>
+              <div className="flex justify-end gap-3">
+                <span className="text-[10px] font-semibold text-slate-600 tracking-wider uppercase">TRIP</span>
+                <span className="font-semibold text-slate-900 font-mono w-36 text-right">{tripNumber}</span>
+              </div>
+              <div className="flex justify-end gap-3">
+                <span className="text-[10px] font-semibold text-slate-600 tracking-wider uppercase">FLIGHT DATE</span>
+                <span className="font-medium text-slate-900 w-36 text-right">{legs[0]?.flightDate || "20 Nov 2026"}</span>
+              </div>
+              <div className="flex justify-end gap-3">
+                <span className="text-[10px] font-semibold text-slate-600 tracking-wider uppercase">STATUS</span>
+                <span className="font-medium text-slate-900 w-36 text-right">Confirmed</span>
+              </div>
             </div>
           </div>
 
-          {/* Flight & Aircraft Identification */}
-          <div className="grid grid-cols-3 gap-6 py-4 border-b border-gray-200 text-xs mb-6 bg-gray-50 p-4 rounded-lg">
+          {/* Flight Identification Row */}
+          <div className="grid grid-cols-3 gap-6 py-4 border-t border-b border-slate-200 text-xs">
             <div>
-              <p className="text-gray-500 font-mono text-[10px] uppercase">Trip Reference</p>
-              <p className="text-base font-bold font-mono text-gray-900">{tripNumber}</p>
-              <p className="text-gray-600 mt-1">Flight Date: {legs[0]?.flightDate}</p>
-            </div>
-            <div>
-              <p className="text-gray-500 font-mono text-[10px] uppercase">Routing</p>
-              <p className="font-bold text-gray-900 font-mono">
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">ROUTING</p>
+              <p className="font-bold text-slate-900 font-mono text-sm">
                 {legs.map(l => `${l.origin.icao}→${l.destination.icao}`).join(" / ")}
               </p>
-              <p className="text-gray-600 mt-1">Total Passengers: {allPassengers.length}</p>
+              <p className="text-slate-600 mt-0.5">
+                {legs.map(l => `${l.origin.city || ""} – ${l.destination.city || ""}`).join(" / ")}
+              </p>
             </div>
             <div>
-              <p className="text-gray-500 font-mono text-[10px] uppercase">Aircraft</p>
-              <p className="font-bold text-gray-900">{aircraft.name}</p>
-              <p className="font-mono text-gray-600 mt-1">Tail: {legs[0]?.aircraftRegistration || aircraft.registration || "OE-FFB"}</p>
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">AIRCRAFT</p>
+              <p className="font-bold text-slate-900">{aircraft.name}</p>
+              <p className="font-mono text-slate-600 mt-0.5">
+                Reg: {legs[0]?.aircraftRegistration || aircraft.registration || (
+                  <span className="bg-amber-100 text-amber-800 px-1 rounded text-[11px] font-normal">[XX-XXX]</span>
+                )}
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">TOTAL PASSENGERS</p>
+              <p className="font-bold text-slate-900 text-2xl">{allPassengers.length}</p>
+              <p className="text-slate-600 mt-0.5">Lead: {client.fullName}</p>
             </div>
           </div>
 
-          {/* Passenger Data Table (DOC-5) */}
-          <div className="mb-6">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-900 mb-2 border-b border-gray-300 pb-1">
-              Verified Passenger Manifest ({allPassengers.length} Total)
+          {/* Passenger Data Table */}
+          <div>
+            <h3 className="text-[10px] font-bold text-slate-900 tracking-wider uppercase mb-2">
+              PASSENGER DATA
             </h3>
-            <table className="w-full text-left text-xs border border-gray-200">
-              <thead className="bg-gray-100 text-gray-700 font-semibold text-[11px]">
-                <tr>
-                  <th className="p-2 border-b">#</th>
-                  <th className="p-2 border-b">Full Legal Name</th>
-                  <th className="p-2 border-b">Passport No.</th>
-                  <th className="p-2 border-b">Nationality</th>
-                  <th className="p-2 border-b">Date of Birth</th>
-                  <th className="p-2 border-b">Expiry</th>
-                  <th className="p-2 border-b">Special Requests</th>
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-slate-300 text-[10px] font-bold text-slate-700 uppercase tracking-wider">
+                  <th className="py-2 pr-3 font-bold w-8">#</th>
+                  <th className="py-2 px-3 font-bold">FULL LEGAL NAME</th>
+                  <th className="py-2 px-3 font-bold">PASSPORT NO.</th>
+                  <th className="py-2 px-3 font-bold">NATIONALITY</th>
+                  <th className="py-2 px-3 font-bold whitespace-nowrap">DATE OF BIRTH</th>
+                  <th className="py-2 px-3 font-bold">EXPIRY</th>
+                  <th className="py-2 pl-3 font-bold">SPECIAL REQUESTS</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
+              <tbody className="divide-y divide-slate-100 text-xs">
                 {allPassengers.map((pax, i) => (
-                  <tr key={pax.id} className="hover:bg-gray-50">
-                    <td className="p-2 font-mono font-bold text-gray-600">{i + 1}</td>
-                    <td className="p-2 font-bold text-gray-900">
-                      {pax.fullName} {pax.isLeadPassenger && <span className="text-gold font-mono text-[10px]">(Lead)</span>}
+                  <tr key={pax.id} className="align-top">
+                    <td className="py-2.5 pr-3 font-mono text-slate-500">{i + 1}</td>
+                    <td className="py-2.5 px-3 font-semibold text-slate-900">
+                      {pax.fullName}
+                      {pax.isLeadPassenger && (
+                        <span className="ml-1.5 text-[10px] font-mono text-gold-dark bg-gold-50 px-1.5 py-0.5 rounded">Lead</span>
+                      )}
                     </td>
-                    <td className="p-2 font-mono text-gray-800">{pax.passportNumber || "P8492019"}</td>
-                    <td className="p-2">{pax.nationality || "Austrian"}</td>
-                    <td className="p-2 font-mono text-gray-600">{pax.dateOfBirth || "12.04.1978"}</td>
-                    <td className="p-2 font-mono text-gray-600">{pax.passportExpiry || "18.06.2031"}</td>
-                    <td className="p-2 text-gray-500 italic">{pax.specialRequests || "None"}</td>
+                    <td className="py-2.5 px-3 font-mono text-slate-800">{pax.passportNumber || "P8492019"}</td>
+                    <td className="py-2.5 px-3 text-slate-700">{pax.nationality || "Austrian"}</td>
+                    <td className="py-2.5 px-3 font-mono text-slate-600">{pax.dateOfBirth || "12.04.1978"}</td>
+                    <td className="py-2.5 px-3 font-mono text-slate-600">{pax.passportExpiry || "18.06.2031"}</td>
+                    <td className="py-2.5 pl-3 text-slate-500 italic">{pax.specialRequests || "None"}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
 
-          {/* Export & Handler Dispatch Actions (Hidden in Print) */}
-          <div className="print:hidden p-4 bg-gray-50 border border-gray-200 rounded-lg space-y-3 mb-6">
+          {/* Export & Handler Dispatch (Hidden in Print) */}
+          <div className="print:hidden p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-3">
             <div className="flex items-center justify-between">
-              <h4 className="text-xs font-bold text-gray-900 uppercase font-mono">
-                Secure Handler / Operator Export [DOC-5]
+              <h4 className="text-[10px] font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5 text-gold-dark" />
+                Secure Handler / Operator Export
               </h4>
               <button
                 onClick={handleExportCsv}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-900 hover:bg-gray-800 text-white text-xs font-bold transition-all"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>Export Manifest CSV</span>
+                <span>Export CSV</span>
               </button>
             </div>
 
             <form onSubmit={handleSendToHandler} className="flex gap-2">
               <input
                 type="email"
-                placeholder="Send manifest securely to FBO handler / operator email..."
+                placeholder="Send manifest securely to FBO / operator email..."
                 value={recipientInput}
                 onChange={(e) => setRecipientInput(e.target.value)}
-                className="flex-1 bg-white border border-gray-300 rounded-lg px-3 py-1.5 text-xs text-gray-900 focus:outline-none focus:border-gold"
+                className="flex-1 bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs text-slate-900 focus:outline-none focus:border-gold"
               />
               <button
                 type="submit"
-                className="px-4 py-1.5 rounded-lg bg-gold hover:bg-gold-light text-[#0F1420] text-xs font-bold flex items-center gap-1"
+                className="px-4 py-1.5 rounded-lg bg-gold hover:bg-gold-light text-[#0F1420] text-xs font-bold flex items-center gap-1 transition-colors"
               >
                 <Send className="w-3 h-3" />
                 <span>Send Securely</span>
@@ -166,8 +190,8 @@ export default function PassengerManifestDoc({ booking }: PassengerManifestDocPr
             )}
 
             {sentLog.length > 0 && (
-              <div className="text-[11px] text-gray-500 border-t border-gray-200 pt-2 space-y-0.5">
-                <p className="font-mono font-bold text-gray-700">Dispatch Audit Log:</p>
+              <div className="text-[11px] text-slate-500 border-t border-slate-200 pt-2 space-y-0.5">
+                <p className="font-mono font-bold text-slate-700">Dispatch Audit Log:</p>
                 {sentLog.map((log, idx) => (
                   <p key={idx}>Sent to <strong>{log.recipient}</strong> at {log.time}</p>
                 ))}
@@ -175,9 +199,9 @@ export default function PassengerManifestDoc({ booking }: PassengerManifestDocPr
             )}
           </div>
 
-          {/* Privacy & GDPR Notice */}
-          <div className="p-3 bg-gray-50 border border-gray-200 rounded text-[10px] text-gray-500 space-y-1">
-            <p className="font-bold text-gray-700">GDPR & Aviation Security Notice</p>
+          {/* GDPR Notice */}
+          <div className="p-3 bg-slate-50 border border-slate-200 rounded text-[10px] text-slate-500 space-y-1">
+            <p className="font-bold text-slate-700">GDPR &amp; Aviation Security Notice</p>
             <p>
               This passenger manifest contains sensitive personal identity and passport data subject to Regulation (EU) 2016/679 (GDPR). Transmitted strictly for border control, customs, and flight security compliance. All passenger identity records are scheduled for automated purge post-flight pursuant to the company data retention policy.
             </p>
@@ -185,16 +209,11 @@ export default function PassengerManifestDoc({ booking }: PassengerManifestDocPr
         </div>
 
         {/* Footer */}
-        <div className="mt-8 pt-4 border-t border-gray-200 text-[10px] text-gray-500 flex justify-between items-end">
-          <div>
-            <p className="font-semibold text-gray-800">Orbelo Jet Management • Flight Operations Center</p>
-            <p>London Biggin Hill Airport (EGKB) & Geneva International (LSGG) • OCC: {operator.supportPhone}</p>
-          </div>
-          <div className="text-right">
-            <p>Document: Manifest</p>
-            <p className="font-mono font-medium text-gray-700">{tripNumber}</p>
-          </div>
-        </div>
+        <DocumentFooter
+          leftText={`${manifestId} · ${client.fullName}`}
+          currentPage={1}
+          totalPages={1}
+        />
       </div>
     </div>
   );

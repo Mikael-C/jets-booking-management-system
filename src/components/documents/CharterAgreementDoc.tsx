@@ -2,199 +2,295 @@
 
 import React from "react";
 import { Booking } from "@/types/aviation";
-import { formatCurrency } from "@/lib/pricingCalculator";
-import FlightLegMap from "@/components/maps/FlightLegMap";
-import { CheckCircle2, Shield } from "lucide-react";
+import DocumentHeader from "./DocumentHeader";
+import DocumentFooter from "./DocumentFooter";
+import { formatDocCurrency } from "./QuotationDoc";
 
 interface CharterAgreementDocProps {
   booking: Booking;
 }
 
 export default function CharterAgreementDoc({ booking }: CharterAgreementDocProps) {
-  const { client, operator, aircraft, legs, pricing, tripNumber, accountNumber, contractDate, paymentDueDate } = booking;
+  const {
+    client,
+    aircraft,
+    legs,
+    pricing,
+    tripNumber,
+    quoteReference,
+    accountNumber,
+    contractDate
+  } = booking;
+
+  const agreementId = tripNumber ? `C-${tripNumber}` : "C-MX5521-001";
+  const basedOnQuote = quoteReference || (tripNumber ? `Q-${tripNumber}` : "Q-MX5521-001");
+  const currency = pricing?.currency || "EUR";
+  const totalPrice = pricing?.totalFlightPrice ?? 58844;
+  const clientName = client?.companyName || client?.fullName || "Bello Group Ltd";
+  const footerRef = `${agreementId} · ${clientName}`;
 
   return (
-    <div className="charter-agreement-document text-gray-900 bg-transparent font-sans max-w-[850px] mx-auto">
-      <div className="doc-page min-h-[1050px] bg-white p-8 sm:p-10 rounded-sm shadow-xl border border-gray-200 mb-8 print:mb-0 print:border-none print:shadow-none print:p-0 flex flex-col justify-between">
-        <div>
-          {/* Header */}
-          <div className="flex items-start justify-between border-b-2 border-gray-900 pb-4 mb-6">
-            <div>
-              <h1 className="text-3xl font-extrabold tracking-tight text-gray-900 uppercase">Aircraft Charter Agreement</h1>
-              <p className="text-xs font-semibold text-gold tracking-widest uppercase">Legally Binding Air Carriage Contract</p>
-            </div>
-            <div className="text-right">
-              <span className="font-display text-3xl font-black tracking-tight" style={{ color: "#FF6B00" }}>
-                ORBELO
-              </span>
-              <p className="text-[10px] uppercase tracking-wider text-gray-500 font-medium">Aviation Operations & Legal</p>
-            </div>
-          </div>
+    <div className="charter-agreement-document text-slate-900 bg-transparent font-sans max-w-[820px] mx-auto select-none print:max-w-none">
+      {/* ================= PAGE 1 ================= */}
+      <div className="doc-page min-h-[1123px] bg-white p-10 sm:p-12 rounded-sm shadow-xl border border-slate-200 mb-8 print:mb-0 print:border-none print:shadow-none print:p-0 flex flex-col justify-between box-border">
+        <div className="space-y-5">
+          <DocumentHeader booking={booking} />
 
-          {/* Reference Banner */}
-          <div className="flex items-center justify-between bg-gray-50 border border-gray-200 p-3 rounded-lg text-xs mb-6 font-mono">
-            <div>Contract Ref: <strong className="text-gray-900">CA-{tripNumber}</strong></div>
-            <div>Account Ref: <strong className="text-gray-900">{accountNumber}</strong></div>
-            <div>Date of Execution: <strong className="text-gray-900">{contractDate}</strong></div>
-          </div>
-
-          {/* Contracting Parties */}
-          <div className="grid grid-cols-2 gap-6 p-4 border border-gray-200 rounded-lg text-xs mb-6 bg-white">
-            <div>
-              <h4 className="font-bold text-gray-900 uppercase tracking-wider border-b border-gray-200 pb-1 mb-2">
-                The Carrier / Operator
-              </h4>
-              <p className="font-semibold text-gray-900">{operator.legalEntity}</p>
-              <p className="text-gray-600">London Biggin Hill Airport (EGKB), Executive Aviation Terminal, United Kingdom</p>
-              <p className="text-gray-600">Company Registry: {operator.commercialRegistry}</p>
-              <p className="text-gray-600">Tax Registration: {operator.vatNumber}</p>
-              <p className="text-gray-600">Contact: {operator.supportEmail} • {operator.supportPhone}</p>
-            </div>
-
-            <div>
-              <h4 className="font-bold text-gray-900 uppercase tracking-wider border-b border-gray-200 pb-1 mb-2">
-                The Charterer / Client
-              </h4>
-              <p className="font-semibold text-gray-900">{client.fullName}</p>
-              {client.companyName && <p className="text-gray-700">{client.companyName}</p>}
-              <p className="text-gray-600">{client.streetAddress}</p>
-              <p className="text-gray-600">{client.cityPostalCountry}</p>
-              <p className="text-gray-600">Contact: {client.email} • {client.phone}</p>
-            </div>
-          </div>
-
-          {/* Aircraft & Route Schedule */}
-          <div className="mb-6">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-900 mb-2 border-b border-gray-300 pb-1">
-              Flight Schedule & Aircraft Assignment
-            </h3>
-            
-            <div className="space-y-4">
-              <div className="bg-gray-50 border border-gray-200 p-3 rounded-lg text-xs flex justify-between items-center">
-                <div>
-                  <span className="text-gray-500">Designated Aircraft:</span>
-                  <p className="font-bold text-gray-900">{aircraft.name} (Tail: {aircraft.registration || "TBD"})</p>
-                </div>
-                <div>
-                  <span className="text-gray-500">Capacity:</span>
-                  <p className="font-bold text-gray-900">{aircraft.passengers} Passenger Seats</p>
-                </div>
-                <div>
-                  <span className="text-gray-500">Total Charter Fee:</span>
-                  <p className="font-bold text-gold-dark text-sm font-mono">{formatCurrency(pricing.totalFlightPrice, pricing.currency)}</p>
-                </div>
+          {/* Title & Agreement Meta */}
+          <div className="flex items-start justify-between">
+            <h1 className="text-3xl font-bold tracking-tight text-slate-900">
+              Charter agreement
+            </h1>
+            <div className="text-right text-xs space-y-1">
+              <div className="flex justify-end gap-3">
+                <span className="text-[10px] font-semibold text-slate-600 tracking-wider uppercase">AGREEMENT</span>
+                <span className="font-semibold text-slate-900 font-mono w-28 text-right">{agreementId}</span>
               </div>
+              <div className="flex justify-end gap-3">
+                <span className="text-[10px] font-semibold text-slate-600 tracking-wider uppercase">BASED ON QUOTE</span>
+                <span className="font-semibold text-slate-900 font-mono w-28 text-right">{basedOnQuote}</span>
+              </div>
+              <div className="flex justify-end gap-3">
+                <span className="text-[10px] font-semibold text-slate-600 tracking-wider uppercase">DATE</span>
+                <span className="font-medium text-slate-900 w-28 text-right">{contractDate || "15 Nov 2026"}</span>
+              </div>
+              <div className="flex justify-end gap-3">
+                <span className="text-[10px] font-semibold text-slate-600 tracking-wider uppercase">STATUS</span>
+                <span className="font-medium text-slate-900 w-28 text-right">For signature</span>
+              </div>
+            </div>
+          </div>
 
-              {/* Legs Table & Embedded Map */}
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center">
-                <div className="lg:col-span-7">
-                  <table className="w-full text-left text-xs border border-gray-200">
-                    <thead className="bg-gray-100 text-gray-700">
-                      <tr>
-                        <th className="p-2 border-b">Leg</th>
-                        <th className="p-2 border-b">Date</th>
-                        <th className="p-2 border-b">Departure</th>
-                        <th className="p-2 border-b">Arrival</th>
-                        <th className="p-2 border-b">Pax</th>
+          {/* The Client & The Broker */}
+          <div className="grid grid-cols-2 gap-8 text-xs pt-1">
+            <div>
+              <p className="text-[10px] font-bold text-slate-900 tracking-wider uppercase mb-1.5">
+                THE CLIENT
+              </p>
+              <p className="font-bold text-slate-900 text-sm">{clientName}</p>
+              <p className="text-slate-700">Attn: {client?.fullName || "Ifeoma Bello"}, Managing Director</p>
+              <p className="text-slate-600">{client?.streetAddress || "Plot 1120 Maitama District"}</p>
+              <p className="text-slate-600">{client?.cityPostalCountry || "Abuja, Nigeria"}</p>
+              <p className="text-slate-600 font-mono mt-0.5">Account {accountNumber || "ACC-30877"}</p>
+            </div>
+
+            <div>
+              <p className="text-[10px] font-bold text-slate-900 tracking-wider uppercase mb-1.5">
+                THE BROKER
+              </p>
+              <p className="text-slate-700 leading-relaxed">
+                <span className="bg-[#FEF3C7] text-[#92400E] px-1 py-0.5 rounded text-[11px] font-normal">[Company legal name]</span> , acting as charter broker and contracting party with the client, arranging the flights with an approved air operator (the operating carrier).
+              </p>
+              <p className="text-slate-500 mt-1.5">
+                <span className="bg-[#FEF3C7] text-[#92400E] px-1 py-0.5 rounded text-[11px] font-normal">[Registered address · Company no.]</span>
+              </p>
+            </div>
+          </div>
+
+          {/* 1 · FLIGHTS */}
+          <div className="pt-1">
+            <h3 className="text-[10px] font-bold text-slate-900 tracking-wider uppercase mb-2">
+              1 · FLIGHTS
+            </h3>
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-slate-300 text-[10px] font-bold text-slate-700 uppercase tracking-wider">
+                  <th className="py-2 pr-2 font-bold w-12">LEG</th>
+                  <th className="py-2 px-2 font-bold w-36">DATE</th>
+                  <th className="py-2 px-2 font-bold">ROUTE</th>
+                  <th className="py-2 px-2 font-bold text-center whitespace-nowrap">DEPARTS (LT)</th>
+                  <th className="py-2 px-2 font-bold">AIRCRAFT</th>
+                  <th className="py-2 pl-2 font-bold text-right w-12">PAX</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-xs">
+                {legs && legs.length > 0 ? (
+                  legs.map((leg, index) => {
+                    const originCode = leg.origin?.icao || "LFPB";
+                    const destCode = leg.destination?.icao || "DNAA";
+                    return (
+                      <tr key={leg.legNumber || index}>
+                        <td className="py-2.5 pr-2 font-medium text-slate-900">{leg.legNumber || index + 1}</td>
+                        <td className="py-2.5 px-2 text-slate-800 whitespace-nowrap">{leg.flightDate || "Tue 24 Nov 2026"}</td>
+                        <td className="py-2.5 px-2 font-semibold text-slate-900">{originCode} → {destCode}</td>
+                        <td className="py-2.5 px-2 text-center font-mono text-slate-800">{leg.departureTimeLocal || "08:30"}</td>
+                        <td className="py-2.5 px-2 text-slate-800">{aircraft?.name || "Challenger 350"} or similar</td>
+                        <td className="py-2.5 pl-2 text-right font-medium text-slate-900">{leg.paxCount || 5}</td>
                       </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200">
-                      {legs.map((leg) => (
-                        <tr key={leg.legNumber}>
-                          <td className="p-2 font-mono font-bold text-gold">{leg.legNumber}</td>
-                          <td className="p-2 text-gray-600">{leg.flightDate}</td>
-                          <td className="p-2 font-semibold">{leg.origin.city} ({leg.origin.icao})</td>
-                          <td className="p-2 font-semibold">{leg.destination.city} ({leg.destination.icao})</td>
-                          <td className="p-2 text-center font-bold">{leg.paxCount}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="lg:col-span-5">
-                  <FlightLegMap
-                    origin={legs[0].origin}
-                    destination={legs[0].destination}
-                    flightTime={legs[0].flightTimeFormatted}
-                    distanceNm={legs[0].distanceNm || 220}
-                    legNumber={1}
-                    compact={true}
-                  />
-                </div>
-              </div>
-            </div>
+                    );
+                  })
+                ) : (
+                  <>
+                    <tr>
+                      <td className="py-2.5 pr-2 font-medium text-slate-900">1</td>
+                      <td className="py-2.5 px-2 text-slate-800 whitespace-nowrap">Tue 24 Nov 2026</td>
+                      <td className="py-2.5 px-2 font-semibold text-slate-900">LFPB → DNAA</td>
+                      <td className="py-2.5 px-2 text-center font-mono text-slate-800">08:30</td>
+                      <td className="py-2.5 px-2 text-slate-800">Challenger 350 or similar</td>
+                      <td className="py-2.5 pl-2 text-right font-medium text-slate-900">5</td>
+                    </tr>
+                    <tr>
+                      <td className="py-2.5 pr-2 font-medium text-slate-900">2</td>
+                      <td className="py-2.5 px-2 text-slate-800 whitespace-nowrap">Mon 30 Nov 2026</td>
+                      <td className="py-2.5 px-2 font-semibold text-slate-900">DNAA → LFPB</td>
+                      <td className="py-2.5 px-2 text-center font-mono text-slate-800">16:00</td>
+                      <td className="py-2.5 px-2 text-slate-800">Challenger 350 or similar</td>
+                      <td className="py-2.5 pl-2 text-right font-medium text-slate-900">5</td>
+                    </tr>
+                  </>
+                )}
+              </tbody>
+            </table>
           </div>
 
-          {/* Key Contractual Articles */}
-          <div className="mb-6 space-y-3 text-[11px] text-gray-700 leading-relaxed">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-900 border-b border-gray-300 pb-1">
-              Terms & Conditions Summary
+          {/* 2 · PRICE AND PAYMENT */}
+          <div className="pt-2">
+            <h3 className="text-[10px] font-bold text-slate-900 tracking-wider uppercase mb-2">
+              2 · PRICE AND PAYMENT
             </h3>
-            
-            <div className="space-y-2 border border-gray-200 p-3.5 rounded-lg bg-gray-50">
-              <p>
-                <strong>1. Operational Control:</strong> The Carrier maintains exclusive operational and technical control over the aircraft at all times. The Commander (Captain) holds absolute authority with respect to safety of passengers, crew, flight route, diversion, and payload.
-              </p>
-              <p>
-                <strong>2. Payment & Settlement:</strong> The total charter fee of {formatCurrency(pricing.totalFlightPrice, pricing.currency)} is due no later than {paymentDueDate}. Flight operations are conditional on full payment clearance in escrow prior to dispatch.
-              </p>
-              <p>
-                <strong>3. Cancellation Policy:</strong> Will be updated later. Standard private aviation charter carriage terms apply.
-              </p>
-              <p>
-                <strong>4. Documentation & Border Control:</strong> Charterer is strictly responsible for ensuring all passengers possess valid passports, visas, health declarations, and immigration clearances. APIS data must be finalized 2 hours prior to wheels-up.
-              </p>
-              <p>
-                <strong>5. Governing Law:</strong> This Agreement shall be governed by and construed in accordance with English Law, with the competent Commercial Court of London, United Kingdom exercising exclusive jurisdiction.
-              </p>
+            <div className="border-t border-b border-slate-200 divide-y divide-slate-100 text-xs">
+              <div className="py-2.5 flex justify-between items-center">
+                <span className="text-slate-700">Total charter price, including services listed in the quotation</span>
+                <span className="font-bold text-slate-900 text-sm font-mono">{formatDocCurrency(totalPrice, currency)}</span>
+              </div>
+              <div className="py-2.5 flex justify-between items-center">
+                <span className="text-slate-700">Payment due</span>
+                <span className="bg-[#FEF3C7] text-[#92400E] px-1 py-0.5 rounded text-[11px] font-normal">
+                  [e.g. 100 % on signature, and in all cases before departure]
+                </span>
+              </div>
+              <div className="py-2.5 flex justify-between items-center">
+                <span className="text-slate-700">Method</span>
+                <span className="text-slate-800 font-medium">Bank transfer, or card with 3.5 % fee</span>
+              </div>
             </div>
           </div>
 
-          {/* Digital Signature & Acceptance */}
-          <div className="border-2 border-gray-900 rounded-lg p-5 bg-white">
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-xs font-bold uppercase tracking-wider text-gray-900">Signatures & Legal Acceptance</span>
-              <span className="flex items-center gap-1 text-[11px] text-emerald-700 font-semibold bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
-                <CheckCircle2 className="w-3.5 h-3.5" /> Legally Executed via Orbelo Secure Sign
-              </span>
-            </div>
+          {/* 3 · CANCELLATION BY THE CLIENT */}
+          <div className="pt-2">
+            <h3 className="text-[10px] font-bold text-slate-900 tracking-wider uppercase mb-2">
+              3 · CANCELLATION BY THE CLIENT
+            </h3>
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-slate-300 text-[10px] font-bold text-slate-700 uppercase tracking-wider">
+                  <th className="py-2 font-bold">NOTICE BEFORE FIRST DEPARTURE</th>
+                  <th className="py-2 text-right font-bold w-40">CANCELLATION FEE</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-xs">
+                <tr>
+                  <td className="py-2 text-slate-800">
+                    <span className="bg-[#FEF3C7] text-[#92400E] px-1 py-0.5 rounded text-[11px] font-normal">[More than … days]</span>
+                  </td>
+                  <td className="py-2 text-right text-slate-800">
+                    <span className="bg-[#FEF3C7] text-[#92400E] px-1 py-0.5 rounded text-[11px] font-normal">[… %]</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td className="py-2 text-slate-800">
+                    <span className="bg-[#FEF3C7] text-[#92400E] px-1 py-0.5 rounded text-[11px] font-normal">[… to … days]</span>
+                  </td>
+                  <td className="py-2 text-right text-slate-800">
+                    <span className="bg-[#FEF3C7] text-[#92400E] px-1 py-0.5 rounded text-[11px] font-normal">[… %]</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td className="py-2 text-slate-800">
+                    <span className="bg-[#FEF3C7] text-[#92400E] px-1 py-0.5 rounded text-[11px] font-normal">[Less than … hours, or no-show]</span>
+                  </td>
+                  <td className="py-2 text-right text-slate-800">
+                    <span className="bg-[#FEF3C7] text-[#92400E] px-1 py-0.5 rounded text-[11px] font-normal">[100 %]</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <p className="text-[10px] text-slate-500 mt-2">
+              Placeholder until the cancellation policy (Q-02) is decided.
+            </p>
+          </div>
 
-            <div className="grid grid-cols-2 gap-8 text-xs pt-2">
-              {/* Operator Side */}
-              <div className="space-y-2">
-                <p className="font-bold text-gray-800">For and on behalf of Carrier:</p>
-                <div className="h-16 flex flex-col justify-end border-b border-gray-300 pb-1">
-                  <span className="font-sans italic text-lg text-gray-900 font-semibold">{operator.representativeName}</span>
-                </div>
-                <p className="text-[11px] text-gray-500 font-mono">Authorized Officer • {operator.companyName}</p>
-                <p className="text-[10px] text-gray-400">Timestamp: {contractDate} 09:14 UTC</p>
-              </div>
-
-              {/* Client Side */}
-              <div className="space-y-2">
-                <p className="font-bold text-gray-800">For and on behalf of Charterer:</p>
-                <div className="h-16 flex flex-col justify-end border-b border-gray-300 pb-1">
-                  <span className="font-sans italic text-lg text-gray-900 font-semibold">{client.fullName}</span>
-                </div>
-                <p className="text-[11px] text-gray-500 font-mono">Signatory • {client.companyName || client.fullName}</p>
-                <p className="text-[10px] text-gray-400">Timestamp: {contractDate} 10:22 UTC (IP Verified)</p>
-              </div>
-            </div>
+          {/* 4 · PASSENGERS AND DOCUMENTS */}
+          <div className="pt-2">
+            <h3 className="text-[10px] font-bold text-slate-900 tracking-wider uppercase mb-1.5">
+              4 · PASSENGERS AND DOCUMENTS
+            </h3>
+            <p className="text-xs text-slate-700 leading-relaxed">
+              The client provides full names and valid travel documents for every passenger, and pet passports where pets travel, no later than <span className="bg-[#FEF3C7] text-[#92400E] px-1 py-0.5 rounded text-[11px] font-normal">[48 hours]</span> before departure. Luggage beyond what is stated in the quotation may not fit the aircraft.
+            </p>
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="mt-8 pt-4 border-t border-gray-200 text-[10px] text-gray-500 flex justify-between items-end">
+        {/* Footer Page 1 */}
+        <DocumentFooter leftText={footerRef} currentPage={1} totalPages={2} />
+      </div>
+
+      {/* ================= PAGE 2 ================= */}
+      <div className="doc-page min-h-[1123px] bg-white p-10 sm:p-12 rounded-sm shadow-xl border border-slate-200 mb-8 print:mb-0 print:border-none print:shadow-none print:p-0 flex flex-col justify-between box-border">
+        <div className="space-y-6">
+          <DocumentHeader booking={booking} />
+
+          {/* 5 · TERMS AND CONDITIONS */}
           <div>
-            <p className="font-semibold text-gray-800">{operator.companyName}</p>
-            <p>VAT no: {operator.vatNumber} • {operator.commercialRegistry}</p>
+            <h3 className="text-[10px] font-bold text-slate-900 tracking-wider uppercase mb-3">
+              5 · TERMS AND CONDITIONS
+            </h3>
+            <div className="border border-dashed border-[#C5A880] rounded-xl p-6 bg-[#FCFAF7] min-h-[500px]">
+              <p className="mb-4">
+                <span className="bg-[#FEF3C7] text-[#92400E] px-1.5 py-0.5 rounded text-xs font-medium">
+                  [Full terms and conditions, supplied by your lawyer.]
+                </span>
+              </p>
+              <p className="text-xs text-slate-700 leading-relaxed mb-4">
+                Typically covers: the broker's role and the operating carrier's responsibility for the flight · aircraft substitution · delays, weather and air-traffic restrictions · the operator's right to refuse carriage · dangerous goods · passenger conduct · liability limits and insurance · force majeure · data protection (passenger data) · governing law and jurisdiction.
+              </p>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                The app inserts the current version of these terms from Settings, so every agreement carries the version that applied on the day it was issued.
+              </p>
+            </div>
           </div>
-          <div className="text-right">
-            <p className="font-bold text-gray-900">Charter Agreement</p>
-            <p className="font-mono text-gray-600">Ref: CA-{tripNumber}</p>
+
+          {/* Confirmation Text */}
+          <p className="text-xs text-slate-800 leading-relaxed pt-1">
+            By signing, the client confirms the flights, the price and the terms above, and that the person signing is authorised to sign for the client.
+          </p>
+
+          {/* Signatures */}
+          <div className="grid grid-cols-2 gap-10 pt-4">
+            <div>
+              <p className="text-[10px] font-bold text-slate-900 tracking-wider uppercase mb-3">
+                FOR THE CLIENT
+              </p>
+              <div className="border-t border-slate-300 pt-3 text-xs space-y-1">
+                <p className="font-semibold text-slate-900">{client?.fullName || "Ifeoma Bello"}, Managing Director</p>
+                <p className="text-slate-700">{clientName}</p>
+                <p className="text-slate-500 pt-2 font-mono">Date ____________ Place ____________</p>
+              </div>
+            </div>
+
+            <div>
+              <p className="text-[10px] font-bold text-slate-900 tracking-wider uppercase mb-3">
+                FOR THE BROKER
+              </p>
+              <div className="border-t border-slate-300 pt-3 text-xs space-y-1">
+                <p className="font-semibold text-slate-900">
+                  <span className="bg-[#FEF3C7] text-[#92400E] px-1 py-0.5 rounded text-[11px] font-normal">[Authorised signatory]</span>
+                </p>
+                <p className="text-slate-700">
+                  <span className="bg-[#FEF3C7] text-[#92400E] px-1 py-0.5 rounded text-[11px] font-normal">[Company legal name]</span>
+                </p>
+                <p className="text-slate-500 pt-2 font-mono">Date ____________ Place ____________</p>
+              </div>
+            </div>
           </div>
+
+          <p className="text-[10px] text-slate-500 pt-2">
+            Signed electronically: the e-signature certificate (signer, time, IP) is attached as the last page.
+          </p>
         </div>
+
+        {/* Footer Page 2 */}
+        <DocumentFooter leftText={footerRef} currentPage={2} totalPages={2} />
       </div>
     </div>
   );
