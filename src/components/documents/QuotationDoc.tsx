@@ -146,6 +146,11 @@ export default function QuotationDoc({ booking }: QuotationDocProps) {
                         <td className="py-2.5 px-2">
                           <div className="font-semibold text-slate-900">{destIcao} {destCity}</div>
                           <div className="text-[11px] text-slate-500">FBO {destFbo}</div>
+                          {booking.tripType === "multi_leg" && leg.aircraftType && (
+                            <div className="text-[10px] text-amber-700 font-mono font-bold mt-0.5">
+                              ✈ {leg.aircraftType}
+                            </div>
+                          )}
                         </td>
                         <td className="py-2.5 px-2 text-center font-mono text-slate-800">{leg.departureTimeLocal || "08:30"}</td>
                         <td className="py-2.5 px-2 text-center font-mono text-slate-800">{leg.arrivalTimeLocal || "14:00"}</td>

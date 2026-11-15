@@ -49,7 +49,8 @@ import {
   CheckSquare,
   Camera,
   Upload,
-  RotateCcw
+  RotateCcw,
+  Lock
 } from "lucide-react";
 
 interface QuoteLegInput {
@@ -378,13 +379,13 @@ export default function GenerateQuoteView() {
 
     const lastLeg = activeLegs[activeLegs.length - 1];
     const originIcao = lastLeg ? lastLeg.destIcao : "LSGG";
-    const destIcao = "LFPB";
+    const destIcao = originIcao === "LFPB" ? "LFMN" : "LFPB";
     const newLeg = createQuoteLegInput(
       originIcao,
       destIcao,
       lastLeg?.flightDate || new Date().toISOString().slice(0, 10),
       lastLeg?.paxCount || 2,
-      selectedAircraftId,
+      lastLeg?.aircraftId || selectedAircraftId,
       "14:00",
     );
     setRouteState((current) => ({
@@ -411,37 +412,64 @@ export default function GenerateQuoteView() {
         createQuoteLegInput("LSGG", "LIMJ", new Date().toISOString().slice(0, 10), 2, selectedAircraftId, "11:00");
 
       if (nextTripType === "one_way") {
-        return { tripType: nextTripType, legs: [firstLeg] };
+        // In one-way, retain existing legs in memory so toggling back preserves return settings
+        return {
+          tripType: nextTripType,
+          legs: [{ ...firstLeg, aircraftId: selectedAircraftId }, ...currentLegs.slice(1)],
+        };
       }
 
-      const returnLeg =
+      if (nextTripType === "round_trip") {
+        // In round-trip, ensure return leg exists and has origin locked to outbound dest and dest locked to outbound origin
+        const returnLeg =
+          currentLegs[1] ||
+          createQuoteLegInput(
+            firstLeg.destIcao,
+            firstLeg.originIcao,
+            firstLeg.flightDate,
+            firstLeg.paxCount,
+            selectedAircraftId,
+            "15:00",
+          );
+
+        const syncedReturnLeg = updateQuoteLegArrival(
+          updateQuoteLegAirport(
+            updateQuoteLegAirport(
+              {
+                ...returnLeg,
+                aircraftId: selectedAircraftId,
+                paxCount: firstLeg.paxCount,
+              },
+              "originIcao",
+              firstLeg.destIcao,
+            ),
+            "destIcao",
+            firstLeg.originIcao,
+          ),
+        );
+
+        return {
+          tripType: nextTripType,
+          legs: [{ ...firstLeg, aircraftId: selectedAircraftId }, syncedReturnLeg, ...currentLegs.slice(2)],
+        };
+      }
+
+      // nextTripType === "multi_leg"
+      // Ensure at least 2 legs are available with full flexibility for airports and jets
+      const secondLeg =
         currentLegs[1] ||
         createQuoteLegInput(
           firstLeg.destIcao,
-          firstLeg.originIcao,
+          firstLeg.destIcao === "LFPB" ? "LFMN" : "LFPB",
           firstLeg.flightDate,
           firstLeg.paxCount,
           selectedAircraftId,
           "15:00",
         );
 
-      if (nextTripType === "multi_leg") {
-        return {
-          tripType: nextTripType,
-          legs: [firstLeg, returnLeg, ...currentLegs.slice(2)],
-        };
-      }
-
-      const syncedReturnLeg = updateQuoteLegArrival(
-        updateQuoteLegAirport(
-          updateQuoteLegAirport(returnLeg, "originIcao", firstLeg.destIcao),
-          "destIcao",
-          firstLeg.originIcao,
-        ),
-      );
       return {
         tripType: nextTripType,
-        legs: [firstLeg, syncedReturnLeg],
+        legs: [firstLeg, secondLeg, ...currentLegs.slice(2)],
       };
     });
   };
@@ -471,15 +499,17 @@ export default function GenerateQuoteView() {
         updated[idx] = updateQuoteLegArrival(updated[idx]);
       }
 
-      if (
-        current.tripType === "round_trip" &&
-        idx === 0 &&
-        (field === "originIcao" || field === "destIcao")
-      ) {
-        const returnField = field === "originIcao" ? "destIcao" : "originIcao";
-        updated[1] = updateQuoteLegArrival(
-          updateQuoteLegAirport(updated[1], returnField, val),
-        );
+      // If round trip and changing outbound leg (idx 0), lock & sync return leg (idx 1)
+      if (current.tripType === "round_trip" && idx === 0 && updated.length > 1) {
+        if (field === "originIcao" || field === "destIcao") {
+          const returnField = field === "originIcao" ? "destIcao" : "originIcao";
+          updated[1] = updateQuoteLegArrival(
+            updateQuoteLegAirport(updated[1], returnField, val),
+          );
+        }
+        if (field === "paxCount") {
+          updated[1] = { ...updated[1], paxCount: val };
+        }
       }
 
       return { ...current, legs: updated };
@@ -845,15 +875,15 @@ export default function GenerateQuoteView() {
                 className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 text-xs font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
                 aria-label="Trip type"
               >
-                <option value="round_trip">Round Trip</option>
+                <option value="round_trip">Round-Trip</option>
                 <option value="one_way">One-Way Charter</option>
-                <option value="multi_leg">Multi-Leg Itinerary</option>
+                <option value="multi_leg">Multiple Legs</option>
               </select>
               <p className="mt-1.5 text-[10px] leading-relaxed text-[#0F1420]/70" aria-live="polite">
-                {tripType === "one_way" && "One-way route · 1 flight leg"}
-                {tripType === "round_trip" && "Round trip · 2 legs; return airports follow the outbound route"}
+                {tripType === "one_way" && "One-way route · 1 flight leg input"}
+                {tripType === "round_trip" && "Round-trip route · 2 legs (return departure locked to leg 1 arrival)"}
                 {tripType === "multi_leg" &&
-                  `Multi-leg itinerary · ${activeLegs.length} flight legs; airports are flexible and more legs can be added below`}
+                  `Multiple legs · ${activeLegs.length} flight legs (flexible airports & individual jet options per leg)`}
               </p>
             </div>
 
@@ -1028,9 +1058,27 @@ export default function GenerateQuoteView() {
               </h3>
             </div>
             <span className="text-xs text-[#0F1420]/70 font-mono">
-              Selected: <strong className="text-[#0F1420]">{effectiveAircraft.name}</strong>
+              {tripType === "multi_leg" ? (
+                <>Primary Fleet Baseline: <strong className="text-[#0F1420]">{effectiveAircraft.name}</strong></>
+              ) : (
+                <>Selected: <strong className="text-[#0F1420]">{effectiveAircraft.name}</strong></>
+              )}
             </span>
           </div>
+
+          {tripType === "multi_leg" && (
+            <div className="p-3.5 bg-amber-500/10 border border-[#C9A052]/40 rounded-xl flex items-start gap-3 text-xs text-[#0F1420]">
+              <Sparkles className="w-4 h-4 text-[#C9A052] shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold font-mono uppercase text-[#9A7A35] block">
+                  Multiple Legs Mode Active — Individual Jet Selection Enabled
+                </span>
+                <span className="text-[11px] text-[#0F1420]/80">
+                  You can assign different aircraft to individual legs below in Section 3. The aircraft configured here sets the default proposal specifications and imagery.
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* Searchable Aircraft Selector (Input + Dropdown) */}
           <div className="relative">
@@ -1347,8 +1395,10 @@ export default function GenerateQuoteView() {
               <h3 className="text-sm font-bold font-mono uppercase tracking-wider text-[#0F1420]">
                 3. Flight Routing, Airport Names & Respective FBO Handling
               </h3>
-              <span className="text-[10px] font-mono font-bold text-[#9A7A35] bg-[#C9A052]/10 border border-[#C9A052]/20 rounded-full px-2 py-1">
-                {activeLegs.length} {activeLegs.length === 1 ? "LEG" : "LEGS"}
+              <span className="text-[10px] font-mono font-bold text-[#9A7A35] bg-[#C9A052]/10 border border-[#C9A052]/20 rounded-full px-2.5 py-1">
+                {tripType === "one_way" && "1 LEG (ONE-WAY CHARTER)"}
+                {tripType === "round_trip" && "2 LEGS (ROUND-TRIP ROUTE)"}
+                {tripType === "multi_leg" && `${activeLegs.length} LEGS (MULTIPLE LEGS)`}
               </span>
             </div>
 
@@ -1383,13 +1433,29 @@ export default function GenerateQuoteView() {
                 >
                   {/* Leg Header Badge & Actions */}
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-[#E0DAD0] pb-3 gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="h-6 w-6 rounded-full bg-[#0F1420] text-[#C9A052] font-mono font-bold text-xs flex items-center justify-center">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="h-6 w-6 rounded-full bg-[#0F1420] text-[#C9A052] font-mono font-bold text-xs flex items-center justify-center shrink-0">
                         {index + 1}
                       </span>
                       <span className="text-xs font-mono font-extrabold text-[#0F1420]">
-                        Flight Leg #{index + 1}: {origAirport.city} ({origAirport.icao}) → {destAirport.city} ({destAirport.icao})
+                        {tripType === "round_trip" && index === 0 && (
+                          `Flight Leg #1 (Outbound): ${origAirport.city} (${origAirport.icao}) → ${destAirport.city} (${destAirport.icao})`
+                        )}
+                        {tripType === "round_trip" && index === 1 && (
+                          `Flight Leg #2 (Return): ${origAirport.city} (${origAirport.icao}) → ${destAirport.city} (${destAirport.icao})`
+                        )}
+                        {tripType === "one_way" && (
+                          `Flight Leg #1 (One-Way): ${origAirport.city} (${origAirport.icao}) → ${destAirport.city} (${destAirport.icao})`
+                        )}
+                        {tripType === "multi_leg" && (
+                          `Flight Leg #${index + 1}: ${origAirport.city} (${origAirport.icao}) → ${destAirport.city} (${destAirport.icao})`
+                        )}
                       </span>
+                      {tripType === "round_trip" && index === 1 && (
+                        <span className="text-[10px] font-mono font-bold text-amber-800 bg-amber-100 border border-amber-300 rounded px-2 py-0.5 flex items-center gap-1">
+                          <Lock className="w-3 h-3" /> Return Route Locked
+                        </span>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -1467,38 +1533,74 @@ export default function GenerateQuoteView() {
                       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-3 text-xs">
                         {/* Origin Airport */}
                         <div className="md:col-span-2">
-                          <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                            Origin Airport
-                          </label>
-                          <AirportSearchSelect
-                            value={leg.originIcao}
-                            onChange={(val) => handleLegChange(index, "originIcao", val)}
-                            disabled={tripType === "round_trip" && index === 1}
-                          />
-                          {tripType === "round_trip" && index === 1 && (
-                            <p className="mt-1 text-[10px] text-gray-500">Linked to the outbound destination.</p>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 flex items-center gap-1">
+                              <span>Origin Airport</span>
+                              {tripType === "round_trip" && index === 1 && (
+                                <span className="text-[9px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.2 rounded border border-amber-300 flex items-center gap-0.5">
+                                  <Lock className="w-2.5 h-2.5" /> Locked to Leg 1 Arrival
+                                </span>
+                              )}
+                            </label>
+                          </div>
+                          {tripType === "round_trip" && index === 1 ? (
+                            <div className="w-full bg-[#EDE9DF]/80 border border-[#D5CEBF] rounded-lg px-2.5 py-2 text-xs text-[#0F1420] font-mono font-bold flex items-center justify-between shadow-xs cursor-not-allowed">
+                              <span className="truncate">
+                                [{origAirport.icao}] {origAirport.city} — {origAirport.name}
+                              </span>
+                              <Lock className="w-3.5 h-3.5 text-amber-700 shrink-0 ml-2" />
+                            </div>
+                          ) : (
+                            <AirportSearchSelect
+                              value={leg.originIcao}
+                              onChange={(val) => handleLegChange(index, "originIcao", val)}
+                            />
                           )}
-                          <p className="text-[10px] text-gray-500 mt-1 truncate">
-                            {origAirport.name} ({origAirport.country})
-                          </p>
+                          {tripType === "round_trip" && index === 1 ? (
+                            <p className="mt-1 text-[10px] text-amber-800 font-medium">
+                              Automatically locked to the arrival airport of Leg #1 ({origAirport.name}).
+                            </p>
+                          ) : (
+                            <p className="text-[10px] text-gray-500 mt-1 truncate">
+                              {origAirport.name} ({origAirport.country})
+                            </p>
+                          )}
                         </div>
 
                         {/* Destination Airport */}
                         <div className="md:col-span-2">
-                          <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                            Destination Airport
-                          </label>
-                          <AirportSearchSelect
-                            value={leg.destIcao}
-                            onChange={(val) => handleLegChange(index, "destIcao", val)}
-                            disabled={tripType === "round_trip" && index === 1}
-                          />
-                          {tripType === "round_trip" && index === 1 && (
-                            <p className="mt-1 text-[10px] text-gray-500">Linked to the outbound origin.</p>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 flex items-center gap-1">
+                              <span>Destination Airport</span>
+                              {tripType === "round_trip" && index === 1 && (
+                                <span className="text-[9px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.2 rounded border border-amber-300 flex items-center gap-0.5">
+                                  <Lock className="w-2.5 h-2.5" /> Locked to Leg 1 Departure
+                                </span>
+                              )}
+                            </label>
+                          </div>
+                          {tripType === "round_trip" && index === 1 ? (
+                            <div className="w-full bg-[#EDE9DF]/80 border border-[#D5CEBF] rounded-lg px-2.5 py-2 text-xs text-[#0F1420] font-mono font-bold flex items-center justify-between shadow-xs cursor-not-allowed">
+                              <span className="truncate">
+                                [{destAirport.icao}] {destAirport.city} — {destAirport.name}
+                              </span>
+                              <Lock className="w-3.5 h-3.5 text-amber-700 shrink-0 ml-2" />
+                            </div>
+                          ) : (
+                            <AirportSearchSelect
+                              value={leg.destIcao}
+                              onChange={(val) => handleLegChange(index, "destIcao", val)}
+                            />
                           )}
-                          <p className="text-[10px] text-gray-500 mt-1 truncate">
-                            {destAirport.name} ({destAirport.country})
-                          </p>
+                          {tripType === "round_trip" && index === 1 ? (
+                            <p className="mt-1 text-[10px] text-amber-800 font-medium">
+                              Automatically locked to the departure airport of Leg #1 ({destAirport.name}).
+                            </p>
+                          ) : (
+                            <p className="text-[10px] text-gray-500 mt-1 truncate">
+                              {destAirport.name} ({destAirport.country})
+                            </p>
+                          )}
                         </div>
 
                         <div>
@@ -1530,25 +1632,89 @@ export default function GenerateQuoteView() {
                         </div>
                       </div>
 
-                      <div className="max-w-md">
-                        <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                          Aircraft for this leg
-                        </label>
-                        <select
-                          value={leg.aircraftId}
-                          onChange={(e) => handleLegChange(index, "aircraftId", e.target.value)}
-                          className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2.5 py-2 text-xs font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                        >
-                          {fleetData.map((aircraft) => (
-                            <option key={aircraft.id} value={aircraft.id}>
-                              {aircraft.name} — {aircraft.passengers} seats (€{aircraft.pricePerHour.toLocaleString()}/hr)
-                            </option>
-                          ))}
-                        </select>
-                        <p className="mt-1 text-[10px] text-gray-500">
-                          This aircraft applies only to Flight Leg #{index + 1}.
-                        </p>
-                      </div>
+                      {/* Aircraft / Jet Selection for this leg */}
+                      {tripType === "multi_leg" ? (
+                        <div className="p-4 bg-white rounded-xl border border-[#C9A052]/50 shadow-sm space-y-3">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-b border-[#E0DAD0] pb-2.5">
+                            <div className="flex items-center gap-2">
+                              <Sparkles className="w-4 h-4 text-[#C9A052]" />
+                              <label className="text-xs font-mono font-bold uppercase text-[#0F1420]">
+                                Jet Option for Flight Leg #{index + 1}
+                              </label>
+                            </div>
+                            <span className="text-[10px] font-mono font-bold text-[#9A7A35] bg-[#C9A052]/10 border border-[#C9A052]/30 px-2.5 py-0.5 rounded-full">
+                              Individual Leg Jet Selection Active
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 items-center">
+                            <div className="md:col-span-2">
+                              <label className="block text-[10px] font-mono text-gray-500 uppercase font-bold mb-1">
+                                Change Jet for Leg #{index + 1} (Aircraft Fleet)
+                              </label>
+                              <select
+                                value={leg.aircraftId}
+                                onChange={(e) => handleLegChange(index, "aircraftId", e.target.value)}
+                                className="w-full bg-[#FAF9F6] border border-[#E0DAD0] hover:border-[#C9A052] rounded-xl px-3 py-2 text-xs font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052] shadow-xs"
+                              >
+                                {fleetData.map((aircraft) => (
+                                  <option key={aircraft.id} value={aircraft.id}>
+                                    {aircraft.name} — {aircraft.categoryLabel} ({aircraft.passengers} seats · €{aircraft.pricePerHour.toLocaleString()}/hr)
+                                  </option>
+                                ))}
+                              </select>
+                              <p className="mt-1 text-[10px] text-gray-500">
+                                This jet and hourly charter rate apply directly to Flight Leg #{index + 1}.
+                              </p>
+                            </div>
+
+                            {/* Selected Aircraft Mini-Card for this leg */}
+                            {(() => {
+                              const legJet = fleetData.find((a) => a.id === leg.aircraftId) || currentAircraft;
+                              const dist = calculateDistanceNm(
+                                origAirport.coordinates?.lat || 46.2,
+                                origAirport.coordinates?.lng || 6.1,
+                                destAirport.coordinates?.lat || 44.4,
+                                destAirport.coordinates?.lng || 8.8
+                              );
+                              const flightMins = leg.durationOverrideMinutes || estimateFlightTimeMinutes(dist);
+                              const legFlightPrice = Math.round(Math.max(flightMins / 60, 1.2) * legJet.pricePerHour);
+
+                              return (
+                                <div className="p-3 rounded-xl bg-[#F5F2EC] border border-[#E0DAD0] flex items-center gap-3">
+                                  <img
+                                    src={legJet.imageExterior}
+                                    alt={legJet.name}
+                                    className="w-14 h-10 rounded-lg object-cover border border-[#E0DAD0] shrink-0"
+                                  />
+                                  <div className="min-w-0 flex-1 text-xs">
+                                    <div className="font-extrabold text-[#0F1420] truncate">{legJet.name}</div>
+                                    <div className="text-[10px] font-mono text-gray-500">
+                                      {legJet.passengers} Seats • €{legJet.pricePerHour.toLocaleString()}/hr
+                                    </div>
+                                    <div className="text-[11px] font-mono font-bold text-[#9A7A35] mt-0.5">
+                                      Leg Price: €{legFlightPrice.toLocaleString()}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        </div>
+                      ) : (
+                        /* In One-Way or Round-Trip: Show assigned aircraft summary pill */
+                        <div className="p-3 bg-white/80 rounded-xl border border-[#E0DAD0] flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                          <div className="flex items-center gap-2">
+                            <Plane className="w-4 h-4 text-[#C9A052]" />
+                            <span className="font-mono text-xs text-[#0F1420]">
+                              Assigned Jet: <strong>{effectiveAircraft.name}</strong> ({effectiveAircraft.passengers} seats · €{effectiveAircraft.pricePerHour.toLocaleString()}/hr)
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-mono font-bold text-gray-500 bg-[#F5F2EC] px-2 py-1 rounded border border-[#E0DAD0]">
+                            {tripType === "round_trip" ? "Round-Trip Jet (Synced from Section 2)" : "Assigned in Section 2"}
+                          </span>
+                        </div>
+                      )}
 
                       {/* Station Times, Duration Override, Timezones, and Respective FBO Dropdowns */}
                       {(() => {
@@ -1916,6 +2082,19 @@ export default function GenerateQuoteView() {
               );
             })}
           </div>
+
+          {tripType === "multi_leg" && (
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={handleAddLeg}
+                className="w-full py-3.5 border-2 border-dashed border-[#C9A052]/50 hover:border-[#C9A052] bg-white/70 hover:bg-[#FAF9F6] text-[#0F1420] rounded-2xl flex items-center justify-center gap-2 text-xs font-bold font-mono transition-all cursor-pointer shadow-xs"
+              >
+                <Plus className="w-4 h-4 text-[#C9A052]" />
+                <span>+ Add Another Flight Leg (Flexible Airports & Jet Selection)</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* SECTION 4: Concierge & Additional Services (De-Icing Options Removed as Requested) */}

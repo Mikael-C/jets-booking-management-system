@@ -454,9 +454,9 @@ export default function NewQuoteModal() {
                   onChange={(e) => setTripType(e.target.value as any)}
                   className="bg-[#080C14] border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs focus:border-gold focus:outline-none"
                 >
-                  <option value="round_trip">RoundTripPlus</option>
+                  <option value="round_trip">Round-Trip</option>
                   <option value="one_way">One-Way Charter</option>
-                  <option value="multi_leg">Multi-Leg Itinerary</option>
+                  <option value="multi_leg">Multiple Legs</option>
                 </select>
               </div>
             </div>
