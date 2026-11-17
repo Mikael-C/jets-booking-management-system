@@ -53,7 +53,11 @@ function getContactTripRole(booking: Booking, contact: ContactRecord): string {
   return isLeadPassenger ? "Lead Pax" : "Guest";
 }
 
-export default function ContactsView() {
+interface ContactsViewProps {
+  selectedContactId?: string;
+}
+
+export default function ContactsView({ selectedContactId }: ContactsViewProps = {}) {
   const { contacts, addContact, updateContact, deleteContact, accounts, role, getTripHistoryForContact, openDocument } = useAviation();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedLetter, setSelectedLetter] = useState<string>("all");
@@ -84,6 +88,15 @@ export default function ContactsView() {
       active = false;
     };
   }, [viewingContact?.id]);
+
+  useEffect(() => {
+    if (selectedContactId) {
+      const match = contacts.find((c) => c.id === selectedContactId);
+      if (match) {
+        setViewingContact(match);
+      }
+    }
+  }, [selectedContactId, contacts]);
 
   const tripHistory = contactTripHistory ??
     (viewingContact ? getTripHistoryForContact(viewingContact.id) : []);

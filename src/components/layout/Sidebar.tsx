@@ -32,7 +32,8 @@ import {
   PlusCircle,
   User,
   MessageSquare,
-  MapPin
+  MapPin,
+  Settings as SettingsIcon
 } from "lucide-react";
 
 export default function Sidebar() {
@@ -129,9 +130,10 @@ export default function Sidebar() {
         {isStaffRole && (
           <div className="space-y-1">
             <div className="px-3 pb-2 text-[10px] font-mono uppercase tracking-wider text-gray-400 font-bold">
-              Operations Control
+              Operations
             </div>
 
+            {/* 1. Overview */}
             <button
               onClick={() => setActiveNav("overview")}
               className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
@@ -146,25 +148,27 @@ export default function Sidebar() {
               </div>
             </button>
 
+            {/* 2. Requests */}
             <button
-              onClick={() => setActiveNav("payments")}
+              onClick={() => setActiveNav("agent_requests")}
               className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "payments"
+                activeNav === "agent_requests"
                   ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
                   : "text-gray-300 hover:text-white hover:bg-[#141A29]"
               }`}
             >
               <div className="flex items-center gap-2.5">
-                <CreditCard className={`w-4 h-4 ${activeNav === "payments" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Payments</span>
+                <Inbox className={`w-4 h-4 ${activeNav === "agent_requests" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
+                <span>Requests</span>
               </div>
+              {pendingRequestsCount > 0 && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold font-mono bg-amber-400 text-[#0F1420] animate-pulse">
+                  {pendingRequestsCount} new
+                </span>
+              )}
             </button>
 
-            {/* Direct Document Generators */}
-            <div className="pt-4 px-3 pb-2 text-[10px] font-mono uppercase tracking-wider text-gray-400 font-bold">
-              Generate Actions
-            </div>
-
+            {/* 3. Quotes */}
             <button
               onClick={() => setActiveNav("quotes")}
               className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
@@ -177,9 +181,9 @@ export default function Sidebar() {
                 <FilePlus2 className={`w-4 h-4 ${activeNav === "quotes" || activeNav === "generate_quote" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
                 <span>Quotes</span>
               </div>
-              <ChevronRight className={`w-3.5 h-3.5 ${activeNav === "quotes" || activeNav === "generate_quote" ? "text-[#0F1420]" : "text-gray-500"}`} />
             </button>
 
+            {/* 4. Bookings */}
             <button
               onClick={() => setActiveNav("bookings")}
               className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
@@ -199,6 +203,37 @@ export default function Sidebar() {
               </span>
             </button>
 
+            {/* 5. Payments */}
+            <button
+              onClick={() => setActiveNav("payments")}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeNav === "payments"
+                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
+                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <CreditCard className={`w-4 h-4 ${activeNav === "payments" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
+                <span>Payments</span>
+              </div>
+            </button>
+
+            {/* 6. Invoices & Credit Notes */}
+            <button
+              onClick={() => setActiveNav("invoices")}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeNav === "invoices" || activeNav === "generate_invoice"
+                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
+                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <Receipt className={`w-4 h-4 ${activeNav === "invoices" || activeNav === "generate_invoice" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
+                <span>Invoices & credit notes</span>
+              </div>
+            </button>
+
+            {/* 7. Flight Briefs */}
             <button
               onClick={() => setActiveNav("flight_briefs")}
               className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
@@ -211,24 +246,9 @@ export default function Sidebar() {
                 <Compass className={`w-4 h-4 ${activeNav === "flight_briefs" || activeNav === "generate_brief" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
                 <span>Flight briefs</span>
               </div>
-              <ChevronRight className={`w-3.5 h-3.5 ${activeNav === "flight_briefs" || activeNav === "generate_brief" ? "text-[#0F1420]" : "text-gray-500"}`} />
             </button>
 
-            <button
-              onClick={() => setActiveNav("invoices")}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "invoices" || activeNav === "generate_invoice"
-                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
-                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Receipt className={`w-4 h-4 ${activeNav === "invoices" || activeNav === "generate_invoice" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Invoices</span>
-              </div>
-              <ChevronRight className={`w-3.5 h-3.5 ${activeNav === "invoices" || activeNav === "generate_invoice" ? "text-[#0F1420]" : "text-gray-500"}`} />
-            </button>
-
+            {/* 8. Contracts */}
             <button
               onClick={() => setActiveNav("contracts")}
               className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
@@ -241,7 +261,6 @@ export default function Sidebar() {
                 <ScrollText className={`w-4 h-4 ${activeNav === "contracts" || activeNav === "generate_contract" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
                 <span>Contracts</span>
               </div>
-              <ChevronRight className={`w-3.5 h-3.5 ${activeNav === "contracts" || activeNav === "generate_contract" ? "text-[#0F1420]" : "text-gray-500"}`} />
             </button>
 
             {/* Directories Section */}
@@ -249,6 +268,7 @@ export default function Sidebar() {
               Directories
             </div>
 
+            {/* 9. Accounts */}
             <button
               onClick={() => setActiveNav("accounts")}
               className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
@@ -268,6 +288,7 @@ export default function Sidebar() {
               </span>
             </button>
 
+            {/* 10. Contacts */}
             <button
               onClick={() => setActiveNav("contacts")}
               className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
@@ -287,6 +308,7 @@ export default function Sidebar() {
               </span>
             </button>
 
+            {/* 11. Agents */}
             <button
               onClick={() => setActiveNav("agents")}
               className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
@@ -301,6 +323,7 @@ export default function Sidebar() {
               </div>
             </button>
 
+            {/* 12. Operators */}
             <button
               onClick={() => setActiveNav("operators")}
               className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
@@ -320,6 +343,7 @@ export default function Sidebar() {
               </span>
             </button>
 
+            {/* 13. Airports */}
             <button
               onClick={() => setActiveNav("airports")}
               className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
@@ -330,66 +354,31 @@ export default function Sidebar() {
             >
               <div className="flex items-center gap-2.5">
                 <MapPin className={`w-4 h-4 ${activeNav === "airports" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Airports</span>
+                <span>Airports & FBOs</span>
               </div>
             </button>
 
-            {/* Broker Queue */}
+            {/* Governance & Configuration */}
             <div className="pt-4 px-3 pb-2 text-[10px] font-mono uppercase tracking-wider text-gray-400 font-bold">
-              Broker Queue
+              Configuration & System
             </div>
 
+            {/* 14. Settings */}
             <button
-              onClick={() => setActiveNav("agent_requests")}
+              onClick={() => setActiveNav("settings")}
               className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "agent_requests"
+                activeNav === "settings"
                   ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
                   : "text-gray-300 hover:text-white hover:bg-[#141A29]"
               }`}
             >
               <div className="flex items-center gap-2.5">
-                <Inbox className={`w-4 h-4 ${activeNav === "agent_requests" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Agent Requests</span>
+                <SettingsIcon className={`w-4 h-4 ${activeNav === "settings" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
+                <span>Settings</span>
               </div>
-              {pendingRequestsCount > 0 && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold font-mono bg-amber-400 text-[#0F1420] animate-pulse">
-                  {pendingRequestsCount} new
-                </span>
-              )}
-            </button>
-
-            {/* Client Portal & Notifications */}
-            <div className="pt-4 px-3 pb-2 text-[10px] font-mono uppercase tracking-wider text-gray-400 font-bold">
-              Client Portal & Comms
-            </div>
-
-            <button
-              onClick={() => setActiveNav("client_portal")}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "client_portal"
-                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
-                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Send className={`w-4 h-4 ${activeNav === "client_portal" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Client Portal</span>
-              </div>
-              <ChevronRight className={`w-3.5 h-3.5 ${activeNav === "client_portal" ? "text-[#0F1420]" : "text-gray-500"}`} />
-            </button>
-
-            <button
-              onClick={() => setActiveNav("notifications")}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "notifications"
-                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
-                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Sparkles className={`w-4 h-4 ${activeNav === "notifications" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Notification Settings</span>
-              </div>
+              <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-[#C9A052]/20 text-[#C9A052] font-bold">
+                R-039
+              </span>
             </button>
 
             <button
@@ -411,11 +400,6 @@ export default function Sidebar() {
               )}
             </button>
 
-            {/* Governance & Activities */}
-            <div className="pt-4 px-3 pb-2 text-[10px] font-mono uppercase tracking-wider text-gray-400 font-bold">
-              Governance & Activities
-            </div>
-
             <button
               onClick={() => setActiveNav("activities")}
               className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
@@ -431,27 +415,6 @@ export default function Sidebar() {
               <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" title="Live Events Active" />
             </button>
 
-            {(role === "super_admin" || role === "admin") && (
-              <button
-                onClick={() => setActiveNav("users")}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                  activeNav === "users" || activeNav === "user_management"
-                    ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
-                    : "text-gray-300 hover:text-white hover:bg-[#141A29]"
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <UserCheck className={`w-4 h-4 ${activeNav === "users" || activeNav === "user_management" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                  <span>User Management</span>
-                </div>
-                {role === "super_admin" && (
-                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[#C9A052]/20 text-[#C9A052] font-bold">
-                    RBAC
-                  </span>
-                )}
-              </button>
-            )}
-
             <button
               onClick={() => setActiveNav("profile")}
               className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
@@ -462,9 +425,8 @@ export default function Sidebar() {
             >
               <div className="flex items-center gap-2.5">
                 <User className={`w-4 h-4 ${activeNav === "profile" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Profile & Settings</span>
+                <span>Profile</span>
               </div>
-              <ChevronRight className={`w-3.5 h-3.5 ${activeNav === "profile" ? "text-[#0F1420]" : "text-gray-500"}`} />
             </button>
           </div>
         )}

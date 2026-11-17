@@ -2,6 +2,8 @@
 
 import React from "react";
 import { Booking } from "@/types/aviation";
+import { useAviation } from "@/lib/aviationContext";
+import { initialSettings } from "@/data/initialSettings";
 import DocumentHeader from "./DocumentHeader";
 import DocumentFooter from "./DocumentFooter";
 import { formatDocCurrency } from "./QuotationDoc";
@@ -11,6 +13,12 @@ interface CharterAgreementDocProps {
 }
 
 export default function CharterAgreementDoc({ booking }: CharterAgreementDocProps) {
+  const { settings } = useAviation();
+  const company = settings?.company || initialSettings.company;
+  const cancellationPolicy = settings?.cancellationPolicy || initialSettings.cancellationPolicy;
+  const activeTerms = settings?.termsVersions?.find((t) => t.isActive) || settings?.termsVersions?.[0] || initialSettings.termsVersions[0];
+  const cardFeePercent = settings?.pricing?.cardFeePercent ?? initialSettings.pricing?.cardFeePercent ?? 3.5;
+
   const {
     client,
     aircraft,
@@ -78,11 +86,12 @@ export default function CharterAgreementDoc({ booking }: CharterAgreementDocProp
               <p className="text-[10px] font-bold text-slate-900 tracking-wider uppercase mb-1.5">
                 THE BROKER
               </p>
-              <p className="text-slate-700 leading-relaxed">
-                <span className="bg-[#FEF3C7] text-[#92400E] px-1 py-0.5 rounded text-[11px] font-normal">[Company legal name]</span> , acting as charter broker and contracting party with the client, arranging the flights with an approved air operator (the operating carrier).
+              <p className="font-bold text-slate-900 text-sm">{company.legalEntity}</p>
+              <p className="text-slate-700 leading-relaxed mt-0.5">
+                Acting as charter broker and contracting party with the client, arranging the flights with an approved air operator (the operating carrier).
               </p>
-              <p className="text-slate-500 mt-1.5">
-                <span className="bg-[#FEF3C7] text-[#92400E] px-1 py-0.5 rounded text-[11px] font-normal">[Registered address · Company no.]</span>
+              <p className="text-slate-500 mt-1 font-mono text-[11px]">
+                {company.address} · Reg. {company.registrationNumber}
               </p>
             </div>
           </div>
@@ -155,13 +164,15 @@ export default function CharterAgreementDoc({ booking }: CharterAgreementDocProp
               </div>
               <div className="py-2.5 flex justify-between items-center">
                 <span className="text-slate-700">Payment due</span>
-                <span className="bg-[#FEF3C7] text-[#92400E] px-1 py-0.5 rounded text-[11px] font-normal">
-                  [e.g. 100 % on signature, and in all cases before departure]
+                <span className="text-slate-900 font-medium font-sans">
+                  100% upon signature, and in all cases prior to departure
                 </span>
               </div>
               <div className="py-2.5 flex justify-between items-center">
                 <span className="text-slate-700">Method</span>
-                <span className="text-slate-800 font-medium">Bank transfer, or card with 3.5 % fee</span>
+                <span className="text-slate-800 font-medium">
+                  Bank transfer, or credit card (+{cardFeePercent}% card fee)
+                </span>
               </div>
             </div>
           </div>
@@ -179,34 +190,16 @@ export default function CharterAgreementDoc({ booking }: CharterAgreementDocProp
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs">
-                <tr>
-                  <td className="py-2 text-slate-800">
-                    <span className="bg-[#FEF3C7] text-[#92400E] px-1 py-0.5 rounded text-[11px] font-normal">[More than … days]</span>
-                  </td>
-                  <td className="py-2 text-right text-slate-800">
-                    <span className="bg-[#FEF3C7] text-[#92400E] px-1 py-0.5 rounded text-[11px] font-normal">[… %]</span>
-                  </td>
-                </tr>
-                <tr>
-                  <td className="py-2 text-slate-800">
-                    <span className="bg-[#FEF3C7] text-[#92400E] px-1 py-0.5 rounded text-[11px] font-normal">[… to … days]</span>
-                  </td>
-                  <td className="py-2 text-right text-slate-800">
-                    <span className="bg-[#FEF3C7] text-[#92400E] px-1 py-0.5 rounded text-[11px] font-normal">[… %]</span>
-                  </td>
-                </tr>
-                <tr>
-                  <td className="py-2 text-slate-800">
-                    <span className="bg-[#FEF3C7] text-[#92400E] px-1 py-0.5 rounded text-[11px] font-normal">[Less than … hours, or no-show]</span>
-                  </td>
-                  <td className="py-2 text-right text-slate-800">
-                    <span className="bg-[#FEF3C7] text-[#92400E] px-1 py-0.5 rounded text-[11px] font-normal">[100 %]</span>
-                  </td>
-                </tr>
+                {cancellationPolicy.map((step, idx) => (
+                  <tr key={idx}>
+                    <td className="py-2 text-slate-800">{step.description}</td>
+                    <td className="py-2 text-right text-slate-900 font-mono font-semibold">{step.feePercentage}%</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
             <p className="text-[10px] text-slate-500 mt-2">
-              Placeholder until the cancellation policy (Q-02) is decided.
+              Cancellation policy governed strictly by standard terms agreed upon execution.
             </p>
           </div>
 
@@ -216,7 +209,7 @@ export default function CharterAgreementDoc({ booking }: CharterAgreementDocProp
               4 · PASSENGERS AND DOCUMENTS
             </h3>
             <p className="text-xs text-slate-700 leading-relaxed">
-              The client provides full names and valid travel documents for every passenger, and pet passports where pets travel, no later than <span className="bg-[#FEF3C7] text-[#92400E] px-1 py-0.5 rounded text-[11px] font-normal">[48 hours]</span> before departure. Luggage beyond what is stated in the quotation may not fit the aircraft.
+              The client provides full names and valid travel documents for every passenger, and pet passports where pets travel, no later than 48 hours before departure. Luggage beyond what is stated in the quotation may not fit the aircraft.
             </p>
           </div>
         </div>
@@ -232,20 +225,33 @@ export default function CharterAgreementDoc({ booking }: CharterAgreementDocProp
 
           {/* 5 · TERMS AND CONDITIONS */}
           <div>
-            <h3 className="text-[10px] font-bold text-slate-900 tracking-wider uppercase mb-3">
-              5 · TERMS AND CONDITIONS
-            </h3>
-            <div className="border border-dashed border-[#C5A880] rounded-xl p-6 bg-[#FCFAF7] min-h-[500px]">
-              <p className="mb-4">
-                <span className="bg-[#FEF3C7] text-[#92400E] px-1.5 py-0.5 rounded text-xs font-medium">
-                  [Full terms and conditions, supplied by your lawyer.]
-                </span>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-[10px] font-bold text-slate-900 tracking-wider uppercase m-0">
+                5 · TERMS AND CONDITIONS
+              </h3>
+              <span className="font-mono text-[10px] text-slate-500 font-semibold">
+                Version: {activeTerms.version}
+              </span>
+            </div>
+
+            <div className="border border-slate-200 rounded-xl p-5 bg-[#FCFAF7] space-y-3 text-xs leading-relaxed text-slate-700">
+              <p className="font-semibold text-slate-900">
+                Standard Charter Conditions ({activeTerms.version})
               </p>
-              <p className="text-xs text-slate-700 leading-relaxed mb-4">
-                Typically covers: the broker's role and the operating carrier's responsibility for the flight · aircraft substitution · delays, weather and air-traffic restrictions · the operator's right to refuse carriage · dangerous goods · passenger conduct · liability limits and insurance · force majeure · data protection (passenger data) · governing law and jurisdiction.
+              <p>
+                1. <strong>Broker Capacity:</strong> The broker acts exclusively as an intermediary between the charterer and the operating carrier. All flights are performed under the air carrier's Air Operator Certificate (AOC).
               </p>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                The app inserts the current version of these terms from Settings, so every agreement carries the version that applied on the day it was issued.
+              <p>
+                2. <strong>Operational Control & Weather:</strong> Operational decisions, including route alterations, weather diversions, and safety determinations, remain at the sole discretion of the aircraft commander (PIC).
+              </p>
+              <p>
+                3. <strong>Substitutions:</strong> In the event of aircraft unavailability due to technical or operational factors, the broker will use reasonable endeavours to provide a comparable aircraft substitute.
+              </p>
+              <p>
+                4. <strong>Passenger Compliance:</strong> Passengers must adhere to international customs, immigration, and aviation security requirements, and present valid biometric travel documents prior to embarkation.
+              </p>
+              <p>
+                5. <strong>Governing Law & Jurisdiction:</strong> This agreement and any non-contractual obligations arising out of or in connection with it shall be governed by and construed in accordance with the laws of {company.courtOfJurisdiction}. The parties irrevocably agree that the courts of {company.courtOfJurisdiction} shall have exclusive jurisdiction.
               </p>
             </div>
           </div>
@@ -273,19 +279,15 @@ export default function CharterAgreementDoc({ booking }: CharterAgreementDocProp
                 FOR THE BROKER
               </p>
               <div className="border-t border-slate-300 pt-3 text-xs space-y-1">
-                <p className="font-semibold text-slate-900">
-                  <span className="bg-[#FEF3C7] text-[#92400E] px-1 py-0.5 rounded text-[11px] font-normal">[Authorised signatory]</span>
-                </p>
-                <p className="text-slate-700">
-                  <span className="bg-[#FEF3C7] text-[#92400E] px-1 py-0.5 rounded text-[11px] font-normal">[Company legal name]</span>
-                </p>
+                <p className="font-semibold text-slate-900">Authorised Signatory</p>
+                <p className="text-slate-700">{company.legalEntity}</p>
                 <p className="text-slate-500 pt-2 font-mono">Date ____________ Place ____________</p>
               </div>
             </div>
           </div>
 
           <p className="text-[10px] text-slate-500 pt-2">
-            Signed electronically: the e-signature certificate (signer, time, IP) is attached as the last page.
+            Signed electronically: the e-signature certificate (signer, time, IP) is attached as the last page upon digital execution.
           </p>
         </div>
 

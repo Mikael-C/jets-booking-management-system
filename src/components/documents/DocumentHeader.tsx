@@ -2,17 +2,16 @@
 
 import React from "react";
 import { Booking } from "@/types/aviation";
+import { useAviation } from "@/lib/aviationContext";
+import { initialSettings } from "@/data/initialSettings";
 
 interface DocumentHeaderProps {
   booking?: Booking;
 }
 
 export default function DocumentHeader({ booking }: DocumentHeaderProps) {
-  // Use operator info if present, with defaults matching the design specifications
-  const legalName = booking?.operator?.legalEntity || booking?.operator?.companyName ? undefined : "[Company legal name]";
-  const legalAddress = booking?.operator?.courtOfJurisdiction ? undefined : "[Registered address, Malta]";
-  const taxInfo = booking?.operator?.vatNumber ? undefined : "[Company no. · VAT no.]";
-  const contact = booking?.operator?.supportEmail ? undefined : "charter@orbelo.com · [+356 phone]";
+  const { settings } = useAviation();
+  const company = settings?.company || initialSettings.company;
 
   return (
     <div className="w-full">
@@ -26,29 +25,21 @@ export default function DocumentHeader({ booking }: DocumentHeaderProps) {
             </div>
           </div>
           <div>
-            <span className="text-xl font-bold tracking-tight text-slate-900 block leading-tight">
-              ORBELO
+            <span className="text-xl font-bold tracking-tight text-slate-900 block leading-tight font-display">
+              {company.name.toUpperCase()}
             </span>
-            <span className="text-[11px] text-slate-500 font-normal block leading-tight">
+            <span className="text-[11px] text-slate-500 font-normal block leading-tight font-sans">
               Private jet charter
             </span>
           </div>
         </div>
 
-        {/* Company Legal Information */}
-        <div className="text-right text-[11px] leading-tight text-[#8D7249] font-normal space-y-0.5">
-          <div>{booking?.operator?.legalEntity || booking?.operator?.companyName || legalName}</div>
-          <div>{booking?.operator?.courtOfJurisdiction || legalAddress}</div>
-          <div>
-            {booking?.operator?.vatNumber
-              ? `${booking.operator.commercialRegistry || "Reg. Malta"} · VAT ${booking.operator.vatNumber}`
-              : taxInfo}
-          </div>
-          <div>
-            {booking?.operator?.supportEmail
-              ? `${booking.operator.supportEmail} · ${booking.operator.supportPhone}`
-              : contact}
-          </div>
+        {/* Company Legal Information (strictly from Settings per R-027, never operator name) */}
+        <div className="text-right text-[11px] leading-tight text-[#8D7249] font-normal space-y-0.5 font-mono">
+          <div>{company.legalEntity}</div>
+          <div>{company.address}</div>
+          <div>VAT {company.vatNumber} • {company.courtOfJurisdiction}</div>
+          <div>{company.email} • {company.phone}</div>
         </div>
       </div>
 

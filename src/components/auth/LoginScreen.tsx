@@ -20,8 +20,8 @@ import {
 
 export default function LoginScreen() {
   const { login } = useAviation();
-  const [email, setEmail] = useState("superadmin@orbelo.com");
-  const [password, setPassword] = useState("orbelo2026!");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -30,14 +30,6 @@ export default function LoginScreen() {
   const [isResetOpen, setIsResetOpen] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
   const [resetSent, setResetSent] = useState(false);
-
-  const testAccounts = [
-    { label: "Super Admin", email: "superadmin@orbelo.com", desc: "Executive Overview & System Control" },
-    { label: "Admin / Sales", email: "admin@orbelo.com", desc: "Charter Bookings & Dispatch Control" },
-    { label: "Finance", email: "finance@orbelo.com", desc: "Payments & Commercial Invoices" },
-    { label: "Operations", email: "ops@orbelo.com", desc: "Flight Operations & Dispatch" },
-    { label: "Charter Agent", email: "agent@orbelo.com", desc: "Broker Quoting & Deals Pipeline" },
-  ];
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -203,36 +195,6 @@ export default function LoginScreen() {
               )}
             </button>
           </form>
-
-          {/* Test Accounts Quick Fill Helper (Pills populate input, does not act as role selector) */}
-          <div className="mt-6 pt-4 border-t border-[#E0DAD0]">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] font-mono uppercase tracking-wider text-[#0F1420]/60 font-bold">
-                Quick Demo Accounts (Click to fill email):
-              </span>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {testAccounts.map((acc) => (
-                <button
-                  key={acc.email}
-                  type="button"
-                  onClick={() => {
-                    setEmail(acc.email);
-                    setPassword("orbelo2026!");
-                    if (errorMessage) setErrorMessage("");
-                  }}
-                  className={`text-[10px] font-mono px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${
-                    email.toLowerCase() === acc.email.toLowerCase()
-                      ? "bg-[#0F1420] text-[#C9A052] border-[#0F1420] font-bold shadow-sm"
-                      : "bg-[#F5F2EC] hover:bg-[#EAE6DE] text-[#0F1420]/80 border-[#E0DAD0]"
-                  }`}
-                  title={`${acc.desc} (${acc.email})`}
-                >
-                  {acc.label}
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
       </div>
 
@@ -295,7 +257,7 @@ export default function LoginScreen() {
       {/* Footer System Status */}
       <div className="text-center text-xs text-[#0F1420]/60 pb-2">
         <p className="font-mono text-[11px]">
-          OPS Dispatch v2.4 • EASA Part-CAT & Austrian Civil Aviation Compliant • Session Security Active
+          OPS Dispatch v2.4 • Session Security Active
         </p>
       </div>
     </div>

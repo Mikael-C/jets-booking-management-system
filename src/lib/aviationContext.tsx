@@ -27,8 +27,10 @@ import {
   AppMessage,
   MessageAttachment,
   AccountRecord,
-  ContactRecord
+  ContactRecord,
+  AppSettings
 } from "@/types/aviation";
+import { initialSettings } from "@/data/initialSettings";
 import { initialBookings, defaultOperator } from "@/data/initialBookings";
 import { initialClients } from "@/data/clients";
 import { initialAccounts } from "@/data/accounts";
@@ -751,6 +753,10 @@ interface AviationContextType {
   refreshUsers: () => Promise<void>;
   refreshAuditLog: () => Promise<void>;
 
+  // Settings & Configuration (R-039)
+  settings: AppSettings;
+  updateSettings: (newSettings: Partial<AppSettings>) => void;
+
   // Navigation
   activeNav: string;
   setActiveNav: (nav: string) => void;
@@ -782,8 +788,9 @@ interface AviationContextType {
   openNewQuoteModal: () => void;
   closeNewQuoteModal: () => void;
   addBooking: (booking: Booking) => Promise<Booking>;
+  updateBooking: (bookingId: string, updates: Partial<Booking>) => void;
   updateBookingStatus: (bookingId: string, status: BookingStatus) => void;
-  updateBookingPaymentStatus: (bookingId: string, paymentStatus: Booking["paymentStatus"]) => void;
+  updateBookingPaymentStatus: (bookingId: string, paymentStatus: Booking["paymentStatus"], paymentReason?: string) => void;
   toggleChecklistItem: (bookingId: string, stepId: string) => void;
   convertQuoteToBooked: (bookingId: string, booking?: Booking) => Promise<Booking>;
   sendQuoteToAgent: (bookingId: string) => void;
@@ -947,6 +954,17 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
   const [operators, setOperators] = useState<OperatorRecord[]>(initialOperators);
   const [auditLog, setAuditLog] = useState<AuditLogEntry[]>(initialAuditLog);
   const [notifications, setNotifications] = useState<Notification[]>(initialNotifications);
+  const [settings, setSettings] = useState<AppSettings>(initialSettings);
+
+  const updateSettings = (newSettings: Partial<AppSettings>) => {
+    setSettings((prev) => ({
+      ...prev,
+      ...newSettings,
+      company: newSettings.company ? { ...prev.company, ...newSettings.company } : prev.company,
+      tokens: newSettings.tokens ? { ...prev.tokens, ...newSettings.tokens } : prev.tokens,
+      notifications: newSettings.notifications ? { ...prev.notifications, ...newSettings.notifications } : prev.notifications
+    }));
+  };
   const [messages, setMessages] = useState<AppMessage[]>(initialMessages);
 
   // Tokenomics State (Agent role)
@@ -1666,16 +1684,57 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const updateBookingPaymentStatus = (bookingId: string, paymentStatus: Booking["paymentStatus"]) => {
+  const updateBooking = (bookingId: string, updates: Partial<Booking>) => {
     setBookings((prev) =>
-      prev.map((b) => (b.id === bookingId ? { ...b, paymentStatus, updatedAt: new Date().toISOString() } : b))
+      prev.map((b) => (b.id === bookingId ? { ...b, ...updates, updatedAt: new Date().toISOString() } : b))
+    );
+    if (activeBooking && activeBooking.id === bookingId) {
+      setActiveBooking((prev) => (prev ? { ...prev, ...updates } : null));
+    }
+    if (selectedBookingForDetail && selectedBookingForDetail.id === bookingId) {
+      setSelectedBookingForDetail((prev) => (prev ? { ...prev, ...updates } : null));
+    }
+  };
+
+  const updateBookingPaymentStatus = (
+    bookingId: string,
+    paymentStatus: Booking["paymentStatus"],
+    paymentReason?: string
+  ) => {
+    setBookings((prev) =>
+      prev.map((b) =>
+        b.id === bookingId
+          ? {
+              ...b,
+              paymentStatus,
+              ...(paymentReason !== undefined ? { paymentReason } : {}),
+              updatedAt: new Date().toISOString()
+            }
+          : b
+      )
     );
     api.bookings.updatePaymentStatus(bookingId, paymentStatus || "unpaid").catch((err) => console.log("Backend sync note:", err.message));
     if (activeBooking && activeBooking.id === bookingId) {
-      setActiveBooking((prev) => (prev ? { ...prev, paymentStatus } : null));
+      setActiveBooking((prev) =>
+        prev
+          ? {
+              ...prev,
+              paymentStatus,
+              ...(paymentReason !== undefined ? { paymentReason } : {})
+            }
+          : null
+      );
     }
     if (selectedBookingForDetail && selectedBookingForDetail.id === bookingId) {
-      setSelectedBookingForDetail((prev) => (prev ? { ...prev, paymentStatus } : null));
+      setSelectedBookingForDetail((prev) =>
+        prev
+          ? {
+              ...prev,
+              paymentStatus,
+              ...(paymentReason !== undefined ? { paymentReason } : {})
+            }
+          : null
+      );
     }
 
     if (currentUser) {
@@ -3306,6 +3365,8 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
         updateUser,
         deleteUser,
         refreshUsers,
+        settings,
+        updateSettings,
         activeNav,
         setActiveNav,
         bookings,
@@ -3331,6 +3392,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
         openNewQuoteModal,
         closeNewQuoteModal,
         addBooking,
+        updateBooking,
         updateBookingStatus,
         updateBookingPaymentStatus,
         toggleChecklistItem,

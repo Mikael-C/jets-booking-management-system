@@ -1,0 +1,19 @@
+"use client";
+
+import React from "react";
+import AppShell from "@/components/layout/AppShell";
+import TripPageShell from "@/components/trip/TripPageShell";
+
+interface TripPageProps {
+  params: {
+    tripId: string;
+  };
+}
+
+export default function TripPage({ params }: TripPageProps) {
+  return (
+    <AppShell navKey="quotes">
+      <TripPageShell tripId={params.tripId} initialTab="itinerary" />
+    </AppShell>
+  );
+}

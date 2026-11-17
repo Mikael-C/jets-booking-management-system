@@ -2,6 +2,8 @@
 
 import React from "react";
 import { Booking } from "@/types/aviation";
+import { useAviation } from "@/lib/aviationContext";
+import { initialSettings } from "@/data/initialSettings";
 import DocumentHeader from "./DocumentHeader";
 import DocumentFooter from "./DocumentFooter";
 import { formatDocCurrency } from "./QuotationDoc";
@@ -11,9 +13,12 @@ interface InvoiceDocProps {
 }
 
 export default function InvoiceDoc({ booking }: InvoiceDocProps) {
+  const { settings } = useAviation();
+  const company = settings?.company || initialSettings.company;
+  const cardFeePercent = settings?.pricing?.cardFeePercent ?? initialSettings.pricing?.cardFeePercent ?? 3.5;
+
   const {
     client,
-    operator,
     aircraft,
     legs,
     pricing,
@@ -29,7 +34,7 @@ export default function InvoiceDoc({ booking }: InvoiceDocProps) {
   const tripRef = tripNumber || "FE4578";
   const currency = pricing?.currency || "EUR";
   const totalAmount = pricing?.totalFlightPrice ?? 8000;
-  const cardAmount = booking.totalWithCardFee ?? (totalAmount * 1.035);
+  const cardAmount = booking.totalWithCardFee ?? (totalAmount * (1 + cardFeePercent / 100));
   const clientName = client?.companyName || client?.fullName || "Adeyemi Holdings Ltd";
   const agreementRef = `C-${tripNumber || "FE4578-002"}`;
 
@@ -37,6 +42,10 @@ export default function InvoiceDoc({ booking }: InvoiceDocProps) {
   const repName = booking.agentName || "Marcus Vance";
   const repEmail = booking.agentEmail || "marcus@vanceaviation.co.uk";
   const repPhone = "+44 20 7946 0912";
+
+  // Select bank account from Settings based on currency
+  const bankAccounts = settings?.bankAccounts || initialSettings.bankAccounts;
+  const bank = bankAccounts.find((b) => b.currency === currency) || bankAccounts[0];
 
   const firstLeg = legs && legs.length > 0 ? legs[0] : null;
   const legOriginIcao = firstLeg?.origin?.icao || "LEIB";
@@ -88,7 +97,7 @@ export default function InvoiceDoc({ booking }: InvoiceDocProps) {
                 BILL TO
               </p>
               <p className="font-bold text-slate-900 text-sm">{clientName}</p>
-              <p className="text-slate-700">Attn: {client?.fullName || "Tunde Adeyemi"}, Chairman</p>
+              <p className="text-slate-700">Attn: {client?.fullName || "Tunde Adeyemi"}</p>
               <p className="text-slate-600">{client?.streetAddress || "14 Bourdillon Road, Ikoyi"}</p>
               <p className="text-slate-600">{client?.cityPostalCountry || "Lagos, Nigeria"}</p>
               <p className="text-slate-600 font-mono mt-0.5">Account {accountNumber || "ACC-30412"}</p>
@@ -119,13 +128,13 @@ export default function InvoiceDoc({ booking }: InvoiceDocProps) {
                   <td className="py-3 pr-4">
                     <p className="font-bold text-slate-900">Private charter flight</p>
                     <p className="text-slate-700 mt-0.5">
-                      Leg 1 · {legOriginIcao} → {legDestIcao} {legOriginCity} – {legDestCity} · {categoryLabel} · {paxCount} passengers
+                      Leg 1 · {legOriginIcao} → {legDestIcao} ({legOriginCity} – {legDestCity}) · {categoryLabel} · {paxCount} passengers
                     </p>
-                    <p className="text-slate-500 mt-0.5">
+                    <p className="text-slate-500 mt-0.5 font-mono text-[11px]">
                       Per charter agreement {agreementRef}
                     </p>
                   </td>
-                  <td className="py-3 px-4 text-slate-800 whitespace-nowrap">
+                  <td className="py-3 px-4 text-slate-800 whitespace-nowrap font-mono">
                     {legFlightDate}
                   </td>
                   <td className="py-3 pl-4 text-right font-medium text-slate-900 font-mono whitespace-nowrap">
@@ -135,7 +144,8 @@ export default function InvoiceDoc({ booking }: InvoiceDocProps) {
 
                 <tr className="align-top">
                   <td className="py-2.5 pr-4 text-slate-700">
-                    VAT <span className="bg-[#FEF3C7] text-[#92400E] px-1 py-0.5 rounded text-[10px]">[rate and exemption text per tax advice]</span>
+                    <span className="font-semibold text-slate-900">VAT: </span>
+                    <span className="text-[11px] text-slate-600">{company.vatWording || company.vatExemptionClause}</span>
                   </td>
                   <td className="py-2.5 px-4"></td>
                   <td className="py-2.5 pl-4 text-right font-medium text-slate-900 font-mono whitespace-nowrap">
@@ -159,42 +169,42 @@ export default function InvoiceDoc({ booking }: InvoiceDocProps) {
             {/* Left Box: Bank Transfer */}
             <div className="border border-slate-200 rounded-lg p-4 bg-white space-y-2">
               <p className="text-[10px] font-bold text-slate-900 tracking-wider uppercase mb-1">
-                BANK TRANSFER
+                BANK TRANSFER INSTRUCTIONS
               </p>
-              <div className="space-y-1.5 text-xs">
+              <div className="space-y-1.5 text-xs font-mono">
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] font-semibold text-slate-600 uppercase tracking-wider w-24">BENEFICIARY</span>
-                  <span className="bg-[#FEF3C7] text-[#92400E] px-1.5 py-0.5 rounded text-[11px] font-normal">
-                    {operator?.companyName || "[Company legal name]"}
+                  <span className="font-bold text-slate-900 font-sans text-xs">
+                    {bank.accountHolder || company.legalEntity}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] font-semibold text-slate-600 uppercase tracking-wider w-24">BANK</span>
-                  <span className="bg-[#FEF3C7] text-[#92400E] px-1.5 py-0.5 rounded text-[11px] font-normal">
-                    {operator?.bankName || "[Bank name]"}
+                  <span className="text-slate-800 font-sans text-xs">
+                    {bank.bankName}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] font-semibold text-slate-600 uppercase tracking-wider w-24">IBAN</span>
-                  <span className="bg-[#FEF3C7] text-[#92400E] px-1.5 py-0.5 rounded text-[11px] font-mono">
-                    {operator?.iban || "[IBAN]"}
+                  <span className="text-slate-900 font-bold">
+                    {bank.iban}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-semibold text-slate-600 uppercase tracking-wider w-24">BIC</span>
-                  <span className="bg-[#FEF3C7] text-[#92400E] px-1.5 py-0.5 rounded text-[11px] font-mono">
-                    {operator?.bic || "[BIC]"}
+                  <span className="text-[10px] font-semibold text-slate-600 uppercase tracking-wider w-24">BIC / SWIFT</span>
+                  <span className="text-slate-900 font-bold">
+                    {bank.bic}
                   </span>
                 </div>
                 <div className="flex items-center gap-2 pt-0.5">
                   <span className="text-[10px] font-semibold text-slate-600 uppercase tracking-wider w-24">REFERENCE</span>
-                  <span className="font-bold text-slate-900 font-mono text-xs">
+                  <span className="font-bold text-slate-900 bg-slate-100 px-1 py-0.5 rounded text-xs">
                     {invNumber}
                   </span>
                 </div>
               </div>
-              <p className="text-[10px] text-slate-500 pt-1">
-                Bank details come from Settings, never typed on the invoice.
+              <p className="text-[10px] text-slate-500 pt-1 font-sans">
+                Please quote reference <span className="font-mono font-bold text-slate-700">{invNumber}</span> on your wire transfer for immediate reconciliation.
               </p>
             </div>
 
@@ -205,15 +215,18 @@ export default function InvoiceDoc({ booking }: InvoiceDocProps) {
                   PAY BY CARD
                 </p>
                 <p className="text-xs text-slate-800 leading-relaxed">
-                  {formatDocCurrency(cardAmount, currency)} including 3.5 % card fee.
+                  {formatDocCurrency(cardAmount, currency)} including {cardFeePercent}% card processing fee.
                 </p>
                 <p className="text-xs text-slate-600 mt-2">
-                  Secure payment link:
+                  Instant settlement link:
                 </p>
                 <p className="text-xs text-blue-600 underline font-mono mt-0.5 break-all">
-                  pay.orbelo.com/{invNumber}
+                  https://pay.orbelo.com/{invNumber}
                 </p>
               </div>
+              <p className="text-[10px] text-slate-500 mt-3 font-sans">
+                Visa, MasterCard, and American Express accepted.
+              </p>
             </div>
           </div>
 
@@ -222,18 +235,18 @@ export default function InvoiceDoc({ booking }: InvoiceDocProps) {
             <span className="text-[10px] font-bold text-slate-900 tracking-wider uppercase mr-2">PAYMENT STATUS</span>
             {isPaid ? (
               <span className="text-slate-800">
-                <strong className="text-emerald-700 font-bold">Paid in full</strong> · bank transfer received {contractDate || "12 Nov 2026"} · ref PAY-0012
+                <strong className="text-emerald-700 font-bold">Paid in full</strong> · wire transfer received {contractDate || "12 Nov 2026"}
               </span>
             ) : (
               <span className="text-slate-800">
-                <strong className="text-amber-700 font-bold">Pending payment</strong> · due prior to departure
+                <strong className="text-amber-700 font-bold">Pending payment</strong> · balance due prior to departure
               </span>
             )}
           </div>
 
           {/* Subtext Note */}
           <p className="text-[10.5px] text-slate-500 leading-relaxed pt-1">
-            Additional services ordered after booking are invoiced separately with the same trip reference. On request, all invoices for a trip can be combined into one.
+            Additional services ordered after booking are invoiced separately under the same trip root reference. On request, all invoices for a trip can be combined into a consolidated statement.
           </p>
         </div>
 

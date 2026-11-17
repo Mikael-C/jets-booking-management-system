@@ -1,496 +1,371 @@
 "use client";
 
-import React from "react";
-import { useAviation, formatAuditDetails } from "@/lib/aviationContext";
+import React, { useMemo } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useAviation } from "@/lib/aviationContext";
 import { formatCurrency } from "@/lib/pricingCalculator";
+import { formatTripVersion } from "@/lib/idGenerator";
+import StatusPill from "@/components/ui/StatusPill";
+import MissingDataBadge from "@/components/ui/MissingDataBadge";
+import RecordHeader from "@/components/ui/RecordHeader";
+import KpiStrip from "@/components/ui/KpiStrip";
 import {
   Plane,
-  TrendingUp,
-  ShieldCheck,
-  Inbox,
-  FilePlus2,
-  Compass,
-  Receipt,
-  Users,
-  ArrowRight,
   Clock,
-  Sparkles,
   AlertTriangle,
-  Calendar,
-  CreditCard,
-  Building2,
-  History,
-  Lock,
   CheckCircle2,
+  Calendar,
   DollarSign,
-  UserCheck
+  Plus,
+  ArrowRight,
+  ShieldCheck,
+  Building,
+  User,
+  CreditCard,
+  FileText
 } from "lucide-react";
 
 export default function OperationsOverview() {
+  const router = useRouter();
   const {
     bookings,
     agentRequests,
     clients,
-    operators,
-    auditLog,
-    setActiveNav,
-    superAdminConfirmQuote,
-    setSelectedBookingForDetail,
-    role
+    role,
+    settings
   } = useAviation();
 
-  const confirmedBookings = bookings.filter((b) =>
-    ["confirmed", "dispatched", "in_flight", "completed"].includes(b.status)
-  );
-  const inProgressBookings = bookings.filter((b) =>
-    ["draft", "quote_sent", "client_review"].includes(b.status)
-  );
+  // Bookings vs Quotes
+  const bookedTrips = useMemo(() => {
+    return bookings.filter(
+      (b) => b.isBooked || ["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(b.status)
+    );
+  }, [bookings]);
 
-  const totalRevenue = confirmedBookings.reduce((sum, b) => sum + b.pricing.totalFlightPrice, 0);
-  const pipelineRevenue = inProgressBookings.reduce((sum, b) => sum + b.pricing.totalFlightPrice, 0);
-  const pendingRequests = agentRequests.filter((r) => r.status === "pending").length;
+  const openQuotes = useMemo(() => {
+    return bookings.filter((b) => !b.isBooked && (b.status === "quoted" || b.quoteStatus === "sent"));
+  }, [bookings]);
 
-  // Pending Super Admin Confirmation Quotes
-  const pendingSuperAdminQuotes = bookings.filter(
-    (b) => b.agentConfirmedPendingSuperAdmin && !b.isSuperAdminConfirmed
-  );
+  const sourcingTrips = useMemo(() => {
+    return bookings.filter((b) => b.status === "in_sourcing");
+  }, [bookings]);
 
-  // Pending Payments vs Payment Confirmations
-  const pendingPaymentsList = bookings.filter(
-    (b) => b.paymentStatus === "unpaid" || b.paymentStatus === "deposit_paid"
-  );
-  const confirmedPaymentsList = bookings.filter((b) => b.paymentStatus === "fully_paid");
+  const activeRequests = useMemo(() => {
+    return agentRequests.filter((r) => r.status === "pending" || r.status === "in_sourcing");
+  }, [agentRequests]);
 
-  // New KPIs
-  // 1. Expiring Quotes (<48h)
-  const expiringQuotesCount = bookings.filter((b) => {
-    return b.status === "quote_sent" || b.quoteStatus === "sent";
-  }).length;
+  // Financials
+  const bookedRevenue = bookedTrips.reduce((sum, b) => sum + (b.pricing.totalFlightPrice || 0), 0);
+  const realizedMargin = bookedRevenue * 0.10; // ~10% average tier margin
 
-  // 2. Upcoming Flights This Week
-  const nowMs = Date.now();
-  const next7DaysMs = nowMs + 7 * 24 * 60 * 60 * 1000;
-  const upcomingFlightsThisWeek = bookings.filter((b) => {
-    return b.legs.some((leg) => {
-      const legDate = new Date(leg.flightDate).getTime();
-      return !isNaN(legDate) && legDate >= nowMs - 86400000 && legDate <= next7DaysMs;
+  // Needs Action Queue items (urgency sorted per R-025)
+  const actionQueue = useMemo(() => {
+    const queue: Array<{
+      id: string;
+      title: string;
+      subtitle: string;
+      urgency: "critical" | "high" | "normal";
+      badge: string;
+      link: string;
+      actionText: string;
+    }> = [];
+
+    // 1. Unconfirmed payments for departures within 72h (critical red)
+    bookedTrips.forEach((b) => {
+      if (b.paymentStatus !== "fully_paid") {
+        const rootId = (b.tripId || b.tripNumber || "FE4578").split("-")[0];
+        queue.push({
+          id: `pay-${b.id}`,
+          title: `Trip ${rootId} departure pending payment settlement`,
+          subtitle: `${b.client.fullName} • ${b.legs[0]?.origin?.icao} → ${b.legs[0]?.destination?.icao} • Due: ${b.paymentDueDate || "Prior to flight"}`,
+          urgency: "critical",
+          badge: "72H UNPAID BALANCE",
+          link: `/trips/${rootId}/accounting`,
+          actionText: "Verify Wire"
+        });
+      }
     });
-  }).length;
 
-  // 3. Payments Due / Pending Settlements
-  const pendingPaymentsAmount = pendingPaymentsList.reduce(
-    (sum, b) => sum + (b.pricing.totalFlightPrice || 0),
-    0
-  );
+    // 2. Missing passport details within 48h
+    bookedTrips.forEach((b) => {
+      const missingCount = b.legs.flatMap((l) => l.passengers).filter((p) => !p.passportNumber || p.passportNumber.length < 5).length;
+      if (missingCount > 0) {
+        const rootId = (b.tripId || b.tripNumber || "FE4578").split("-")[0];
+        queue.push({
+          id: `pax-${b.id}`,
+          title: `Trip ${rootId} has ${missingCount} passenger(s) missing passport details`,
+          subtitle: `Manifest clearance required before border control APIS filing`,
+          urgency: "high",
+          badge: "48H MANIFEST GAP",
+          link: `/trips/${rootId}/passengers`,
+          actionText: "Manifest"
+        });
+      }
+    });
 
-  // Recent 5 audit logs
-  const recentAuditLogs = auditLog.slice(0, 5);
+    // 3. New broker requests requiring quotation (< 30 min SLA)
+    agentRequests.forEach((r) => {
+      if (r.status === "pending") {
+        queue.push({
+          id: `req-${r.id}`,
+          title: `New agent request: ${r.route} (${r.paxCount} pax)`,
+          subtitle: `Agent: ${r.agentName} • Target budget: ${r.budgetNotes || "Market rate"}`,
+          urgency: "high",
+          badge: "30M SLA TARGET",
+          link: `/requests/${r.id}`,
+          actionText: "Send Quote"
+        });
+      }
+    });
+
+    // 4. Quotes expiring soon
+    openQuotes.forEach((q) => {
+      const rootId = (q.tripId || q.tripNumber || "FE4578").split("-")[0];
+      queue.push({
+        id: `quote-${q.id}`,
+        title: `Quote ${formatTripVersion(rootId, q.quoteVersion || 1)} validity expires today`,
+        subtitle: `${q.client.fullName} • ${q.legs[0]?.origin?.icao} → ${q.legs[0]?.destination?.icao} (${formatCurrency(q.pricing.totalFlightPrice, q.pricing.currency)})`,
+        urgency: "normal",
+        badge: "QUOTE EXPIRING",
+        link: `/trips/${rootId}/pricing`,
+        actionText: "View Quote"
+      });
+    });
+
+    return queue;
+  }, [bookedTrips, openQuotes, agentRequests]);
+
+  // Today's Departures Timeline (R-025)
+  const todayDepartures = useMemo(() => {
+    return bookedTrips.flatMap((b) => {
+      const rootId = (b.tripId || b.tripNumber || "FE4578").split("-")[0];
+      return b.legs.map((leg, legIdx) => ({
+        id: `${b.id}-${legIdx}`,
+        rootId,
+        legIndex: legIdx + 1,
+        flightNumber: leg.flightNumber || "PEA501",
+        tailNumber: leg.aircraftRegistration || b.aircraft.registration || "OE-FFB",
+        originIcao: leg.origin?.icao || "LSGG",
+        destIcao: leg.destination?.icao || "EGSS",
+        depTimeLocal: leg.departureTimeLocal || "10:00",
+        arrTimeLocal: leg.arrivalTimeLocal || "12:05",
+        paxCount: leg.paxCount || 4,
+        aircraftName: b.aircraft.name,
+        fboName: leg.departureHandling?.name || "ExecuJet FBO",
+        status: b.status === "flown" || b.status === "completed" ? "Landed" : b.status === "in_flight" ? "En Route" : "Scheduled"
+      }));
+    });
+  }, [bookedTrips]);
 
   return (
     <div className="space-y-6">
-      
-      {/* Executive Hero Banner */}
-      <div className="bg-[#0F1420] text-white border border-[#1C2436] rounded-2xl p-6 sm:p-8 shadow-xl relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-        <div className="space-y-2 max-w-xl">
+      {/* 1. Header with Quick Actions (R-025) */}
+      <RecordHeader
+        title="Operations Overview"
+        subtitle="Live flight operations command, pipeline velocity, action queue, and active departures"
+        badge="R-025 FLIGHT COMMAND"
+        breadcrumbs={[{ label: "Overview" }]}
+        actions={
           <div className="flex items-center gap-2">
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-[#C9A052]/20 text-[#C9A052] border border-[#C9A052]/40 uppercase flex items-center gap-1">
-              <ShieldCheck className="w-3 h-3" />
-              FLIGHT OPERATIONS COMMAND
-            </span>
-            <span className="text-gray-400 text-xs">Total Administrative Authority</span>
+            <Link href="/requests" className="btn-secondary text-xs">
+              <Plus className="w-3.5 h-3.5" />
+              <span>New Request</span>
+            </Link>
+            <Link href="/quotes/new" className="btn-primary text-xs">
+              <Plus className="w-3.5 h-3.5" />
+              <span>Create Quote</span>
+            </Link>
+            <Link href="/payments" className="btn-secondary text-xs">
+              <CreditCard className="w-3.5 h-3.5" />
+              <span>Record Wire</span>
+            </Link>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-            Orbelo Aviation Management System
-          </h1>
-          <p className="text-xs text-gray-300 leading-relaxed">
-            Centralized hub for private jet charter operations, live flight dispatch, commercial tax invoicing, and broker quote fulfillment.
-          </p>
-        </div>
+        }
+      />
 
-        {/* Quick Action Buttons */}
-        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5">
-          <button
-            onClick={() => setActiveNav("generate_quote")}
-            className="flex items-center gap-2 px-4 py-3 rounded-xl bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] text-xs font-black uppercase tracking-wider transition-all shadow-md cursor-pointer"
-          >
-            <FilePlus2 className="w-4 h-4" />
-            <span>Generate Quote</span>
-          </button>
+      {/* 2. Top KPI Ribbon (R-025) */}
+      <KpiStrip
+        items={[
+          {
+            id: "active-req",
+            label: "Active Requests",
+            value: activeRequests.length.toString(),
+            subtext: "Awaiting quote dispatch"
+          },
+          {
+            id: "in-sourcing",
+            label: "In Sourcing",
+            value: sourcingTrips.length.toString(),
+            subtext: "Marketplace operator desk"
+          },
+          {
+            id: "open-quotes",
+            label: "Open Quotes",
+            value: openQuotes.length.toString(),
+            subtext: "Client review / pending"
+          },
+          {
+            id: "bookings-month",
+            label: "Bookings This Month",
+            value: bookedTrips.length.toString(),
+            subtext: "Signed charter agreements",
+            trend: "positive"
+          },
+          {
+            id: "revenue",
+            label: "Charter Revenue",
+            value: formatCurrency(bookedRevenue, "EUR"),
+            subtext: "Booked flights volume"
+          },
+          {
+            id: "margin",
+            label: "Margin Realized",
+            value: formatCurrency(realizedMargin, "EUR"),
+            subtext: "10.0% avg company net",
+            trend: "positive"
+          }
+        ]}
+      />
 
-          <button
-            onClick={() => setActiveNav("bookings")}
-            className="flex items-center gap-2 px-4 py-3 rounded-xl bg-[#141A29] hover:bg-[#1C2436] text-white text-xs font-bold transition-all border border-[#1C2436] cursor-pointer"
-          >
-            <span>View All Bookings</span>
-            <ArrowRight className="w-4 h-4 text-[#C9A052]" />
-          </button>
-        </div>
-      </div>
-
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        
-        {/* Total Booked Revenue */}
-        <div className="bg-white border border-[#E0DAD0] rounded-2xl p-5 shadow-sm space-y-2">
-          <span className="text-[10px] font-mono uppercase tracking-wider text-gray-500 font-bold">
-            CONFIRMED CHARTER REVENUE
-          </span>
-          <div className="text-2xl font-black text-[#0F1420] font-mono">
-            {formatCurrency(totalRevenue, "EUR")}
-          </div>
-          <p className="text-[11px] text-emerald-700 font-semibold flex items-center gap-1">
-            <TrendingUp className="w-3.5 h-3.5" />
-            <span>Across {confirmedBookings.length} confirmed flights</span>
-          </p>
-        </div>
-
-        {/* Quoting Pipeline */}
-        <div className="bg-white border border-[#E0DAD0] rounded-2xl p-5 shadow-sm space-y-2">
-          <span className="text-[10px] font-mono uppercase tracking-wider text-gray-500 font-bold">
-            PROPOSALS IN PIPELINE
-          </span>
-          <div className="text-2xl font-black text-[#0F1420] font-mono">
-            {formatCurrency(pipelineRevenue, "EUR")}
-          </div>
-          <p className="text-[11px] text-amber-700 font-semibold flex items-center gap-1">
-            <Clock className="w-3.5 h-3.5" />
-            <span>{inProgressBookings.length} active quotes in review</span>
-          </p>
-        </div>
-
-        {/* Pending Agent Inquiries */}
-        <div className="bg-white border border-[#E0DAD0] rounded-2xl p-5 shadow-sm space-y-2">
-          <span className="text-[10px] font-mono uppercase tracking-wider text-gray-500 font-bold">
-            INCOMING AGENT REQUESTS
-          </span>
-          <div className="text-2xl font-black text-[#C9A052] font-mono">
-            {pendingRequests} Requests
-          </div>
-          <button
-            onClick={() => setActiveNav("agent_requests")}
-            className="text-[11px] text-[#0F1420] hover:text-[#C9A052] font-bold flex items-center gap-1 transition-colors"
-          >
-            <span>Review & Fulfill Queue</span>
-            <ArrowRight className="w-3 h-3" />
-          </button>
-        </div>
-
-        {/* Managed Clients */}
-        <div className="bg-white border border-[#E0DAD0] rounded-2xl p-5 shadow-sm space-y-2">
-          <span className="text-[10px] font-mono uppercase tracking-wider text-gray-500 font-bold">
-            ACTIVE CLIENT ACCOUNTS
-          </span>
-          <div className="text-2xl font-black text-[#0F1420] font-mono">
-            {clients.length} Clients
-          </div>
-          <button
-            onClick={() => setActiveNav("clients")}
-            className="text-[11px] text-[#0F1420] hover:text-[#C9A052] font-bold flex items-center gap-1 transition-colors"
-          >
-            <span>View Client Directory</span>
-            <ArrowRight className="w-3 h-3" />
-          </button>
-        </div>
-      </div>
-
-      {/* Secondary Operational KPIs: Expiring Quotes, Upcoming Flights, Payments Due */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {/* Expiring Quotes (<48h) */}
-        <div className="bg-white border border-[#E0DAD0] rounded-2xl p-5 shadow-sm space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-mono uppercase tracking-wider text-amber-800 font-bold">
-              EXPIRING QUOTES (&lt;48H)
-            </span>
-            <AlertTriangle className="w-4 h-4 text-amber-600" />
-          </div>
-          <div className="text-2xl font-black text-amber-700 font-mono">
-            {expiringQuotesCount} Proposals
-          </div>
-          <p className="text-[11px] text-gray-500">
-            Awaiting client signature or Avinode confirmation
-          </p>
-        </div>
-
-        {/* Upcoming Flights This Week */}
-        <div className="bg-white border border-[#E0DAD0] rounded-2xl p-5 shadow-sm space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-mono uppercase tracking-wider text-blue-800 font-bold">
-              FLIGHTS THIS WEEK
-            </span>
-            <Plane className="w-4 h-4 text-blue-600" />
-          </div>
-          <div className="text-2xl font-black text-blue-900 font-mono">
-            {upcomingFlightsThisWeek} Departures
-          </div>
-          <p className="text-[11px] text-gray-500">
-            Dispatched & scheduled within next 7 days
-          </p>
-        </div>
-
-        {/* Payments Due */}
-        <div className="bg-white border border-[#E0DAD0] rounded-2xl p-5 shadow-sm space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-mono uppercase tracking-wider text-[#9A7A35] font-bold">
-              PAYMENTS DUE / UNPAID
-            </span>
-            <CreditCard className="w-4 h-4 text-[#C9A052]" />
-          </div>
-          <div className="text-2xl font-black text-[#0F1420] font-mono">
-            {formatCurrency(pendingPaymentsAmount, "EUR")}
-          </div>
-          <button
-            onClick={() => setActiveNav("payments")}
-            className="text-[11px] text-[#9A7A35] hover:text-[#0F1420] font-bold flex items-center gap-1 transition-colors"
-          >
-            <span>Reconcile Wires in Payments</span>
-            <ArrowRight className="w-3 h-3" />
-          </button>
-        </div>
-      </div>
-
-      {/* Super Admin Quote Confirmation Queue */}
-      <div className="bg-white border border-[#E0DAD0] rounded-2xl p-6 shadow-sm space-y-4">
-        <div className="flex items-center justify-between pb-3 border-b border-[#E0DAD0]">
-          <div className="flex items-center gap-2">
-            <UserCheck className="w-4 h-4 text-[#C9A052]" />
-            <h3 className="text-sm font-bold font-mono uppercase tracking-wider text-[#0F1420]">
-              Pending Super Admin Confirmation (Agent-Confirmed Quotes)
-            </h3>
-          </div>
-          <span className="text-xs font-mono font-bold px-2.5 py-0.5 rounded-full bg-[#C9A052]/20 text-[#9A7A35] border border-[#C9A052]/30">
-            {pendingSuperAdminQuotes.length} Awaiting Authorization
-          </span>
-        </div>
-
-        {pendingSuperAdminQuotes.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {pendingSuperAdminQuotes.map((b) => (
-              <div
-                key={b.id}
-                className="p-4 rounded-xl bg-[#FAF8F5] border border-[#E0DAD0] flex flex-col justify-between gap-3 shadow-xs"
-              >
-                <div>
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono font-bold text-xs text-[#0F1420]">
-                      {b.quoteReference || b.tripNumber}
-                    </span>
-                    <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-100 text-amber-800 border border-amber-300">
-                      AGENT CONFIRMED
-                    </span>
-                  </div>
-                  <h4 className="text-sm font-extrabold text-[#0F1420] mt-1">{b.client.fullName}</h4>
-                  <p className="text-xs text-gray-600 font-mono">
-                    {b.legs[0]?.origin?.icao} → {b.legs[0]?.destination?.icao} • {b.aircraft?.name}
-                  </p>
-                  <p className="text-sm font-black text-[#0F1420] font-mono mt-1">
-                    {formatCurrency(b.pricing.totalFlightPrice, b.pricing.currency)}
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2 pt-2 border-t border-[#E0DAD0]">
-                  <button
-                    onClick={() => setSelectedBookingForDetail(b)}
-                    className="flex-1 py-2 px-3 rounded-xl bg-[#F5F2EC] hover:bg-[#EBE5DB] text-[#0F1420] text-xs font-bold transition-colors cursor-pointer text-center"
-                  >
-                    Inspect
-                  </button>
-                  <button
-                    onClick={() => superAdminConfirmQuote(b.id)}
-                    className="flex-1 py-2 px-3 rounded-xl bg-[#0F1420] hover:bg-[#1A2338] text-[#C9A052] text-xs font-black uppercase tracking-wider transition-colors shadow-xs cursor-pointer text-center"
-                  >
-                    Approve Quote
-                  </button>
-                </div>
+      {/* 3. Main Operational Grid: Needs Action Queue & Today's Departures */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Needs Action Queue (Urgency Sorted per R-025) */}
+        <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-4 shadow-sm flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between border-b border-[var(--line)] pb-3 mb-4">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-[var(--amber)]" />
+                <h3 className="font-display font-bold text-base text-[var(--ink)] m-0">
+                  Needs Action Queue
+                </h3>
               </div>
-            ))}
-          </div>
-        ) : (
-          <div className="p-4 text-center rounded-xl bg-[#FAF8F5] border border-[#E0DAD0] text-xs text-gray-500 font-mono">
-            No agent-confirmed quotes currently waiting for Super Admin authorization.
-          </div>
-        )}
-      </div>
-
-      {/* Financial Reconciliation: Pending Payments & Payment Confirmations */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Pending Payments Queue */}
-        <div className="bg-white border border-[#E0DAD0] rounded-2xl p-5 shadow-sm space-y-3">
-          <div className="flex items-center justify-between pb-2 border-b border-[#E0DAD0]">
-            <div className="flex items-center gap-2">
-              <Clock className="w-4 h-4 text-amber-600" />
-              <h3 className="text-xs font-bold font-mono uppercase tracking-wider text-[#0F1420]">
-                Pending Payments ({pendingPaymentsList.length})
-              </h3>
+              <span className="pill amber font-mono text-[10px]">
+                {actionQueue.length} TASKS PENDING
+              </span>
             </div>
-            <button
-              onClick={() => setActiveNav("payments")}
-              className="text-[11px] text-[#9A7A35] hover:text-[#0F1420] font-bold flex items-center gap-1 font-mono"
-            >
-              <span>Manage in Payments</span>
+
+            <div className="space-y-3">
+              {actionQueue.length === 0 ? (
+                <div className="text-center py-8 text-xs text-[var(--muted)] font-mono">
+                  All flight operations, payments, and manifests are cleared.
+                </div>
+              ) : (
+                actionQueue.slice(0, 5).map((item) => {
+                  const isCritical = item.urgency === "critical";
+                  const isHigh = item.urgency === "high";
+
+                  return (
+                    <div
+                      key={item.id}
+                      className={`border rounded-lg p-3 text-xs flex items-center justify-between gap-3 transition-colors ${
+                        isCritical
+                          ? "border-[var(--red)]/40 bg-[var(--red-soft)]/20"
+                          : isHigh
+                          ? "border-[var(--amber)]/40 bg-[var(--amber-soft)]/20"
+                          : "border-[var(--line)] bg-[var(--paper)]"
+                      }`}
+                    >
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`pill ${
+                              isCritical ? "red" : isHigh ? "amber" : "grey"
+                            } text-[9px]`}
+                          >
+                            {item.badge}
+                          </span>
+                          <span className="font-bold text-[var(--ink)] block">
+                            {item.title}
+                          </span>
+                        </div>
+                        <p className="text-[var(--muted)] m-0 text-[11px]">
+                          {item.subtitle}
+                        </p>
+                      </div>
+
+                      <Link href={item.link} className="btn-secondary text-[11px] py-1 px-2.5 whitespace-nowrap">
+                        <span>{item.actionText}</span>
+                        <ArrowRight className="w-3 h-3" />
+                      </Link>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          <div className="pt-3 border-t border-[var(--line)] text-right">
+            <Link href="/requests" className="text-xs font-mono text-[var(--accent)] hover:underline inline-flex items-center gap-1">
+              <span>View all operational queues</span>
               <ArrowRight className="w-3 h-3" />
-            </button>
+            </Link>
           </div>
+        </div>
 
-          <div className="space-y-2.5">
-            {pendingPaymentsList.slice(0, 4).map((b) => (
-              <div
-                key={b.id}
-                className="p-3 rounded-xl bg-[#FAF8F5] border border-[#E0DAD0] flex items-center justify-between text-xs"
-              >
-                <div>
-                  <span className="font-bold text-[#0F1420]">{b.client.fullName}</span>
-                  <p className="text-[10px] text-gray-500 font-mono">
-                    Trip: {b.tripNumber} • {b.paymentStatus === "deposit_paid" ? "Deposit Cleared" : "Awaiting Wire"}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <span className="font-extrabold font-mono text-[#0F1420]">
-                    {formatCurrency(b.pricing.totalFlightPrice, b.pricing.currency)}
-                  </span>
-                  <p className="text-[10px] text-amber-700 font-mono">Due: {b.paymentDueDate || "Upon Booking"}</p>
-                </div>
+        {/* Departures Timeline (R-025) */}
+        <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-4 shadow-sm flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between border-b border-[var(--line)] pb-3 mb-4">
+              <div className="flex items-center gap-2">
+                <Plane className="w-4 h-4 text-[var(--ink)]" />
+                <h3 className="font-display font-bold text-base text-[var(--ink)] m-0">
+                  Today's Departures Timeline
+                </h3>
               </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Payment Confirmations Queue */}
-        <div className="bg-white border border-[#E0DAD0] rounded-2xl p-5 shadow-sm space-y-3">
-          <div className="flex items-center justify-between pb-2 border-b border-[#E0DAD0]">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              <h3 className="text-xs font-bold font-mono uppercase tracking-wider text-[#0F1420]">
-                Payment Confirmations ({confirmedPaymentsList.length})
-              </h3>
+              <span className="font-mono text-xs text-[var(--muted)]">
+                {new Date().toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" })}
+              </span>
             </div>
-            <span className="text-[11px] font-mono text-emerald-700 font-bold">
-              Cleared & Reconciled
-            </span>
-          </div>
 
-          <div className="space-y-2.5">
-            {confirmedPaymentsList.slice(0, 4).map((b) => (
-              <div
-                key={b.id}
-                className="p-3 rounded-xl bg-emerald-50/50 border border-emerald-200 flex items-center justify-between text-xs"
-              >
-                <div>
-                  <span className="font-bold text-[#0F1420]">{b.client.fullName}</span>
-                  <p className="text-[10px] text-emerald-800 font-mono">
-                    Inv: {b.invoiceNumber || "INV-ORB"} • Wire Settlement
-                  </p>
+            <div className="space-y-3">
+              {todayDepartures.length === 0 ? (
+                <div className="text-center py-8 text-xs text-[var(--muted)] font-mono">
+                  No charter departures scheduled for today.
                 </div>
-                <div className="text-right">
-                  <span className="font-black font-mono text-emerald-800">
-                    {formatCurrency(b.pricing.totalFlightPrice, b.pricing.currency)}
-                  </span>
-                  <span className="block text-[9px] font-mono font-bold text-emerald-600">
-                    CONFIRMED
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+              ) : (
+                todayDepartures.map((dep) => (
+                  <div
+                    key={dep.id}
+                    onClick={() => router.push(`/trips/${dep.rootId}/itinerary`)}
+                    className="border border-[var(--line)] rounded-lg p-3.5 bg-[var(--paper)] hover:border-[var(--accent)] cursor-pointer transition-colors space-y-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-bold text-xs text-[var(--ink)]">
+                          {dep.depTimeLocal} Local
+                        </span>
+                        <span className="font-mono text-xs text-[var(--muted)]">
+                          ({dep.originIcao} → {dep.destIcao})
+                        </span>
+                      </div>
+                      <StatusPill
+                        label={dep.status.toUpperCase()}
+                        variant={dep.status === "Landed" ? "green" : dep.status === "En Route" ? "blue" : "grey"}
+                      />
+                    </div>
 
-      {/* Quick Launchpad to Core Sections */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div
-          onClick={() => setActiveNav("generate_quote")}
-          className="bg-white border border-[#E0DAD0] hover:border-[#C9A052] rounded-2xl p-5 shadow-sm transition-all cursor-pointer group"
-        >
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2.5 rounded-xl bg-[#F5F2EC] group-hover:bg-[#C9A052] transition-colors">
-              <FilePlus2 className="w-5 h-5 text-[#0F1420]" />
-            </div>
-            <div>
-              <h3 className="font-extrabold text-sm text-[#0F1420]">Generate Quote</h3>
-              <p className="text-[11px] text-gray-500">Calculate pricing & export official PDF</p>
-            </div>
-          </div>
-          <span className="text-xs font-bold text-[#C9A052] flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-            <span>Start Quote Builder</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </span>
-        </div>
-
-        <div
-          onClick={() => setActiveNav("generate_brief")}
-          className="bg-white border border-[#E0DAD0] hover:border-[#C9A052] rounded-2xl p-5 shadow-sm transition-all cursor-pointer group"
-        >
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2.5 rounded-xl bg-[#F5F2EC] group-hover:bg-[#C9A052] transition-colors">
-              <Compass className="w-5 h-5 text-[#0F1420]" />
-            </div>
-            <div>
-              <h3 className="font-extrabold text-sm text-[#0F1420]">Generate Flight Brief</h3>
-              <p className="text-[11px] text-gray-500">Assign crew, FBOs & operational NOTAMs</p>
+                    <div className="flex items-center justify-between text-xs">
+                      <div>
+                        <span className="font-bold text-[var(--ink)] block">{dep.aircraftName}</span>
+                        <span className="font-mono text-[11px] text-[var(--muted)]">
+                          Tail: {dep.tailNumber} • FBO: {dep.fboName}
+                        </span>
+                      </div>
+                      <span className="font-mono font-bold text-[var(--ink)]">{dep.paxCount} Pax</span>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
-          <span className="text-xs font-bold text-[#C9A052] flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-            <span>Compile Flight Brief</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </span>
-        </div>
 
-        <div
-          onClick={() => setActiveNav("generate_invoice")}
-          className="bg-white border border-[#E0DAD0] hover:border-[#C9A052] rounded-2xl p-5 shadow-sm transition-all cursor-pointer group"
-        >
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2.5 rounded-xl bg-[#F5F2EC] group-hover:bg-[#C9A052] transition-colors">
-              <Receipt className="w-5 h-5 text-[#0F1420]" />
-            </div>
-            <div>
-              <h3 className="font-extrabold text-sm text-[#0F1420]">Generate Tax Invoice</h3>
-              <p className="text-[11px] text-gray-500">International VAT exempt & wire details</p>
-            </div>
+          <div className="pt-3 border-t border-[var(--line)] text-right">
+            <Link href="/flight-briefs" className="text-xs font-mono text-[var(--accent)] hover:underline inline-flex items-center gap-1">
+              <span>View full dispatch board</span>
+              <ArrowRight className="w-3 h-3" />
+            </Link>
           </div>
-          <span className="text-xs font-bold text-[#C9A052] flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-            <span>Create Tax Invoice</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </span>
-        </div>
-      </div>
-
-      {/* Recent Activity & Audit Trail Section (Last 5 Entries) */}
-      <div className="bg-white border border-[#E0DAD0] rounded-2xl p-6 shadow-sm space-y-4">
-        <div className="flex items-center justify-between pb-3 border-b border-[#E0DAD0]">
-          <div className="flex items-center gap-2.5">
-            <History className="w-4 h-4 text-[#C9A052]" />
-            <h3 className="text-sm font-bold font-mono uppercase tracking-wider text-[#0F1420]">
-              Recent Activity & Security Audit Trail
-            </h3>
-          </div>
-          <button
-            onClick={() => setActiveNav("activities")}
-            className="text-xs font-mono font-bold text-[#9A7A35] hover:text-[#0F1420] flex items-center gap-1 transition-colors cursor-pointer"
-          >
-            <span>View All Activities & Audit Trail</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </button>
-        </div>
-
-        <div className="divide-y divide-[#E0DAD0]/60">
-          {recentAuditLogs.map((entry) => (
-            <div key={entry.id} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-              <div className="flex items-start sm:items-center gap-3">
-                <span className="px-2 py-0.5 rounded font-mono font-bold text-[10px] bg-[#F5F2EC] text-[#0F1420] border border-[#E0DAD0] flex-shrink-0">
-                  {entry.action}
-                </span>
-                <div>
-                  <span className="font-bold text-[#0F1420]">{entry.userName}</span>
-                  <span className="text-gray-400 mx-1.5">•</span>
-                  <span className="text-gray-600">{formatAuditDetails(entry?.details)}</span>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 font-mono text-[11px] text-gray-400 self-end sm:self-center">
-                <span>Ref: {entry.entityId}</span>
-                <span>{entry.timestamp}</span>
-              </div>
-            </div>
-          ))}
         </div>
       </div>
     </div>

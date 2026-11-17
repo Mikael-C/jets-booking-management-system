@@ -2,6 +2,8 @@
 
 import React from "react";
 import { Booking } from "@/types/aviation";
+import { useAviation } from "@/lib/aviationContext";
+import { initialSettings } from "@/data/initialSettings";
 import DocumentHeader from "./DocumentHeader";
 import DocumentFooter from "./DocumentFooter";
 import { formatDocCurrency } from "./QuotationDoc";
@@ -11,6 +13,9 @@ interface CreditNoteDocProps {
 }
 
 export default function CreditNoteDoc({ booking }: CreditNoteDocProps) {
+  const { settings } = useAviation();
+  const company = settings?.company || initialSettings.company;
+
   const {
     client,
     pricing,
@@ -20,9 +25,9 @@ export default function CreditNoteDoc({ booking }: CreditNoteDocProps) {
   } = booking;
 
   const creditNote = booking.creditNotes?.[0];
-  const tripRef = tripNumber || "FE4578";
+  const tripRef = (tripNumber || "FE4578").split("-")[0];
   const creditNoteNumber = creditNote?.creditNoteNumber || `CN-${tripRef}-01`;
-  const againstInvoice = `INV-${tripRef}-02`;
+  const againstInvoice = `INV-${tripRef}-01`;
   const currency = pricing?.currency || "EUR";
   const creditAmount = creditNote?.amount || 250;
   const clientName = client?.companyName || client?.fullName || "Adeyemi Holdings Ltd";
@@ -53,7 +58,7 @@ export default function CreditNoteDoc({ booking }: CreditNoteDocProps) {
                 <span className="font-semibold text-slate-900 font-mono w-40 text-right">{againstInvoice}</span>
               </div>
               <div className="flex justify-end gap-3">
-                <span className="text-[10px] font-semibold text-slate-600 tracking-wider uppercase">TRIP</span>
+                <span className="text-[10px] font-semibold text-slate-600 tracking-wider uppercase">TRIP ROOT</span>
                 <span className="font-semibold text-slate-900 font-mono w-40 text-right">{tripRef}</span>
               </div>
               <div className="flex justify-end gap-3">
@@ -70,7 +75,7 @@ export default function CreditNoteDoc({ booking }: CreditNoteDocProps) {
                 ISSUED TO
               </p>
               <p className="font-bold text-slate-900 text-sm">{clientName}</p>
-              <p className="text-slate-700">Attn: {client?.fullName || "Tunde Adeyemi"}, Chairman</p>
+              <p className="text-slate-700">Attn: {client?.fullName || "Tunde Adeyemi"}</p>
               <p className="text-slate-600">{client?.streetAddress || "14 Bourdillon Road, Ikoyi"}</p>
               <p className="text-slate-600">{client?.cityPostalCountry || "Lagos, Nigeria"}</p>
               <p className="text-slate-600 font-mono mt-0.5">Account {accountNumber || "ACC-30412"}</p>
@@ -98,9 +103,9 @@ export default function CreditNoteDoc({ booking }: CreditNoteDocProps) {
               <tbody className="divide-y divide-slate-100 text-xs">
                 <tr className="align-top">
                   <td className="py-3 pr-4">
-                    <p className="font-bold text-slate-900">Credit against invoice {againstInvoice}</p>
+                    <p className="font-bold text-slate-900">Commercial credit adjustment</p>
                     <p className="text-slate-700 mt-0.5">
-                      {creditNote?.reason || "VIP chauffeur on arrival, Geneva (LSGG), 20 Nov 2026"}
+                      Credit applied against Invoice {againstInvoice} (Trip Reference {tripRef})
                     </p>
                   </td>
                   <td className="py-3 pl-4 text-right font-medium text-slate-900 font-mono whitespace-nowrap">
@@ -110,7 +115,8 @@ export default function CreditNoteDoc({ booking }: CreditNoteDocProps) {
 
                 <tr className="align-top">
                   <td className="py-2.5 pr-4 text-slate-700">
-                    VAT <span className="bg-[#FEF3C7] text-[#92400E] px-1 py-0.5 rounded text-[10px]">[as on the original invoice]</span>
+                    <span className="font-semibold text-slate-900">VAT: </span>
+                    <span className="text-[11px] text-slate-600">{company.vatWording || company.vatExemptionClause}</span>
                   </td>
                   <td className="py-2.5 pl-4 text-right font-medium text-slate-900 font-mono whitespace-nowrap">
                     {formatDocCurrency(0, currency)}
@@ -122,7 +128,7 @@ export default function CreditNoteDoc({ booking }: CreditNoteDocProps) {
             {/* Total Credited */}
             <div className="border-t border-slate-900 pt-3 mt-1 flex justify-between items-center text-sm">
               <span className="font-bold text-slate-900">Total credited</span>
-              <span className="font-bold text-slate-900 text-base font-mono">
+              <span className="font-bold text-rose-700 text-base font-mono">
                 {formatDocCurrency(-creditAmount, currency)}
               </span>
             </div>
@@ -131,38 +137,26 @@ export default function CreditNoteDoc({ booking }: CreditNoteDocProps) {
           {/* TRIP BALANCE AFTER THIS CREDIT NOTE */}
           <div className="pt-2">
             <h3 className="text-[10px] font-bold text-slate-900 tracking-wider uppercase mb-2">
-              TRIP BALANCE AFTER THIS CREDIT NOTE
+              TRIP LEDGER SUMMARY AFTER THIS CREDIT NOTE
             </h3>
-            <div className="border-t border-b border-slate-200 divide-y divide-slate-100 text-xs">
+            <div className="border-t border-b border-slate-200 divide-y divide-slate-100 text-xs font-mono">
               <div className="py-2.5 flex justify-between items-center">
-                <span className="text-slate-700">Invoiced · INV-{tripRef}-01, INV-{tripRef}-02</span>
-                <span className="font-mono text-slate-900">{formatDocCurrency(8250, currency)}</span>
+                <span className="text-slate-700 font-sans">Original Invoiced Amount ({againstInvoice})</span>
+                <span className="text-slate-900">{formatDocCurrency(booking.pricing.totalFlightPrice, currency)}</span>
               </div>
               <div className="py-2.5 flex justify-between items-center">
-                <span className="text-slate-700">Credited · {creditNoteNumber}</span>
-                <span className="font-mono text-slate-900">{formatDocCurrency(-creditAmount, currency)}</span>
+                <span className="text-slate-700 font-sans">Total Credited ({creditNoteNumber})</span>
+                <span className="text-rose-700 font-bold">{formatDocCurrency(-creditAmount, currency)}</span>
               </div>
               <div className="py-2.5 flex justify-between items-center">
-                <span className="text-slate-700">Received</span>
-                <span className="font-mono text-slate-900">{formatDocCurrency(-8000, currency)}</span>
-              </div>
-              <div className="py-2.5 flex justify-between items-center font-bold">
-                <span className="text-slate-900">Balance</span>
-                <span className="font-mono text-slate-900 text-sm">{formatDocCurrency(0, currency)}</span>
+                <span className="text-slate-700 font-sans">Adjusted Net Payable</span>
+                <span className="text-slate-900 font-bold">
+                  {formatDocCurrency(booking.pricing.totalFlightPrice - creditAmount, currency)}
+                </span>
               </div>
             </div>
-            <p className="text-xs text-slate-700 mt-2.5">
-              {againstInvoice} is now settled. No payment is due and no refund is owed.
-            </p>
-          </div>
-
-          {/* Design Notes Callout Box */}
-          <div className="border border-dashed border-slate-300 rounded-lg p-4 bg-slate-50 text-[11px] text-slate-600 leading-relaxed">
-            <p className="font-bold text-slate-900 mb-1">
-              Design notes for the developer (not printed)
-            </p>
-            <p>
-              The reason chosen in the app (here: Complimentary service) is internal and never printed. When the client has overpaid, the balance block ends with “Refund due to you: € …” and the refund method. Output options: credit note only, invoice for the remainder, or both.
+            <p className="text-xs text-slate-600 mt-2.5 font-sans leading-relaxed">
+              This credit note has been applied to the client account. If payment was already received in full, the balance may be retained as flight credit or refunded upon written instruction.
             </p>
           </div>
         </div>

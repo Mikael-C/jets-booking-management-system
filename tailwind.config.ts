@@ -56,10 +56,9 @@ const config: Config = {
         brandOrange: "#FF6B00",
       },
       fontFamily: {
-        sans: ["var(--font-manrope)", "Manrope", "system-ui", "sans-serif"],
-        display: ["var(--font-manrope)", "Manrope", "system-ui", "sans-serif"],
-        mono: ["var(--font-manrope)", "Manrope", "system-ui", "sans-serif"],
-        serif: ["var(--font-manrope)", "Manrope", "system-ui", "sans-serif"],
+        sans: ["var(--body)", "IBM Plex Sans", "system-ui", "sans-serif"],
+        display: ["var(--display)", "IBM Plex Sans Condensed", "Arial Narrow", "sans-serif"],
+        mono: ["var(--mono)", "IBM Plex Mono", "monospace"],
       },
       boxShadow: {
         gold: "0 4px 30px rgba(201,160,82,0.15)",

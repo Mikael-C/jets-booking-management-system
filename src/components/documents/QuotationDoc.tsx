@@ -2,6 +2,8 @@
 
 import React from "react";
 import { Booking } from "@/types/aviation";
+import { useAviation } from "@/lib/aviationContext";
+import { initialSettings } from "@/data/initialSettings";
 import DocumentHeader from "./DocumentHeader";
 import DocumentFooter from "./DocumentFooter";
 
@@ -28,6 +30,9 @@ export function formatDocCurrency(amount: number, currency: string = "EUR"): str
 }
 
 export default function QuotationDoc({ booking }: QuotationDocProps) {
+  const { settings } = useAviation();
+  const company = settings?.company || initialSettings.company;
+
   const {
     client,
     aircraft,
@@ -297,7 +302,7 @@ export default function QuotationDoc({ booking }: QuotationDocProps) {
 
                 <div className="flex justify-between items-start gap-4">
                   <span className="text-slate-700 leading-snug">
-                    VAT <span className="bg-[#FEF3C7] text-[#92400E] px-1 py-0.5 rounded text-[10px]">[rate and exemption text per tax advice]</span>
+                    VAT · <span className="text-[10px] text-slate-500 font-mono">{company.vatExemptionClause}</span>
                   </span>
                   <span className="font-medium text-slate-900 whitespace-nowrap">
                     {formatDocCurrency(0, currency)}

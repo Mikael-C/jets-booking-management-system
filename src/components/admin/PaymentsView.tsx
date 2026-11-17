@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import NextLink from "next/link";
 import { useAviation } from "@/lib/aviationContext";
 import { Booking } from "@/types/aviation";
 import { formatCurrency } from "@/lib/pricingCalculator";
@@ -126,8 +127,7 @@ export default function PaymentsView() {
     e.preventDefault();
     if (!selectedBookingForPayment) return;
 
-    selectedBookingForPayment.paymentReason = paymentReason;
-    updateBookingPaymentStatus(selectedBookingForPayment.id, paymentType);
+    updateBookingPaymentStatus(selectedBookingForPayment.id, paymentType, paymentReason);
     addAuditEntry({
       userEmail: currentUser?.email || "finance@orbelo.com",
       userName: currentUser?.name || "Finance Operations",
@@ -373,7 +373,12 @@ export default function PaymentsView() {
                         </td>
                         <td className="py-3.5 px-4">
                           <div className="font-bold text-[#0F1420]">{item.booking.client.fullName}</div>
-                          <span className="text-[10px] text-gray-500 font-mono">Trip: {item.booking.tripNumber}</span>
+                          <NextLink
+                            href={`/trips/${(item.booking.tripId || item.booking.tripNumber || item.booking.id).split("-")[0]}/accounting`}
+                            className="text-[10px] text-[#C9A052] hover:underline font-mono font-bold block"
+                          >
+                            Trip: {item.booking.tripNumber} →
+                          </NextLink>
                         </td>
                         <td className="py-3.5 px-4 font-mono text-[#0F1420] font-bold">
                           {formatCurrency(item.originalTotal ?? item.amount, item.booking.pricing.currency || "EUR")}
@@ -443,7 +448,12 @@ export default function PaymentsView() {
                   <tr key={b.id} className="hover:bg-[#FDFCFA] transition-colors">
                     {/* Trip # & Flight Date */}
                     <td className="py-3.5 px-4">
-                      <div className="font-mono font-bold text-[#0F1420]">{b.tripNumber}</div>
+                      <NextLink
+                        href={`/trips/${(b.tripId || b.tripNumber || "FE4578").split("-")[0]}/accounting`}
+                        className="font-mono font-bold text-[#0F1420] hover:text-[#C9A052] hover:underline"
+                      >
+                        {b.tripNumber}
+                      </NextLink>
                       <p className="text-[11px] text-gray-500">
                         {b.legs[0]?.origin.icao} → {b.legs[0]?.destination.icao} ({b.legs[0]?.flightDate})
                       </p>

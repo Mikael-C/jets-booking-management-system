@@ -1,8 +1,11 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useAviation } from "@/lib/aviationContext";
 import { formatCurrency } from "@/lib/pricingCalculator";
+import StatusPill from "@/components/ui/StatusPill";
 import {
   Sparkles,
   TrendingUp,
@@ -16,18 +19,26 @@ import {
   Compass,
   Receipt,
   Coins,
-  PlusCircle
+  PlusCircle,
+  ExternalLink
 } from "lucide-react";
 
 export default function AgentOverviewView() {
+  const router = useRouter();
   const {
     bookings,
+    agentRequests,
     setActiveNav,
     openDocument,
     tokenBalance,
     tokenTier,
     openTokenModal
   } = useAviation();
+
+  const handleNewRequest = () => {
+    setActiveNav("request_quote");
+    router.push("/agent/requests/new");
+  };
 
   const confirmedDeals = bookings.filter((b) =>
     ["confirmed", "dispatched", "in_flight", "completed"].includes(b.status)
@@ -77,7 +88,7 @@ export default function AgentOverviewView() {
             <span>Refill Tokens</span>
           </button>
           <button
-            onClick={() => setActiveNav("request_quote")}
+            onClick={handleNewRequest}
             className="flex items-center gap-2.5 px-6 py-3.5 rounded-xl bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] font-black text-xs uppercase tracking-wider shadow-lg transition-all transform hover:-translate-y-0.5 cursor-pointer whitespace-nowrap"
           >
             <Sparkles className="w-4 h-4" />
@@ -160,7 +171,7 @@ export default function AgentOverviewView() {
       {/* 3 Quick Launchpad Buttons for Broker Requests */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div
-          onClick={() => setActiveNav("request_quote")}
+          onClick={handleNewRequest}
           className="bg-white border border-[#E0DAD0] hover:border-[#C9A052] rounded-2xl p-5 shadow-sm transition-all cursor-pointer group"
         >
           <div className="flex items-center gap-3 mb-2">
@@ -169,11 +180,11 @@ export default function AgentOverviewView() {
             </div>
             <div>
               <h3 className="font-extrabold text-sm text-[#0F1420]">Request for Quotes</h3>
-              <p className="text-[11px] text-gray-500">Submit routing for admin price generation</p>
+              <p className="text-[11px] text-gray-500">6-step guided wizard for routing & aircraft</p>
             </div>
           </div>
           <span className="text-xs font-bold text-[#C9A052] flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-            <span>Fill Quote Details</span>
+            <span>Launch Wizard</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </span>
         </div>
@@ -214,6 +225,138 @@ export default function AgentOverviewView() {
             <span>Fill Invoice Details</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </span>
+        </div>
+      </div>
+
+      {/* Recent Proposals & Activity */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Recent Quotes for Clients */}
+        <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-bold font-display text-sm text-[var(--ink)] m-0">
+                Active Client Proposals
+              </h3>
+              <p className="text-xs text-[var(--muted)]">Recent quotes with your 5% broker commission</p>
+            </div>
+            <Link
+              href="/agent/requests"
+              className="text-xs font-mono text-[var(--accent)] hover:underline flex items-center gap-1"
+            >
+              <span>View all</span>
+              <ArrowRight className="w-3 h-3" />
+            </Link>
+          </div>
+
+          <div className="space-y-2.5">
+            {openQuotes.slice(0, 4).map((b) => {
+              const route = b.legs.map((l) => `${l.origin?.iata || l.origin?.icao || "---"} → ${l.destination?.iata || l.destination?.icao || "---"}`).join(", ");
+              const comm = b.pricing.totalFlightPrice * 0.05;
+              return (
+                <div
+                  key={b.id}
+                  className="p-3 bg-[var(--paper)] border border-[var(--line)] rounded-lg flex items-center justify-between gap-3 hover:border-[var(--accent)] transition-colors"
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-bold text-xs text-[var(--ink)]">
+                        {b.tripNumber}
+                      </span>
+                      <StatusPill
+                        label={b.quoteStatus?.toUpperCase() || b.status.toUpperCase()}
+                        variant={b.quoteStatus === "accepted" ? "green" : "blue"}
+                      />
+                    </div>
+                    <p className="text-xs text-[var(--ink)] font-semibold truncate mt-0.5">
+                      {b.client?.fullName || "Client Confidential"} • {b.aircraft?.name || "Midsize Jet"}
+                    </p>
+                    <p className="text-[11px] text-[var(--muted)] font-mono">
+                      {route}
+                    </p>
+                  </div>
+
+                  <div className="text-right flex-shrink-0">
+                    <div className="font-mono font-bold text-xs text-[var(--ink)]">
+                      {formatCurrency(b.pricing.totalFlightPrice, b.pricing.currency || "EUR")}
+                    </div>
+                    <div className="font-mono text-[11px] text-[var(--accent)] font-semibold">
+                      +{formatCurrency(comm, b.pricing.currency || "EUR")} comm
+                    </div>
+                    <Link
+                      href={`/agent/quotes/${b.id}`}
+                      className="text-[10px] font-mono font-bold text-[var(--muted)] hover:text-[var(--ink)] inline-flex items-center gap-0.5 mt-1"
+                    >
+                      <span>Detail</span>
+                      <ExternalLink className="w-2.5 h-2.5" />
+                    </Link>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Live Sourcing Inquiries */}
+        <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-bold font-display text-sm text-[var(--ink)] m-0">
+                Sourcing Requests Queue
+              </h3>
+              <p className="text-xs text-[var(--muted)]">Flight requests under review by Orbelo Operations</p>
+            </div>
+            <Link
+              href="/agent/requests"
+              className="text-xs font-mono text-[var(--accent)] hover:underline flex items-center gap-1"
+            >
+              <span>View all</span>
+              <ArrowRight className="w-3 h-3" />
+            </Link>
+          </div>
+
+          <div className="space-y-2.5">
+            {agentRequests.slice(0, 4).map((req) => (
+              <div
+                key={req.id}
+                className="p-3 bg-[var(--paper)] border border-[var(--line)] rounded-lg flex items-center justify-between gap-3"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-bold text-xs text-[var(--ink)]">{req.id}</span>
+                    <StatusPill
+                      label={req.status.replace("_", " ").toUpperCase()}
+                      variant={
+                        req.status === "completed"
+                          ? "green"
+                          : req.status === "declined"
+                          ? "red"
+                          : "amber"
+                      }
+                    />
+                  </div>
+                  <p className="text-xs text-[var(--ink)] font-semibold truncate mt-0.5">
+                    {req.clientName || "Private Client"}
+                  </p>
+                  <p className="text-[11px] text-[var(--muted)] font-mono">
+                    {req.route || `${req.originIcao || "---"} → ${req.destIcao || "---"}`} • {req.aircraftPreference || "Any Category"}
+                  </p>
+                </div>
+
+                <div className="text-right flex-shrink-0">
+                  <span className="text-[10px] font-mono text-[var(--muted)] block">
+                    {req.flightDate || "Flexible"}
+                  </span>
+                  <Link
+                    href="/agent/requests"
+                    className="text-[10px] font-mono font-bold text-[var(--accent)] hover:underline inline-flex items-center gap-0.5 mt-1"
+                  >
+                    <span>Track</span>
+                    <ArrowRight className="w-2.5 h-2.5" />
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>

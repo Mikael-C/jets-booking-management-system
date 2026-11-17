@@ -29,7 +29,11 @@ import {
   UserCheck
 } from "lucide-react";
 
-export default function AccountsView() {
+interface AccountsViewProps {
+  selectedAccountId?: string;
+}
+
+export default function AccountsView({ selectedAccountId }: AccountsViewProps = {}) {
   const { accounts, addAccount, updateAccount, deleteAccount, setActiveNav, currentUser, role } = useAviation();
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<"all" | "entity" | "individual" | "agent">("all");
@@ -171,6 +175,15 @@ export default function AccountsView() {
     setValidationErrors([]);
     setIsModalOpen(true);
   };
+
+  React.useEffect(() => {
+    if (selectedAccountId) {
+      const match = accounts.find((a) => a.id === selectedAccountId || a.accountNumber === selectedAccountId);
+      if (match) {
+        handleOpenEditModal(match);
+      }
+    }
+  }, [selectedAccountId, accounts]);
 
   // Add person row
   const handleAddPerson = () => {

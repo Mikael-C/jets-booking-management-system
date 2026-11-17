@@ -723,3 +723,87 @@ export interface ContactRecord {
   notes?: string;
   createdAt: string;
 }
+
+export interface MarginTier {
+  id: string;
+  label: string;
+  minCost: number;
+  maxCost: number | null; // null = infinity
+  marginPercent: number; // e.g. 15, 10, 8
+}
+
+export interface BankAccountSetting {
+  id: string;
+  currency: "EUR" | "USD" | "GBP" | "CHF";
+  bankName: string;
+  accountHolder: string;
+  iban: string;
+  bic: string;
+  accountNumber?: string;
+  routingNumber?: string;
+  address?: string;
+  isDefault?: boolean;
+}
+
+export interface TermsVersion {
+  id: string;
+  version: string; // e.g. "v2.4"
+  effectiveDate: string; // e.g. "01.10.2026"
+  title: string;
+  summary: string;
+  fullText: string;
+  isActive: boolean;
+}
+
+export interface CancellationFeeStep {
+  id: string;
+  daysPriorMin: number;
+  daysPriorMax: number | null; // null = or more
+  feePercentage: number;
+  description: string;
+}
+
+export interface TokenBundleConfig {
+  id: string;
+  tokens: number;
+  price: number;
+  currency: "EUR" | "USD" | "GBP";
+  popular?: boolean;
+}
+
+export interface AppSettings {
+  company: {
+    name: string;
+    legalEntity: string;
+    representativeName: string;
+    address: string;
+    phone: string;
+    phone24_7?: string;
+    email: string;
+    vatNumber: string;
+    additionalVatNumbers: string[];
+    courtOfJurisdiction: string;
+    commercialRegistry: string;
+    registrationNumber?: string;
+    vatExemptionClause: string;
+    vatWording?: string;
+    signatoryTitle?: string;
+  };
+  pricing?: {
+    cardFeePercent: number;
+    defaultCurrency?: "EUR" | "USD" | "GBP" | "CHF";
+  };
+  marginTiers: MarginTier[];
+  bankAccounts: BankAccountSetting[];
+  termsVersions: TermsVersion[];
+  cancellationPolicy: CancellationFeeStep[];
+  tokens: {
+    freeTokensOnSignup: number;
+    bundles: TokenBundleConfig[];
+  };
+  requestOverdueMinutes: number; // e.g. 30
+  notifications: {
+    emailAlerts: boolean;
+    urgentTripHours: number; // e.g. 72 (3 days)
+  };
+}
