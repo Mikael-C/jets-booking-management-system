@@ -2,7 +2,7 @@
 
 import React from "react";
 import AppShell from "@/components/layout/AppShell";
-import RequestDetailView from "@/components/admin/RequestDetailView";
+import AgentRequestsQueueView from "@/components/admin/AgentRequestsQueueView";
 
 interface RequestPageProps {
   params: {
@@ -10,10 +10,10 @@ interface RequestPageProps {
   };
 }
 
-export default function RequestPage({ params }: RequestPageProps) {
+export default function RequestDetailPage({ params }: RequestPageProps) {
   return (
     <AppShell navKey="agent_requests">
-      <RequestDetailView requestId={params.id} />
+      <AgentRequestsQueueView selectedRequestId={params.id} />
     </AppShell>
   );
 }

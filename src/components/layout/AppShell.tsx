@@ -17,7 +17,7 @@ interface AppShellProps {
 }
 
 export default function AppShell({ children, navKey }: AppShellProps) {
-  const { isAuthenticated, setActiveNav, role } = useAviation();
+  const { isAuthenticated, setActiveNav, role, activeNav } = useAviation();
 
   useEffect(() => {
     if (navKey) {
@@ -30,6 +30,31 @@ export default function AppShell({ children, navKey }: AppShellProps) {
   }
 
   const isAgent = role === "agent";
+  const effectiveNav = navKey || activeNav;
+  const isModernCleanPage = ["agent_requests", "requests", "accounts", "contacts"].includes(effectiveNav);
+
+  if (isModernCleanPage) {
+    return (
+      <div className="min-h-screen bg-[#F8F9FA] text-gray-900 flex font-sans antialiased">
+        {/* Sidebar */}
+        <Sidebar />
+
+        {/* Main Content Area */}
+        <div className="flex-1 flex flex-col min-w-0 min-h-screen overflow-x-hidden bg-[#F8F9FA]">
+          <main className="flex-1 p-6 sm:p-8 max-w-7xl w-full mx-auto">
+            {children}
+          </main>
+        </div>
+
+        {/* Global Modals & Drawers */}
+        <DocumentViewerModal />
+        <BookingDetailDrawer />
+        <ChecklistDrawer />
+        <NewQuoteModal />
+        <TokenSubscriptionModal />
+      </div>
+    );
+  }
 
   return (
     <div

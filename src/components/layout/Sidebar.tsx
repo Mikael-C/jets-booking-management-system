@@ -1,634 +1,218 @@
 "use client";
 
 import React from "react";
+import { useRouter, usePathname } from "next/navigation";
 import { useAviation } from "@/lib/aviationContext";
-import {
-  LayoutDashboard,
-  Plane,
-  FilePlus2,
-  Compass,
-  Receipt,
-  Users,
-  Inbox,
-  LogOut,
-  Shield,
-  Send,
-  FileText,
-  Clock,
-  Sparkles,
-  RefreshCw,
-  CheckCircle2,
-  ChevronRight,
-  Search,
-  Building2,
-  CreditCard,
-  ClipboardList,
-  ShieldCheck,
-  Layers,
-  ScrollText,
-  Activity,
-  UserCheck,
-  Coins,
-  PlusCircle,
-  User,
-  MessageSquare,
-  MapPin,
-  Settings as SettingsIcon
-} from "lucide-react";
 
 export default function Sidebar() {
+  const router = useRouter();
+  const pathname = usePathname();
   const {
     role,
     activeNav,
     setActiveNav,
-    logout,
-    currentUser,
     agentRequests,
     bookings,
-    operators,
     accounts,
-    contacts,
-    tokenBalance,
-    openTokenModal,
-    unreadMessageCount
+    contacts
   } = useAviation();
 
-  const pendingRequestsCount = agentRequests.filter((r) => r.status === "pending").length;
-  const inSourcingCount = agentRequests.filter((r) => r.status === "in_sourcing").length;
-  const inProgressBookingsCount = bookings.filter((b) =>
-    ["draft", "quote_sent", "client_review"].includes(b.status)
-  ).length;
-  const bookingTripsCount = new Set(bookings.map((booking) => {
-    const isBookedRecord = booking.isBooked ||
-      ["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(booking.status);
-    return isBookedRecord ? booking.tripId || booking.tripNumber || booking.id : booking.id;
-  })).size;
+  const isRequestsActive = activeNav === "agent_requests" || pathname?.startsWith("/requests");
+  const isAccountsActive = activeNav === "accounts" || pathname?.startsWith("/accounts");
+  const isContactsActive = activeNav === "contacts" || pathname?.startsWith("/contacts");
+  const isOverviewActive = activeNav === "overview" && !pathname?.startsWith("/requests") && !pathname?.startsWith("/accounts") && !pathname?.startsWith("/contacts");
+  const isQuotesActive = activeNav === "quotes" || pathname?.startsWith("/quotes");
+  const isBookingsActive = activeNav === "bookings" || pathname?.startsWith("/bookings");
+  const isPaymentsActive = activeNav === "payments" || pathname?.startsWith("/payments");
+  const isInvoicesActive = activeNav === "invoices" || pathname?.startsWith("/invoices");
+  const isBriefsActive = activeNav === "flight_briefs" || pathname?.startsWith("/flight-briefs");
+  const isContractsActive = activeNav === "contracts" || pathname?.startsWith("/contracts");
+  const isAgentsActive = activeNav === "agents" || pathname?.startsWith("/agents");
+  const isOperatorsActive = activeNav === "operators" || pathname?.startsWith("/operators");
+  const isAirportsActive = activeNav === "airports" || pathname?.startsWith("/airports");
 
-  const getRoleDisplay = () => {
-    switch (role) {
-      case "super_admin":
-        return "SUPER ADMIN";
-      case "finance":
-        return "FINANCE";
-      case "operations":
-        return "OPERATIONS";
-      case "admin":
-        return "ADMINISTRATOR";
-      case "agent":
-      default:
-        return "CHARTER AGENT";
-    }
+  const navigateTo = (navKey: string, route: string) => {
+    setActiveNav(navKey);
+    router.push(route);
   };
 
-  const isStaffRole = role !== "agent";
-
   return (
-    <aside className="w-64 bg-[#0F1420] text-white flex flex-col flex-shrink-0 h-screen sticky top-0 border-r border-[#1C2436] shadow-2xl z-30 select-none">
-      
+    <aside className="w-56 bg-[#0B1320] text-white flex flex-col flex-shrink-0 h-screen sticky top-0 border-r border-[#151D2A] select-none z-30">
       {/* Brand Header */}
-      <div className="p-5 border-b border-[#1C2436] flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="h-9 w-9 rounded-xl bg-[#141A29] border border-[#C9A052]/40 flex items-center justify-center shadow-md">
-            <Plane className="w-5 h-5 text-[#C9A052] transform -rotate-45" />
-          </div>
-          <div>
-            <div className="flex items-center gap-1.5">
-              <span
-                className="font-display text-xl font-black tracking-tight"
-                style={{ color: "#FF6B00", letterSpacing: "-0.03em" }}
-              >
-                Orbelo
-              </span>
-              <span className="text-[9px] font-mono font-bold uppercase px-1.5 py-0.5 rounded bg-[#C9A052]/15 text-[#C9A052] border border-[#C9A052]/30">
-                OPS
-              </span>
-            </div>
-            <p className="text-[10px] text-gray-400 font-medium">Private Jet Management</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Role Badge Indicator */}
-      <div className="px-5 py-3 bg-[#0B101A] border-b border-[#1C2436] flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          {isStaffRole ? (
-            <Shield className="w-3.5 h-3.5 text-[#C9A052]" />
-          ) : (
-            <Plane className="w-3.5 h-3.5 text-[#C9A052]" />
-          )}
-          <span className="text-[11px] font-mono uppercase font-bold tracking-wider text-gray-300">
-            {getRoleDisplay()}
-          </span>
-        </div>
-        <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" title="System Online" />
+      <div className="px-5 py-6 flex items-center gap-2.5">
+        <div className="w-4 h-4 rounded-[4px] bg-[#E59700] flex-shrink-0" />
+        <span className="font-bold text-white text-base tracking-tight font-sans">
+          Orbelo
+        </span>
       </div>
 
       {/* Nav List */}
-      <div className="flex-1 overflow-y-auto py-4 px-3 space-y-6">
-        
-        {/* Navigation for STAFF / ADMIN / SUPER_ADMIN / FINANCE / OPERATIONS */}
-        {isStaffRole && (
-          <div className="space-y-1">
-            <div className="px-3 pb-2 text-[10px] font-mono uppercase tracking-wider text-gray-400 font-bold">
-              Operations
-            </div>
-
-            {/* 1. Overview */}
-            <button
-              onClick={() => setActiveNav("overview")}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "overview"
-                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
-                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <LayoutDashboard className={`w-4 h-4 ${activeNav === "overview" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Overview</span>
-              </div>
-            </button>
-
-            {/* 2. Requests */}
-            <button
-              onClick={() => setActiveNav("agent_requests")}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "agent_requests"
-                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
-                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Inbox className={`w-4 h-4 ${activeNav === "agent_requests" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Requests</span>
-              </div>
-              {pendingRequestsCount > 0 && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold font-mono bg-amber-400 text-[#0F1420] animate-pulse">
-                  {pendingRequestsCount} new
-                </span>
-              )}
-            </button>
-
-            {/* 3. Quotes */}
-            <button
-              onClick={() => setActiveNav("quotes")}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "quotes" || activeNav === "generate_quote"
-                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
-                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <FilePlus2 className={`w-4 h-4 ${activeNav === "quotes" || activeNav === "generate_quote" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Quotes</span>
-              </div>
-            </button>
-
-            {/* 4. Bookings */}
-            <button
-              onClick={() => setActiveNav("bookings")}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "bookings"
-                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
-                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Plane className={`w-4 h-4 ${activeNav === "bookings" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Bookings</span>
-              </div>
-              <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold ${
-                activeNav === "bookings" ? "bg-[#0F1420] text-white" : "bg-[#1C2436] text-gray-300"
-              }`}>
-                {bookingTripsCount}
-              </span>
-            </button>
-
-            {/* 5. Payments */}
-            <button
-              onClick={() => setActiveNav("payments")}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "payments"
-                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
-                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <CreditCard className={`w-4 h-4 ${activeNav === "payments" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Payments</span>
-              </div>
-            </button>
-
-            {/* 6. Invoices & Credit Notes */}
-            <button
-              onClick={() => setActiveNav("invoices")}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "invoices" || activeNav === "generate_invoice"
-                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
-                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Receipt className={`w-4 h-4 ${activeNav === "invoices" || activeNav === "generate_invoice" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Invoices & credit notes</span>
-              </div>
-            </button>
-
-            {/* 7. Flight Briefs */}
-            <button
-              onClick={() => setActiveNav("flight_briefs")}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "flight_briefs" || activeNav === "generate_brief"
-                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
-                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Compass className={`w-4 h-4 ${activeNav === "flight_briefs" || activeNav === "generate_brief" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Flight briefs</span>
-              </div>
-            </button>
-
-            {/* 8. Contracts */}
-            <button
-              onClick={() => setActiveNav("contracts")}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "contracts" || activeNav === "generate_contract"
-                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
-                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <ScrollText className={`w-4 h-4 ${activeNav === "contracts" || activeNav === "generate_contract" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Contracts</span>
-              </div>
-            </button>
-
-            {/* Directories Section */}
-            <div className="pt-4 px-3 pb-2 text-[10px] font-mono uppercase tracking-wider text-gray-400 font-bold">
-              Directories
-            </div>
-
-            {/* 9. Accounts */}
-            <button
-              onClick={() => setActiveNav("accounts")}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "accounts"
-                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
-                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Building2 className={`w-4 h-4 ${activeNav === "accounts" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Accounts</span>
-              </div>
-              <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold ${
-                activeNav === "accounts" ? "bg-[#0F1420] text-white" : "bg-[#1C2436] text-gray-300"
-              }`}>
-                {accounts.length}
-              </span>
-            </button>
-
-            {/* 10. Contacts */}
-            <button
-              onClick={() => setActiveNav("contacts")}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "contacts"
-                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
-                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Users className={`w-4 h-4 ${activeNav === "contacts" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Contacts</span>
-              </div>
-              <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold ${
-                activeNav === "contacts" ? "bg-[#0F1420] text-white" : "bg-[#1C2436] text-gray-300"
-              }`}>
-                {contacts.length}
-              </span>
-            </button>
-
-            {/* 11. Agents */}
-            <button
-              onClick={() => setActiveNav("agents")}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "agents"
-                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
-                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <UserCheck className={`w-4 h-4 ${activeNav === "agents" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Agents</span>
-              </div>
-            </button>
-
-            {/* 12. Operators */}
-            <button
-              onClick={() => setActiveNav("operators")}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "operators"
-                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
-                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <ShieldCheck className={`w-4 h-4 ${activeNav === "operators" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Operators</span>
-              </div>
-              <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold ${
-                activeNav === "operators" ? "bg-[#0F1420] text-white" : "bg-[#1C2436] text-gray-300"
-              }`}>
-                {operators.length}
-              </span>
-            </button>
-
-            {/* 13. Airports */}
-            <button
-              onClick={() => setActiveNav("airports")}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "airports"
-                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
-                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <MapPin className={`w-4 h-4 ${activeNav === "airports" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Airports & FBOs</span>
-              </div>
-            </button>
-
-            {/* Governance & Configuration */}
-            <div className="pt-4 px-3 pb-2 text-[10px] font-mono uppercase tracking-wider text-gray-400 font-bold">
-              Configuration & System
-            </div>
-
-            {/* 14. Settings */}
-            <button
-              onClick={() => setActiveNav("settings")}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "settings"
-                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
-                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <SettingsIcon className={`w-4 h-4 ${activeNav === "settings" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Settings</span>
-              </div>
-              <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-[#C9A052]/20 text-[#C9A052] font-bold">
-                R-039
-              </span>
-            </button>
-
-            <button
-              onClick={() => setActiveNav("messages")}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "messages"
-                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
-                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <MessageSquare className={`w-4 h-4 ${activeNav === "messages" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Messages & Chat</span>
-              </div>
-              {unreadMessageCount > 0 && (
-                <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-full bg-[#C9A052] text-[#0F1420]">
-                  {unreadMessageCount}
-                </span>
-              )}
-            </button>
-
-            <button
-              onClick={() => setActiveNav("activities")}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "activities" || activeNav === "audit_log"
-                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
-                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Activity className={`w-4 h-4 ${activeNav === "activities" || activeNav === "audit_log" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Activities</span>
-              </div>
-              <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" title="Live Events Active" />
-            </button>
-
-            <button
-              onClick={() => setActiveNav("profile")}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "profile"
-                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
-                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <User className={`w-4 h-4 ${activeNav === "profile" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Profile</span>
-              </div>
-            </button>
-          </div>
-        )}
-
-        {/* Navigation for CHARTER AGENT */}
-        {role === "agent" && (
-          <div className="space-y-1">
-            {/* Agent Token Balance Card */}
-            <div className="mx-1 mb-3 p-3 rounded-xl bg-gradient-to-br from-[#141A29] to-[#0B101A] border border-[#C9A052]/40 shadow-md">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#C9A052] flex items-center gap-1">
-                  <Coins className="w-3.5 h-3.5" /> Token Balance
-                </span>
-                <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30">
-                  Active
-                </span>
-              </div>
-              <div className="text-xl font-black font-mono text-white">
-                {tokenBalance.toLocaleString()}{" "}
-                <span className="text-xs font-normal text-gray-400 font-sans">Tokens</span>
-              </div>
-              <p className="text-[10px] text-gray-400 mt-0.5">100 tokens / core action</p>
-              <button
-                type="button"
-                onClick={() => openTokenModal("Refill your agent tokens")}
-                className="w-full mt-2.5 py-1.5 px-2 rounded-lg bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1 shadow-sm cursor-pointer"
-              >
-                <PlusCircle className="w-3.5 h-3.5" />
-                <span>Refill / Subscribe</span>
-              </button>
-            </div>
-
-            <div className="px-3 pb-2 text-[10px] font-mono uppercase tracking-wider text-gray-400 font-bold">
-              Agent Quoting Desk
-            </div>
-
-            <button
-              onClick={() => setActiveNav("agent_overview")}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "agent_overview"
-                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
-                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <LayoutDashboard className={`w-4 h-4 ${activeNav === "agent_overview" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Sales Overview</span>
-              </div>
-            </button>
-
-            <div className="pt-3 px-3 pb-2 text-[10px] font-mono uppercase tracking-wider text-gray-400 font-bold">
-              Submit Requests to Admin
-            </div>
-
-            <button
-              onClick={() => setActiveNav("request_quote")}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "request_quote"
-                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
-                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Send className={`w-4 h-4 ${activeNav === "request_quote" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Request for Quotes</span>
-              </div>
-              <ChevronRight className={`w-3.5 h-3.5 ${activeNav === "request_quote" ? "text-[#0F1420]" : "text-gray-500"}`} />
-            </button>
-
-            <button
-              onClick={() => setActiveNav("request_invoice")}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "request_invoice"
-                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
-                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Receipt className={`w-4 h-4 ${activeNav === "request_invoice" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Request for Invoice</span>
-              </div>
-              <ChevronRight className={`w-3.5 h-3.5 ${activeNav === "request_invoice" ? "text-[#0F1420]" : "text-gray-500"}`} />
-            </button>
-
-            <button
-              onClick={() => setActiveNav("request_brief")}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "request_brief"
-                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
-                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Compass className={`w-4 h-4 ${activeNav === "request_brief" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Request for Flight Briefs</span>
-              </div>
-              <ChevronRight className={`w-3.5 h-3.5 ${activeNav === "request_brief" ? "text-[#0F1420]" : "text-gray-500"}`} />
-            </button>
-
-            <div className="pt-3 px-3 pb-2 text-[10px] font-mono uppercase tracking-wider text-gray-400 font-bold">
-              Tracking & Directory
-            </div>
-
-            <button
-              onClick={() => setActiveNav("my_requests")}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "my_requests"
-                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
-                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Clock className={`w-4 h-4 ${activeNav === "my_requests" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>My Submitted Requests</span>
-              </div>
-              <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold ${
-                activeNav === "my_requests" ? "bg-[#0F1420] text-white" : "bg-[#1C2436] text-gray-300"
-              }`}>
-                {agentRequests.length}
-              </span>
-            </button>
-
-            <button
-              onClick={() => setActiveNav("clients")}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "clients"
-                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
-                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Users className={`w-4 h-4 ${activeNav === "clients" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Clients</span>
-              </div>
-            </button>
-
-            <button
-              onClick={() => setActiveNav("messages")}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "messages"
-                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
-                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <MessageSquare className={`w-4 h-4 ${activeNav === "messages" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Messages & Chat</span>
-              </div>
-              {unreadMessageCount > 0 && (
-                <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-full bg-[#C9A052] text-[#0F1420]">
-                  {unreadMessageCount}
-                </span>
-              )}
-            </button>
-
-            <button
-              onClick={() => setActiveNav("profile")}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "profile"
-                  ? "bg-[#C9A052] text-[#0F1420] font-bold shadow-md shadow-[#C9A052]/20"
-                  : "text-gray-300 hover:text-white hover:bg-[#141A29]"
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <User className={`w-4 h-4 ${activeNav === "profile" ? "text-[#0F1420]" : "text-[#C9A052]"}`} />
-                <span>Profile & Settings</span>
-              </div>
-              <ChevronRight className={`w-3.5 h-3.5 ${activeNav === "profile" ? "text-[#0F1420]" : "text-gray-500"}`} />
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* User Profile at Bottom */}
-      <div className="p-4 border-t border-[#1C2436] bg-[#0B101A]">
-
-        {/* User Card with Logout */}
-        <div className="flex items-center justify-between pt-1">
+      <div className="flex-1 overflow-y-auto px-3 space-y-5 text-xs font-sans">
+        {/* Overview */}
+        <div>
           <button
-            onClick={() => setActiveNav("profile")}
-            className="flex items-center gap-2.5 overflow-hidden text-left hover:opacity-90 transition-opacity flex-1 group"
-            title="Click to view and edit profile"
+            onClick={() => navigateTo("overview", "/")}
+            className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg transition-all ${
+              isOverviewActive
+                ? "bg-[#1E293B] text-white font-medium"
+                : "text-gray-400 hover:text-white hover:bg-[#141C2B]"
+            }`}
           >
-            <div className={`h-8 w-8 rounded-full text-xs font-black flex items-center justify-center flex-shrink-0 transition-transform group-hover:scale-105 ${
-              activeNav === "profile" ? "bg-white text-[#0F1420] ring-2 ring-[#C9A052]" : "bg-[#C9A052] text-[#0F1420]"
-            }`}>
-              {currentUser?.name ? currentUser.name.charAt(0).toUpperCase() : "U"}
-            </div>
-            <div className="overflow-hidden">
-              <p className={`text-xs font-bold truncate ${activeNav === "profile" ? "text-[#C9A052]" : "text-white"}`}>
-                {currentUser?.name || "User"}
-              </p>
-              <p className="text-[10px] text-gray-400 font-mono truncate">{currentUser?.email || ""}</p>
-            </div>
+            <span>Overview</span>
+          </button>
+        </div>
+
+        {/* WORK Section */}
+        <div className="space-y-0.5">
+          <div className="px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-500">
+            WORK
+          </div>
+          <button
+            onClick={() => navigateTo("agent_requests", "/requests")}
+            className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg transition-all ${
+              isRequestsActive
+                ? "bg-[#1E293B] text-white font-medium"
+                : "text-gray-400 hover:text-white hover:bg-[#141C2B]"
+            }`}
+          >
+            <span>Requests</span>
+            <span className="text-xs text-gray-400 font-mono">4</span>
           </button>
 
           <button
-            onClick={logout}
-            className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-[#141A29] transition-colors ml-2"
-            title="Log out and return to Login Screen"
+            onClick={() => navigateTo("quotes", "/quotes")}
+            className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg transition-all ${
+              isQuotesActive
+                ? "bg-[#1E293B] text-white font-medium"
+                : "text-gray-400 hover:text-white hover:bg-[#141C2B]"
+            }`}
           >
-            <LogOut className="w-4 h-4 text-red-400" />
+            <span>Quotes</span>
+            <span className="text-xs text-gray-400 font-mono">9</span>
+          </button>
+
+          <button
+            onClick={() => navigateTo("bookings", "/bookings")}
+            className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg transition-all ${
+              isBookingsActive
+                ? "bg-[#1E293B] text-white font-medium"
+                : "text-gray-400 hover:text-white hover:bg-[#141C2B]"
+            }`}
+          >
+            <span>Bookings</span>
+            <span className="text-xs text-gray-400 font-mono">5</span>
+          </button>
+
+          <button
+            onClick={() => navigateTo("payments", "/payments")}
+            className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg transition-all ${
+              isPaymentsActive
+                ? "bg-[#1E293B] text-white font-medium"
+                : "text-gray-400 hover:text-white hover:bg-[#141C2B]"
+            }`}
+          >
+            <span>Payments</span>
+            <span className="text-xs text-gray-400 font-mono">3</span>
+          </button>
+        </div>
+
+        {/* DOCUMENTS Section */}
+        <div className="space-y-0.5">
+          <div className="px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-500">
+            DOCUMENTS
+          </div>
+          <button
+            onClick={() => navigateTo("invoices", "/invoices")}
+            className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg transition-all ${
+              isInvoicesActive
+                ? "bg-[#1E293B] text-white font-medium"
+                : "text-gray-400 hover:text-white hover:bg-[#141C2B]"
+            }`}
+          >
+            <span>Invoices & credit notes</span>
+          </button>
+          <button
+            onClick={() => navigateTo("flight_briefs", "/flight-briefs")}
+            className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg transition-all ${
+              isBriefsActive
+                ? "bg-[#1E293B] text-white font-medium"
+                : "text-gray-400 hover:text-white hover:bg-[#141C2B]"
+            }`}
+          >
+            <span>Flight briefs</span>
+          </button>
+          <button
+            onClick={() => navigateTo("contracts", "/contracts")}
+            className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg transition-all ${
+              isContractsActive
+                ? "bg-[#1E293B] text-white font-medium"
+                : "text-gray-400 hover:text-white hover:bg-[#141C2B]"
+            }`}
+          >
+            <span>Contracts</span>
+          </button>
+        </div>
+
+        {/* DIRECTORY Section */}
+        <div className="space-y-0.5">
+          <div className="px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-500">
+            DIRECTORY
+          </div>
+          <button
+            onClick={() => navigateTo("accounts", "/accounts")}
+            className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg transition-all ${
+              isAccountsActive
+                ? "bg-[#1E293B] text-white font-medium"
+                : "text-gray-400 hover:text-white hover:bg-[#141C2B]"
+            }`}
+          >
+            <span>Accounts</span>
+          </button>
+          <button
+            onClick={() => navigateTo("contacts", "/contacts")}
+            className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg transition-all ${
+              isContactsActive
+                ? "bg-[#1E293B] text-white font-medium"
+                : "text-gray-400 hover:text-white hover:bg-[#141C2B]"
+            }`}
+          >
+            <span>Contacts</span>
+          </button>
+          <button
+            onClick={() => navigateTo("agents", "/agents")}
+            className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg transition-all ${
+              isAgentsActive
+                ? "bg-[#1E293B] text-white font-medium"
+                : "text-gray-400 hover:text-white hover:bg-[#141C2B]"
+            }`}
+          >
+            <span>Agents</span>
+          </button>
+          <button
+            onClick={() => navigateTo("operators", "/operators")}
+            className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg transition-all ${
+              isOperatorsActive
+                ? "bg-[#1E293B] text-white font-medium"
+                : "text-gray-400 hover:text-white hover:bg-[#141C2B]"
+            }`}
+          >
+            <span>Operators</span>
+          </button>
+          <button
+            onClick={() => navigateTo("airports", "/airports")}
+            className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg transition-all ${
+              isAirportsActive
+                ? "bg-[#1E293B] text-white font-medium"
+                : "text-gray-400 hover:text-white hover:bg-[#141C2B]"
+            }`}
+          >
+            <span>Airports</span>
+          </button>
+          <button
+            onClick={() => navigateTo("airports", "/airports")}
+            className="w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-[#141C2B] transition-all"
+          >
+            <span>FBOs</span>
           </button>
         </div>
       </div>

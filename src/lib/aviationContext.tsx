@@ -1024,7 +1024,17 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       }
       const savedRequests = localStorage.getItem("orbelo_requests_v2");
       if (savedRequests) {
-        setAgentRequests(JSON.parse(savedRequests));
+        try {
+          const parsed = JSON.parse(savedRequests);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const hasNew = parsed.some((r: any) => r.id === "RQ-0431");
+            if (hasNew) {
+              setAgentRequests(parsed);
+            } else {
+              setAgentRequests([...initialAgentRequests, ...parsed.filter((p: any) => !initialAgentRequests.some((i) => i.id === p.id))]);
+            }
+          }
+        } catch {}
       }
       const savedClients = localStorage.getItem("orbelo_clients_v2");
       if (savedClients) {
@@ -1034,14 +1044,28 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       if (savedAccounts) {
         try {
           const parsed = JSON.parse(savedAccounts);
-          if (Array.isArray(parsed) && parsed.length > 0) setAccounts(parsed);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const hasNew = parsed.some((a: any) => a.accountNumber === "ACC-30412");
+            if (hasNew) {
+              setAccounts(parsed);
+            } else {
+              setAccounts([...initialAccounts, ...parsed.filter((p: any) => !initialAccounts.some((i) => i.id === p.id || i.accountNumber === p.accountNumber))]);
+            }
+          }
         } catch {}
       }
       const savedContacts = localStorage.getItem("orbelo_contacts_v2");
       if (savedContacts) {
         try {
           const parsed = JSON.parse(savedContacts);
-          if (Array.isArray(parsed) && parsed.length > 0) setContacts(parsed);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const hasNew = parsed.some((c: any) => c.id === "cnt-ngozi-eze");
+            if (hasNew) {
+              setContacts(parsed);
+            } else {
+              setContacts([...initialContacts, ...parsed.filter((p: any) => !initialContacts.some((i) => i.id === p.id))]);
+            }
+          }
         } catch {}
       }
       const savedOperators = localStorage.getItem("orbelo_operators_v2");

@@ -503,6 +503,7 @@ export interface AgentRequest {
   id: string;
   tripId?: string;
   quoteGroupId?: string;
+  accountId?: string;
   type: RequestType;
   title: string;
   agentName: string;
@@ -559,6 +560,29 @@ export interface AgentRequest {
   agentMarginFixed?: number;
   pets?: PetDetails;
   luggage?: LuggageDetails;
+
+  // New design fields
+  receivedAgo?: string;
+  routeDisplay?: string;
+  flightDateFormatted?: string;
+  categoryLabel?: string;
+  tokensUsed?: number;
+  statusLabel?: string;
+  agentCompany?: string;
+  agentConversionRate?: string;
+  agentTokensRemaining?: number;
+  accountEarlierTrips?: number;
+  lavatoryPreference?: string;
+  luggageDetailsText?: string;
+  petDetailsText?: string;
+  servicesText?: string;
+  askOperatorText?: string;
+  paymentMethodText?: string;
+  offersLoggedText?: string;
+  createdTripId?: string;
+  leg1Text?: string;
+  leg2Text?: string;
+  isOverdue?: boolean;
 }
 
 export interface ClientRecord {
@@ -616,6 +640,8 @@ export interface AuthorizedPerson {
   email: string;
   phone: string;
   idDocumentType: BioIdType;
+  contactId?: string;
+  hasPassport?: boolean;
   passportDetails?: {
     passportNumber: string;
     issuingCountry: string;
@@ -661,6 +687,25 @@ export interface AccountRecord {
   vipTier?: "Ultra HNWI" | "Corporate Executive" | "Family Office" | "Private VIP";
   notes?: string;
   createdAt: string;
+
+  // New design fields
+  legalName?: string;
+  sendDocumentsTo?: string;
+  agentName?: string;
+  invoicedAmount?: number;
+  receivedAmount?: number;
+  openBalance?: number;
+  preferencesList?: string[];
+  lifetimeTrips?: number;
+  lifetimeSince?: string;
+  conversionRate?: number;
+  recentTrips?: Array<{
+    tripId: string;
+    flightDate: string;
+    route: string;
+    stage: string;
+    value: number;
+  }>;
 }
 
 export interface PetRecord {
@@ -689,6 +734,10 @@ export interface ContactRecord {
   suffix?: string; // e.g. "Jr.", "Sr.", "II", "III", "Esq."
   title?: string; // e.g. "Family Office Principal", "Lead Charterer", "Signatory"
   tripsFlown?: string[]; // IDs of trips / bookings this contact has flown on
+  roleTitle?: string;
+  hasPassport?: boolean;
+  nationality?: string;
+  upcomingTrips?: string[];
   email: string;
   phone: string;
   country: string;
@@ -704,6 +753,7 @@ export interface ContactRecord {
     placeOfBirth: string;
     dateOfBirth: string;
     expirationDate: string;
+    issueDate?: string;
   };
   idDetails?: {
     idNumber: string;
