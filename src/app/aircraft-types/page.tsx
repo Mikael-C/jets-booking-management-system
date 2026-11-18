@@ -6,7 +6,7 @@ import FleetView from "@/components/admin/FleetView";
 
 export default function AircraftTypesPage() {
   return (
-    <AppShell navKey="fleet">
+    <AppShell navKey="aircraft_types">
       <FleetView />
     </AppShell>
   );

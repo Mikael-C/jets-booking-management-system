@@ -92,6 +92,9 @@ export interface Airport {
   extensionPossibilities?: string;
   runwayLength?: string;
   runwaySurface?: string;
+  longestRunwayMeters?: number;
+  slotsRequired?: boolean;
+  customsHours?: string;
   elevation?: string;
   fbos?: FboOption[];
 }

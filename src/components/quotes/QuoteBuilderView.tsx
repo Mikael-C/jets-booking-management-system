@@ -124,6 +124,14 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId }: QuoteB
     return sourceTrip?.pricing ? Math.round(sourceTrip.pricing.totalFlightPrice * 0.85) : 11200;
   });
 
+  // Aircraft photos picker state (Step 04 Photos)
+  const [isPhotoPickerOpen, setIsPhotoPickerOpen] = useState(false);
+  const [selectedPhotos, setSelectedPhotos] = useState<string[]>([
+    "Exterior · actual aircraft",
+    "Cabin · actual aircraft"
+  ]);
+  const [saveToOperatorAircraft, setSaveToOperatorAircraft] = useState(true);
+
   // 5. Services
   const [addLimousine, setAddLimousine] = useState<boolean>(Boolean(sourceTrip?.services.limousineService));
   const [limousinePrice, setLimousinePrice] = useState<number>(480);
@@ -299,6 +307,320 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId }: QuoteB
     await addBooking(newBooking);
     router.push(`/trips/${rootId}/itinerary`);
   };
+
+  const selectedOperator = operators.find((op) => op.id === selectedOperatorId) || operators[0];
+  const operatorName = selectedOperator?.tradingName || "Sahel Executive";
+
+  // ====================================================
+  // VIEW: AIRCRAFT PHOTOS PICKER (SCREEN 3)
+  // ====================================================
+  if (isPhotoPickerOpen) {
+    const tripDisplayId = rootId || "MX5521";
+
+    const togglePhoto = (label: string) => {
+      if (selectedPhotos.includes(label)) {
+        setSelectedPhotos(selectedPhotos.filter((p) => p !== label));
+      } else {
+        if (selectedPhotos.length >= 4) {
+          alert("Maximum 4 photos allowed on quote PDF.");
+          return;
+        }
+        setSelectedPhotos([...selectedPhotos, label]);
+      }
+    };
+
+    return (
+      <div className="space-y-5 max-w-6xl mx-auto pb-12 font-sans">
+        {/* Breadcrumb */}
+        <div className="flex items-center gap-1.5 text-xs text-gray-500 font-medium">
+          <span>Quotes</span>
+          <span>/</span>
+          <span>New</span>
+          <span>/</span>
+          <span className="text-gray-800">Step 04 · Operator offer / Photos</span>
+        </div>
+
+        {/* Header Row */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
+            New quote · {tripDisplayId} · Aircraft photos
+          </h1>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsPhotoPickerOpen(false)}
+              className="bg-white border border-gray-300 text-gray-800 hover:bg-gray-50 text-xs font-medium px-4 py-1.5 rounded-lg shadow-sm transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsPhotoPickerOpen(false)}
+              className="bg-[#111827] text-white hover:bg-gray-800 text-xs font-semibold px-4 py-1.5 rounded-lg shadow-sm transition-all"
+            >
+              Use selected photos
+            </button>
+          </div>
+        </div>
+
+        {/* Informational Blue Banner */}
+        <div className="bg-[#EFF6FF] border border-[#BFDBFE] text-[#1E40AF] px-4 py-2.5 rounded-xl text-xs font-medium">
+          Pick one exterior and one cabin for the quote PDF (up to 4 in total). Photos are saved with this quote version, so revising later never changes a quote that was already sent.
+        </div>
+
+        {/* 2-Column Photos Layout */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          {/* Left Column (8 cols) */}
+          <div className="lg:col-span-8 space-y-6">
+            {/* Card 1: From the operator */}
+            <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-bold text-gray-900">
+                  From the operator · {operatorName} · this aircraft
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => alert("Upload custom photos from operator spec sheet")}
+                  className="bg-white border border-gray-300 hover:bg-gray-50 text-xs font-medium px-3 py-1 rounded-lg shadow-sm transition-all"
+                >
+                  + Paste or upload
+                </button>
+              </div>
+
+              {/* Grid of 4 operator cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {/* 1. Exterior · actual aircraft */}
+                <div
+                  className={`bg-[#F1F3F5] rounded-xl p-3 flex flex-col justify-between h-40 transition-all ${
+                    selectedPhotos.includes("Exterior · actual aircraft")
+                      ? "border-2 border-black"
+                      : "border border-gray-200"
+                  }`}
+                >
+                  <div>
+                    {selectedPhotos.includes("Exterior · actual aircraft") && (
+                      <span className="inline-block px-2 py-0.5 rounded text-[11px] font-bold bg-white text-emerald-700 shadow-sm">
+                        On quote
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-center text-xs text-gray-700 font-medium my-auto">
+                    Exterior · actual aircraft
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] pt-1">
+                    <span className="text-gray-500">Operator</span>
+                    <button
+                      type="button"
+                      onClick={() => togglePhoto("Exterior · actual aircraft")}
+                      className="text-blue-600 hover:underline font-semibold"
+                    >
+                      {selectedPhotos.includes("Exterior · actual aircraft") ? "Remove" : "Use"}
+                    </button>
+                  </div>
+                </div>
+
+                {/* 2. Cabin · actual aircraft */}
+                <div
+                  className={`bg-[#F1F3F5] rounded-xl p-3 flex flex-col justify-between h-40 transition-all ${
+                    selectedPhotos.includes("Cabin · actual aircraft")
+                      ? "border-2 border-black"
+                      : "border border-gray-200"
+                  }`}
+                >
+                  <div>
+                    {selectedPhotos.includes("Cabin · actual aircraft") && (
+                      <span className="inline-block px-2 py-0.5 rounded text-[11px] font-bold bg-white text-emerald-700 shadow-sm">
+                        On quote
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-center text-xs text-gray-700 font-medium my-auto">
+                    Cabin · actual aircraft
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] pt-1">
+                    <span className="text-gray-500">Operator</span>
+                    <button
+                      type="button"
+                      onClick={() => togglePhoto("Cabin · actual aircraft")}
+                      className="text-blue-600 hover:underline font-semibold"
+                    >
+                      {selectedPhotos.includes("Cabin · actual aircraft") ? "Remove" : "Use"}
+                    </button>
+                  </div>
+                </div>
+
+                {/* 3. Cabin · rear */}
+                <div
+                  className={`bg-[#F1F3F5] rounded-xl p-3 flex flex-col justify-between h-40 transition-all ${
+                    selectedPhotos.includes("Cabin · rear")
+                      ? "border-2 border-black"
+                      : "border border-gray-200"
+                  }`}
+                >
+                  <div>
+                    {selectedPhotos.includes("Cabin · rear") && (
+                      <span className="inline-block px-2 py-0.5 rounded text-[11px] font-bold bg-white text-emerald-700 shadow-sm">
+                        On quote
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-center text-xs text-gray-700 font-medium my-auto">
+                    Cabin · rear
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] pt-1">
+                    <span className="text-gray-500">Operator</span>
+                    <button
+                      type="button"
+                      onClick={() => togglePhoto("Cabin · rear")}
+                      className="text-blue-600 hover:underline font-semibold"
+                    >
+                      {selectedPhotos.includes("Cabin · rear") ? "Remove" : "Use"}
+                    </button>
+                  </div>
+                </div>
+
+                {/* 4. Dropzone Card */}
+                <div className="border-2 border-dashed border-gray-200 hover:border-gray-300 rounded-xl p-4 flex flex-col items-center justify-center text-center h-40 transition-colors">
+                  <div className="text-xs text-gray-500 font-medium leading-relaxed">
+                    Paste (Ctrl/Cmd+V) or drop photos here
+                  </div>
+                </div>
+              </div>
+
+              {/* Checkbox */}
+              <div className="pt-2 flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="save-to-op"
+                  checked={saveToOperatorAircraft}
+                  onChange={(e) => setSaveToOperatorAircraft(e.target.checked)}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                />
+                <label htmlFor="save-to-op" className="text-xs text-gray-700 font-medium cursor-pointer">
+                  Also save these to the operator&apos;s aircraft, for future quotes
+                </label>
+              </div>
+            </div>
+
+            {/* Card 2: Generic photos */}
+            <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm space-y-4">
+              <h2 className="text-sm font-bold text-gray-900">
+                Generic · {selectedAircraft.name} (from Aircraft types)
+              </h2>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {/* Generic 1 */}
+                <div className="bg-[#F1F3F5] rounded-xl p-3 flex flex-col justify-between h-36 border border-gray-200">
+                  <div className="text-center text-xs text-gray-700 font-medium my-auto">
+                    Exterior · default
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] pt-1">
+                    <span className="text-gray-500">Generic</span>
+                    <button
+                      type="button"
+                      onClick={() => togglePhoto("Exterior · default")}
+                      className="text-blue-600 hover:underline font-semibold"
+                    >
+                      {selectedPhotos.includes("Exterior · default") ? "Remove" : "Use"}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Generic 2 */}
+                <div className="bg-[#F1F3F5] rounded-xl p-3 flex flex-col justify-between h-36 border border-gray-200">
+                  <div className="text-center text-xs text-gray-700 font-medium my-auto">
+                    Cabin · default
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] pt-1">
+                    <span className="text-gray-500">Generic</span>
+                    <button
+                      type="button"
+                      onClick={() => togglePhoto("Cabin · default")}
+                      className="text-blue-600 hover:underline font-semibold"
+                    >
+                      {selectedPhotos.includes("Cabin · default") ? "Remove" : "Use"}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Generic 3 */}
+                <div className="bg-[#F1F3F5] rounded-xl p-3 flex flex-col justify-between h-36 border border-gray-200">
+                  <div className="text-center text-xs text-gray-700 font-medium my-auto">
+                    Cabin · night
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] pt-1">
+                    <span className="text-gray-500">Generic</span>
+                    <button
+                      type="button"
+                      onClick={() => togglePhoto("Cabin · night")}
+                      className="text-blue-600 hover:underline font-semibold"
+                    >
+                      {selectedPhotos.includes("Cabin · night") ? "Remove" : "Use"}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Generic 4 */}
+                <div className="bg-[#F1F3F5] rounded-xl p-3 flex flex-col justify-between h-36 border border-gray-200">
+                  <div className="text-center text-xs text-gray-700 font-medium my-auto">
+                    Galley
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] pt-1">
+                    <span className="text-gray-500">Generic</span>
+                    <button
+                      type="button"
+                      onClick={() => togglePhoto("Galley")}
+                      className="text-blue-600 hover:underline font-semibold"
+                    >
+                      {selectedPhotos.includes("Galley") ? "Remove" : "Use"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2 text-[11px] text-gray-400 leading-relaxed">
+                Generic photos print with the caption &ldquo;Representative of the aircraft type&rdquo;. Operator photos print without it.
+              </div>
+            </div>
+          </div>
+
+          {/* Right Column (4 cols) */}
+          <div className="lg:col-span-4 space-y-4">
+            {/* Card: On the quote PDF */}
+            <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm space-y-4">
+              <h2 className="text-sm font-bold text-gray-900">On the quote PDF</h2>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-[#F1F3F5] rounded-xl p-4 flex flex-col items-center justify-center text-center h-24 border border-gray-200">
+                  <span className="text-xs text-gray-700 font-medium">Exterior · operator</span>
+                </div>
+                <div className="bg-[#F1F3F5] rounded-xl p-4 flex flex-col items-center justify-center text-center h-24 border border-gray-200">
+                  <span className="text-xs text-gray-700 font-medium">Cabin · operator</span>
+                </div>
+              </div>
+
+              <div className="text-[11px] text-gray-400">
+                Order: exterior first, then cabin. Drag to swap.
+              </div>
+            </div>
+
+            {/* Rules Text */}
+            <div className="p-1 space-y-1.5 text-xs text-gray-600">
+              <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2">
+                RULES
+              </div>
+              <div>No photo chosen: the type&apos;s generic defaults are used</div>
+              <div>
+                Operator photos never show the operator&apos;s name or logo on the client PDF (crop or choose another)
+              </div>
+              <div>A sent quote keeps its photos; a revision can change them</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">
@@ -639,6 +961,23 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId }: QuoteB
                     className="w-full bg-[var(--paper)] border border-[var(--line)] rounded-lg pl-8 pr-3 py-2 text-sm font-mono font-black text-[var(--ink)]"
                   />
                 </div>
+              </div>
+
+              {/* Step 04 Photos Row */}
+              <div className="sm:col-span-2 pt-3 border-t border-[var(--line)] flex items-center justify-between">
+                <div>
+                  <span className="font-bold text-xs text-[var(--ink)] block">Aircraft Photos on Quote PDF</span>
+                  <span className="text-[11px] text-[var(--muted)]">
+                    {selectedPhotos.length} selected: {selectedPhotos.join(", ")}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsPhotoPickerOpen(true)}
+                  className="bg-white border border-gray-300 hover:bg-gray-50 text-xs font-semibold px-3 py-1.5 rounded-lg shadow-sm transition-all"
+                >
+                  Pick photos
+                </button>
               </div>
             </div>
           </div>

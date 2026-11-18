@@ -34,6 +34,7 @@ export default function Sidebar() {
   const isContractsActive = activeNav === "contracts" || pathname?.startsWith("/contracts");
   const isAgentsActive = activeNav === "agents" || pathname?.startsWith("/agents");
   const isOperatorsActive = activeNav === "operators" || pathname?.startsWith("/operators");
+  const isAircraftTypesActive = activeNav === "aircraft_types" || activeNav === "fleet" || pathname?.startsWith("/aircraft-types");
   const isAirportsActive = activeNav === "airports" || pathname?.startsWith("/airports");
   const isSettingsActive = activeNav === "settings" || pathname?.startsWith("/settings");
   const isMessagesActive = activeNav === "messages" || pathname?.startsWith("/messages");
@@ -212,6 +213,16 @@ export default function Sidebar() {
             <span className="text-xs text-gray-400 font-mono">
               {operators?.length || 3}
             </span>
+          </button>
+          <button
+            onClick={() => navigateTo("aircraft_types", "/aircraft-types")}
+            className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg transition-all ${
+              isAircraftTypesActive
+                ? "bg-[#1E293B] text-white font-medium"
+                : "text-gray-400 hover:text-white hover:bg-[#141C2B]"
+            }`}
+          >
+            <span>Aircraft types</span>
           </button>
           <button
             onClick={() => navigateTo("airports", "/airports")}

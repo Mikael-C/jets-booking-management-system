@@ -1,456 +1,662 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useAviation } from "@/lib/aviationContext";
 import { formatCurrency } from "@/lib/pricingCalculator";
-import {
-  Users,
-  Search,
-  Building2,
-  Mail,
-  Phone,
-  Globe,
-  Plus,
-  Percent,
-  Coins,
-  ShieldCheck,
-  CheckCircle2,
-  ChevronRight,
-  FileText,
-  UserCheck,
-  Plane,
-  X,
-  CreditCard
-} from "lucide-react";
 
-export default function AgentsView() {
+interface AgentItem {
+  id: string;
+  name: string;
+  firstName: string;
+  lastName: string;
+  agencyName: string;
+  email: string;
+  phone: string;
+  country: string;
+  commissionPct: number;
+  tokensLeft: number;
+  tokensBought: number;
+  tokensFree: number;
+  requests30d: number;
+  bookedCount: number;
+  conversionRate: number;
+  commissionOpen: string;
+  nextPayout: string;
+  status: "active" | "inactive" | "pending";
+  referenceId: string;
+  tokenTransactions: Array<{
+    date: string;
+    entry: string;
+    tokens: string;
+    balance: number;
+    by: "Agent" | "Rule" | "Admin";
+  }>;
+}
+
+interface AgentsViewProps {
+  selectedAgentId?: string;
+}
+
+export default function AgentsView({ selectedAgentId }: AgentsViewProps = {}) {
+  const router = useRouter();
   const { accounts, contacts, bookings, agentRequests, setActiveNav, addAuditEntry, currentUser } = useAviation();
+
+  const [activeAgId, setActiveAgId] = useState<string | null>(selectedAgentId || null);
+  const [activeTab, setActiveTab] = useState<"profile" | "requests" | "trips" | "tokens_ledger" | "payouts" | "clients">("tokens_ledger");
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeTab, setActiveTab] = useState<"all" | "accounts" | "contacts">("all");
-  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+  const [filterPill, setFilterPill] = useState<"all" | "active" | "brokers" | "concierge">("all");
 
-  // Invite modal state
-  const [inviteName, setInviteName] = useState("");
-  const [inviteAgency, setInviteAgency] = useState("");
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [invitePhone, setInvitePhone] = useState("");
-  const [inviteCommission, setInviteCommission] = useState<number>(8);
-  const [inviteCountry, setInviteCountry] = useState("United Kingdom");
-  const [inviteSent, setInviteSent] = useState(false);
+  // Sync prop
+  useEffect(() => {
+    if (selectedAgentId) {
+      setActiveAgId(selectedAgentId);
+    }
+  }, [selectedAgentId]);
 
-  // Agent accounts (ticked as isAgent in Accounts)
-  const agentAccounts = useMemo(() => {
-    return accounts.filter((a) => a.isAgent);
-  }, [accounts]);
-
-  // Agent contacts (ticked as isAgent in Contacts)
-  const agentContacts = useMemo(() => {
-    return contacts.filter((c) => c.isAgent);
-  }, [contacts]);
-
-  // Unified agent list
-  const combinedAgents = useMemo(() => {
-    const list: Array<{
-      id: string;
-      type: "account" | "contact";
-      name: string;
-      agencyName: string;
-      email: string;
-      phone: string;
-      country: string;
-      commissionPct: number;
-      totalBookings: number;
-      tokenBalance?: number;
-      status: string;
-      referenceId: string;
-    }> = [];
-
-    // Add agent accounts
-    agentAccounts.forEach((acc) => {
-      const relatedBookingsCount = bookings.filter((b) => (b.agentEmail || "").toLowerCase() === acc.email.toLowerCase() || b.accountNumber === acc.accountNumber).length;
-      list.push({
-        id: acc.id,
-        type: "account",
-        name: acc.preferredContactName || acc.name,
-        agencyName: acc.name,
-        email: acc.email,
-        phone: acc.phone,
-        country: acc.country,
+  // Unified list of agents with rich details
+  const agentsList: AgentItem[] = useMemo(() => {
+    return [
+      {
+        id: "vance-marcus",
+        name: "Marcus Vance",
+        firstName: "Marcus",
+        lastName: "Vance",
+        agencyName: "Vance Luxury Aviation & Brokerage Ltd",
+        email: "m.vance@vanceaviation.co.uk",
+        phone: "+44 20 7946 0912",
+        country: "United Kingdom",
         commissionPct: 8,
-        totalBookings: relatedBookingsCount || acc.totalBookings || 0,
-        tokenBalance: 2000,
-        status: "Active Verified Agency",
-        referenceId: acc.accountNumber
-      });
-    });
-
-    // Add agent contacts (if not already included by email)
-    agentContacts.forEach((cnt) => {
-      if (!list.some((a) => a.email.toLowerCase() === cnt.email.toLowerCase())) {
-        list.push({
-          id: cnt.id,
-          type: "contact",
-          name: `${cnt.firstName} ${cnt.lastName}`,
-          agencyName: cnt.associatedAccountName || "Independent Broker",
-          email: cnt.email,
-          phone: cnt.phone,
-          country: cnt.country,
-          commissionPct: 8,
-          totalBookings: bookings.filter((b) => (b.agentEmail || "").toLowerCase() === cnt.email.toLowerCase()).length,
-          tokenBalance: 1500,
-          status: "Accredited Broker Rep",
-          referenceId: `AGT-${cnt.id.slice(-4).toUpperCase()}`
-        });
+        tokensLeft: 11,
+        tokensBought: 10,
+        tokensFree: 5,
+        requests30d: 14,
+        bookedCount: 4,
+        conversionRate: 29,
+        commissionOpen: "1,697",
+        nextPayout: "27 Nov",
+        status: "active",
+        referenceId: "AGT-0412",
+        tokenTransactions: [
+          { date: "14 Nov", entry: "Request RQ-0430", tokens: "– 1", balance: 11, by: "Agent" },
+          { date: "10 Nov", entry: "Free tokens · conversion above 25 %", tokens: "+ 5", balance: 12, by: "Rule" },
+          { date: "03–06 Nov", entry: "3 requests", tokens: "– 3", balance: 7, by: "Agent" },
+          { date: "02 Nov", entry: "Bundle of 10 bought · [price per Q-03]", tokens: "+ 10", balance: 10, by: "Agent" }
+        ]
+      },
+      {
+        id: "laurent-camille",
+        name: "Camille Laurent",
+        firstName: "Camille",
+        lastName: "Laurent",
+        agencyName: "Monaco Luxury Jet Brokers SARL",
+        email: "c.laurent@monacojets.mc",
+        phone: "+377 98 06 20 00",
+        country: "Monaco",
+        commissionPct: 10,
+        tokensLeft: 8,
+        tokensBought: 20,
+        tokensFree: 4,
+        requests30d: 19,
+        bookedCount: 6,
+        conversionRate: 31,
+        commissionOpen: "3,450",
+        nextPayout: "27 Nov",
+        status: "active",
+        referenceId: "AGT-0391",
+        tokenTransactions: [
+          { date: "14 Nov", entry: "Request RQ-0431", tokens: "– 1", balance: 8, by: "Agent" },
+          { date: "12 Nov", entry: "Request RQ-0428", tokens: "– 1", balance: 9, by: "Agent" },
+          { date: "08 Nov", entry: "Free tokens · conversion above 30 %", tokens: "+ 4", balance: 10, by: "Rule" },
+          { date: "01 Nov", entry: "Bundle of 20 bought", tokens: "+ 20", balance: 6, by: "Agent" }
+        ]
+      },
+      {
+        id: "bello-taofeek",
+        name: "Taofeek Bello",
+        firstName: "Taofeek",
+        lastName: "Bello",
+        agencyName: "AfriJets Executive Concierge Ltd",
+        email: "t.bello@afrijets.com",
+        phone: "+234 803 555 1212",
+        country: "Nigeria",
+        commissionPct: 8,
+        tokensLeft: 14,
+        tokensBought: 15,
+        tokensFree: 3,
+        requests30d: 8,
+        bookedCount: 3,
+        conversionRate: 38,
+        commissionOpen: "2,150",
+        nextPayout: "27 Nov",
+        status: "active",
+        referenceId: "AGT-0520",
+        tokenTransactions: [
+          { date: "14 Nov", entry: "Request RQ-0434", tokens: "– 1", balance: 14, by: "Agent" },
+          { date: "05 Nov", entry: "Bundle of 15 bought", tokens: "+ 15", balance: 15, by: "Agent" }
+        ]
+      },
+      {
+        id: "okafor-amara",
+        name: "Amara Okafor",
+        firstName: "Amara",
+        lastName: "Okafor",
+        agencyName: "Lagos Executive Wings Ltd",
+        email: "a.okafor@lagoswings.aero",
+        phone: "+234 802 999 8888",
+        country: "Nigeria",
+        commissionPct: 8,
+        tokensLeft: 6,
+        tokensBought: 10,
+        tokensFree: 2,
+        requests30d: 11,
+        bookedCount: 2,
+        conversionRate: 22,
+        commissionOpen: "1,100",
+        nextPayout: "27 Nov",
+        status: "active",
+        referenceId: "AGT-0488",
+        tokenTransactions: [
+          { date: "14 Nov", entry: "Request RQ-0433", tokens: "– 1", balance: 6, by: "Agent" },
+          { date: "03 Nov", entry: "Bundle of 10 bought", tokens: "+ 10", balance: 7, by: "Agent" }
+        ]
       }
-    });
+    ];
+  }, []);
 
-    return list;
-  }, [agentAccounts, agentContacts, bookings]);
+  const activeAgent = useMemo(() => {
+    if (!activeAgId) return null;
+    return agentsList.find((a) => a.id === activeAgId || a.referenceId === activeAgId || a.name.toLowerCase().includes(activeAgId.toLowerCase())) || null;
+  }, [activeAgId, agentsList]);
 
-  // Filtered by search and tab
+  // Filtered agents
   const filteredAgents = useMemo(() => {
-    return combinedAgents.filter((agent) => {
-      if (activeTab === "accounts" && agent.type !== "account") return false;
-      if (activeTab === "contacts" && agent.type !== "contact") return false;
-
-      if (searchQuery.trim() !== "") {
+    return agentsList.filter((ag) => {
+      if (filterPill === "active" && ag.status !== "active") return false;
+      if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
-        const matchName = agent.name.toLowerCase().includes(q);
-        const matchAgency = agent.agencyName.toLowerCase().includes(q);
-        const matchEmail = agent.email.toLowerCase().includes(q);
-        const matchCountry = agent.country.toLowerCase().includes(q);
-        const matchRef = agent.referenceId.toLowerCase().includes(q);
+        const matchName = ag.name.toLowerCase().includes(q);
+        const matchAgency = ag.agencyName.toLowerCase().includes(q);
+        const matchEmail = ag.email.toLowerCase().includes(q);
+        const matchCountry = ag.country.toLowerCase().includes(q);
+        const matchRef = ag.referenceId.toLowerCase().includes(q);
         if (!matchName && !matchAgency && !matchEmail && !matchCountry && !matchRef) return false;
       }
-
       return true;
     });
-  }, [combinedAgents, activeTab, searchQuery]);
+  }, [agentsList, filterPill, searchQuery]);
 
-  const handleInviteSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inviteName || !inviteEmail) return;
-
-    addAuditEntry({
-      userEmail: currentUser?.email || "admin@orbelo.com",
-      userName: currentUser?.name || "System Admin",
-      action: "AGENT_INVITATION_SENT",
-      entityType: "Agent",
-      entityId: inviteEmail,
-      details: `Sent broker invitation to ${inviteName} (${inviteAgency || "Independent"}) with ${inviteCommission}% agreed commission.`
-    });
-
-    setInviteSent(true);
-    setTimeout(() => {
-      setInviteSent(false);
-      setIsInviteModalOpen(false);
-      setInviteName("");
-      setInviteEmail("");
-      setInvitePhone("");
-      setInviteAgency("");
-    }, 1500);
+  const handleOpenAgent = (agent: AgentItem) => {
+    setActiveAgId(agent.id);
+    setActiveTab("tokens_ledger");
+    if (typeof window !== "undefined") {
+      window.history.pushState(null, "", `/agents/${agent.id}`);
+    }
   };
 
-  return (
-    <div className="space-y-6">
-      {/* Hero Header */}
-      <div className="bg-[#0F1420] text-white rounded-2xl p-6 sm:p-8 border border-[#1C2436] shadow-xl relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-        <div className="space-y-2 max-w-2xl">
-          <div className="flex items-center gap-2">
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-[#C9A052]/20 text-[#C9A052] border border-[#C9A052]/40 uppercase flex items-center gap-1">
-              <UserCheck className="w-3 h-3" />
-              BROKERAGE PARTNER NETWORK
-            </span>
-            <span className="text-gray-400 text-xs font-mono">• {combinedAgents.length} Accredited Charter Agents</span>
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-            Charter Agents & Broker Directory
-          </h1>
-          <p className="text-xs text-gray-300 leading-relaxed">
-            Centralized hub for all charter brokers, retail agents, and concierge partners. Automatically aggregated from accounts and contacts tagged as agents, complete with commission margins, token balances, and quote confirmation pipelines.
-          </p>
+  const handleBackToList = () => {
+    setActiveAgId(null);
+    if (typeof window !== "undefined") {
+      window.history.pushState(null, "", `/agents`);
+    }
+  };
+
+  // ==========================================
+  // VIEW: DETAILS SCREEN (SCREEN 1)
+  // ==========================================
+  if (activeAgent) {
+    const breadcrumbName = `${activeAgent.lastName}, ${activeAgent.firstName}`;
+
+    return (
+      <div className="space-y-6 max-w-6xl mx-auto pb-12">
+        {/* Breadcrumb */}
+        <div className="flex items-center gap-1.5 text-xs text-gray-500 font-medium">
+          <button
+            onClick={handleBackToList}
+            className="hover:text-gray-900 transition-colors"
+          >
+            Agents
+          </button>
+          <span>/</span>
+          <span className="text-gray-800">{breadcrumbName}</span>
         </div>
 
-        <button
-          onClick={() => setIsInviteModalOpen(true)}
-          className="flex items-center gap-2 px-5 py-3 rounded-xl bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] text-xs font-black uppercase tracking-wider transition-all shadow-md cursor-pointer flex-shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Invite / Register Agent</span>
-        </button>
-      </div>
-
-      {/* Search & Tabs Bar */}
-      <div className="bg-white border border-[#E0DAD0] rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-        <div className="relative flex-1">
-          <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 transform -translate-y-1/2" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search agents by broker name, agency company, email, country, or reference ID..."
-            className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-[#E0DAD0] bg-[#F5F2EC] text-xs text-[#0F1420] font-medium placeholder-gray-400 focus:outline-none focus:border-[#C9A052] focus:bg-white transition-all"
-          />
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setActiveTab("all")}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
-              activeTab === "all" ? "bg-[#0F1420] text-white" : "bg-[#F5F2EC] text-gray-700 hover:bg-[#EBE5DB]"
-            }`}
-          >
-            All Agents ({combinedAgents.length})
-          </button>
-          <button
-            onClick={() => setActiveTab("accounts")}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
-              activeTab === "accounts" ? "bg-[#0F1420] text-white" : "bg-[#F5F2EC] text-gray-700 hover:bg-[#EBE5DB]"
-            }`}
-          >
-            Agency Accounts ({agentAccounts.length})
-          </button>
-          <button
-            onClick={() => setActiveTab("contacts")}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
-              activeTab === "contacts" ? "bg-[#0F1420] text-white" : "bg-[#F5F2EC] text-gray-700 hover:bg-[#EBE5DB]"
-            }`}
-          >
-            Broker Representatives ({agentContacts.length})
-          </button>
-        </div>
-      </div>
-
-      {/* Agents List */}
-      <div className="space-y-3">
-        {filteredAgents.map((agent) => (
-          <div
-            key={`${agent.type}-${agent.id}`}
-            className="bg-white border border-[#E0DAD0] hover:border-[#C9A052] rounded-2xl p-4 sm:p-5 shadow-sm hover:shadow-md transition-all flex flex-col xl:flex-row xl:items-center gap-4 xl:gap-6 group"
-          >
-            <div className="flex-1 min-w-0">
-              <div className="flex flex-wrap items-center gap-2 mb-1.5">
-                <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-[#0F1420] text-[#C9A052]">
-                  {agent.referenceId}
-                </span>
-                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">
-                  {agent.status}
-                </span>
-              </div>
-              <h3 className="text-base font-black text-[#0F1420] group-hover:text-[#C9A052] transition-colors truncate">
-                {agent.name}
-              </h3>
-              <p className="text-xs text-gray-600 font-semibold flex items-center gap-1 mt-0.5 min-w-0">
-                <Building2 className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                <span className="truncate">{agent.agencyName}</span>
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-2 flex-[1.4] min-w-0 text-xs font-mono">
-              <div className="flex items-center gap-2 text-gray-700 min-w-0">
-                <Mail className="w-3.5 h-3.5 text-[#C9A052] flex-shrink-0" />
-                <span className="truncate">{agent.email}</span>
-              </div>
-              <div className="flex items-center gap-2 text-gray-700 min-w-0">
-                <Phone className="w-3.5 h-3.5 text-[#C9A052] flex-shrink-0" />
-                <span className="truncate">{agent.phone}</span>
-              </div>
-              <div className="flex items-center gap-2 text-gray-700 min-w-0 sm:col-span-2">
-                <Globe className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                <span className="truncate">{agent.country}</span>
-              </div>
-            </div>
-
-            <div className="flex items-stretch gap-2 flex-shrink-0">
-              <div className="p-2.5 rounded-xl border border-gray-200 bg-white min-w-[112px]">
-                <span className="text-[10px] text-gray-500 font-mono block">TOTAL BOOKINGS</span>
-                <p className="text-sm font-black font-mono text-[#0F1420]">
-                  {agent.totalBookings} Flights
-                </p>
-              </div>
-
-              <div className="p-2.5 rounded-xl border border-gray-200 bg-white min-w-[112px]">
-                <span className="text-[10px] text-gray-500 font-mono flex items-center gap-1">
-                  <Coins className="w-3 h-3 text-[#C9A052]" /> TOKENS
-                </span>
-                <p className="text-sm font-black font-mono text-[#C9A052]">
-                  {agent.tokenBalance?.toLocaleString() || "2,000"} pts
-                </p>
-              </div>
-            </div>
-
-            <div className="flex xl:flex-col items-center xl:items-end justify-between xl:justify-center gap-2 xl:border-l xl:border-[#E0DAD0] xl:pl-5 text-xs flex-shrink-0">
-              <div className="flex flex-col items-start xl:items-end gap-1">
-                <span className="text-[11px] font-mono text-gray-500">
-                  Source: {agent.type === "account" ? "Account Registry" : "Contact Directory"}
-                </span>
-                <span className="text-[11px] font-mono text-gray-500">
-                  Commission: <strong className="text-[#0F1420]">{agent.commissionPct}%</strong>
-                </span>
-              </div>
-              <button
-                onClick={() => setActiveNav("generate_quote")}
-                className="text-xs font-bold text-[#C9A052] hover:text-[#0F1420] flex items-center gap-1 transition-colors"
-              >
-                <span>Issue Quote</span>
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
+        {/* Header Row */}
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
+              {activeAgent.name}{" "}
+              <span className="text-gray-500 font-normal">· {activeAgent.agencyName}</span>
+            </h1>
+            <div className="flex flex-wrap items-center gap-2 mt-2">
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0]">
+                Active
+              </span>
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-gray-100 text-gray-700">
+                Login: agent portal
+              </span>
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-gray-100 text-gray-700">
+                Default margin {activeAgent.commissionPct} %
+              </span>
             </div>
           </div>
-        ))}
-      </div>
 
-      {filteredAgents.length === 0 && (
-        <div className="bg-white border border-[#E0DAD0] rounded-2xl p-12 text-center space-y-3">
-          <UserCheck className="w-10 h-10 text-gray-300 mx-auto" />
-          <h3 className="text-base font-bold text-[#0F1420]">No agents or brokers matching criteria</h3>
-          <p className="text-xs text-gray-500 max-w-md mx-auto">
-            You can tag existing accounts or contacts as agents in their respective directories, or click below to invite an agent directly.
-          </p>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              onClick={() => alert(`Login reset link dispatched to ${activeAgent.email}`)}
+              className="bg-white border border-gray-300 text-gray-800 hover:bg-gray-50 text-xs font-medium px-4 py-1.5 rounded-lg shadow-sm transition-all"
+            >
+              Reset login
+            </button>
+            <button
+              onClick={() => alert(`Deactivated status for ${activeAgent.name}`)}
+              className="bg-white border border-gray-300 text-gray-800 hover:bg-gray-50 text-xs font-medium px-4 py-1.5 rounded-lg shadow-sm transition-all"
+            >
+              Deactivate
+            </button>
+            <button
+              onClick={() => {
+                const count = prompt("Number of bonus tokens to grant:", "5");
+                if (count) alert(`Granted ${count} tokens to ${activeAgent.name}`);
+              }}
+              className="bg-[#111827] text-white hover:bg-gray-800 text-xs font-semibold px-4 py-1.5 rounded-lg shadow-sm transition-all"
+            >
+              Grant tokens
+            </button>
+          </div>
+        </div>
+
+        {/* 4 Stat Cards Row */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* 1. TOKENS LEFT */}
+          <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+            <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1">
+              TOKENS LEFT
+            </div>
+            <div className="text-2xl font-bold text-gray-900 tracking-tight">
+              {activeAgent.tokensLeft}
+            </div>
+            <div className="text-xs text-gray-500 mt-1">
+              bought {activeAgent.tokensBought} · free {activeAgent.tokensFree}
+            </div>
+          </div>
+
+          {/* 2. REQUESTS · 30 D */}
+          <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+            <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1">
+              REQUESTS · 30 D
+            </div>
+            <div className="text-2xl font-bold text-gray-900 tracking-tight">
+              {activeAgent.requests30d}
+            </div>
+          </div>
+
+          {/* 3. BOOKED */}
+          <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+            <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1">
+              BOOKED
+            </div>
+            <div className="text-2xl font-bold text-gray-900 tracking-tight">
+              {activeAgent.bookedCount}
+            </div>
+            <div className="text-xs text-gray-500 mt-1">
+              conversion {activeAgent.conversionRate} %
+            </div>
+          </div>
+
+          {/* 4. COMMISSION OPEN */}
+          <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+            <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1">
+              COMMISSION OPEN
+            </div>
+            <div className="text-2xl font-bold text-gray-900 tracking-tight">
+              € {activeAgent.commissionOpen}
+            </div>
+            <div className="text-xs text-[#D97706] font-medium mt-1">
+              payout {activeAgent.nextPayout}
+            </div>
+          </div>
+        </div>
+
+        {/* Tabs Row */}
+        <div className="flex items-center gap-6 border-b border-gray-200 text-xs">
           <button
-            onClick={() => setIsInviteModalOpen(true)}
-            className="px-4 py-2 rounded-xl bg-[#0F1420] text-white text-xs font-bold"
+            onClick={() => setActiveTab("profile")}
+            className={`pb-2.5 font-medium transition-colors ${
+              activeTab === "profile"
+                ? "border-b-2 border-black text-gray-900 font-bold"
+                : "text-gray-500 hover:text-gray-800"
+            }`}
           >
-            + Invite Agent Partner
+            Profile
+          </button>
+          <button
+            onClick={() => setActiveTab("requests")}
+            className={`pb-2.5 font-medium transition-colors ${
+              activeTab === "requests"
+                ? "border-b-2 border-black text-gray-900 font-bold"
+                : "text-gray-500 hover:text-gray-800"
+            }`}
+          >
+            Requests
+          </button>
+          <button
+            onClick={() => setActiveTab("trips")}
+            className={`pb-2.5 font-medium transition-colors ${
+              activeTab === "trips"
+                ? "border-b-2 border-black text-gray-900 font-bold"
+                : "text-gray-500 hover:text-gray-800"
+            }`}
+          >
+            Trips
+          </button>
+          <button
+            onClick={() => setActiveTab("tokens_ledger")}
+            className={`pb-2.5 font-medium transition-colors ${
+              activeTab === "tokens_ledger"
+                ? "border-b-2 border-black text-gray-900 font-bold"
+                : "text-gray-500 hover:text-gray-800"
+            }`}
+          >
+            Tokens ledger
+          </button>
+          <button
+            onClick={() => setActiveTab("payouts")}
+            className={`pb-2.5 font-medium transition-colors ${
+              activeTab === "payouts"
+                ? "border-b-2 border-black text-gray-900 font-bold"
+                : "text-gray-500 hover:text-gray-800"
+            }`}
+          >
+            Payouts
+          </button>
+          <button
+            onClick={() => setActiveTab("clients")}
+            className={`pb-2.5 font-medium transition-colors ${
+              activeTab === "clients"
+                ? "border-b-2 border-black text-gray-900 font-bold"
+                : "text-gray-500 hover:text-gray-800"
+            }`}
+          >
+            Clients (5)
           </button>
         </div>
-      )}
 
-      {/* Invite Agent Modal */}
-      {isInviteModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-2xl max-w-lg w-full flex flex-col shadow-2xl border border-[#D1C9BC] overflow-hidden">
-            <div className="p-6 bg-[#0F1420] text-white flex items-start justify-between border-b border-[#1C2436]">
+        {/* Tab 4: TOKENS LEDGER (Screen 1 Layout) */}
+        {activeTab === "tokens_ledger" && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm space-y-4">
+            <h2 className="text-sm font-bold text-gray-900">Tokens ledger</h2>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-gray-100 text-gray-400 text-[11px] uppercase tracking-wider">
+                    <th className="py-2.5 font-semibold">DATE</th>
+                    <th className="py-2.5 font-semibold">ENTRY</th>
+                    <th className="py-2.5 text-right font-semibold">TOKENS</th>
+                    <th className="py-2.5 text-right font-semibold">BALANCE</th>
+                    <th className="py-2.5 text-right font-semibold">BY</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {activeAgent.tokenTransactions.map((tx, idx) => (
+                    <tr key={idx} className="hover:bg-gray-50/50">
+                      <td className="py-3 text-gray-700 whitespace-nowrap">{tx.date}</td>
+                      <td className="py-3 font-medium text-gray-900">{tx.entry}</td>
+                      <td className={`py-3 text-right font-mono font-medium ${tx.tokens.startsWith("+") ? "text-emerald-600" : "text-gray-700"}`}>
+                        {tx.tokens}
+                      </td>
+                      <td className="py-3 text-right font-mono font-bold text-gray-900">{tx.balance}</td>
+                      <td className="py-3 text-right text-gray-600">{tx.by}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="pt-3 border-t border-gray-100 text-[11px] text-gray-400 leading-relaxed">
+              A declined request (no aircraft found) can be refunded with one click. Free-token rules are set in Settings.
+            </div>
+          </div>
+        )}
+
+        {/* Tab 1: PROFILE */}
+        {activeTab === "profile" && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm space-y-4">
+            <h2 className="text-sm font-bold text-gray-900">Broker Profile & Accreditation</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
               <div>
-                <span className="text-[10px] font-mono uppercase tracking-wider text-[#C9A052] font-bold">
-                  BROKER REGISTRATION & ACCREDITATION
-                </span>
-                <h2 className="text-xl font-black text-white">Invite Charter Agent Partner</h2>
+                <span className="text-gray-400 text-[11px] uppercase block mb-1">Representative Name</span>
+                <span className="font-medium text-gray-900">{activeAgent.name}</span>
               </div>
-              <button
-                onClick={() => setIsInviteModalOpen(false)}
-                className="p-2 rounded-xl text-gray-400 hover:text-white hover:bg-[#1C2436] transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div>
+                <span className="text-gray-400 text-[11px] uppercase block mb-1">Agency Legal Name</span>
+                <span className="font-medium text-gray-900">{activeAgent.agencyName}</span>
+              </div>
+              <div>
+                <span className="text-gray-400 text-[11px] uppercase block mb-1">Email Address</span>
+                <span className="font-medium text-gray-900">{activeAgent.email}</span>
+              </div>
+              <div>
+                <span className="text-gray-400 text-[11px] uppercase block mb-1">Direct Phone</span>
+                <span className="font-medium text-gray-900">{activeAgent.phone}</span>
+              </div>
+              <div>
+                <span className="text-gray-400 text-[11px] uppercase block mb-1">Country</span>
+                <span className="font-medium text-gray-900">{activeAgent.country}</span>
+              </div>
+              <div>
+                <span className="text-gray-400 text-[11px] uppercase block mb-1">Contract Commission</span>
+                <span className="font-medium text-gray-900">{activeAgent.commissionPct} % applied on quotes</span>
+              </div>
             </div>
+          </div>
+        )}
 
-            <form onSubmit={handleInviteSubmit} className="p-6 space-y-4">
-              {inviteSent ? (
-                <div className="p-6 rounded-xl bg-emerald-50 border border-emerald-300 text-center space-y-2">
-                  <CheckCircle2 className="w-10 h-10 text-emerald-600 mx-auto" />
-                  <h3 className="text-base font-black text-emerald-900">Broker Invitation Dispatched!</h3>
-                  <p className="text-xs text-emerald-700">
-                    Invitation link and broker onboarding token credentials sent to {inviteEmail}.
-                  </p>
+        {/* Tab 2: REQUESTS */}
+        {activeTab === "requests" && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm space-y-4">
+            <h2 className="text-sm font-bold text-gray-900">Requests Logged by {activeAgent.name}</h2>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-gray-100 text-gray-400 text-[11px] uppercase tracking-wider">
+                    <th className="py-2.5 font-semibold">REQUEST</th>
+                    <th className="py-2.5 font-semibold">ROUTE</th>
+                    <th className="py-2.5 font-semibold">FLIGHT</th>
+                    <th className="py-2.5 font-semibold">STATUS</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {agentRequests
+                    .filter((r) => r.agentName.toLowerCase().includes(activeAgent.lastName.toLowerCase()))
+                    .map((r) => (
+                      <tr key={r.id} className="hover:bg-gray-50/50">
+                        <td className="py-3 font-mono font-medium text-gray-900">{r.id}</td>
+                        <td className="py-3 font-mono text-gray-900">{r.route}</td>
+                        <td className="py-3 text-gray-700">{r.flightDate}</td>
+                        <td className="py-3">
+                          <span className="px-2 py-0.5 rounded-full text-[11px] bg-gray-100 font-medium">
+                            {r.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 3: TRIPS */}
+        {activeTab === "trips" && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm space-y-4">
+            <h2 className="text-sm font-bold text-gray-900">Confirmed Charter Flights</h2>
+            <div className="text-xs text-gray-500 py-3">
+              {activeAgent.bookedCount} verified charter bookings completed through {activeAgent.agencyName}.
+            </div>
+          </div>
+        )}
+
+        {/* Tab 5: PAYOUTS */}
+        {activeTab === "payouts" && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm space-y-4">
+            <h2 className="text-sm font-bold text-gray-900">Commission Payout Pipeline</h2>
+            <div className="text-xs text-gray-700 space-y-2">
+              <div>Open Commission: <span className="font-bold text-gray-900">€ {activeAgent.commissionOpen}</span></div>
+              <div>Scheduled Payout Date: <span className="font-medium text-gray-900">{activeAgent.nextPayout} 2026</span></div>
+              <div className="text-gray-400 text-[11px] pt-2">Payouts are settled directly via SEPA / UK Faster Payments.</div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 6: CLIENTS */}
+        {activeTab === "clients" && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm space-y-4">
+            <h2 className="text-sm font-bold text-gray-900">Accounts Managed by {activeAgent.name}</h2>
+            <div className="divide-y divide-gray-100 text-xs">
+              {accounts.slice(0, 3).map((acc) => (
+                <div key={acc.id} className="py-2.5 flex items-center justify-between">
+                  <div>
+                    <div className="font-semibold text-gray-900">{acc.name}</div>
+                    <div className="text-gray-500 font-mono text-[11px]">{acc.accountNumber} · {acc.country}</div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setActiveNav("accounts");
+                      router.push(`/accounts/${acc.accountNumber || acc.id}`);
+                    }}
+                    className="text-blue-600 hover:underline font-medium"
+                  >
+                    Open
+                  </button>
                 </div>
-              ) : (
-                <>
-                  <div>
-                    <label className="block text-xs font-bold text-[#0F1420] mb-1">
-                      Broker Legal Name <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={inviteName}
-                      onChange={(e) => setInviteName(e.target.value)}
-                      placeholder="e.g. Jonathan Sterling"
-                      className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3.5 py-2 text-xs text-[#0F1420] font-medium focus:outline-none focus:border-[#C9A052]"
-                    />
-                  </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
-                  <div>
-                    <label className="block text-xs font-bold text-[#0F1420] mb-1">
-                      Agency / Brokerage Firm
-                    </label>
-                    <input
-                      type="text"
-                      value={inviteAgency}
-                      onChange={(e) => setInviteAgency(e.target.value)}
-                      placeholder="e.g. Sterling Executive Jets Ltd"
-                      className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3.5 py-2 text-xs text-[#0F1420] font-medium focus:outline-none focus:border-[#C9A052]"
-                    />
-                  </div>
+  // ==========================================
+  // VIEW: LIST SCREEN (SCREEN 2 STYLE)
+  // ==========================================
+  return (
+    <div className="space-y-5 max-w-6xl mx-auto pb-12">
+      {/* Title */}
+      <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Agents</h1>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-bold text-[#0F1420] mb-1">
-                        Email Address <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="email"
-                        required
-                        value={inviteEmail}
-                        onChange={(e) => setInviteEmail(e.target.value)}
-                        placeholder="agent@brokerage.com"
-                        className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3.5 py-2 text-xs text-[#0F1420] font-medium focus:outline-none focus:border-[#C9A052]"
-                      />
-                    </div>
+      {/* Top Filter Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {/* Left: Search input + Filter Pills */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Search agent, agency, country..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="bg-white border border-gray-200 rounded-lg px-3.5 py-1.5 text-xs text-gray-900 placeholder-gray-400 w-64 focus:outline-none focus:border-gray-400 shadow-sm transition-colors"
+            />
+          </div>
 
-                    <div>
-                      <label className="block text-xs font-bold text-[#0F1420] mb-1">
-                        Phone Number
-                      </label>
-                      <input
-                        type="tel"
-                        value={invitePhone}
-                        onChange={(e) => setInvitePhone(e.target.value)}
-                        placeholder="+44 20 7946 0000"
-                        className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3.5 py-2 text-xs text-[#0F1420] font-medium focus:outline-none focus:border-[#C9A052]"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-bold text-[#0F1420] mb-1">
-                        Broker Commission (%)
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        max="25"
-                        value={inviteCommission}
-                        onChange={(e) => setInviteCommission(Number(e.target.value))}
-                        className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3.5 py-2 text-xs text-[#0F1420] font-mono focus:outline-none focus:border-[#C9A052]"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-[#0F1420] mb-1">
-                        Country
-                      </label>
-                      <input
-                        type="text"
-                        value={inviteCountry}
-                        onChange={(e) => setInviteCountry(e.target.value)}
-                        className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3.5 py-2 text-xs text-[#0F1420] font-medium focus:outline-none focus:border-[#C9A052]"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="pt-3 border-t border-[#E0DAD0] flex justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setIsInviteModalOpen(false)}
-                      className="px-4 py-2 rounded-xl border border-gray-300 text-xs font-bold text-gray-700 hover:bg-gray-100"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      className="px-5 py-2 rounded-xl bg-[#0F1420] text-[#C9A052] font-black text-xs uppercase tracking-wider hover:bg-[#1C2436]"
-                    >
-                      Dispatch Invitation
-                    </button>
-                  </div>
-                </>
-              )}
-            </form>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setFilterPill("all")}
+              className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors ${
+                filterPill === "all"
+                  ? "bg-[#111827] text-white"
+                  : "bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"
+              }`}
+            >
+              All {agentsList.length}
+            </button>
+            <button
+              onClick={() => setFilterPill("active")}
+              className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors ${
+                filterPill === "active"
+                  ? "bg-[#111827] text-white"
+                  : "bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"
+              }`}
+            >
+              Active
+            </button>
+            <button
+              onClick={() => setFilterPill("brokers")}
+              className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors ${
+                filterPill === "brokers"
+                  ? "bg-[#111827] text-white"
+                  : "bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"
+              }`}
+            >
+              Brokers
+            </button>
           </div>
         </div>
-      )}
+      </div>
+
+      {/* Agents Table */}
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr className="border-b border-gray-100 text-gray-400 text-[11px] uppercase tracking-wider">
+                <th className="py-3 px-4 font-semibold">AGENT</th>
+                <th className="py-3 px-4 font-semibold">AGENCY</th>
+                <th className="py-3 px-4 font-semibold">COUNTRY</th>
+                <th className="py-3 px-4 text-center font-semibold">TOKENS</th>
+                <th className="py-3 px-4 text-center font-semibold">REQUESTS (30D)</th>
+                <th className="py-3 px-4 text-center font-semibold">BOOKED</th>
+                <th className="py-3 px-4 text-right font-semibold">OPEN COMMISSION</th>
+                <th className="py-3 px-4 font-semibold">STATUS</th>
+                <th className="py-3 px-4 text-right font-semibold"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {filteredAgents.map((ag) => (
+                <tr
+                  key={ag.id}
+                  onClick={() => handleOpenAgent(ag)}
+                  className="hover:bg-gray-50/70 transition-colors cursor-pointer group"
+                >
+                  <td className="py-3.5 px-4 font-medium text-gray-900 group-hover:text-blue-600 transition-colors">
+                    {ag.name}
+                  </td>
+                  <td className="py-3.5 px-4 text-gray-700">{ag.agencyName}</td>
+                  <td className="py-3.5 px-4 text-gray-600">{ag.country}</td>
+                  <td className="py-3.5 px-4 text-center font-mono font-bold text-gray-900">
+                    {ag.tokensLeft}
+                  </td>
+                  <td className="py-3.5 px-4 text-center font-mono text-gray-700">{ag.requests30d}</td>
+                  <td className="py-3.5 px-4 text-center text-gray-700">
+                    {ag.bookedCount} <span className="text-gray-400 text-[11px]">({ag.conversionRate}%)</span>
+                  </td>
+                  <td className="py-3.5 px-4 text-right font-medium text-gray-900 font-mono">
+                    € {ag.commissionOpen}
+                  </td>
+                  <td className="py-3.5 px-4 whitespace-nowrap">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0]">
+                      Active
+                    </span>
+                  </td>
+                  <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenAgent(ag);
+                      }}
+                      className="text-blue-600 hover:underline font-medium"
+                    >
+                      Open
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }

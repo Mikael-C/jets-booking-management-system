@@ -86,6 +86,7 @@ export default function Home() {
         case "clients":
           return <AccountsView />;
         case "fleet":
+        case "aircraft_types":
           return <FleetView />;
         case "activities":
         case "audit_log":

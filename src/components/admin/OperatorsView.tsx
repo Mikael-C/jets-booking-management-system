@@ -1,900 +1,571 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useAviation } from "@/lib/aviationContext";
-import { OperatorRecord, OperatorQualDoc } from "@/types/aviation";
-import {
-  ShieldCheck,
-  Building2,
-  AlertTriangle,
-  CheckCircle2,
-  XCircle,
-  Clock,
-  Plus,
-  Search,
-  FileText,
-  Phone,
-  Mail,
-  ExternalLink,
-  ChevronDown,
-  X,
-  Calendar,
-  Check,
-  AlertCircle
-} from "lucide-react";
+import { OperatorRecord } from "@/types/aviation";
 
-export default function OperatorsView() {
-  const {
-    operators,
-    addOperator,
-    updateOperatorStatus,
-    updateOperatorChecklist,
-    addAuditEntry,
-    currentUser,
-    role
-  } = useAviation();
+interface OperatorsViewProps {
+  selectedOperatorId?: string;
+}
 
+export default function OperatorsView({ selectedOperatorId }: OperatorsViewProps = {}) {
+  const router = useRouter();
+  const { operators, updateOperatorStatus, addAuditEntry, currentUser } = useAviation();
+
+  const [activeOpId, setActiveOpId] = useState<string | null>(selectedOperatorId || null);
+  const [activeTab, setActiveTab] = useState<"compliance" | "fleet" | "offers" | "trips_flown" | "contacts">("compliance");
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [selectedOperator, setSelectedOperator] = useState<OperatorRecord | null>(null);
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [filterPill, setFilterPill] = useState<"all" | "approved" | "preferred" | "pending" | "suspended">("all");
 
-  // New Operator Form State
-  const [newOp, setNewOp] = useState({
-    legalName: "",
-    tradingName: "",
-    aocNumber: "",
-    aocAuthority: "Austro Control (Austria)",
-    aocExpiry: "",
-    baseIcao: "",
-    salesContact: "",
-    salesEmail: "",
-    opsPhone: "",
-    opsEmail: "",
-    insuranceExpiry: "",
-    safetyRating: "ARGUS Platinum",
-    safetyRatingProvider: "ARGUS International",
-    notes: ""
-  });
+  useEffect(() => {
+    if (selectedOperatorId) {
+      setActiveOpId(selectedOperatorId);
+    }
+  }, [selectedOperatorId]);
 
-  const canEdit = role === "super_admin" || role === "admin" || role === "operations";
-
-  // Calculate days until expiry
-  const getDaysUntil = (dateStr?: string) => {
-    if (!dateStr) return null;
-    const target = new Date(dateStr).getTime();
-    const now = new Date().getTime();
-    return Math.ceil((target - now) / (1000 * 60 * 60 * 24));
-  };
-
-  // Badge styling for expiry
-  const getExpiryBadge = (dateStr?: string) => {
-    const days = getDaysUntil(dateStr);
-    if (days === null) {
-      return (
-        <span className="inline-flex items-center gap-1 text-[11px] font-mono text-gray-400">
-          Not Recorded
-        </span>
-      );
-    }
-    if (days < 0) {
-      return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-mono font-bold bg-red-100 text-red-800 border border-red-300">
-          <XCircle className="w-3 h-3 text-red-600" />
-          EXPIRED ({Math.abs(days)}d ago)
-        </span>
-      );
-    }
-    if (days <= 30) {
-      return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-mono font-bold bg-red-50 text-red-700 border border-red-200">
-          <AlertTriangle className="w-3 h-3 text-red-500" />
-          {dateStr} ({days}d)
-        </span>
-      );
-    }
-    if (days <= 90) {
-      return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-mono font-bold bg-amber-50 text-amber-800 border border-amber-300">
-          <Clock className="w-3 h-3 text-amber-600" />
-          {dateStr} ({days}d)
-        </span>
-      );
-    }
+  const activeOperator = useMemo(() => {
+    if (!activeOpId) return null;
     return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-mono font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
-        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-        {dateStr}
-      </span>
+      operators.find(
+        (o) =>
+          o.id === activeOpId ||
+          o.tradingName?.toLowerCase().replace(/\s+/g, "-") === activeOpId.toLowerCase() ||
+          o.tradingName?.toLowerCase().includes(activeOpId.toLowerCase()) ||
+          o.legalName?.toLowerCase().includes(activeOpId.toLowerCase())
+      ) || operators[0] || null
     );
-  };
+  }, [activeOpId, operators]);
 
-  // Status Badge
-  const getStatusBadge = (status: OperatorRecord["status"]) => {
-    switch (status) {
-      case "approved":
-        return (
-          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-            APPROVED
-          </span>
-        );
-      case "approved_with_conditions":
-        return (
-          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold bg-amber-100 text-amber-900 border border-amber-300">
-            CONDITIONAL
-          </span>
-        );
-      case "pending":
-        return (
-          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold bg-blue-100 text-blue-800 border border-blue-300">
-            PENDING QUAL
-          </span>
-        );
-      case "suspended":
-        return (
-          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold bg-red-100 text-red-800 border border-red-300">
-            SUSPENDED
-          </span>
-        );
-      case "rejected":
-        return (
-          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold bg-gray-100 text-gray-700 border border-gray-300">
-            REJECTED
-          </span>
-        );
-      default:
-        return null;
+  const filteredOperators = useMemo(() => {
+    return operators.filter((op) => {
+      if (filterPill === "approved" && op.status !== "approved") return false;
+      if (filterPill === "preferred" && op.safetyRating !== "ARGUS Platinum" && !op.tradingName.toLowerCase().includes("alpine")) return false;
+      if (filterPill === "pending" && op.status !== "pending") return false;
+      if (filterPill === "suspended" && op.status !== "suspended") return false;
+
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const matchName = op.tradingName?.toLowerCase().includes(q) || op.legalName?.toLowerCase().includes(q);
+        const matchAoc = op.aocNumber?.toLowerCase().includes(q);
+        const matchBase = op.baseIcao?.toLowerCase().includes(q);
+        if (!matchName && !matchAoc && !matchBase) return false;
+      }
+      return true;
+    });
+  }, [operators, filterPill, searchQuery]);
+
+  const handleOpenOperator = (op: OperatorRecord) => {
+    setActiveOpId(op.id);
+    setActiveTab("compliance");
+    if (typeof window !== "undefined") {
+      window.history.pushState(null, "", `/operators/${op.id}`);
     }
   };
 
-  // Stats
-  const totalOps = operators.length;
-  const approvedOps = operators.filter((o) => o.status === "approved").length;
-  const pendingOps = operators.filter(
-    (o) => o.status === "pending" || o.status === "approved_with_conditions"
-  ).length;
-  const expiringWithin60 = operators.filter((o) => {
-    const aocDays = getDaysUntil(o.aocExpiry);
-    const insDays = getDaysUntil(o.insuranceExpiry);
+  const handleBackToList = () => {
+    setActiveOpId(null);
+    if (typeof window !== "undefined") {
+      window.history.pushState(null, "", `/operators`);
+    }
+  };
+
+  // ==========================================
+  // VIEW: DETAILS SCREEN (SCREEN 2)
+  // ==========================================
+  if (activeOperator) {
+    const isPreferred = activeOperator.safetyRating === "ARGUS Platinum" || activeOperator.tradingName.toLowerCase().includes("alpine");
+    const aocDisplay = `AOC ${activeOperator.aocNumber || "ES-xxx"} · ${activeOperator.aocAuthority || "AESA"}`;
+
     return (
-      (aocDays !== null && aocDays <= 60 && aocDays >= 0) ||
-      (insDays !== null && insDays <= 60 && insDays >= 0)
-    );
-  }).length;
-
-  // Filtered operators
-  const filteredOperators = operators.filter((op) => {
-    const matchesSearch =
-      op.legalName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      op.tradingName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      op.aocNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      op.baseIcao.toLowerCase().includes(searchQuery.toLowerCase());
-
-    const matchesStatus =
-      statusFilter === "all" ||
-      (statusFilter === "approved" && op.status === "approved") ||
-      (statusFilter === "pending" && (op.status === "pending" || op.status === "approved_with_conditions")) ||
-      (statusFilter === "suspended" && op.status === "suspended") ||
-      (statusFilter === "expiring" && ((getDaysUntil(op.aocExpiry) || 999) <= 60 || (getDaysUntil(op.insuranceExpiry) || 999) <= 60));
-
-    return matchesSearch && matchesStatus;
-  });
-
-  const handleAddSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newOp.legalName || !newOp.aocNumber) return;
-
-    const defaultChecklist: OperatorQualDoc[] = [
-      { id: "doc-1", docType: "Air Operator Certificate (AOC)", status: "pass", expiryDate: newOp.aocExpiry },
-      { id: "doc-2", docType: "Aircraft registered on AOC", status: "pass" },
-      { id: "doc-3", docType: "Certificate of Airworthiness (ARC)", status: "pending" },
-      { id: "doc-4", docType: "Third Party & Passenger Liability Insurance", status: "pending", expiryDate: newOp.insuranceExpiry },
-      { id: "doc-5", docType: "Independent Safety Audit Rating", status: "pass", notes: `${newOp.safetyRating} (${newOp.safetyRatingProvider})` },
-      { id: "doc-6", docType: "Crew Licensing, Medicals & Recurrent Training", status: "pending" },
-      { id: "doc-7", docType: "24/7 Operations Control Center (OCC)", status: "pass" },
-      { id: "doc-8", docType: "No Sub-Charter without Prior Consent Clause", status: "pass" },
-      { id: "doc-9", docType: "Master Charter Broker Agreement Signed", status: "pending" }
-    ];
-
-    const record: OperatorRecord = {
-      id: `op-${Date.now()}`,
-      legalName: newOp.legalName,
-      tradingName: newOp.tradingName || newOp.legalName,
-      aocNumber: newOp.aocNumber,
-      aocAuthority: newOp.aocAuthority,
-      aocExpiry: newOp.aocExpiry || "2027-12-31",
-      baseIcao: newOp.baseIcao.toUpperCase() || "LFMN",
-      salesContact: newOp.salesContact || "Operations Desk",
-      salesEmail: newOp.salesEmail || "sales@operator.aero",
-      opsPhone: newOp.opsPhone || "+33 4 93 00 00 00",
-      opsEmail: newOp.opsEmail || "dispatch@operator.aero",
-      status: "pending",
-      insuranceExpiry: newOp.insuranceExpiry,
-      safetyRating: newOp.safetyRating,
-      safetyRatingProvider: newOp.safetyRatingProvider,
-      notes: newOp.notes,
-      qualificationChecklist: defaultChecklist,
-      createdAt: new Date().toISOString()
-    };
-
-    addOperator(record);
-    addAuditEntry({
-      userEmail: currentUser?.email || "ops@orbelo.com",
-      userName: currentUser?.name || "Operations Team",
-      action: "OPERATOR_ADDED",
-      entityType: "Operator",
-      entityId: record.id,
-      details: `Added new aircraft operator '${record.tradingName}' (AOC: ${record.aocNumber})`
-    });
-
-    setIsAddModalOpen(false);
-    setNewOp({
-      legalName: "",
-      tradingName: "",
-      aocNumber: "",
-      aocAuthority: "Austro Control (Austria)",
-      aocExpiry: "",
-      baseIcao: "",
-      salesContact: "",
-      salesEmail: "",
-      opsPhone: "",
-      opsEmail: "",
-      insuranceExpiry: "",
-      safetyRating: "ARGUS Platinum",
-      safetyRatingProvider: "ARGUS International",
-      notes: ""
-    });
-  };
-
-  const handleStatusChange = (opId: string, newStatus: OperatorRecord["status"]) => {
-    updateOperatorStatus(opId, newStatus);
-    const op = operators.find((o) => o.id === opId);
-    addAuditEntry({
-      userEmail: currentUser?.email || "ops@orbelo.com",
-      userName: currentUser?.name || "Operations Team",
-      action: "OPERATOR_STATUS_CHANGED",
-      entityType: "Operator",
-      entityId: opId,
-      details: `Updated operator '${op?.tradingName || opId}' status to '${newStatus}'`
-    });
-    if (selectedOperator && selectedOperator.id === opId) {
-      setSelectedOperator({ ...selectedOperator, status: newStatus });
-    }
-  };
-
-  const handleChecklistToggle = (
-    docId: string,
-    nextStatus: "pass" | "fail" | "pending"
-  ) => {
-    if (!selectedOperator) return;
-    updateOperatorChecklist(selectedOperator.id, docId, nextStatus);
-    const updatedChecklist = selectedOperator.qualificationChecklist.map((d) =>
-      d.id === docId ? { ...d, status: nextStatus } : d
-    );
-    const updatedOp = { ...selectedOperator, qualificationChecklist: updatedChecklist };
-    setSelectedOperator(updatedOp);
-
-    addAuditEntry({
-      userEmail: currentUser?.email || "ops@orbelo.com",
-      userName: currentUser?.name || "Operations Team",
-      action: "QUALIFICATION_DOC_UPDATED",
-      entityType: "OperatorChecklist",
-      entityId: selectedOperator.id,
-      details: `Updated qualification checklist item '${docId}' to '${nextStatus}' for ${selectedOperator.tradingName}`
-    });
-  };
-
-  return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-12">
-      {/* Top Header Card */}
-      <div className="bg-white border border-[#E0DAD0] rounded-2xl p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-[#C9A052]/15 text-[#9A7A35] border border-[#C9A052]/30">
-              SAFETY & COMPLIANCE PIPELINE
-            </span>
-            <span className="text-xs text-[#0F1420]/60">EASA / FAA Part 135 Qualification</span>
-          </div>
-          <h2 className="text-xl font-black text-[#0F1420] tracking-tight">
-            Air Charter Operator Qualification & Directory
-          </h2>
-          <p className="text-xs text-[#0F1420]/65 mt-0.5">
-            Audit AOC certifications, third-party liability insurance policies, safety audit ratings (ARGUS, IS-BAO, Wyvern), and 9-point broker vetting checklists.
-          </p>
+      <div className="space-y-6 max-w-6xl mx-auto pb-12">
+        {/* Breadcrumb */}
+        <div className="flex items-center gap-1.5 text-xs text-gray-500 font-medium">
+          <button
+            onClick={handleBackToList}
+            className="hover:text-gray-900 transition-colors"
+          >
+            Operators
+          </button>
+          <span>/</span>
+          <span className="text-gray-800">{activeOperator.tradingName}</span>
         </div>
 
-        {canEdit && (
+        {/* Header Row */}
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
+              {activeOperator.tradingName}{" "}
+              <span className="text-gray-500 font-normal">· Internal only</span>
+            </h1>
+            <div className="flex flex-wrap items-center gap-2 mt-2">
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0]">
+                Approved
+              </span>
+              {isPreferred && (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-[#F0FDF4] text-[#166534] border border-[#BBF7D0]">
+                  Preferred
+                </span>
+              )}
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-gray-100 text-gray-700">
+                {aocDisplay}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              onClick={() => alert(`Editing qualification parameters for ${activeOperator.tradingName}`)}
+              className="bg-white border border-gray-300 text-gray-800 hover:bg-gray-50 text-xs font-medium px-4 py-1.5 rounded-lg shadow-sm transition-all"
+            >
+              Edit
+            </button>
+            <button
+              onClick={() => {
+                if (confirm(`Suspend commercial operations with ${activeOperator.tradingName}?`)) {
+                  updateOperatorStatus(activeOperator.id, "suspended");
+                }
+              }}
+              className="bg-white border border-gray-300 text-gray-800 hover:bg-gray-50 text-xs font-medium px-4 py-1.5 rounded-lg shadow-sm transition-all"
+            >
+              Suspend
+            </button>
+          </div>
+        </div>
+
+        {/* Tabs Row */}
+        <div className="flex items-center gap-6 border-b border-gray-200 text-xs">
           <button
-            onClick={() => setIsAddModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#0F1420] hover:bg-[#1A2338] text-white font-mono text-xs font-bold transition-all shadow-sm"
+            onClick={() => setActiveTab("compliance")}
+            className={`pb-2.5 font-medium transition-colors ${
+              activeTab === "compliance"
+                ? "border-b-2 border-black text-gray-900 font-bold"
+                : "text-gray-500 hover:text-gray-800"
+            }`}
           >
-            <Plus className="w-4 h-4 text-[#C9A052]" />
-            <span>Add Qualified Operator</span>
+            Compliance
           </button>
+          <button
+            onClick={() => setActiveTab("fleet")}
+            className={`pb-2.5 font-medium transition-colors ${
+              activeTab === "fleet"
+                ? "border-b-2 border-black text-gray-900 font-bold"
+                : "text-gray-500 hover:text-gray-800"
+            }`}
+          >
+            Fleet (4)
+          </button>
+          <button
+            onClick={() => setActiveTab("offers")}
+            className={`pb-2.5 font-medium transition-colors ${
+              activeTab === "offers"
+                ? "border-b-2 border-black text-gray-900 font-bold"
+                : "text-gray-500 hover:text-gray-800"
+            }`}
+          >
+            Offers (12)
+          </button>
+          <button
+            onClick={() => setActiveTab("trips_flown")}
+            className={`pb-2.5 font-medium transition-colors ${
+              activeTab === "trips_flown"
+                ? "border-b-2 border-black text-gray-900 font-bold"
+                : "text-gray-500 hover:text-gray-800"
+            }`}
+          >
+            Trips flown (5)
+          </button>
+          <button
+            onClick={() => setActiveTab("contacts")}
+            className={`pb-2.5 font-medium transition-colors ${
+              activeTab === "contacts"
+                ? "border-b-2 border-black text-gray-900 font-bold"
+                : "text-gray-500 hover:text-gray-800"
+            }`}
+          >
+            Contacts
+          </button>
+        </div>
+
+        {/* Tab 1: COMPLIANCE (Screen 2 Layout) */}
+        {activeTab === "compliance" && (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            {/* Left Column (8 cols) */}
+            <div className="lg:col-span-8 space-y-6">
+              <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm space-y-4">
+                <h2 className="text-sm font-bold text-gray-900">Compliance · 9 of 9</h2>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b border-gray-100 text-gray-400 text-[11px] uppercase tracking-wider">
+                        <th className="py-2.5 font-semibold">DOCUMENT</th>
+                        <th className="py-2.5 font-semibold">REFERENCE</th>
+                        <th className="py-2.5 font-semibold">EXPIRES</th>
+                        <th className="py-2.5 font-semibold">STATUS</th>
+                        <th className="py-2.5 text-right font-semibold"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      <tr className="hover:bg-gray-50/50">
+                        <td className="py-3 font-medium text-gray-900">Air Operator Certificate</td>
+                        <td className="py-3 text-gray-600 font-mono">ES-xxx · AESA</td>
+                        <td className="py-3 text-gray-700 whitespace-nowrap">30 Nov 2027</td>
+                        <td className="py-3">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0]">
+                            Verified
+                          </span>
+                        </td>
+                        <td className="py-3 text-right">
+                          <a href="#" onClick={(e) => { e.preventDefault(); alert("Viewing Air Operator Certificate PDF"); }} className="text-blue-600 hover:underline font-medium">PDF</a>
+                        </td>
+                      </tr>
+                      <tr className="hover:bg-gray-50/50">
+                        <td className="py-3 font-medium text-gray-900">Operating specifications</td>
+                        <td className="py-3 text-gray-600 font-mono">Ops Spec rev 12</td>
+                        <td className="py-3 text-gray-700 whitespace-nowrap">30 Nov 2027</td>
+                        <td className="py-3">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0]">
+                            Verified
+                          </span>
+                        </td>
+                        <td className="py-3 text-right">
+                          <a href="#" onClick={(e) => { e.preventDefault(); alert("Viewing Ops Spec PDF"); }} className="text-blue-600 hover:underline font-medium">PDF</a>
+                        </td>
+                      </tr>
+                      <tr className="hover:bg-gray-50/50">
+                        <td className="py-3 font-medium text-gray-900">Liability insurance</td>
+                        <td className="py-3 text-gray-600">Min. € 25 m</td>
+                        <td className="py-3 text-gray-700 whitespace-nowrap">15 May 2027</td>
+                        <td className="py-3">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0]">
+                            Verified
+                          </span>
+                        </td>
+                        <td className="py-3 text-right">
+                          <a href="#" onClick={(e) => { e.preventDefault(); alert("Viewing Liability Insurance Certificate PDF"); }} className="text-blue-600 hover:underline font-medium">PDF</a>
+                        </td>
+                      </tr>
+                      <tr className="hover:bg-gray-50/50">
+                        <td className="py-3 font-medium text-gray-900">Us named as additional insured</td>
+                        <td className="py-3 text-gray-600">Certificate</td>
+                        <td className="py-3 text-gray-700 whitespace-nowrap">15 May 2027</td>
+                        <td className="py-3">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0]">
+                            Verified
+                          </span>
+                        </td>
+                        <td className="py-3 text-right">
+                          <a href="#" onClick={(e) => { e.preventDefault(); alert("Viewing Additional Insured Certificate PDF"); }} className="text-blue-600 hover:underline font-medium">PDF</a>
+                        </td>
+                      </tr>
+                      <tr className="hover:bg-gray-50/50">
+                        <td className="py-3 font-medium text-gray-900">Safety audit</td>
+                        <td className="py-3 text-gray-600">ARGUS Gold</td>
+                        <td className="py-3 text-gray-700 whitespace-nowrap">01 Feb 2027</td>
+                        <td className="py-3">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0]">
+                            Verified
+                          </span>
+                        </td>
+                        <td className="py-3 text-right">
+                          <a href="#" onClick={(e) => { e.preventDefault(); alert("Viewing Safety Audit PDF"); }} className="text-blue-600 hover:underline font-medium">PDF</a>
+                        </td>
+                      </tr>
+                      <tr className="hover:bg-gray-50/50">
+                        <td className="py-3 font-medium text-gray-900">Charter terms signed</td>
+                        <td className="py-3 text-gray-600">Framework agreement</td>
+                        <td className="py-3 text-gray-400">—</td>
+                        <td className="py-3">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0]">
+                            Verified
+                          </span>
+                        </td>
+                        <td className="py-3 text-right">
+                          <a href="#" onClick={(e) => { e.preventDefault(); alert("Viewing Signed Framework Agreement PDF"); }} className="text-blue-600 hover:underline font-medium">PDF</a>
+                        </td>
+                      </tr>
+                      <tr className="hover:bg-gray-50/50">
+                        <td className="py-3 font-medium text-gray-900">Aircraft list with registrations</td>
+                        <td className="py-3 text-gray-600">4 aircraft</td>
+                        <td className="py-3 text-gray-400">—</td>
+                        <td className="py-3">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0]">
+                            Verified
+                          </span>
+                        </td>
+                        <td className="py-3 text-right">
+                          <a href="#" onClick={(e) => { e.preventDefault(); alert("Viewing Fleet Registry PDF"); }} className="text-blue-600 hover:underline font-medium">PDF</a>
+                        </td>
+                      </tr>
+                      <tr className="hover:bg-gray-50/50">
+                        <td className="py-3 font-medium text-gray-900">Bank details</td>
+                        <td className="py-3 text-gray-600">IBAN on file</td>
+                        <td className="py-3 text-gray-400">—</td>
+                        <td className="py-3">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0]">
+                            Verified
+                          </span>
+                        </td>
+                        <td className="py-3 text-right text-gray-400">—</td>
+                      </tr>
+                      <tr className="hover:bg-gray-50/50">
+                        <td className="py-3 font-medium text-gray-900">Company registration</td>
+                        <td className="py-3 text-gray-600">Registry extract</td>
+                        <td className="py-3 text-gray-400">—</td>
+                        <td className="py-3">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0]">
+                            Verified
+                          </span>
+                        </td>
+                        <td className="py-3 text-right">
+                          <a href="#" onClick={(e) => { e.preventDefault(); alert("Viewing Company Registration PDF"); }} className="text-blue-600 hover:underline font-medium">PDF</a>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="pt-3 border-t border-gray-100 text-[11px] text-gray-400 leading-relaxed">
+                  An operator can only be selected on a trip when every document is verified and nothing has expired. Expiry within 60 days turns amber here and on the Operators list.
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column (4 cols) */}
+            <div className="lg:col-span-4 space-y-4">
+              <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm space-y-5">
+                {/* BASE */}
+                <div>
+                  <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1">
+                    BASE
+                  </div>
+                  <div className="text-xs font-semibold text-gray-900">
+                    {activeOperator.baseIcao || "LEPA"} Palma
+                  </div>
+                </div>
+
+                {/* CONTACTS */}
+                <div>
+                  <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1">
+                    CONTACTS
+                  </div>
+                  <div className="space-y-0.5 text-xs text-gray-700">
+                    <div>Ops desk {activeOperator.opsPhone || "+34 971 000 000"}</div>
+                    <div className="text-gray-600">{activeOperator.opsEmail || "charter@alpine-exec.aero"}</div>
+                  </div>
+                </div>
+
+                {/* PERFORMANCE */}
+                <div>
+                  <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1">
+                    PERFORMANCE
+                  </div>
+                  <div className="space-y-0.5 text-xs text-gray-700">
+                    <div>12 offers · 5 flown</div>
+                    <div className="text-gray-500">Avg. response 18 min</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 2: FLEET */}
+        {activeTab === "fleet" && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm space-y-4">
+            <h2 className="text-sm font-bold text-gray-900">Managed Fleet (4 Aircraft)</h2>
+            <div className="divide-y divide-gray-100 text-xs">
+              <div className="py-3 flex items-center justify-between">
+                <div>
+                  <div className="font-semibold text-gray-900">Bombardier Challenger 350 · <span className="font-mono text-gray-600">EC-NFA</span></div>
+                  <div className="text-gray-500">Super midsize · 9 seats · Enclosed lavatory · High-speed WiFi</div>
+                </div>
+                <span className="px-2 py-0.5 rounded-full text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">Available</span>
+              </div>
+              <div className="py-3 flex items-center justify-between">
+                <div>
+                  <div className="font-semibold text-gray-900">Cessna Citation CJ3+ · <span className="font-mono text-gray-600">EC-MQL</span></div>
+                  <div className="text-gray-500">Light jet · 7 seats · Enclosed lavatory · Based LEPA</div>
+                </div>
+                <span className="px-2 py-0.5 rounded-full text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">Available</span>
+              </div>
+              <div className="py-3 flex items-center justify-between">
+                <div>
+                  <div className="font-semibold text-gray-900">Embraer Phenom 300E · <span className="font-mono text-gray-600">EC-KLM</span></div>
+                  <div className="text-gray-500">Light jet · 8 seats · Enclosed lavatory · Bossa Nova interior</div>
+                </div>
+                <span className="px-2 py-0.5 rounded-full text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">Available</span>
+              </div>
+              <div className="py-3 flex items-center justify-between">
+                <div>
+                  <div className="font-semibold text-gray-900">Gulfstream G450 · <span className="font-mono text-gray-600">EC-GLF</span></div>
+                  <div className="text-gray-500">Heavy jet · 14 seats · Dual lavatories · Forward galley</div>
+                </div>
+                <span className="px-2 py-0.5 rounded-full text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">Available</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 3: OFFERS */}
+        {activeTab === "offers" && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm space-y-4">
+            <h2 className="text-sm font-bold text-gray-900">Sourcing Offers (12 Total)</h2>
+            <div className="text-xs text-gray-500 py-3">
+              12 charter offers submitted across requests. Average quote turnaround: 18 minutes.
+            </div>
+          </div>
+        )}
+
+        {/* Tab 4: TRIPS FLOWN */}
+        {activeTab === "trips_flown" && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm space-y-4">
+            <h2 className="text-sm font-bold text-gray-900">Charter Flights Completed (5 Flown)</h2>
+            <div className="divide-y divide-gray-100 text-xs">
+              <div className="py-2.5 flex items-center justify-between">
+                <div>
+                  <div className="font-mono font-medium text-gray-900">FE4578-005 · LEIB → LSGG</div>
+                  <div className="text-gray-500">20 Nov 2026 · CJ3+ EC-MQL · Value € 8,250.00</div>
+                </div>
+                <span className="px-2 py-0.5 rounded-full text-[11px] bg-emerald-50 text-emerald-700 font-medium">Flown</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 5: CONTACTS */}
+        {activeTab === "contacts" && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm space-y-4">
+            <h2 className="text-sm font-bold text-gray-900">Operations & Charter Sales Contacts</h2>
+            <div className="space-y-3 text-xs">
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <div className="font-semibold text-gray-900">Charter Sales Desk (24/7)</div>
+                <div className="text-gray-600">charter@alpine-exec.aero · +34 971 000 001</div>
+              </div>
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <div className="font-semibold text-gray-900">Flight Dispatch & Handling Coordination</div>
+                <div className="text-gray-600">dispatch@alpine-exec.aero · +34 971 000 002</div>
+              </div>
+            </div>
+          </div>
         )}
       </div>
+    );
+  }
 
-      {/* KPI Stats Row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-white border border-[#E0DAD0] rounded-xl p-4 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-mono font-bold uppercase text-[#0F1420]/70">
-              Total Operators
-            </span>
-            <Building2 className="w-4 h-4 text-[#C9A052]" />
+  // ==========================================
+  // VIEW: LIST SCREEN (SCREEN 2 STYLE)
+  // ==========================================
+  return (
+    <div className="space-y-5 max-w-6xl mx-auto pb-12">
+      {/* Title */}
+      <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Operators</h1>
+
+      {/* Top Filter Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {/* Left: Search input + Filter Pills */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Search operator, AOC, base ICAO..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="bg-white border border-gray-200 rounded-lg px-3.5 py-1.5 text-xs text-gray-900 placeholder-gray-400 w-64 focus:outline-none focus:border-gray-400 shadow-sm transition-colors"
+            />
           </div>
-          <p className="text-2xl font-black font-mono text-[#0F1420] mt-2">{totalOps}</p>
-          <span className="text-[11px] text-gray-500">Active fleet partners</span>
-        </div>
 
-        <div className="bg-white border border-[#E0DAD0] rounded-xl p-4 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-mono font-bold uppercase text-emerald-800">
-              Fully Approved
-            </span>
-            <ShieldCheck className="w-4 h-4 text-emerald-600" />
-          </div>
-          <p className="text-2xl font-black font-mono text-emerald-700 mt-2">{approvedOps}</p>
-          <span className="text-[11px] text-emerald-800/80">100% compliant for quoting</span>
-        </div>
-
-        <div className="bg-white border border-[#E0DAD0] rounded-xl p-4 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-mono font-bold uppercase text-amber-800">
-              Pending / Conditional
-            </span>
-            <AlertCircle className="w-4 h-4 text-amber-600" />
-          </div>
-          <p className="text-2xl font-black font-mono text-amber-700 mt-2">{pendingOps}</p>
-          <span className="text-[11px] text-amber-800/80">Audit action needed</span>
-        </div>
-
-        <div className="bg-white border border-[#E0DAD0] rounded-xl p-4 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-mono font-bold uppercase text-red-800">
-              Expiring &le; 60 Days
-            </span>
-            <Clock className="w-4 h-4 text-red-600" />
-          </div>
-          <p className="text-2xl font-black font-mono text-red-700 mt-2">{expiringWithin60}</p>
-          <span className="text-[11px] text-red-800/80">AOC or insurance renewals</span>
-        </div>
-      </div>
-
-      {/* Filter & Search Bar */}
-      <div className="bg-white border border-[#E0DAD0] rounded-xl p-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
-        <div className="relative w-full sm:w-80">
-          <Search className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
-          <input
-            type="text"
-            placeholder="Search operator, AOC #, or ICAO base..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-lg pl-9 pr-3 py-1.5 text-xs text-[#0F1420] placeholder-gray-400 focus:outline-none focus:border-[#C9A052]"
-          />
-        </div>
-
-        <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto">
-          {[
-            { id: "all", label: "All Operators" },
-            { id: "approved", label: "Approved" },
-            { id: "pending", label: "Pending Audit" },
-            { id: "expiring", label: "Expiring Soon" },
-            { id: "suspended", label: "Suspended" }
-          ].map((tab) => (
+          <div className="flex items-center gap-1.5">
             <button
-              key={tab.id}
-              onClick={() => setStatusFilter(tab.id)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-colors whitespace-nowrap ${
-                statusFilter === tab.id
-                  ? "bg-[#0F1420] text-[#C9A052]"
-                  : "bg-[#F5F2EC] text-[#0F1420]/70 hover:bg-[#EAE6DE]"
+              onClick={() => setFilterPill("all")}
+              className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors ${
+                filterPill === "all"
+                  ? "bg-[#111827] text-white"
+                  : "bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"
               }`}
             >
-              {tab.label}
+              All {operators.length}
             </button>
-          ))}
+            <button
+              onClick={() => setFilterPill("approved")}
+              className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors ${
+                filterPill === "approved"
+                  ? "bg-[#111827] text-white"
+                  : "bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"
+              }`}
+            >
+              Approved
+            </button>
+            <button
+              onClick={() => setFilterPill("preferred")}
+              className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors ${
+                filterPill === "preferred"
+                  ? "bg-[#111827] text-white"
+                  : "bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"
+              }`}
+            >
+              Preferred
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Operators Grid / Table */}
-      <div className="bg-white border border-[#E0DAD0] rounded-2xl shadow-sm overflow-hidden">
+      {/* Operators Table */}
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
+          <table className="w-full text-left border-collapse text-xs">
             <thead>
-              <tr className="bg-[#F5F2EC] border-b border-[#E0DAD0] text-[#0F1420]/80 font-mono text-[10px] uppercase tracking-wider">
-                <th className="py-3 px-4">Operator & Base</th>
-                <th className="py-3 px-4">AOC Certificate</th>
-                <th className="py-3 px-4">AOC Expiry</th>
-                <th className="py-3 px-4">Safety Audit</th>
-                <th className="py-3 px-4">Insurance Expiry</th>
-                <th className="py-3 px-4">Status</th>
-                <th className="py-3 px-4 text-right">Actions</th>
+              <tr className="border-b border-gray-100 text-gray-400 text-[11px] uppercase tracking-wider">
+                <th className="py-3 px-4 font-semibold">OPERATOR</th>
+                <th className="py-3 px-4 font-semibold">AOC NUMBER</th>
+                <th className="py-3 px-4 font-semibold">BASE</th>
+                <th className="py-3 px-4 font-semibold">SAFETY RATING</th>
+                <th className="py-3 px-4 font-semibold">COMPLIANCE</th>
+                <th className="py-3 px-4 font-semibold">STATUS</th>
+                <th className="py-3 px-4 text-right font-semibold"></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#E0DAD0]/60">
-              {filteredOperators.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="py-8 text-center text-xs text-gray-500 font-mono">
-                    No operators found matching the criteria.
+            <tbody className="divide-y divide-gray-100">
+              {filteredOperators.map((op) => (
+                <tr
+                  key={op.id}
+                  onClick={() => handleOpenOperator(op)}
+                  className="hover:bg-gray-50/70 transition-colors cursor-pointer group"
+                >
+                  <td className="py-3.5 px-4 font-medium text-gray-900 group-hover:text-blue-600 transition-colors">
+                    {op.tradingName}
+                  </td>
+                  <td className="py-3.5 px-4 text-gray-700 font-mono">{op.aocNumber}</td>
+                  <td className="py-3.5 px-4 text-gray-600 font-mono">{op.baseIcao}</td>
+                  <td className="py-3.5 px-4 text-gray-700">{op.safetyRating || "ARGUS Gold"}</td>
+                  <td className="py-3.5 px-4 whitespace-nowrap">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0]">
+                      9 of 9 verified
+                    </span>
+                  </td>
+                  <td className="py-3.5 px-4 whitespace-nowrap">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0]">
+                      Approved
+                    </span>
+                  </td>
+                  <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenOperator(op);
+                      }}
+                      className="text-blue-600 hover:underline font-medium"
+                    >
+                      Open
+                    </button>
                   </td>
                 </tr>
-              ) : (
-                filteredOperators.map((op) => {
-                  const passCount = op.qualificationChecklist.filter((d) => d.status === "pass").length;
-                  const totalDocs = op.qualificationChecklist.length;
-
-                  return (
-                    <tr key={op.id} className="hover:bg-[#FDFCFA] transition-colors">
-                      {/* Operator & Base */}
-                      <td className="py-3.5 px-4">
-                        <div>
-                          <div className="font-bold text-[#0F1420] flex items-center gap-1.5">
-                            <span>{op.tradingName}</span>
-                            <span className="px-1.5 py-0.2 rounded bg-[#0F1420]/5 text-[#0F1420]/70 font-mono text-[10px]">
-                              {op.baseIcao}
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-gray-500">{op.legalName}</p>
-                          <div className="flex items-center gap-2 mt-1 text-[10px] text-gray-400">
-                            <span className="flex items-center gap-0.5">
-                              <Mail className="w-2.5 h-2.5" />
-                              {op.salesEmail}
-                            </span>
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* AOC Certificate */}
-                      <td className="py-3.5 px-4 font-mono">
-                        <div className="font-bold text-[#0F1420]">{op.aocNumber}</div>
-                        <p className="text-[10px] text-gray-500">{op.aocAuthority}</p>
-                      </td>
-
-                      {/* AOC Expiry */}
-                      <td className="py-3.5 px-4">
-                        {getExpiryBadge(op.aocExpiry)}
-                      </td>
-
-                      {/* Safety Audit */}
-                      <td className="py-3.5 px-4">
-                        {op.safetyRating ? (
-                          <div>
-                            <span className="font-bold font-mono text-[#0F1420]">
-                              {op.safetyRating}
-                            </span>
-                            <p className="text-[10px] text-gray-500">{op.safetyRatingProvider}</p>
-                          </div>
-                        ) : (
-                          <span className="text-[11px] font-mono text-gray-400">Not Audited</span>
-                        )}
-                      </td>
-
-                      {/* Insurance Expiry */}
-                      <td className="py-3.5 px-4">
-                        {getExpiryBadge(op.insuranceExpiry)}
-                      </td>
-
-                      {/* Status */}
-                      <td className="py-3.5 px-4">
-                        <div className="space-y-1">
-                          {getStatusBadge(op.status)}
-                          <div className="text-[10px] font-mono text-gray-500">
-                            {passCount}/{totalDocs} Docs Verified
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* Actions */}
-                      <td className="py-3.5 px-4 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            onClick={() => setSelectedOperator(op)}
-                            className="px-2.5 py-1.5 rounded-lg bg-[#F5F2EC] hover:bg-[#EAE6DE] text-[#0F1420] font-mono font-bold text-[11px] transition-colors border border-[#E0DAD0] flex items-center gap-1"
-                          >
-                            <ShieldCheck className="w-3.5 h-3.5 text-[#C9A052]" />
-                            <span>Qualification</span>
-                          </button>
-
-                          {canEdit && (
-                            <select
-                              value={op.status}
-                              onChange={(e) => handleStatusChange(op.id, e.target.value as any)}
-                              className="bg-white border border-[#E0DAD0] rounded-lg px-2 py-1 text-[11px] font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                            >
-                              <option value="approved">Approved</option>
-                              <option value="approved_with_conditions">Conditional</option>
-                              <option value="pending">Pending</option>
-                              <option value="suspended">Suspended</option>
-                              <option value="rejected">Rejected</option>
-                            </select>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
+              ))}
             </tbody>
           </table>
         </div>
       </div>
-
-      {/* Qualification Checklist Modal / Drawer */}
-      {selectedOperator && (
-        <div className="fixed inset-0 z-50 bg-[#0F1420]/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-3xl w-full border border-[#E0DAD0] shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
-            {/* Modal Header */}
-            <div className="p-6 bg-[#0F1420] text-white flex items-center justify-between border-b border-[#1C2436]">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-[#C9A052]/20 text-[#C9A052] border border-[#C9A052]/30">
-                    OPERATOR AUDIT & COMPLIANCE FILE
-                  </span>
-                  <span className="text-xs text-gray-400">AOC #{selectedOperator.aocNumber}</span>
-                </div>
-                <h3 className="text-xl font-black text-white tracking-tight">
-                  {selectedOperator.tradingName} ({selectedOperator.legalName})
-                </h3>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  Base: {selectedOperator.baseIcao} • Authority: {selectedOperator.aocAuthority} • Safety: {selectedOperator.safetyRating || "Unrated"}
-                </p>
-              </div>
-
-              <button
-                onClick={() => setSelectedOperator(null)}
-                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Checklist Progress Bar */}
-            <div className="px-6 py-3 bg-[#F5F2EC] border-b border-[#E0DAD0] flex items-center justify-between text-xs font-mono">
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-[#0F1420]">9-Point Broker Qualification Standard:</span>
-                <span className="text-[#9A7A35] font-black">
-                  {selectedOperator.qualificationChecklist.filter((d) => d.status === "pass").length} /{" "}
-                  {selectedOperator.qualificationChecklist.length} PASSED
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] text-gray-500">Current Status:</span>
-                {getStatusBadge(selectedOperator.status)}
-              </div>
-            </div>
-
-            {/* Scrollable Checklist Items */}
-            <div className="p-6 overflow-y-auto space-y-3 flex-1">
-              {selectedOperator.qualificationChecklist.map((doc, idx) => (
-                <div
-                  key={doc.id}
-                  className={`p-3.5 rounded-xl border transition-all ${
-                    doc.status === "pass"
-                      ? "border-emerald-200 bg-emerald-50/40"
-                      : doc.status === "fail"
-                      ? "border-red-200 bg-red-50/40"
-                      : "border-amber-200 bg-amber-50/40"
-                  }`}
-                >
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <div className="flex items-start gap-2.5">
-                      <span className="h-5 w-5 rounded-full bg-[#0F1420] text-[#C9A052] font-mono font-bold text-[10px] flex items-center justify-center mt-0.5 flex-shrink-0">
-                        {idx + 1}
-                      </span>
-                      <div>
-                        <div className="font-bold text-xs text-[#0F1420] flex items-center gap-2">
-                          <span>{doc.docType}</span>
-                          {doc.expiryDate && (
-                            <span className="text-[10px] font-mono text-gray-500">
-                              (Exp: {doc.expiryDate})
-                            </span>
-                          )}
-                        </div>
-                        {doc.notes && (
-                          <p className="text-[11px] text-gray-600 mt-0.5">{doc.notes}</p>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Pass / Pending / Fail Action Buttons */}
-                    {canEdit ? (
-                      <div className="flex items-center gap-1.5 self-end sm:self-center">
-                        <button
-                          type="button"
-                          onClick={() => handleChecklistToggle(doc.id, "pass")}
-                          className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold transition-all ${
-                            doc.status === "pass"
-                              ? "bg-emerald-600 text-white shadow-sm"
-                              : "bg-white text-gray-600 border border-gray-300 hover:bg-emerald-50"
-                          }`}
-                        >
-                          Pass
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleChecklistToggle(doc.id, "pending")}
-                          className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold transition-all ${
-                            doc.status === "pending"
-                              ? "bg-amber-600 text-white shadow-sm"
-                              : "bg-white text-gray-600 border border-gray-300 hover:bg-amber-50"
-                          }`}
-                        >
-                          Pending
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleChecklistToggle(doc.id, "fail")}
-                          className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold transition-all ${
-                            doc.status === "fail"
-                              ? "bg-red-600 text-white shadow-sm"
-                              : "bg-white text-gray-600 border border-gray-300 hover:bg-red-50"
-                          }`}
-                        >
-                          Fail
-                        </button>
-                      </div>
-                    ) : (
-                      <span className="font-mono text-[10px] uppercase font-bold text-gray-600">
-                        Status: {doc.status}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
-
-              {selectedOperator.notes && (
-                <div className="p-3 bg-[#F5F2EC] rounded-xl border border-[#E0DAD0] text-xs text-[#0F1420]/80">
-                  <span className="font-mono font-bold text-[10px] uppercase block mb-1 text-[#9A7A35]">
-                    Broker Internal Notes:
-                  </span>
-                  <p>{selectedOperator.notes}</p>
-                </div>
-              )}
-            </div>
-
-            {/* Modal Footer */}
-            <div className="p-4 bg-[#FDFCFA] border-t border-[#E0DAD0] flex items-center justify-between">
-              <div className="text-[11px] text-gray-500 font-mono">
-                Commercial Contact: {selectedOperator.salesContact} ({selectedOperator.opsPhone})
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setSelectedOperator(null)}
-                className="px-4 py-2 rounded-xl bg-[#0F1420] text-white text-xs font-mono font-bold hover:bg-[#1A2338]"
-              >
-                Close Audit Record
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Add Operator Modal */}
-      {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 bg-[#0F1420]/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-2xl w-full border border-[#E0DAD0] shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
-            <div className="p-5 bg-[#0F1420] text-white flex items-center justify-between">
-              <div>
-                <h3 className="text-base font-bold text-white">Add New Charter Fleet Operator</h3>
-                <p className="text-xs text-gray-400">Register and qualify a certified EASA/FAA carrier</p>
-              </div>
-              <button
-                onClick={() => setIsAddModalOpen(false)}
-                className="p-1.5 rounded-lg bg-white/10 text-white"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleAddSubmit} className="p-6 overflow-y-auto space-y-4 flex-1 text-xs">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-mono uppercase font-bold text-[#0F1420]/70 mb-1">
-                    Legal Entity Name *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. VistaJet Aviation Malta Ltd"
-                    value={newOp.legalName}
-                    onChange={(e) => setNewOp({ ...newOp, legalName: e.target.value })}
-                    className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-lg px-3 py-1.5 font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-mono uppercase font-bold text-[#0F1420]/70 mb-1">
-                    Trading / Brand Name
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. VistaJet"
-                    value={newOp.tradingName}
-                    onChange={(e) => setNewOp({ ...newOp, tradingName: e.target.value })}
-                    className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-lg px-3 py-1.5 text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-[10px] font-mono uppercase font-bold text-[#0F1420]/70 mb-1">
-                    AOC Number *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. MT-03 or FR.AOC.0842"
-                    value={newOp.aocNumber}
-                    onChange={(e) => setNewOp({ ...newOp, aocNumber: e.target.value })}
-                    className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-lg px-3 py-1.5 font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-mono uppercase font-bold text-[#0F1420]/70 mb-1">
-                    AOC Issuing Authority
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. TM-CAD, DGAC, FAA"
-                    value={newOp.aocAuthority}
-                    onChange={(e) => setNewOp({ ...newOp, aocAuthority: e.target.value })}
-                    className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-lg px-3 py-1.5 text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-mono uppercase font-bold text-[#0F1420]/70 mb-1">
-                    Base Airport (ICAO)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. LMML, LFMN"
-                    maxLength={4}
-                    value={newOp.baseIcao}
-                    onChange={(e) => setNewOp({ ...newOp, baseIcao: e.target.value.toUpperCase() })}
-                    className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-lg px-3 py-1.5 font-mono text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-mono uppercase font-bold text-[#0F1420]/70 mb-1">
-                    AOC Expiry Date
-                  </label>
-                  <input
-                    type="date"
-                    value={newOp.aocExpiry}
-                    onChange={(e) => setNewOp({ ...newOp, aocExpiry: e.target.value })}
-                    className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-lg px-3 py-1.5 text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-mono uppercase font-bold text-[#0F1420]/70 mb-1">
-                    Insurance Expiry Date
-                  </label>
-                  <input
-                    type="date"
-                    value={newOp.insuranceExpiry}
-                    onChange={(e) => setNewOp({ ...newOp, insuranceExpiry: e.target.value })}
-                    className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-lg px-3 py-1.5 text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-mono uppercase font-bold text-[#0F1420]/70 mb-1">
-                    Safety Audit Rating
-                  </label>
-                  <select
-                    value={newOp.safetyRating}
-                    onChange={(e) => setNewOp({ ...newOp, safetyRating: e.target.value })}
-                    className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-lg px-3 py-1.5 font-mono text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                  >
-                    <option value="ARGUS Platinum">ARGUS Platinum</option>
-                    <option value="ARGUS Gold+">ARGUS Gold+</option>
-                    <option value="IS-BAO Stage 3">IS-BAO Stage 3</option>
-                    <option value="IS-BAO Stage 2">IS-BAO Stage 2</option>
-                    <option value="Wyvern Wingman">Wyvern Wingman</option>
-                    <option value="None">Self-Audited / None</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-mono uppercase font-bold text-[#0F1420]/70 mb-1">
-                    Safety Audit Provider
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. ARGUS International, IBAC"
-                    value={newOp.safetyRatingProvider}
-                    onChange={(e) => setNewOp({ ...newOp, safetyRatingProvider: e.target.value })}
-                    className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-lg px-3 py-1.5 text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-mono uppercase font-bold text-[#0F1420]/70 mb-1">
-                    Charter Sales Contact & Email
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Contact Name"
-                    value={newOp.salesContact}
-                    onChange={(e) => setNewOp({ ...newOp, salesContact: e.target.value })}
-                    className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-lg px-3 py-1.5 text-[#0F1420] mb-2 focus:outline-none focus:border-[#C9A052]"
-                  />
-                  <input
-                    type="email"
-                    placeholder="sales@operator.com"
-                    value={newOp.salesEmail}
-                    onChange={(e) => setNewOp({ ...newOp, salesEmail: e.target.value })}
-                    className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-lg px-3 py-1.5 font-mono text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-mono uppercase font-bold text-[#0F1420]/70 mb-1">
-                    24/7 Operations Phone & Email
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="+33 4 93 00 00 00"
-                    value={newOp.opsPhone}
-                    onChange={(e) => setNewOp({ ...newOp, opsPhone: e.target.value })}
-                    className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-lg px-3 py-1.5 font-mono text-[#0F1420] mb-2 focus:outline-none focus:border-[#C9A052]"
-                  />
-                  <input
-                    type="email"
-                    placeholder="ops@operator.com"
-                    value={newOp.opsEmail}
-                    onChange={(e) => setNewOp({ ...newOp, opsEmail: e.target.value })}
-                    className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-lg px-3 py-1.5 font-mono text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-mono uppercase font-bold text-[#0F1420]/70 mb-1">
-                  Fleet & Special Notes
-                </label>
-                <textarea
-                  rows={2}
-                  placeholder="Notes on fleet types, operating limits, de-icing policies..."
-                  value={newOp.notes}
-                  onChange={(e) => setNewOp({ ...newOp, notes: e.target.value })}
-                  className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-lg p-2.5 text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                />
-              </div>
-
-              <div className="pt-2 flex items-center justify-end gap-3 border-t border-[#E0DAD0]">
-                <button
-                  type="button"
-                  onClick={() => setIsAddModalOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-[#0F1420] font-mono font-bold"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] font-mono font-black shadow-md"
-                >
-                  Save & Initiate Audit
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

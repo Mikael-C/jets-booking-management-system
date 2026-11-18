@@ -31,7 +31,17 @@ export default function AppShell({ children, navKey }: AppShellProps) {
 
   const isAgent = role === "agent";
   const effectiveNav = navKey || activeNav;
-  const isModernCleanPage = ["agent_requests", "requests", "accounts", "contacts"].includes(effectiveNav);
+  const isModernCleanPage = [
+    "agent_requests",
+    "requests",
+    "accounts",
+    "contacts",
+    "agents",
+    "operators",
+    "aircraft_types",
+    "fleet",
+    "airports"
+  ].includes(effectiveNav);
 
   if (isModernCleanPage) {
     return (
