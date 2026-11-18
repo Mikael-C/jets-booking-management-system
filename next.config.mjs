@@ -11,8 +11,6 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: false,
   },
-  // Fix: disable build trace collection to avoid Windows OneDrive path issues (Next.js 14 bug)
-  outputFileTracing: false,
 };
 
 export default nextConfig;
