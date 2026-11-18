@@ -85,6 +85,17 @@ code, pre, .mono, .font-mono {
   background: var(--muted);
 }
 
+/* Invisible Scrollbar Utility */
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+.no-scrollbar {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
+
 /* Standard Status Pills */
 .pill {
   display: inline-flex;

@@ -3,6 +3,7 @@
 import React from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAviation } from "@/lib/aviationContext";
+import { LogOut } from "lucide-react";
 
 export default function Sidebar() {
   const router = useRouter();
@@ -14,13 +15,17 @@ export default function Sidebar() {
     agentRequests,
     bookings,
     accounts,
-    contacts
+    contacts,
+    operators,
+    unreadMessageCount,
+    currentUser,
+    logout
   } = useAviation();
 
   const isRequestsActive = activeNav === "agent_requests" || pathname?.startsWith("/requests");
   const isAccountsActive = activeNav === "accounts" || pathname?.startsWith("/accounts");
   const isContactsActive = activeNav === "contacts" || pathname?.startsWith("/contacts");
-  const isOverviewActive = activeNav === "overview" && !pathname?.startsWith("/requests") && !pathname?.startsWith("/accounts") && !pathname?.startsWith("/contacts");
+  const isOverviewActive = (activeNav === "overview" && (pathname === "/" || pathname === "/overview")) || false;
   const isQuotesActive = activeNav === "quotes" || pathname?.startsWith("/quotes");
   const isBookingsActive = activeNav === "bookings" || pathname?.startsWith("/bookings");
   const isPaymentsActive = activeNav === "payments" || pathname?.startsWith("/payments");
@@ -30,6 +35,10 @@ export default function Sidebar() {
   const isAgentsActive = activeNav === "agents" || pathname?.startsWith("/agents");
   const isOperatorsActive = activeNav === "operators" || pathname?.startsWith("/operators");
   const isAirportsActive = activeNav === "airports" || pathname?.startsWith("/airports");
+  const isSettingsActive = activeNav === "settings" || pathname?.startsWith("/settings");
+  const isMessagesActive = activeNav === "messages" || pathname?.startsWith("/messages");
+  const isActivitiesActive = activeNav === "activities" || pathname?.startsWith("/activities");
+  const isProfileActive = activeNav === "profile" || pathname?.startsWith("/profile");
 
   const navigateTo = (navKey: string, route: string) => {
     setActiveNav(navKey);
@@ -39,15 +48,15 @@ export default function Sidebar() {
   return (
     <aside className="w-56 bg-[#0B1320] text-white flex flex-col flex-shrink-0 h-screen sticky top-0 border-r border-[#151D2A] select-none z-30">
       {/* Brand Header */}
-      <div className="px-5 py-6 flex items-center gap-2.5">
+      <div className="px-5 py-6 flex items-center gap-2.5 flex-shrink-0">
         <div className="w-4 h-4 rounded-[4px] bg-[#E59700] flex-shrink-0" />
         <span className="font-bold text-white text-base tracking-tight font-sans">
           Orbelo
         </span>
       </div>
 
-      {/* Nav List */}
-      <div className="flex-1 overflow-y-auto px-3 space-y-5 text-xs font-sans">
+      {/* Nav List - Scrollable with invisible scrollbar */}
+      <div className="flex-1 overflow-y-auto px-3 space-y-5 text-xs font-sans no-scrollbar [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
         {/* Overview */}
         <div>
           <button
@@ -177,6 +186,9 @@ export default function Sidebar() {
             }`}
           >
             <span>Contacts</span>
+            <span className="text-xs text-gray-400 font-mono">
+              {contacts?.length || 8}
+            </span>
           </button>
           <button
             onClick={() => navigateTo("agents", "/agents")}
@@ -197,6 +209,9 @@ export default function Sidebar() {
             }`}
           >
             <span>Operators</span>
+            <span className="text-xs text-gray-400 font-mono">
+              {operators?.length || 3}
+            </span>
           </button>
           <button
             onClick={() => navigateTo("airports", "/airports")}
@@ -206,16 +221,96 @@ export default function Sidebar() {
                 : "text-gray-400 hover:text-white hover:bg-[#141C2B]"
             }`}
           >
-            <span>Airports</span>
+            <span>Airports & FBOs</span>
           </button>
+        </div>
+
+        {/* CONFIGURATION & SYSTEM Section */}
+        <div className="space-y-0.5 pb-4">
+          <div className="px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-500">
+            CONFIGURATION & SYSTEM
+          </div>
           <button
-            onClick={() => navigateTo("airports", "/airports")}
-            className="w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-[#141C2B] transition-all"
+            onClick={() => navigateTo("settings", "/settings")}
+            className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg transition-all ${
+              isSettingsActive
+                ? "bg-[#1E293B] text-white font-medium"
+                : "text-gray-400 hover:text-white hover:bg-[#141C2B]"
+            }`}
           >
-            <span>FBOs</span>
+            <span>Settings</span>
+            <span className="text-[10px] text-gray-400 font-mono">R-039</span>
+          </button>
+
+          <button
+            onClick={() => navigateTo("messages", "/messages")}
+            className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg transition-all ${
+              isMessagesActive
+                ? "bg-[#1E293B] text-white font-medium"
+                : "text-gray-400 hover:text-white hover:bg-[#141C2B]"
+            }`}
+          >
+            <span>Messages & Chat</span>
+            {unreadMessageCount > 0 && (
+              <span className="text-xs text-amber-500 font-mono font-bold">
+                {unreadMessageCount}
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={() => navigateTo("activities", "/activities")}
+            className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg transition-all ${
+              isActivitiesActive
+                ? "bg-[#1E293B] text-white font-medium"
+                : "text-gray-400 hover:text-white hover:bg-[#141C2B]"
+            }`}
+          >
+            <span>Activities</span>
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" title="Live Events Active" />
+          </button>
+
+          <button
+            onClick={() => navigateTo("profile", "/profile")}
+            className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg transition-all ${
+              isProfileActive
+                ? "bg-[#1E293B] text-white font-medium"
+                : "text-gray-400 hover:text-white hover:bg-[#141C2B]"
+            }`}
+          >
+            <span>Profile</span>
           </button>
         </div>
       </div>
+
+      {/* User Footer Card */}
+      {currentUser && (
+        <div className="p-3 border-t border-[#151D2A] flex items-center justify-between bg-[#0B1320] flex-shrink-0">
+          <button
+            onClick={() => navigateTo("profile", "/profile")}
+            className="flex items-center gap-2.5 min-w-0 text-left hover:opacity-85 transition-opacity"
+          >
+            <div className="w-7 h-7 rounded-full bg-[#E59700]/20 border border-[#E59700]/40 text-[#E59700] flex items-center justify-center font-bold text-xs flex-shrink-0">
+              {currentUser.name ? currentUser.name.charAt(0) : "M"}
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs font-medium text-white truncate">
+                {currentUser.name || "Maximilian von Bern"}
+              </div>
+              <div className="text-[10px] text-gray-500 truncate">
+                {currentUser.email || "superadmin@orbelo.com"}
+              </div>
+            </div>
+          </button>
+          <button
+            onClick={logout}
+            title="Sign out"
+            className="text-gray-500 hover:text-white p-1 rounded transition-colors"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
     </aside>
   );
 }
