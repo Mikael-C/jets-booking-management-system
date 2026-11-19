@@ -1,13 +1,12 @@
 "use client";
-
 import React from "react";
-import AppShell from "@/components/layout/AppShell";
+import AgentShell from "@/components/agent/AgentShell";
 import AgentRequestsListView from "@/components/agent/AgentRequestsListView";
 
 export default function AgentRequestsPage() {
   return (
-    <AppShell navKey="my_requests">
+    <AgentShell>
       <AgentRequestsListView />
-    </AppShell>
+    </AgentShell>
   );
 }

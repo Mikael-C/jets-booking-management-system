@@ -274,6 +274,10 @@ export interface ClientDetails {
   email: string;
   vatNumber?: string;
   accountNumber?: string;
+  isHandledByPa?: boolean;
+  paName?: string;
+  paEmail?: string;
+  paPhone?: string;
 }
 
 export interface OperatorDetails {
@@ -409,6 +413,7 @@ export interface Booking {
   checklist: DispatchChecklistStep[];
   agentName?: string;
   agentEmail?: string;
+  sourceAgentRequestId?: string;
   commissionPercentage?: number;
   quoteVersion?: number;
   quoteStatus?: "draft" | "sent" | "pending" | "undecided" | "accepted" | "declined" | "expired";
@@ -423,7 +428,11 @@ export interface Booking {
   adminMarginValue?: number;
   agentMarginType?: "percentage" | "fixed";
   agentMarginValue?: number;
-  manualServices?: { id: string; name: string; price: number }[];
+  manualServices?: Array<{ id: string; name: string; price: number; details?: string; description?: string }>;
+  isHandledByPa?: boolean;
+  paName?: string;
+  paEmail?: string;
+  paPhone?: string;
   avInodeTripId?: string;
   sourcingOptions?: SourcingOption[];
   isSuperAdminConfirmed?: boolean;

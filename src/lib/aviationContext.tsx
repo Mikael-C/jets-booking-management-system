@@ -120,7 +120,7 @@ export const initialUsers: UserRecord[] = [
     company: "Vance Luxury Charters Ltd",
     location: "London, Mayfair, United Kingdom",
     bio: "Senior Charter Broker with 12+ years experience in VIP executive aviation, heavy jets, and transatlantic routing.",
-    tokens: 2000,
+    tokens: 11,
     tokenTier: "standard",
     subscriptionStatus: "active",
     subscriptionExpiresAt: "2026-12-31T23:59:59Z",
@@ -431,7 +431,7 @@ export const getRoleDefaultNav = (targetRole: UserRole): string => {
     case "operations":
       return "overview";
     case "agent":
-      return "agent_overview";
+      return "my_requests";
     default:
       return "bookings";
   }
@@ -486,6 +486,10 @@ export const normalizeBooking = (b: any): Booking => {
     email: String(b?.client?.email || "client@orbelo.com"),
     vatNumber: b?.client?.vatNumber ? String(b.client.vatNumber) : undefined,
     accountNumber: String(b?.client?.accountNumber || b?.accountNumber || "ACC-21737"),
+    isHandledByPa: b?.client?.isHandledByPa ?? b?.isHandledByPa,
+    paName: b?.client?.paName || b?.paName,
+    paEmail: b?.client?.paEmail || b?.paEmail,
+    paPhone: b?.client?.paPhone || b?.paPhone,
   };
 
   // Resolve operator
@@ -700,6 +704,7 @@ export const normalizeBooking = (b: any): Booking => {
     checklist,
     agentName: b?.agentName,
     agentEmail: b?.agentEmail,
+    sourceAgentRequestId: b?.sourceAgentRequestId,
     commissionPercentage: b?.commissionPercentage,
     quoteVersion: b?.quoteVersion,
     quoteStatus: b?.quoteStatus,
@@ -715,6 +720,15 @@ export const normalizeBooking = (b: any): Booking => {
     agentMarginType: b?.agentMarginType,
     agentMarginValue: b?.agentMarginValue,
     manualServices: b?.manualServices,
+    aircraftCustomImages: b?.aircraftCustomImages || (aircraft.imageExterior || aircraft.imageInterior ? {
+      exterior: aircraft.imageExterior,
+      interior: aircraft.imageInterior,
+      cabinViews: []
+    } : undefined),
+    isHandledByPa: b?.isHandledByPa ?? b?.client?.isHandledByPa,
+    paName: b?.paName || b?.client?.paName,
+    paEmail: b?.paEmail || b?.client?.paEmail,
+    paPhone: b?.paPhone || b?.client?.paPhone,
     avInodeTripId: b?.avInodeTripId,
     sourcingOptions: b?.sourcingOptions,
     createdAt: String(b?.createdAt || new Date().toISOString()),
@@ -968,21 +982,46 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
   const [messages, setMessages] = useState<AppMessage[]>(initialMessages);
 
   // Tokenomics State (Agent role)
-  const [tokenBalance, setTokenBalance] = useState<number>(2000);
+  const [tokenBalance, setTokenBalance] = useState<number>(11);
   const [tokenTier, setTokenTier] = useState<"free" | "standard" | "pro" | "enterprise">("standard");
   const [subscriptionStatus, setSubscriptionStatus] = useState<"none" | "active" | "expired">("active");
   const [subscriptionExpiresAt, setSubscriptionExpiresAt] = useState<string | undefined>("2026-12-31T23:59:59Z");
   const [tokenTransactions, setTokenTransactions] = useState<TokenTransaction[]>([
     {
-      id: "tx-init-welcome",
+      id: "tx-4",
+      type: "debit",
+      amount: 1,
+      balanceAfter: 11,
+      action: "Request RQ-0430",
+      description: "Request RQ-0430",
+      createdAt: "2026-11-14T14:20:00Z"
+    },
+    {
+      id: "tx-3",
       type: "credit",
-      amount: 2000,
-      balanceAfter: 2000,
-      action: "SUBSCRIPTION_PURCHASE",
-      description: "Welcome Charter Broker Package (2,000 Tokens) - Standard Allocation",
-      currency: "GBP",
-      pricePaid: 500,
-      createdAt: "2026-03-01T09:00:00Z"
+      amount: 5,
+      balanceAfter: 12,
+      action: "Free tokens · conversion",
+      description: "Free tokens · conversion",
+      createdAt: "2026-11-10T09:00:00Z"
+    },
+    {
+      id: "tx-2",
+      type: "debit",
+      amount: 3,
+      balanceAfter: 7,
+      action: "3 requests",
+      description: "3 requests",
+      createdAt: "2026-11-06T18:00:00Z"
+    },
+    {
+      id: "tx-1",
+      type: "credit",
+      amount: 10,
+      balanceAfter: 10,
+      action: "Bought 10",
+      description: "Bought 10",
+      createdAt: "2026-11-02T11:30:00Z"
     }
   ]);
   const [isTokenModalOpen, setIsTokenModalOpen] = useState<boolean>(false);
@@ -1667,10 +1706,35 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
   };
 
   const addBooking = async (newBooking: Booking): Promise<Booking> => {
-    const response = await api.bookings.create(newBooking);
-    const persisted = normalizeBooking(response?.data || response);
-    setBookings((prev) => [persisted, ...prev.filter((booking) => booking.id !== persisted.id)]);
-    setBookingsSource("backend");
+    let persisted: Booking = newBooking;
+    try {
+      const response = await api.bookings.create(newBooking);
+      const backendBooking = normalizeBooking(response?.data || response);
+      persisted = {
+        ...backendBooking,
+        id: backendBooking.id || newBooking.id,
+        tripId: newBooking.tripId || backendBooking.tripId,
+        tripNumber: newBooking.tripNumber || backendBooking.tripNumber,
+        quoteReference: newBooking.quoteReference || backendBooking.quoteReference,
+      };
+      setBookingsSource("backend");
+    } catch (err: any) {
+      console.warn("Backend addBooking notice (saving locally):", err?.message);
+      persisted = newBooking;
+    }
+
+    setBookings((prev) => [persisted, ...prev.filter((booking) => booking.id !== persisted.id && booking.tripId !== persisted.tripId)]);
+
+    try {
+      if (typeof window !== "undefined") {
+        const saved = localStorage.getItem("orbelo_bookings_v2");
+        const list: Booking[] = saved ? JSON.parse(saved) : [];
+        const nextList = [persisted, ...list.filter((b) => b.id !== persisted.id && b.tripId !== persisted.tripId)];
+        localStorage.setItem("orbelo_bookings_v2", JSON.stringify(nextList));
+      }
+    } catch {
+      // ignore
+    }
     if (currentUser) {
       addAuditEntry({
         userEmail: currentUser.email,

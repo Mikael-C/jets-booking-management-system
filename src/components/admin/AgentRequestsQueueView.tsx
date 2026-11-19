@@ -135,7 +135,7 @@ export default function AgentRequestsQueueView({ selectedRequestId }: AgentReque
 
   const handleCreateQuote = () => {
     if (!activeRequest) return;
-    openNewQuoteModal();
+    router.push(`/quotes/new?fromRequest=${encodeURIComponent(activeRequest.id)}`);
   };
 
   const getReceivedBadge = (req: AgentRequest) => {

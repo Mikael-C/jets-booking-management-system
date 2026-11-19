@@ -252,17 +252,21 @@ router.post('/:id/fulfill', authorize('super_admin', 'admin', 'operations'), asy
   const quoteGroupId = request.quoteGroupId || undefined;
   const identifiers = await createBookingIdentifiers({
     quoteGroupId,
-    tripId: request.tripId || undefined,
+    tripId: req.body.tripId || request.tripId || undefined,
     isQuote,
     isBooked: Boolean(req.body.isBooked),
   });
+  const tripId = req.body.tripId || identifiers.tripId;
   if (isQuote) {
-    request.tripId = identifiers.tripId;
+    request.tripId = tripId;
     request.quoteGroupId = identifiers.quoteGroupId;
   }
   const bookingData = {
-    ...req.body,
     ...identifiers,
+    ...req.body,
+    tripId,
+    tripNumber: req.body.tripNumber || identifiers.tripNumber,
+    id: req.body.id || identifiers.id,
     source: 'agent_request',
     sourceAgentRequestId: request._id,
     status: 'quoted',

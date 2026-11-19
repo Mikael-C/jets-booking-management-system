@@ -407,6 +407,11 @@ export const api = {
 
   // Quotes
   quotes: {
+    create: (data: any) =>
+      request<{ success: boolean; data: any }>("/bookings", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
     generate: (data: { agentRequestId: string; aircraftId: string; [key: string]: any }) =>
       request<any>("/quotes/generate", {
         method: "POST",

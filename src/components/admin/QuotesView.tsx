@@ -41,6 +41,17 @@ export default function QuotesView() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(null);
 
+  // Read any quote selected from creation flow
+  React.useEffect(() => {
+    if (typeof window !== "undefined") {
+      const stored = sessionStorage.getItem("orbelo_selected_quote_id");
+      if (stored) {
+        setSelectedQuoteId(stored);
+        sessionStorage.removeItem("orbelo_selected_quote_id");
+      }
+    }
+  }, []);
+
   // Filter out trips that are already booked (Bookings shows Booked onward only)
   // And group to get ONLY the latest version per trip root
   const quoteRows = useMemo(() => {
@@ -53,10 +64,27 @@ export default function QuotesView() {
       return !isBooked;
     });
 
+    const getQuoteGroupRoot = (b: Booking): string => {
+      if (b.tripNumber && !b.tripNumber.toUpperCase().startsWith("QTE-")) {
+        return b.tripNumber.split("-")[0].toUpperCase();
+      }
+      if (b.tripId && !b.tripId.toUpperCase().startsWith("TRIP-") && !b.tripId.toUpperCase().startsWith("BOOKING-")) {
+        return b.tripId.toUpperCase().split("-")[0];
+      }
+      if (b.tripId && b.tripId.toUpperCase().startsWith("TRIP-")) {
+        return b.tripId.toUpperCase();
+      }
+      const clean = (b.id || "").replace(/^booking-/i, "").replace(/^trip-/i, "");
+      if (clean) {
+        return clean.split("-")[0].toUpperCase();
+      }
+      return b.id;
+    };
+
     // Group by root trip ID
     const rootMap = new Map<string, Booking[]>();
     unbookedTrips.forEach((b) => {
-      const root = (b.tripId || b.tripNumber || b.id).toUpperCase().split("-")[0];
+      const root = getQuoteGroupRoot(b);
       const list = rootMap.get(root) || [];
       list.push(b);
       rootMap.set(root, list);
@@ -147,8 +175,8 @@ export default function QuotesView() {
     { id: "all", label: "All quotes", count: counts.all }
   ];
 
-  const handleOpenTrip = (rootId: string) => {
-    router.push(`/trips/${rootId}/itinerary`);
+  const handleOpenTrip = (targetTripId: string) => {
+    router.push(`/trips/${encodeURIComponent(targetTripId)}/itinerary`);
   };
 
   return (
@@ -239,19 +267,20 @@ export default function QuotesView() {
                 ) : (
                   filteredRows.map(({ booking, versionsCount, rootId }) => {
                     const isSelected = selectedItem?.booking.id === booking.id;
-                    const verLabel = formatTripVersion(rootId, booking.quoteVersion || 1);
+                    const targetId = booking.tripId || rootId || booking.id;
+                    const verLabel = booking.tripNumber || formatTripVersion(rootId, booking.quoteVersion || 1);
                     const leg = booking.legs[0];
 
                     return (
                       <tr
                         key={booking.id}
                         onClick={() => setSelectedQuoteId(booking.id)}
-                        onDoubleClick={() => handleOpenTrip(rootId)}
+                        onDoubleClick={() => handleOpenTrip(targetId)}
                         className={`clickable-row ${isSelected ? "bg-[var(--accent-soft)]" : ""}`}
                       >
                         <td>
                           <Link
-                            href={`/trips/${rootId}/itinerary`}
+                            href={`/trips/${encodeURIComponent(targetId)}/itinerary`}
                             className="font-mono font-bold text-xs block text-[var(--ink)] hover:text-[var(--accent)] hover:underline"
                             onClick={(e) => e.stopPropagation()}
                           >
@@ -328,26 +357,30 @@ export default function QuotesView() {
         </div>
 
         {/* Right 1 Col: Preview Panel (R-012) */}
-        {selectedItem && (
-          <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-4">
-            <div className="flex items-center justify-between border-b border-[var(--line)] pb-3">
-              <div>
-                <span className="font-mono text-[10px] uppercase font-bold text-[var(--muted)]">
-                  Quote Preview
-                </span>
-                <h3 className="font-mono font-bold text-lg text-[var(--ink)] m-0">
-                  {formatTripVersion(selectedItem.rootId, selectedItem.booking.quoteVersion || 1)}
-                </h3>
-              </div>
+        {selectedItem && (() => {
+          const previewTargetId = selectedItem.booking.tripId || selectedItem.rootId || selectedItem.booking.id;
+          const previewLabel = selectedItem.booking.tripNumber || formatTripVersion(selectedItem.rootId, selectedItem.booking.quoteVersion || 1);
 
-              <button
-                onClick={() => handleOpenTrip(selectedItem.rootId)}
-                className="btn-secondary text-xs"
-              >
-                <span>Open trip</span>
-                <ArrowRight className="w-3 h-3" />
-              </button>
-            </div>
+          return (
+            <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-4">
+              <div className="flex items-center justify-between border-b border-[var(--line)] pb-3">
+                <div>
+                  <span className="font-mono text-[10px] uppercase font-bold text-[var(--muted)]">
+                    Quote Preview
+                  </span>
+                  <h3 className="font-mono font-bold text-lg text-[var(--ink)] m-0">
+                    {previewLabel}
+                  </h3>
+                </div>
+
+                <button
+                  onClick={() => handleOpenTrip(previewTargetId)}
+                  className="btn-secondary text-xs"
+                >
+                  <span>Open trip</span>
+                  <ArrowRight className="w-3 h-3" />
+                </button>
+              </div>
 
             {/* Itinerary Snippet */}
             <div className="space-y-1.5 text-xs font-sans">
@@ -437,7 +470,8 @@ export default function QuotesView() {
               </button>
             </div>
           </div>
-        )}
+        );
+      })()}
       </div>
     </div>
   );

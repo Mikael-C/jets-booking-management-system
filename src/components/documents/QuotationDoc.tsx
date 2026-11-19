@@ -48,8 +48,63 @@ export default function QuotationDoc({ booking }: QuotationDocProps) {
   const quoteId = quoteReference || (tripNumber ? `Q-${tripNumber}` : "Q-MX5521-001");
   const currency = pricing?.currency || "EUR";
   const totalPrice = pricing?.totalFlightPrice ?? 58844;
-  const baseCharterPrice = pricing?.flightPrice ?? (totalPrice > 300 ? totalPrice - 300 : totalPrice);
   const cardPrice = booking.totalWithCardFee ?? (totalPrice * 1.035);
+
+  // Dynamic Service Items from booking
+  const itemizedServices = React.useMemo(() => {
+    if (booking.manualServices && booking.manualServices.length > 0) {
+      return booking.manualServices.map((ms) => ({
+        name: ms.name,
+        details: ms.details || ms.description || "",
+        price: Number(ms.price ?? 0)
+      }));
+    }
+
+    const items: Array<{ name: string; details: string; price: number }> = [];
+    if (booking.services?.limousineService) {
+      items.push({
+        name: "VIP limousine",
+        details: "arrival transfer",
+        price: 300
+      });
+    }
+    if (booking.services?.vipCateringDetails || booking.services?.vipCateringDetails !== undefined) {
+      items.push({
+        name: "Catering",
+        details: booking.services?.vipCateringDetails || "VIP menu 1 · both legs",
+        price: 0
+      });
+    }
+    if (booking.services?.helicopterService) {
+      items.push({
+        name: "Helicopter transfer",
+        details: "VIP charter connector",
+        price: 850
+      });
+    }
+    if (booking.services?.deicingInsurance && booking.services.deicingInsurance !== "none") {
+      items.push({
+        name: "De-icing protection",
+        details: "holdover protection package",
+        price: booking.services.deicingCostPerLeg || 450
+      });
+    }
+    if (booking.services?.carbonOffset && booking.services.carbonOffset !== "none") {
+      items.push({
+        name: "Carbon offset",
+        details: "Gold Standard certified climate credit",
+        price: booking.services.carbonOffsetRatePerHour || 65
+      });
+    }
+    return items;
+  }, [booking.manualServices, booking.services]);
+
+  const servicesTotal = itemizedServices.reduce((sum, item) => sum + item.price, 0);
+  const baseCharterPrice = pricing?.flightPrice ?? Math.max(0, totalPrice - servicesTotal);
+
+  // Exterior & Interior photos
+  const exteriorPhoto = booking.aircraftCustomImages?.exterior || aircraft?.imageExterior;
+  const cabinPhoto = booking.aircraftCustomImages?.interior || aircraft?.imageInterior;
 
   // Representative fallback
   const repName = booking.agentName || "Camille Laurent";
@@ -95,11 +150,23 @@ export default function QuotationDoc({ booking }: QuotationDocProps) {
               <p className="text-[10px] font-bold text-slate-900 tracking-wider uppercase mb-1.5">
                 PREPARED FOR
               </p>
-              <p className="font-bold text-slate-900 text-sm">{client?.companyName || client?.fullName || "Bello Group Ltd"}</p>
-              <p className="text-slate-700">Attn: {client?.fullName || "Ifeoma Bello"}, Managing Director</p>
-              <p className="text-slate-600">{client?.streetAddress || "Plot 1120 Maitama District"}</p>
-              <p className="text-slate-600">{client?.cityPostalCountry || "Abuja, Nigeria"}</p>
-              <p className="text-slate-600 font-mono mt-0.5">Account {accountNumber || "ACC-30877"}</p>
+              <p className="font-bold text-slate-900 text-sm">{client?.companyName || client?.fullName || "Adeyemi Holdings Ltd"}</p>
+              <p className="text-slate-800">
+                Authorised Owner: <span className="font-semibold text-slate-900">{client?.fullName || "Edward Brinkmann"}</span>
+              </p>
+              {(client?.isHandledByPa || booking.isHandledByPa) && (client?.paName || booking.paName) && (
+                <div className="text-[11px] text-amber-900 font-medium bg-amber-50/90 border border-amber-200 rounded px-2 py-1 mt-1">
+                  c/o Representative / PA: <span className="font-bold">{client?.paName || booking.paName}</span>
+                  {(client?.paEmail || booking.paEmail || client?.paPhone || booking.paPhone) && (
+                    <span className="block text-[10px] text-amber-800/90 font-mono mt-0.5">
+                      {[client?.paEmail || booking.paEmail, client?.paPhone || booking.paPhone].filter(Boolean).join(" • ")}
+                    </span>
+                  )}
+                </div>
+              )}
+              <p className="text-slate-600 mt-1">{client?.streetAddress || "14 Bourdillon Road, Ikoyi"}</p>
+              <p className="text-slate-600">{client?.cityPostalCountry || "Lagos, Nigeria"}</p>
+              <p className="text-slate-600 font-mono mt-0.5">Account {accountNumber || "ACC-30412"}</p>
             </div>
 
             <div>
@@ -217,11 +284,10 @@ export default function QuotationDoc({ booking }: QuotationDocProps) {
               {/* Photo Placeholders */}
               <div className="grid grid-cols-2 gap-2 mb-3">
                 <div className="h-24 rounded-md border border-slate-200 bg-slate-50 flex items-center justify-center text-xs text-slate-400 overflow-hidden relative">
-                  {aircraft?.imageExterior ? (
+                  {exteriorPhoto ? (
                     <img
-                      src={aircraft.imageExterior}
+                      src={exteriorPhoto}
                       alt="Exterior"
-                      crossOrigin="anonymous"
                       className="w-full h-full object-cover"
                     />
                   ) : (
@@ -229,11 +295,10 @@ export default function QuotationDoc({ booking }: QuotationDocProps) {
                   )}
                 </div>
                 <div className="h-24 rounded-md border border-slate-200 bg-slate-50 flex items-center justify-center text-xs text-slate-400 overflow-hidden relative">
-                  {aircraft?.imageInterior ? (
+                  {cabinPhoto ? (
                     <img
-                      src={aircraft.imageInterior}
+                      src={cabinPhoto}
                       alt="Cabin"
-                      crossOrigin="anonymous"
                       className="w-full h-full object-cover"
                     />
                   ) : (
@@ -282,23 +347,16 @@ export default function QuotationDoc({ booking }: QuotationDocProps) {
                   </span>
                 </div>
 
-                <div className="flex justify-between items-start gap-4">
-                  <span className="text-slate-700 leading-snug">
-                    VIP limousine · arrival Abuja (SUV, 5 pax)
-                  </span>
-                  <span className="font-medium text-slate-900 whitespace-nowrap">
-                    {formatDocCurrency(300, currency)}
-                  </span>
-                </div>
-
-                <div className="flex justify-between items-start gap-4">
-                  <span className="text-slate-700 leading-snug">
-                    Catering · VIP menu 1, both legs
-                  </span>
-                  <span className="font-medium text-slate-900 whitespace-nowrap">
-                    Included
-                  </span>
-                </div>
+                {itemizedServices.map((srv, idx) => (
+                  <div key={idx} className="flex justify-between items-start gap-4">
+                    <span className="text-slate-700 leading-snug">
+                      {srv.name}{srv.details ? ` · ${srv.details}` : ""}
+                    </span>
+                    <span className="font-medium text-slate-900 whitespace-nowrap">
+                      {srv.price === 0 ? "Included" : formatDocCurrency(srv.price, currency)}
+                    </span>
+                  </div>
+                ))}
 
                 <div className="flex justify-between items-start gap-4">
                   <span className="text-slate-700 leading-snug">

@@ -857,5 +857,222 @@ export const initialBookings: Booking[] = [
     commissionPercentage: 10,
     createdAt: "2026-10-20T09:30:00Z",
     updatedAt: "2026-10-20T11:00:00Z"
+  },
+  {
+    id: "booking-rb3310",
+    tripNumber: "RB3310-002",
+    quoteReference: "RB3310-002",
+    invoiceNumber: "INV-RB3310-01",
+    accountNumber: "ACC-OKAFOR",
+    contractDate: "19.11.2026",
+    quoteExpirationDate: "today 18:00",
+    paymentDueDate: "20.11.2026",
+    status: "quote_sent",
+    quoteStatus: "sent",
+    paymentStatus: "unpaid",
+    tripType: "one_way",
+    aircraft: {
+      ...getAircraftById("cessna-citation-mustang"),
+      name: "Phenom 300",
+      registration: "D-CHIC",
+      yearOfManufacture: "2019"
+    },
+    client: {
+      fullName: "N. Okafor",
+      companyName: "Okafor Capital",
+      streetAddress: "10 Boulevard Haussmann",
+      cityPostalCountry: "75009 Paris, France",
+      phone: "+33 1 42 68 00 00",
+      email: "n.okafor@okaforcapital.com",
+      accountNumber: "ACC-OKAFOR"
+    },
+    operator: defaultOperator,
+    legs: [
+      {
+        legNumber: 1,
+        flightDate: "2026-11-19",
+        origin: findAirportByCode("LFPB"),
+        destination: findAirportByCode("LIML"),
+        departureTimeLocal: "14:15",
+        arrivalTimeLocal: "15:40",
+        flightTimeFormatted: "1h 25m",
+        paxCount: 3,
+        flightNumber: "RB3310",
+        aircraftRegistration: "D-CHIC",
+        crew: [],
+        passengers: [
+          { id: "p-ok-1", fullName: "N. Okafor", passportNumber: "P-FR994821", isLeadPassenger: true }
+        ],
+        luggage: {
+          pieceCount: 3,
+          totalWeightKg: 60,
+          standardSuitcases: 3,
+          dimensionsDescription: "3 standard suitcases"
+        },
+        departureHandling: {
+          name: "Signature Flight Support LFPB",
+          airportCode: "LFPB",
+          phone: "+33 1 49 92 75 00",
+          email: "lfpb@signatureflight.com"
+        },
+        arrivalHandling: {
+          name: "Milano Prime Linate",
+          airportCode: "LIML",
+          phone: "+39 02 7014 311",
+          email: "handling@milanoprime.com"
+        }
+      }
+    ],
+    pricing: {
+      flightPrice: 12200,
+      airportFees: 1200,
+      passengerFees: 396,
+      dayOfWeekDiscount: 0,
+      inboundPassengerTax: 0,
+      outboundPassengerTax: 0,
+      additionalServicesTotal: 0,
+      subtotal: 13796,
+      vatRate: 0,
+      vatAmount: 0,
+      totalFlightPrice: 13796,
+      currency: "EUR"
+    },
+    services: {
+      limousineService: true,
+      luxuryCarRental: false,
+      helicopterService: false,
+      vipCateringDetails: "Executive VIP Canapés",
+      deicingInsurance: "none",
+      deicingCostPerLeg: 0,
+      carbonOffset: "none",
+      carbonOffsetRatePerHour: 0
+    },
+    checklist: [],
+    agentName: "Marcus Vance",
+    agentEmail: "agent@orbelo.com",
+    commissionPercentage: 8,
+    agentMarginType: "percentage",
+    agentMarginValue: 8,
+    routeRevisions: [
+      {
+        id: "rev-002",
+        date: "today",
+        author: "Flight Desk",
+        reason: "departure 12:00 → 14:15",
+        supersededLegs: [],
+        newLegs: [],
+        previousPrice: 13796,
+        newPrice: 13796
+      },
+      {
+        id: "rev-001",
+        date: "yesterday",
+        author: "Flight Desk",
+        reason: "first quote",
+        supersededLegs: [],
+        newLegs: [],
+        previousPrice: 13796,
+        newPrice: 13796
+      }
+    ],
+    createdAt: "2026-11-18T10:00:00Z",
+    updatedAt: "2026-11-19T08:00:00Z"
+  },
+  {
+    id: "booking-fe4578",
+    tripNumber: "FE4578",
+    quoteReference: "Q-FE4578-002",
+    invoiceNumber: "INV-FE4578-01",
+    accountNumber: "ACC-30412",
+    contractDate: "18.11.2026",
+    quoteExpirationDate: "19.11.2026",
+    paymentDueDate: "18.11.2026",
+    status: "confirmed",
+    quoteStatus: "accepted",
+    paymentStatus: "deposit_paid",
+    isBooked: true,
+    isContractSigned: true,
+    contractSignedDate: "18.11.2026",
+    contractSignedBy: "Tunde Adeyemi",
+    tripType: "one_way",
+    aircraft: {
+      ...getAircraftById("cessna-citation-mustang"),
+      name: "CJ3+",
+      registration: "OE-FAS",
+      yearOfManufacture: "2020"
+    },
+    client: {
+      fullName: "Tunde Adeyemi",
+      companyName: "Adeyemi Holdings Ltd",
+      streetAddress: "14 Bourdillon Road, Ikoyi",
+      cityPostalCountry: "Lagos, Nigeria",
+      phone: "+234 1 270 0000",
+      email: "office@adeyemi-holdings.ng",
+      accountNumber: "ACC-30412"
+    },
+    operator: defaultOperator,
+    legs: [
+      {
+        legNumber: 1,
+        flightDate: "2026-11-20",
+        origin: findAirportByCode("LEIB"),
+        destination: findAirportByCode("LSGG"),
+        departureTimeLocal: "10:00",
+        arrivalTimeLocal: "11:45",
+        flightTimeFormatted: "1h 45m",
+        paxCount: 4,
+        flightNumber: "FE4578",
+        aircraftRegistration: "OE-FAS",
+        crew: [],
+        passengers: [
+          { id: "p-ade-1", fullName: "Tunde Adeyemi", passportNumber: "A10849201", nationality: "NGA", isLeadPassenger: true },
+          { id: "p-ade-2", fullName: "Ada Adeyemi", passportNumber: "A10849202", nationality: "NGA" },
+          { id: "p-ade-3", fullName: "Kemi Adeyemi", passportNumber: "", nationality: "NGA" },
+          { id: "p-ade-4", fullName: "Bayo Adeyemi", passportNumber: "", nationality: "NGA" }
+        ],
+        departureHandling: {
+          name: "Ibiza Executive Aviation",
+          airportCode: "LEIB",
+          phone: "+34 971 809 000",
+          email: "ops@ibizajets.es"
+        },
+        arrivalHandling: {
+          name: "Jet Aviation Geneva",
+          airportCode: "LSGG",
+          phone: "+41 58 158 1811",
+          email: "gvafbo@jetaviation.com"
+        }
+      }
+    ],
+    pricing: {
+      flightPrice: 7162.50,
+      airportFees: 837.50,
+      passengerFees: 0,
+      dayOfWeekDiscount: 0,
+      inboundPassengerTax: 0,
+      outboundPassengerTax: 0,
+      additionalServicesTotal: 250,
+      subtotal: 8250,
+      vatRate: 0,
+      vatAmount: 0,
+      totalFlightPrice: 7412.50,
+      currency: "EUR"
+    },
+    services: {
+      limousineService: true,
+      luxuryCarRental: false,
+      helicopterService: false,
+      vipCateringDetails: "Standard VIP Catering",
+      deicingInsurance: "none",
+      deicingCostPerLeg: 0,
+      carbonOffset: "neutral",
+      carbonOffsetRatePerHour: 33
+    },
+    checklist: [],
+    agentName: "Marcus Vance",
+    agentEmail: "agent@orbelo.com",
+    commissionPercentage: 8,
+    createdAt: "2026-11-17T14:00:00Z",
+    updatedAt: "2026-11-18T16:00:00Z"
   }
 ];

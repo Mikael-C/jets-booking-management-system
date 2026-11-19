@@ -1,13 +1,12 @@
 "use client";
-
 import React from "react";
-import AppShell from "@/components/layout/AppShell";
-import AgentRequestWizard from "@/components/agent/AgentRequestWizard";
+import AgentShell from "@/components/agent/AgentShell";
+import AgentNewRequestWizard from "@/components/agent/AgentNewRequestWizard";
 
 export default function NewAgentRequestPage() {
   return (
-    <AppShell navKey="request_quote">
-      <AgentRequestWizard />
-    </AppShell>
+    <AgentShell>
+      <AgentNewRequestWizard />
+    </AgentShell>
   );
 }

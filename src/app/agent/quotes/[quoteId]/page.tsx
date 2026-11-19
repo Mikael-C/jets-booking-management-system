@@ -1,13 +1,16 @@
 "use client";
-
 import React from "react";
-import AppShell from "@/components/layout/AppShell";
+import AgentShell from "@/components/agent/AgentShell";
 import AgentQuoteDetailView from "@/components/agent/AgentQuoteDetailView";
 
-export default function AgentQuotePage({ params }: { params: { quoteId: string } }) {
+export default function AgentQuoteDetailPage({
+  params,
+}: {
+  params: { quoteId: string };
+}) {
   return (
-    <AppShell>
+    <AgentShell>
       <AgentQuoteDetailView quoteId={params.quoteId} />
-    </AppShell>
+    </AgentShell>
   );
 }

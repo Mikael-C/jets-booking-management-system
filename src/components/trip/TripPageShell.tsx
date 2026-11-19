@@ -115,9 +115,9 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
   const [compareVersionA, setCompareVersionA] = useState<number>(1);
   const [compareVersionB, setCompareVersionB] = useState<number>(2);
 
-  // Normalize tripId (e.g. FE4578, booking-peu842, or PEU842-001)
+  // Normalize tripId (e.g. FE4578, LE7143, booking-peu842, or PEU842-001)
   const normalizedId = useMemo(() => {
-    return tripId
+    return (tripId || "")
       .toUpperCase()
       .replace(/^BOOKING-/, "")
       .replace(/^TRIP-/, "")
@@ -126,33 +126,87 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
 
   // Find all revisions for this trip root
   const tripVersions = useMemo(() => {
+    const rawTripId = (tripId || "").toUpperCase();
     return bookings.filter((b) => {
-      const bTripRoot = (b.tripId || b.tripNumber || b.id)
+      const bId = (b.id || "").toUpperCase();
+      const bTripId = (b.tripId || "").toUpperCase();
+      const bTripNumber = (b.tripNumber || "").toUpperCase();
+      const bQuoteRef = (b.quoteReference || "").toUpperCase();
+
+      // Direct exact matches
+      if (bId === rawTripId || bTripId === rawTripId || bTripNumber === rawTripId || bQuoteRef === rawTripId) {
+        return true;
+      }
+
+      // Cleaned root match
+      const bTripRoot = (b.tripId || b.tripNumber || b.id || "")
         .toUpperCase()
         .replace(/^BOOKING-/, "")
         .replace(/^TRIP-/, "")
         .split("-")[0];
-      return (
-        bTripRoot === normalizedId ||
-        b.id.toUpperCase() === tripId.toUpperCase() ||
-        b.tripNumber?.toUpperCase().includes(normalizedId) ||
-        b.tripId?.toUpperCase() === normalizedId
-      );
+
+      if (normalizedId && bTripRoot === normalizedId) {
+        return true;
+      }
+
+      if (normalizedId && (bTripNumber.includes(normalizedId) || bTripId.includes(normalizedId) || bId.includes(normalizedId))) {
+        return true;
+      }
+
+      return false;
     });
   }, [bookings, normalizedId, tripId]);
 
   // Active (latest) version of the trip
   const currentTrip: Booking | undefined = useMemo(() => {
-    if (tripVersions.length === 0) {
-      return bookings.find((b) => b.id === tripId || b.tripNumber === tripId);
+    if (tripVersions.length > 0) {
+      const sorted = [...tripVersions].sort((a, b) => {
+        const verA = a.quoteVersion || 1;
+        const verB = b.quoteVersion || 1;
+        return verA - verB;
+      });
+      return sorted[sorted.length - 1];
     }
-    const sorted = [...tripVersions].sort((a, b) => {
-      const verA = a.quoteVersion || 1;
-      const verB = b.quoteVersion || 1;
-      return verA - verB;
+
+    const rawTripId = (tripId || "").toUpperCase();
+    // Direct match fallback
+    const direct = bookings.find((b) => {
+      const bId = (b.id || "").toUpperCase();
+      const bTripId = (b.tripId || "").toUpperCase();
+      const bTripNumber = (b.tripNumber || "").toUpperCase();
+      const bQuoteRef = (b.quoteReference || "").toUpperCase();
+      return bId === rawTripId || bTripId === rawTripId || bTripNumber === rawTripId || bQuoteRef === rawTripId;
     });
-    return sorted[sorted.length - 1];
-  }, [tripVersions, bookings, tripId]);
+    if (direct) return direct;
+
+    // Fail-safe check in localStorage in case context hasn't reloaded
+    if (typeof window !== "undefined") {
+      try {
+        const localData = localStorage.getItem("orbelo_bookings_v2");
+        if (localData) {
+          const parsed = JSON.parse(localData);
+          if (Array.isArray(parsed)) {
+            const found = parsed.find((b: any) => {
+              const bId = String(b.id || "").toUpperCase();
+              const bTripId = String(b.tripId || "").toUpperCase();
+              const bTripNum = String(b.tripNumber || "").toUpperCase();
+              return (
+                bId === rawTripId ||
+                bTripId === rawTripId ||
+                bTripNum === rawTripId ||
+                (normalizedId && (bTripId.includes(normalizedId) || bTripNum.includes(normalizedId)))
+              );
+            });
+            if (found) return found as Booking;
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    return undefined;
+  }, [tripVersions, bookings, tripId, normalizedId]);
 
   if (!currentTrip) {
     return (

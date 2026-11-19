@@ -27,7 +27,12 @@ import {
   ArrowRight,
   Info,
   DollarSign,
-  ChevronDown
+  ChevronDown,
+  Search,
+  Upload,
+  Image as ImageIcon,
+  UserCheck,
+  X
 } from "lucide-react";
 
 export interface MultiLegItem {
@@ -39,6 +44,34 @@ export interface MultiLegItem {
   aircraft: Aircraft;
 }
 
+const parseDateToIso = (dateStr?: string, fallback = "2026-11-24"): string => {
+  if (!dateStr) return fallback;
+  const trimmed = dateStr.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  const match = trimmed.match(/(\d{1,2})\s+([A-Za-z]{3})(?:\s+(\d{4}))?/);
+  if (match) {
+    const day = match[1].padStart(2, "0");
+    const months: Record<string, string> = {
+      jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06",
+      jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12"
+    };
+    const mon = months[match[2].toLowerCase()] || "11";
+    const year = match[3] || "2026";
+    return `${year}-${mon}-${day}`;
+  }
+  const parsed = Date.parse(trimmed);
+  if (!isNaN(parsed)) {
+    return new Date(parsed).toISOString().split("T")[0];
+  }
+  return fallback;
+};
+
+const parseTimeToLocal = (timeStr?: string, fallback = "08:30"): string => {
+  if (!timeStr) return fallback;
+  const match = timeStr.match(/(\d{1,2}:\d{2})/);
+  return match ? match[1] : fallback;
+};
+
 interface QuoteBuilderProps {
   reviseTripId?: string;
   fromRequestId?: string;
@@ -48,7 +81,7 @@ interface QuoteBuilderProps {
 export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: QuoteBuilderProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const reqId = fromRequestId || searchParams.get("fromRequest");
+  const reqId = fromRequestId || searchParams.get("fromRequest") || searchParams.get("requestId");
 
   const {
     bookings,
@@ -57,7 +90,9 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
     operators,
     agentRequests,
     settings,
-    addBooking
+    addBooking,
+    updateAgentRequestStatus,
+    sendMessage
   } = useAviation();
 
   // Find source if revising or creating from request
@@ -86,7 +121,13 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
 
   const sourceRequest = useMemo(() => {
     if (!reqId) return undefined;
-    return agentRequests.find((r) => r.id === reqId);
+    const cleanReqId = reqId.trim().toLowerCase();
+    return agentRequests.find(
+      (r) =>
+        r.id.toLowerCase() === cleanReqId ||
+        (r as any)._id?.toString().toLowerCase() === cleanReqId ||
+        (r as any).requestId?.toLowerCase() === cleanReqId
+    );
   }, [agentRequests, reqId]);
 
   // Root ID and next version
@@ -94,6 +135,9 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
     if (sourceTrip) {
       const raw = sourceTrip.tripId || sourceTrip.tripNumber || sourceTrip.id;
       return raw.replace(/^booking-/i, "").replace(/^trip-/i, "").split("-")[0].toUpperCase();
+    }
+    if (sourceRequest?.createdTripId) {
+      return sourceRequest.createdTripId.replace(/^booking-/i, "").replace(/^trip-/i, "").split("-")[0].toUpperCase();
     }
     return generateTripRootId();
   });
@@ -120,33 +164,117 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
   // Form State
   // 1. Client
   const [selectedAccountId, setSelectedAccountId] = useState<string>(() => {
-    return sourceTrip?.accountNumber || accounts[0]?.accountNumber || "ACC-21737";
+    if (sourceTrip?.accountNumber) return sourceTrip.accountNumber;
+    if (sourceRequest) {
+      const match = accounts.find(
+        (a) =>
+          (sourceRequest.accountId && (a.accountNumber === sourceRequest.accountId || a.id === sourceRequest.accountId)) ||
+          (sourceRequest.clientName && a.name.toLowerCase().includes(sourceRequest.clientName.toLowerCase())) ||
+          (sourceRequest.companyName && a.name.toLowerCase().includes(sourceRequest.companyName.toLowerCase()))
+      );
+      if (match) return match.accountNumber || match.id;
+      if (sourceRequest.accountId) return sourceRequest.accountId;
+    }
+    return accounts[0]?.accountNumber || "ACC-21737";
   });
   const [leadPaxName, setLeadPaxName] = useState<string>(() => {
     return sourceRequest?.clientName || sourceTrip?.client.fullName || "Edward Brinkmann";
   });
 
+  // Searchable account dropdown state
+  const [isAccountDropdownOpen, setIsAccountDropdownOpen] = useState(false);
+  const [accountSearchQuery, setAccountSearchQuery] = useState("");
+  const accountDropdownRef = React.useRef<HTMLDivElement>(null);
+
+  // PA / Representative handling state
+  const [isHandledByPa, setIsHandledByPa] = useState<boolean>(() => {
+    if (sourceTrip?.isHandledByPa || sourceTrip?.client?.isHandledByPa) return true;
+    return false;
+  });
+  const [paName, setPaName] = useState<string>(() => {
+    return sourceTrip?.paName || sourceTrip?.client?.paName || "";
+  });
+  const [paEmail, setPaEmail] = useState<string>(() => {
+    return sourceTrip?.paEmail || sourceTrip?.client?.paEmail || "";
+  });
+  const [paPhone, setPaPhone] = useState<string>(() => {
+    return sourceTrip?.paPhone || sourceTrip?.client?.paPhone || "";
+  });
+
+  // Click outside to close account dropdown
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (accountDropdownRef.current && !accountDropdownRef.current.contains(e.target as Node)) {
+        setIsAccountDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const resolveOwnerNameForAccount = (acc: any) => {
+    if (!acc) return "Edward Brinkmann";
+    const primaryPerson = acc.authorizedPersons?.find((p: any) => p.isPrimaryAccountName);
+    if (primaryPerson?.fullName) return primaryPerson.fullName;
+    if (acc.preferredContactName) return acc.preferredContactName;
+    if (acc.authorizedPersons?.[0]?.fullName) return acc.authorizedPersons[0].fullName;
+    if (acc.accountType === "individual") return acc.name;
+    return acc.name || "Edward Brinkmann";
+  };
+
+  const handleSelectAccount = (acc: any) => {
+    setSelectedAccountId(acc.accountNumber);
+    setIsAccountDropdownOpen(false);
+    setAccountSearchQuery("");
+    const owner = resolveOwnerNameForAccount(acc);
+    if (owner) {
+      setLeadPaxName(owner);
+    }
+  };
+
+  const filteredAccounts = useMemo(() => {
+    const q = accountSearchQuery.toLowerCase().trim();
+    if (!q) return accounts;
+    return accounts.filter((a) => {
+      const matchName = a.name?.toLowerCase().includes(q);
+      const matchNum = a.accountNumber?.toLowerCase().includes(q);
+      const matchContact = a.preferredContactName?.toLowerCase().includes(q) ||
+        a.authorizedPersons?.some((p) => p.fullName.toLowerCase().includes(q));
+      return matchName || matchNum || matchContact;
+    });
+  }, [accounts, accountSearchQuery]);
+
   // 2. Itinerary
   const [tripType, setTripType] = useState<TripType>(() => {
-    return sourceTrip?.tripType || (sourceRequest?.tripType as TripType) || "round_trip";
+    if (sourceTrip?.tripType) return sourceTrip.tripType;
+    if (sourceRequest?.tripType) return sourceRequest.tripType;
+    if (sourceRequest?.route?.includes("⇄") || sourceRequest?.route?.toLowerCase().includes("round")) return "round_trip";
+    return "round_trip";
   });
   const [originAirport, setOriginAirport] = useState<any>(() => {
     return sourceTrip?.legs[0]?.origin || findAirportByCode(sourceRequest?.originIcao || "LSGG") || airportsData[0];
   });
   const [destAirport, setDestAirport] = useState<any>(() => {
-    return sourceTrip?.legs[0]?.destination || findAirportByCode(sourceRequest?.destIcao || "EGSS") || airportsData[1];
+    return sourceTrip?.legs[0]?.destination || findAirportByCode(sourceRequest?.destIcao || "LFMN") || airportsData[1];
   });
   const [flightDate, setFlightDate] = useState<string>(() => {
-    return sourceTrip?.legs[0]?.flightDate || sourceRequest?.flightDate || "2026-11-20";
+    if (sourceTrip?.legs[0]?.flightDate) return sourceTrip.legs[0].flightDate;
+    if (sourceRequest?.flightDate) return parseDateToIso(sourceRequest.flightDate, "2026-11-24");
+    return "2026-11-24";
   });
   const [departureTime, setDepartureTime] = useState<string>(() => {
-    return sourceTrip?.legs[0]?.departureTimeLocal || sourceRequest?.departureTime || "10:00";
+    if (sourceTrip?.legs[0]?.departureTimeLocal) return sourceTrip.legs[0].departureTimeLocal;
+    if (sourceRequest?.departureTime) return parseTimeToLocal(sourceRequest.departureTime, "08:30");
+    return "08:30";
   });
   const [returnFlightDate, setReturnFlightDate] = useState<string>(() => {
-    return sourceTrip?.legs[1]?.flightDate || sourceRequest?.returnFlightDate || "2026-11-23";
+    if (sourceTrip?.legs[1]?.flightDate) return sourceTrip.legs[1].flightDate;
+    if (sourceRequest?.returnFlightDate) return parseDateToIso(sourceRequest.returnFlightDate, "2026-11-30");
+    return "2026-11-30";
   });
   const [returnDepartureTime, setReturnDepartureTime] = useState<string>(() => {
-    return sourceTrip?.legs[1]?.departureTimeLocal || "15:00";
+    if (sourceTrip?.legs[1]?.departureTimeLocal) return sourceTrip.legs[1].departureTimeLocal;
+    return "16:00";
   });
 
   // Multi-Leg state with "Same aircraft on all legs"
@@ -166,17 +294,17 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
       {
         id: "leg-1",
         origin: findAirportByCode(sourceRequest?.originIcao || "LSGG") || airportsData[0],
-        destination: findAirportByCode(sourceRequest?.destIcao || "EGSS") || airportsData[1],
-        flightDate: sourceRequest?.flightDate || "2026-11-20",
-        departureTime: sourceRequest?.departureTime || "10:00",
+        destination: findAirportByCode(sourceRequest?.destIcao || "LFMN") || airportsData[1],
+        flightDate: sourceRequest?.flightDate ? parseDateToIso(sourceRequest.flightDate, "2026-11-24") : "2026-11-24",
+        departureTime: sourceRequest?.departureTime ? parseTimeToLocal(sourceRequest.departureTime, "08:30") : "08:30",
         aircraft: fleetData[0]
       },
       {
         id: "leg-2",
-        origin: findAirportByCode(sourceRequest?.destIcao || "EGSS") || airportsData[1],
-        destination: airportsData[2] || airportsData[0],
-        flightDate: "2026-11-22",
-        departureTime: "14:00",
+        origin: findAirportByCode(sourceRequest?.destIcao || "LFMN") || airportsData[1],
+        destination: findAirportByCode(sourceRequest?.originIcao || "LSGG") || airportsData[0],
+        flightDate: sourceRequest?.returnFlightDate ? parseDateToIso(sourceRequest.returnFlightDate, "2026-11-30") : "2026-11-30",
+        departureTime: "16:00",
         aircraft: fleetData[0]
       }
     ];
@@ -186,21 +314,48 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
   const [paxCount, setPaxCount] = useState<number>(() => {
     return sourceTrip?.legs[0]?.paxCount || sourceRequest?.paxCount || 4;
   });
-  const [luggagePieces, setLuggagePieces] = useState<number>(4);
-  const [hasPets, setHasPets] = useState<boolean>(false);
+  const [luggagePieces, setLuggagePieces] = useState<number>(() => {
+    if (sourceRequest?.luggageCount) return sourceRequest.luggageCount;
+    if (sourceRequest?.luggageDetailsText) {
+      const m = sourceRequest.luggageDetailsText.match(/(\d+)/);
+      if (m) return parseInt(m[1], 10);
+    }
+    return 6;
+  });
+  const [hasPets, setHasPets] = useState<boolean>(() => {
+    if (sourceRequest?.hasPets !== undefined) return sourceRequest.hasPets;
+    if (sourceRequest?.petDetailsText && !sourceRequest.petDetailsText.toLowerCase().includes("none")) return true;
+    return false;
+  });
 
   // 4. Operator Offer
   const [selectedOperatorId, setSelectedOperatorId] = useState<string>(() => {
     return operators[0]?.id || "op-1";
   });
   const [selectedAircraft, setSelectedAircraft] = useState<Aircraft>(() => {
-    return sourceTrip?.aircraft || fleetData[0];
+    if (sourceTrip?.aircraft) return sourceTrip.aircraft;
+    if (sourceRequest?.aircraftPreference || sourceRequest?.categoryLabel) {
+      const pref = `${sourceRequest.aircraftPreference || ""} ${sourceRequest.categoryLabel || ""}`.toLowerCase();
+      const matched = fleetData.find(
+        (a) =>
+          a.name.toLowerCase().includes(pref) ||
+          pref.includes(a.name.toLowerCase()) ||
+          a.category.toLowerCase().includes(pref) ||
+          pref.includes(a.category.toLowerCase()) ||
+          (pref.includes("challenger") && a.name.toLowerCase().includes("challenger")) ||
+          (pref.includes("latitude") && a.name.toLowerCase().includes("latitude")) ||
+          (pref.includes("super mid") && (a.category.toLowerCase().includes("mid") || a.name.toLowerCase().includes("latitude") || a.name.toLowerCase().includes("challenger")))
+      );
+      if (matched) return matched;
+    }
+    return fleetData[0];
   });
   const [operatorFlightCost, setOperatorFlightCost] = useState<number>(() => {
     return sourceTrip?.pricing ? Math.round(sourceTrip.pricing.totalFlightPrice * 0.85) : 11200;
   });
 
   // Aircraft photos picker state (Step 04 Photos)
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [isPhotoPickerOpen, setIsPhotoPickerOpen] = useState(false);
   const [selectedPhotos, setSelectedPhotos] = useState<string[]>([
     "Exterior · actual aircraft",
@@ -208,13 +363,96 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
   ]);
   const [saveToOperatorAircraft, setSaveToOperatorAircraft] = useState(true);
 
+  const [customExteriorPhoto, setCustomExteriorPhoto] = useState<string>(() => {
+    return sourceTrip?.aircraftCustomImages?.exterior || sourceTrip?.aircraft?.imageExterior || selectedAircraft.imageExterior || "";
+  });
+  const [customCabinPhoto, setCustomCabinPhoto] = useState<string>(() => {
+    return sourceTrip?.aircraftCustomImages?.interior || sourceTrip?.aircraft?.imageInterior || selectedAircraft.imageInterior || "";
+  });
+
+  interface UploadedPhotoItem {
+    id: string;
+    url: string;
+    name: string;
+    tag?: "exterior" | "cabin";
+    isOperator?: boolean;
+    timestamp: number;
+  }
+  const [uploadedPhotos, setUploadedPhotos] = useState<UploadedPhotoItem[]>([]);
+
+  const handleProcessImageFiles = (files: FileList | File[]) => {
+    const list = Array.from(files);
+    list.forEach((file) => {
+      if (!file.type.startsWith("image/")) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const result = e.target?.result as string;
+        if (!result) return;
+        const newPhoto: UploadedPhotoItem = {
+          id: `photo-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          url: result,
+          name: file.name || "Uploaded photo",
+          tag: !customExteriorPhoto ? "exterior" : "cabin",
+          isOperator: true,
+          timestamp: Date.now()
+        };
+        setUploadedPhotos((prev) => [newPhoto, ...prev]);
+
+        setCustomExteriorPhoto((curr) => {
+          if (!curr || curr === selectedAircraft.imageExterior) return result;
+          return curr;
+        });
+        setCustomCabinPhoto((curr) => {
+          if (!curr || curr === selectedAircraft.imageInterior) {
+            return result;
+          }
+          return curr;
+        });
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handlePastePhoto = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const imageFiles: File[] = [];
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf("image") !== -1) {
+        const file = items[i].getAsFile();
+        if (file) imageFiles.push(file);
+      }
+    }
+    if (imageFiles.length > 0) {
+      handleProcessImageFiles(imageFiles);
+    }
+  };
+
   // 5. Services (Screen 2 design)
-  const [serviceOptions, setServiceOptions] = useState({
-    limousine: true,
-    helicopter: false,
-    catering: true,
-    deicing: false,
-    carbonOffset: false,
+  const [serviceOptions, setServiceOptions] = useState(() => {
+    if (sourceRequest) {
+      const sText = (sourceRequest.servicesText || "").toLowerCase();
+      const askText = (sourceRequest.askOperatorText || "").toLowerCase();
+      return {
+        limousine: Boolean(sourceRequest.limousineService || sText.includes("limousine")),
+        helicopter: Boolean(sourceRequest.helicopterService || sText.includes("helicopter")),
+        catering: Boolean(sText.includes("vip") || sText.includes("menu") || sText.includes("catering") || sourceRequest.specialRequests),
+        deicing: Boolean(
+          sourceRequest.deicingInsurance === "at_reservation" ||
+          sourceRequest.deicingInsurance === "within_48h" ||
+          askText.includes("de-icing") ||
+          askText.includes("deicing")
+        ),
+        carbonOffset: Boolean(sourceRequest.carbonOffset && sourceRequest.carbonOffset !== "none"),
+      };
+    }
+    return {
+      limousine: true,
+      helicopter: false,
+      catering: true,
+      deicing: false,
+      carbonOffset: false,
+    };
   });
 
   interface CustomService {
@@ -238,9 +476,49 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
 
   // 6. Margins & Payment (Screen 2 design)
   const [companyMarginText, setCompanyMarginText] = useState("8 % · tier > € 35k");
-  const [agentMarginText, setAgentMarginText] = useState("10 % · set by agent");
+  const [agentMarginText, setAgentMarginText] = useState(() => {
+    if (sourceRequest?.agentMarginPct) {
+      return `${sourceRequest.agentMarginPct} % · set by agent`;
+    }
+    return "10 % · set by agent";
+  });
   const [currency, setCurrency] = useState<"EUR" | "USD" | "GBP" | "CHF">("EUR");
   const [validUntil, setValidUntil] = useState("16 Nov 18:00 LT");
+
+  // Keep in sync if sourceRequest loads later
+  useEffect(() => {
+    if (sourceRequest) {
+      if (sourceRequest.clientName) setLeadPaxName(sourceRequest.clientName);
+      if (sourceRequest.originIcao) {
+        const apt = findAirportByCode(sourceRequest.originIcao);
+        if (apt) setOriginAirport(apt);
+      }
+      if (sourceRequest.destIcao) {
+        const apt = findAirportByCode(sourceRequest.destIcao);
+        if (apt) setDestAirport(apt);
+      }
+      if (sourceRequest.flightDate) setFlightDate(parseDateToIso(sourceRequest.flightDate, "2026-11-24"));
+      if (sourceRequest.departureTime) setDepartureTime(parseTimeToLocal(sourceRequest.departureTime, "08:30"));
+      if (sourceRequest.returnFlightDate) setReturnFlightDate(parseDateToIso(sourceRequest.returnFlightDate, "2026-11-30"));
+      if (sourceRequest.paxCount) setPaxCount(sourceRequest.paxCount);
+      if (sourceRequest.tripType) setTripType(sourceRequest.tripType);
+      if (sourceRequest.agentMarginPct) setAgentMarginText(`${sourceRequest.agentMarginPct} % · set by agent`);
+      if (sourceRequest.aircraftPreference || sourceRequest.categoryLabel) {
+        const pref = `${sourceRequest.aircraftPreference || ""} ${sourceRequest.categoryLabel || ""}`.toLowerCase();
+        const matched = fleetData.find(
+          (a) =>
+            a.name.toLowerCase().includes(pref) ||
+            pref.includes(a.name.toLowerCase()) ||
+            a.category.toLowerCase().includes(pref) ||
+            pref.includes(a.category.toLowerCase()) ||
+            (pref.includes("challenger") && a.name.toLowerCase().includes("challenger")) ||
+            (pref.includes("latitude") && a.name.toLowerCase().includes("latitude")) ||
+            (pref.includes("super mid") && (a.category.toLowerCase().includes("mid") || a.name.toLowerCase().includes("latitude") || a.name.toLowerCase().includes("challenger")))
+        );
+        if (matched) setSelectedAircraft(matched);
+      }
+    }
+  }, [sourceRequest]);
 
   // Parse percentages safely
   const companyMarginPercent = useMemo(() => {
@@ -271,8 +549,24 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
 
   // Selected Account details
   const activeAccount = useMemo(() => {
-    return accounts.find((a) => a.accountNumber === selectedAccountId) || accounts[0];
-  }, [accounts, selectedAccountId]);
+    const found = accounts.find((a) => a.accountNumber === selectedAccountId || a.id === selectedAccountId);
+    if (found) return found;
+    if (sourceRequest) {
+      return {
+        id: sourceRequest.accountId || "ACC-61346745090425",
+        name: sourceRequest.companyName || sourceRequest.clientName || "Ugochukwu Michael Chukwuekwe",
+        accountNumber: sourceRequest.accountId || "ACC-61346745090425",
+        billingAddress: sourceRequest.clientAddress || "14 Bourdillon Road, Ikoyi, Lagos, Nigeria",
+        country: sourceRequest.clientCityCountry || "Nigeria",
+        email: sourceRequest.clientEmail || "client@orbelo.com",
+        phone: sourceRequest.clientPhone || "+234 803 123 4567",
+        vatNumber: sourceRequest.clientVatNumber || "",
+        agentName: sourceRequest.agentName || "Marcus Vance",
+        isAgent: false
+      };
+    }
+    return accounts[0];
+  }, [accounts, selectedAccountId, sourceRequest]);
 
   // Submission handler
   const handleCompleteQuotation = async () => {
@@ -392,6 +686,57 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
       }
     }
 
+    // Build itemized active services list
+    const activeServicesList: Array<{ id: string; name: string; details?: string; price: number }> = [];
+    if (serviceOptions.limousine) {
+      activeServicesList.push({
+        id: "limo",
+        name: "VIP limousine",
+        details: `arrival ${destAirport.city || destAirport.name || destAirport.icao || "destination"} (SUV, ${paxCount} pax)`,
+        price: limousinePrice
+      });
+    }
+    if (serviceOptions.catering) {
+      activeServicesList.push({
+        id: "catering",
+        name: "Catering",
+        details: cateringPrice === 0 ? "VIP menu 1 · both legs (included)" : "VIP menu 1 · both legs",
+        price: cateringPrice
+      });
+    }
+    if (serviceOptions.helicopter) {
+      activeServicesList.push({
+        id: "heli",
+        name: "Helicopter transfer",
+        details: `VIP charter connector (${paxCount} pax)`,
+        price: helicopterPrice
+      });
+    }
+    if (serviceOptions.deicing) {
+      activeServicesList.push({
+        id: "deicing",
+        name: "De-icing protection",
+        details: "Holdover protection package",
+        price: deicingPrice
+      });
+    }
+    if (serviceOptions.carbonOffset) {
+      activeServicesList.push({
+        id: "carbon",
+        name: "Carbon offset",
+        details: "Gold Standard certified climate credit",
+        price: carbonOffsetPrice
+      });
+    }
+    customServices.forEach((cs) => {
+      activeServicesList.push({
+        id: cs.id,
+        name: cs.name,
+        details: cs.details,
+        price: cs.price
+      });
+    });
+
     const newBooking: Booking = {
       id: isBookingRevision
         ? `booking-${rootId.toLowerCase()}-v${nextVersionNum}`
@@ -412,7 +757,20 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
         : "unpaid",
       bookingRevisionId: isBookingRevision ? versionLabel : undefined,
       tripType,
-      aircraft: selectedAircraft,
+      aircraft: {
+        ...selectedAircraft,
+        imageExterior: customExteriorPhoto || selectedAircraft.imageExterior,
+        imageInterior: customCabinPhoto || selectedAircraft.imageInterior,
+      },
+      aircraftCustomImages: {
+        exterior: customExteriorPhoto || selectedAircraft.imageExterior,
+        interior: customCabinPhoto || selectedAircraft.imageInterior,
+        cabinViews: uploadedPhotos.map((p) => p.url)
+      },
+      isHandledByPa,
+      paName: isHandledByPa ? paName : undefined,
+      paEmail: isHandledByPa ? paEmail : undefined,
+      paPhone: isHandledByPa ? paPhone : undefined,
       client: {
         fullName: leadPaxName,
         companyName: activeAccount?.name || sourceTrip?.client.companyName || "Private VIP",
@@ -420,7 +778,11 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
         cityPostalCountry: `${activeAccount?.country || sourceTrip?.client.cityPostalCountry || "United Kingdom"}`,
         phone: activeAccount?.phone || sourceTrip?.client.phone || "+44 20 7946 0192",
         email: activeAccount?.email || sourceTrip?.client.email || "charter@bgcapital.com",
-        accountNumber: activeAccount?.accountNumber || "ACC-21737"
+        accountNumber: activeAccount?.accountNumber || "ACC-21737",
+        isHandledByPa,
+        paName: isHandledByPa ? paName : undefined,
+        paEmail: isHandledByPa ? paEmail : undefined,
+        paPhone: isHandledByPa ? paPhone : undefined,
       },
       operator: {
         companyName: selectedOperator?.tradingName || sourceTrip?.operator.companyName || "GlobeAir AG",
@@ -464,12 +826,48 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
       },
       checklist: sourceTrip?.checklist || [],
       quoteVersion: nextVersionNum,
+      agentName: sourceRequest?.agentName,
+      agentEmail: sourceRequest?.agentEmail,
+      commissionPercentage: agentCommissionPercent,
+      adminMarginValue: companyMarginPercent,
+      manualServices: activeServicesList,
+      sourceAgentRequestId: sourceRequest?.id,
       createdAt: sourceTrip?.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
 
-    await addBooking(newBooking);
-    router.push(`/trips/${rootId}/itinerary`);
+    try {
+      const persisted = await addBooking(newBooking);
+
+      if (sourceRequest) {
+        updateAgentRequestStatus(
+          sourceRequest.id,
+          "completed",
+          persisted.id || newBooking.id,
+          `Quoted → ${versionLabel}`
+        );
+
+        if (sendMessage) {
+          sendMessage({
+            channel: "broker_desk",
+            recipientEmail: sourceRequest.agentEmail,
+            recipientName: sourceRequest.agentName,
+            recipientRole: "agent",
+            content: `Official Quotation ${versionLabel} compiled and sent for ${leadPaxName} (${originAirport.icao} ⇄ ${destAirport.icao}). Total: €${clientTotal.toLocaleString("de-DE")}`,
+            tripNumber: versionLabel,
+            requestId: sourceRequest.id,
+          });
+        }
+      }
+    } catch (err: any) {
+      console.warn("Complete quotation notice:", err);
+    }
+
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem("orbelo_selected_quote_id", newBooking.id);
+    }
+
+    router.push("/quotes");
   };
 
   const selectedOperator = operators.find((op) => op.id === selectedOperatorId) || operators[0];
@@ -481,20 +879,29 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
   if (isPhotoPickerOpen) {
     const tripDisplayId = rootId || "MX5521";
 
-    const togglePhoto = (label: string) => {
-      if (selectedPhotos.includes(label)) {
-        setSelectedPhotos(selectedPhotos.filter((p) => p !== label));
-      } else {
-        if (selectedPhotos.length >= 4) {
-          alert("Maximum 4 photos allowed on quote PDF.");
-          return;
-        }
-        setSelectedPhotos([...selectedPhotos, label]);
-      }
-    };
+    const isExteriorSelected = Boolean(customExteriorPhoto);
+    const isCabinSelected = Boolean(customCabinPhoto);
 
     return (
-      <div className="space-y-5 max-w-6xl mx-auto pb-12 font-sans">
+      <div
+        tabIndex={0}
+        onPaste={handlePastePhoto}
+        className="space-y-5 max-w-6xl mx-auto pb-12 font-sans focus:outline-none"
+      >
+        {/* Hidden file upload input */}
+        <input
+          type="file"
+          ref={fileInputRef}
+          accept="image/*"
+          multiple
+          onChange={(e) => {
+            if (e.target.files && e.target.files.length > 0) {
+              handleProcessImageFiles(e.target.files);
+            }
+          }}
+          className="hidden"
+        />
+
         {/* Breadcrumb */}
         <div className="flex items-center gap-1.5 text-xs text-gray-500 font-medium">
           <span>Quotes</span>
@@ -520,23 +927,123 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
             </button>
             <button
               type="button"
-              onClick={() => setIsPhotoPickerOpen(false)}
-              className="bg-[#111827] text-white hover:bg-gray-800 text-xs font-semibold px-4 py-1.5 rounded-lg shadow-sm transition-all"
+              onClick={() => {
+                if (customExteriorPhoto) {
+                  setSelectedAircraft((prev) => ({ ...prev, imageExterior: customExteriorPhoto }));
+                }
+                if (customCabinPhoto) {
+                  setSelectedAircraft((prev) => ({ ...prev, imageInterior: customCabinPhoto }));
+                }
+                const chosen: string[] = [];
+                if (customExteriorPhoto) chosen.push("Exterior · operator");
+                if (customCabinPhoto) chosen.push("Cabin · operator");
+                setSelectedPhotos(chosen.length > 0 ? chosen : ["Exterior · operator", "Cabin · operator"]);
+                setIsPhotoPickerOpen(false);
+              }}
+              className="bg-[#111827] text-white hover:bg-gray-800 text-xs font-semibold px-4 py-1.5 rounded-lg shadow-sm transition-all flex items-center gap-1.5"
             >
-              Use selected photos
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Use selected photos</span>
             </button>
           </div>
         </div>
 
         {/* Informational Blue Banner */}
-        <div className="bg-[#EFF6FF] border border-[#BFDBFE] text-[#1E40AF] px-4 py-2.5 rounded-xl text-xs font-medium">
-          Pick one exterior and one cabin for the quote PDF (up to 4 in total). Photos are saved with this quote version, so revising later never changes a quote that was already sent.
+        <div className="bg-[#EFF6FF] border border-[#BFDBFE] text-[#1E40AF] px-4 py-2.5 rounded-xl text-xs font-medium flex items-center justify-between">
+          <span>
+            Pick one exterior and one cabin for the quote PDF (up to 4 in total). Photos are saved with this quote version, so revising later never changes a quote that was already sent.
+          </span>
+          <span className="text-[11px] font-mono font-bold bg-blue-100/80 px-2 py-0.5 rounded text-blue-900 ml-2 whitespace-nowrap">
+            {uploadedPhotos.length > 0 ? `${uploadedPhotos.length} custom uploaded` : "Clipboard & file upload ready"}
+          </span>
         </div>
 
         {/* 2-Column Photos Layout */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           {/* Left Column (8 cols) */}
           <div className="lg:col-span-8 space-y-6">
+            {/* Uploaded Photos Section if any */}
+            {uploadedPhotos.length > 0 && (
+              <div className="bg-white rounded-xl border border-blue-200 p-5 shadow-sm space-y-3">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                    <Upload className="w-4 h-4 text-blue-600" />
+                    <span>Uploaded from your device / clipboard ({uploadedPhotos.length})</span>
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="text-xs text-blue-600 hover:text-blue-800 font-semibold"
+                  >
+                    + Add more photos
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {uploadedPhotos.map((photo) => {
+                    const isExt = customExteriorPhoto === photo.url;
+                    const isCab = customCabinPhoto === photo.url;
+                    return (
+                      <div
+                        key={photo.id}
+                        className={`bg-white rounded-xl p-2.5 flex flex-col justify-between border transition-all ${
+                          isExt || isCab ? "border-2 border-emerald-600 shadow-md ring-2 ring-emerald-100" : "border-gray-200"
+                        }`}
+                      >
+                        <div className="h-24 w-full rounded-lg overflow-hidden bg-gray-100 relative mb-2">
+                          <img
+                            src={photo.url}
+                            alt={photo.name}
+                            className="w-full h-full object-cover"
+                          />
+                          {(isExt || isCab) && (
+                            <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-600 text-white shadow">
+                              {isExt ? "Exterior on PDF" : "Cabin on PDF"}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] font-semibold text-gray-800 truncate mb-1.5" title={photo.name}>
+                          {photo.name}
+                        </div>
+                        <div className="flex items-center justify-between text-[11px] gap-1 pt-1 border-t border-gray-100">
+                          <button
+                            type="button"
+                            onClick={() => setCustomExteriorPhoto(isExt ? "" : photo.url)}
+                            className={`font-semibold px-1.5 py-0.5 rounded text-[10px] transition-colors ${
+                              isExt
+                                ? "bg-emerald-600 text-white"
+                                : "text-blue-600 hover:bg-blue-50"
+                            }`}
+                          >
+                            {isExt ? "Exterior ✓" : "Exterior"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setCustomCabinPhoto(isCab ? "" : photo.url)}
+                            className={`font-semibold px-1.5 py-0.5 rounded text-[10px] transition-colors ${
+                              isCab
+                                ? "bg-blue-600 text-white"
+                                : "text-blue-600 hover:bg-blue-50"
+                            }`}
+                          >
+                            {isCab ? "Cabin ✓" : "Cabin"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setUploadedPhotos((prev) => prev.filter((p) => p.id !== photo.id))}
+                            className="text-gray-400 hover:text-red-600 text-xs px-1"
+                            title="Remove uploaded image"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Card 1: From the operator */}
             <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm space-y-4">
               <div className="flex items-center justify-between">
@@ -545,10 +1052,11 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                 </h2>
                 <button
                   type="button"
-                  onClick={() => alert("Upload custom photos from operator spec sheet")}
-                  className="bg-white border border-gray-300 hover:bg-gray-50 text-xs font-medium px-3 py-1 rounded-lg shadow-sm transition-all"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="bg-white border border-gray-300 hover:bg-gray-50 text-xs font-semibold px-3 py-1 rounded-lg shadow-sm transition-all flex items-center gap-1.5 text-gray-800 cursor-pointer"
                 >
-                  + Paste or upload
+                  <Upload className="w-3.5 h-3.5 text-gray-600" />
+                  <span>+ Paste or upload</span>
                 </button>
               </div>
 
@@ -556,75 +1064,101 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {/* 1. Exterior · actual aircraft */}
                 <div
-                  className={`bg-[#F1F3F5] rounded-xl p-3 flex flex-col justify-between h-40 transition-all ${
-                    selectedPhotos.includes("Exterior · actual aircraft")
+                  className={`bg-[#F1F3F5] rounded-xl p-3 flex flex-col justify-between h-44 transition-all ${
+                    customExteriorPhoto === (selectedAircraft.imageExterior || "Exterior · actual aircraft")
                       ? "border-2 border-black"
                       : "border border-gray-200"
                   }`}
                 >
-                  <div>
-                    {selectedPhotos.includes("Exterior · actual aircraft") && (
-                      <span className="inline-block px-2 py-0.5 rounded text-[11px] font-bold bg-white text-emerald-700 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    {customExteriorPhoto === (selectedAircraft.imageExterior || "Exterior · actual aircraft") && (
+                      <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-white text-emerald-700 shadow-sm">
                         On quote
                       </span>
                     )}
                   </div>
-                  <div className="text-center text-xs text-gray-700 font-medium my-auto">
-                    Exterior · actual aircraft
-                  </div>
-                  <div className="flex items-center justify-between text-[11px] pt-1">
-                    <span className="text-gray-500">Operator</span>
+                  {selectedAircraft.imageExterior ? (
+                    <div className="h-20 w-full rounded overflow-hidden my-auto bg-gray-200">
+                      <img
+                        src={selectedAircraft.imageExterior}
+                        alt="Exterior"
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  ) : (
+                    <div className="text-center text-xs text-gray-700 font-medium my-auto">
+                      Exterior · actual aircraft
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between text-[11px] pt-1 border-t border-gray-200">
+                    <span className="text-gray-500 text-[10px]">Operator</span>
                     <button
                       type="button"
-                      onClick={() => togglePhoto("Exterior · actual aircraft")}
+                      onClick={() => {
+                        const target = selectedAircraft.imageExterior || "Exterior · actual aircraft";
+                        setCustomExteriorPhoto(customExteriorPhoto === target ? "" : target);
+                      }}
                       className="text-blue-600 hover:underline font-semibold"
                     >
-                      {selectedPhotos.includes("Exterior · actual aircraft") ? "Remove" : "Use"}
+                      {customExteriorPhoto === (selectedAircraft.imageExterior || "Exterior · actual aircraft") ? "Remove" : "Use Exterior"}
                     </button>
                   </div>
                 </div>
 
                 {/* 2. Cabin · actual aircraft */}
                 <div
-                  className={`bg-[#F1F3F5] rounded-xl p-3 flex flex-col justify-between h-40 transition-all ${
-                    selectedPhotos.includes("Cabin · actual aircraft")
+                  className={`bg-[#F1F3F5] rounded-xl p-3 flex flex-col justify-between h-44 transition-all ${
+                    customCabinPhoto === (selectedAircraft.imageInterior || "Cabin · actual aircraft")
                       ? "border-2 border-black"
                       : "border border-gray-200"
                   }`}
                 >
-                  <div>
-                    {selectedPhotos.includes("Cabin · actual aircraft") && (
-                      <span className="inline-block px-2 py-0.5 rounded text-[11px] font-bold bg-white text-emerald-700 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    {customCabinPhoto === (selectedAircraft.imageInterior || "Cabin · actual aircraft") && (
+                      <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-white text-emerald-700 shadow-sm">
                         On quote
                       </span>
                     )}
                   </div>
-                  <div className="text-center text-xs text-gray-700 font-medium my-auto">
-                    Cabin · actual aircraft
-                  </div>
-                  <div className="flex items-center justify-between text-[11px] pt-1">
-                    <span className="text-gray-500">Operator</span>
+                  {selectedAircraft.imageInterior ? (
+                    <div className="h-20 w-full rounded overflow-hidden my-auto bg-gray-200">
+                      <img
+                        src={selectedAircraft.imageInterior}
+                        alt="Cabin"
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  ) : (
+                    <div className="text-center text-xs text-gray-700 font-medium my-auto">
+                      Cabin · actual aircraft
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between text-[11px] pt-1 border-t border-gray-200">
+                    <span className="text-gray-500 text-[10px]">Operator</span>
                     <button
                       type="button"
-                      onClick={() => togglePhoto("Cabin · actual aircraft")}
+                      onClick={() => {
+                        const target = selectedAircraft.imageInterior || "Cabin · actual aircraft";
+                        setCustomCabinPhoto(customCabinPhoto === target ? "" : target);
+                      }}
                       className="text-blue-600 hover:underline font-semibold"
                     >
-                      {selectedPhotos.includes("Cabin · actual aircraft") ? "Remove" : "Use"}
+                      {customCabinPhoto === (selectedAircraft.imageInterior || "Cabin · actual aircraft") ? "Remove" : "Use Cabin"}
                     </button>
                   </div>
                 </div>
 
                 {/* 3. Cabin · rear */}
                 <div
-                  className={`bg-[#F1F3F5] rounded-xl p-3 flex flex-col justify-between h-40 transition-all ${
-                    selectedPhotos.includes("Cabin · rear")
+                  className={`bg-[#F1F3F5] rounded-xl p-3 flex flex-col justify-between h-44 transition-all ${
+                    customCabinPhoto === (selectedAircraft.images?.[1] || "Cabin · rear")
                       ? "border-2 border-black"
                       : "border border-gray-200"
                   }`}
                 >
-                  <div>
-                    {selectedPhotos.includes("Cabin · rear") && (
-                      <span className="inline-block px-2 py-0.5 rounded text-[11px] font-bold bg-white text-emerald-700 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    {customCabinPhoto === (selectedAircraft.images?.[1] || "Cabin · rear") && (
+                      <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-white text-emerald-700 shadow-sm">
                         On quote
                       </span>
                     )}
@@ -632,22 +1166,38 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                   <div className="text-center text-xs text-gray-700 font-medium my-auto">
                     Cabin · rear
                   </div>
-                  <div className="flex items-center justify-between text-[11px] pt-1">
-                    <span className="text-gray-500">Operator</span>
+                  <div className="flex items-center justify-between text-[11px] pt-1 border-t border-gray-200">
+                    <span className="text-gray-500 text-[10px]">Operator</span>
                     <button
                       type="button"
-                      onClick={() => togglePhoto("Cabin · rear")}
+                      onClick={() => {
+                        const target = selectedAircraft.images?.[1]?.url || selectedAircraft.imageInterior || "Cabin · rear";
+                        setCustomCabinPhoto(customCabinPhoto === target ? "" : target);
+                      }}
                       className="text-blue-600 hover:underline font-semibold"
                     >
-                      {selectedPhotos.includes("Cabin · rear") ? "Remove" : "Use"}
+                      {customCabinPhoto === (selectedAircraft.images?.[1]?.url || selectedAircraft.imageInterior || "Cabin · rear") ? "Remove" : "Use Cabin"}
                     </button>
                   </div>
                 </div>
 
-                {/* 4. Dropzone Card */}
-                <div className="border-2 border-dashed border-gray-200 hover:border-gray-300 rounded-xl p-4 flex flex-col items-center justify-center text-center h-40 transition-colors">
-                  <div className="text-xs text-gray-500 font-medium leading-relaxed">
+                {/* 4. Dropzone Card with Drag & Drop and Click */}
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (e.dataTransfer.files) handleProcessImageFiles(e.dataTransfer.files);
+                  }}
+                  className="border-2 border-dashed border-gray-300 hover:border-blue-500 hover:bg-blue-50/20 cursor-pointer rounded-xl p-3 flex flex-col items-center justify-center text-center h-44 transition-all group"
+                >
+                  <Upload className="w-5 h-5 text-gray-400 group-hover:text-blue-600 mb-1.5 transition-colors" />
+                  <div className="text-xs text-gray-700 font-medium leading-tight group-hover:text-blue-700">
                     Paste (Ctrl/Cmd+V) or drop photos here
+                  </div>
+                  <div className="text-[10px] text-gray-400 mt-1">
+                    or click to browse from device
                   </div>
                 </div>
               </div>
@@ -679,14 +1229,17 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                   <div className="text-center text-xs text-gray-700 font-medium my-auto">
                     Exterior · default
                   </div>
-                  <div className="flex items-center justify-between text-[11px] pt-1">
+                  <div className="flex items-center justify-between text-[11px] pt-1 border-t border-gray-200">
                     <span className="text-gray-500">Generic</span>
                     <button
                       type="button"
-                      onClick={() => togglePhoto("Exterior · default")}
+                      onClick={() => {
+                        const target = selectedAircraft.imageExterior || "Exterior · default";
+                        setCustomExteriorPhoto(customExteriorPhoto === target ? "" : target);
+                      }}
                       className="text-blue-600 hover:underline font-semibold"
                     >
-                      {selectedPhotos.includes("Exterior · default") ? "Remove" : "Use"}
+                      {customExteriorPhoto === (selectedAircraft.imageExterior || "Exterior · default") ? "Remove" : "Use"}
                     </button>
                   </div>
                 </div>
@@ -696,14 +1249,17 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                   <div className="text-center text-xs text-gray-700 font-medium my-auto">
                     Cabin · default
                   </div>
-                  <div className="flex items-center justify-between text-[11px] pt-1">
+                  <div className="flex items-center justify-between text-[11px] pt-1 border-t border-gray-200">
                     <span className="text-gray-500">Generic</span>
                     <button
                       type="button"
-                      onClick={() => togglePhoto("Cabin · default")}
+                      onClick={() => {
+                        const target = selectedAircraft.imageInterior || "Cabin · default";
+                        setCustomCabinPhoto(customCabinPhoto === target ? "" : target);
+                      }}
                       className="text-blue-600 hover:underline font-semibold"
                     >
-                      {selectedPhotos.includes("Cabin · default") ? "Remove" : "Use"}
+                      {customCabinPhoto === (selectedAircraft.imageInterior || "Cabin · default") ? "Remove" : "Use"}
                     </button>
                   </div>
                 </div>
@@ -713,14 +1269,17 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                   <div className="text-center text-xs text-gray-700 font-medium my-auto">
                     Cabin · night
                   </div>
-                  <div className="flex items-center justify-between text-[11px] pt-1">
+                  <div className="flex items-center justify-between text-[11px] pt-1 border-t border-gray-200">
                     <span className="text-gray-500">Generic</span>
                     <button
                       type="button"
-                      onClick={() => togglePhoto("Cabin · night")}
+                      onClick={() => {
+                        const target = selectedAircraft.images?.[2]?.url || "Cabin · night";
+                        setCustomCabinPhoto(customCabinPhoto === target ? "" : target);
+                      }}
                       className="text-blue-600 hover:underline font-semibold"
                     >
-                      {selectedPhotos.includes("Cabin · night") ? "Remove" : "Use"}
+                      {customCabinPhoto === (selectedAircraft.images?.[2]?.url || "Cabin · night") ? "Remove" : "Use"}
                     </button>
                   </div>
                 </div>
@@ -730,14 +1289,17 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                   <div className="text-center text-xs text-gray-700 font-medium my-auto">
                     Galley
                   </div>
-                  <div className="flex items-center justify-between text-[11px] pt-1">
+                  <div className="flex items-center justify-between text-[11px] pt-1 border-t border-gray-200">
                     <span className="text-gray-500">Generic</span>
                     <button
                       type="button"
-                      onClick={() => togglePhoto("Galley")}
+                      onClick={() => {
+                        const target = selectedAircraft.images?.[3]?.url || "Galley";
+                        setCustomCabinPhoto(customCabinPhoto === target ? "" : target);
+                      }}
                       className="text-blue-600 hover:underline font-semibold"
                     >
-                      {selectedPhotos.includes("Galley") ? "Remove" : "Use"}
+                      {customCabinPhoto === (selectedAircraft.images?.[3]?.url || "Galley") ? "Remove" : "Use"}
                     </button>
                   </div>
                 </div>
@@ -756,16 +1318,63 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
               <h2 className="text-sm font-bold text-gray-900">On the quote PDF</h2>
 
               <div className="grid grid-cols-2 gap-3">
-                <div className="bg-[#F1F3F5] rounded-xl p-4 flex flex-col items-center justify-center text-center h-24 border border-gray-200">
-                  <span className="text-xs text-gray-700 font-medium">Exterior · operator</span>
-                </div>
-                <div className="bg-[#F1F3F5] rounded-xl p-4 flex flex-col items-center justify-center text-center h-24 border border-gray-200">
-                  <span className="text-xs text-gray-700 font-medium">Cabin · operator</span>
-                </div>
+                {/* Exterior Slot */}
+                {customExteriorPhoto ? (
+                  <div className="rounded-xl overflow-hidden h-28 border-2 border-emerald-500 relative group bg-gray-100">
+                    <img
+                      src={customExteriorPhoto}
+                      alt="Exterior chosen"
+                      className="w-full h-full object-cover"
+                    />
+                    <span className="absolute bottom-1.5 left-1.5 px-2 py-0.5 rounded text-[10px] font-bold bg-black/70 text-white backdrop-blur-xs">
+                      Exterior · on quote
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setCustomExteriorPhoto("")}
+                      className="absolute top-1.5 right-1.5 bg-black/60 hover:bg-black/90 text-white p-1 rounded-full text-[10px] leading-none"
+                      title="Clear photo"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ) : (
+                  <div className="bg-[#F1F3F5] rounded-xl p-3 flex flex-col items-center justify-center text-center h-28 border border-gray-200">
+                    <span className="text-xs text-gray-700 font-medium">Exterior · operator</span>
+                    <span className="text-[10px] text-gray-400 mt-1">Default will be used</span>
+                  </div>
+                )}
+
+                {/* Cabin Slot */}
+                {customCabinPhoto ? (
+                  <div className="rounded-xl overflow-hidden h-28 border-2 border-blue-500 relative group bg-gray-100">
+                    <img
+                      src={customCabinPhoto}
+                      alt="Cabin chosen"
+                      className="w-full h-full object-cover"
+                    />
+                    <span className="absolute bottom-1.5 left-1.5 px-2 py-0.5 rounded text-[10px] font-bold bg-black/70 text-white backdrop-blur-xs">
+                      Cabin · on quote
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setCustomCabinPhoto("")}
+                      className="absolute top-1.5 right-1.5 bg-black/60 hover:bg-black/90 text-white p-1 rounded-full text-[10px] leading-none"
+                      title="Clear photo"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ) : (
+                  <div className="bg-[#F1F3F5] rounded-xl p-3 flex flex-col items-center justify-center text-center h-28 border border-gray-200">
+                    <span className="text-xs text-gray-700 font-medium">Cabin · operator</span>
+                    <span className="text-[10px] text-gray-400 mt-1">Default will be used</span>
+                  </div>
+                )}
               </div>
 
               <div className="text-[11px] text-gray-400">
-                Order: exterior first, then cabin. Drag to swap.
+                Order: exterior first, then cabin. Saved automatically with quote version.
               </div>
             </div>
 
@@ -850,6 +1459,8 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
             <span>
               {isBookingRevision
                 ? `Complete Booking Revision (${versionLabel})`
+                : sourceRequest
+                ? `Complete Quotation and Send to Agent (${versionLabel})`
                 : `Complete Quotation (${versionLabel})`}
             </span>
           </button>
@@ -872,33 +1483,164 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-sans">
-              <div>
+              {/* Searchable Client Account Dropdown */}
+              <div className="relative" ref={accountDropdownRef}>
                 <label className="block text-xs font-mono font-bold text-[var(--muted)] mb-1">
                   Client Account
                 </label>
-                <select
-                  value={selectedAccountId}
-                  onChange={(e) => setSelectedAccountId(e.target.value)}
-                  className="w-full bg-[var(--paper)] border border-[var(--line)] rounded-lg px-3 py-2 text-xs text-[var(--ink)]"
+                <button
+                  type="button"
+                  onClick={() => setIsAccountDropdownOpen(!isAccountDropdownOpen)}
+                  className="w-full bg-[var(--paper)] border border-[var(--line)] rounded-lg px-3 py-2 text-xs text-[var(--ink)] flex items-center justify-between text-left hover:border-gray-400 focus:outline-none transition-all shadow-2xs"
                 >
-                  {accounts.map((acc) => (
-                    <option key={acc.id} value={acc.accountNumber}>
-                      {acc.name} ({acc.accountNumber})
-                    </option>
-                  ))}
-                </select>
+                  <span className="truncate font-medium">
+                    {activeAccount?.name || "Select Account"}{" "}
+                    <span className="text-[var(--muted)] font-mono">
+                      ({activeAccount?.accountNumber || selectedAccountId})
+                    </span>
+                  </span>
+                  <ChevronDown className="w-3.5 h-3.5 text-[var(--muted)] shrink-0 ml-1.5" />
+                </button>
+
+                {isAccountDropdownOpen && (
+                  <div className="absolute left-0 top-full mt-1 w-full bg-[var(--card)] border border-[var(--line)] rounded-xl shadow-2xl p-2.5 z-40 space-y-2">
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 text-[var(--muted)] absolute left-2.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        autoFocus
+                        value={accountSearchQuery}
+                        onChange={(e) => setAccountSearchQuery(e.target.value)}
+                        placeholder="Search account name, ref, or contact..."
+                        className="w-full bg-[var(--paper)] border border-[var(--line)] rounded-lg pl-8 pr-3 py-1.5 text-xs text-[var(--ink)] placeholder:text-[var(--muted)] focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      />
+                    </div>
+
+                    <div className="max-h-56 overflow-y-auto space-y-1 divide-y divide-[var(--line)]">
+                      {filteredAccounts.map((acc) => {
+                        const isSelected = acc.accountNumber === selectedAccountId;
+                        const owner = resolveOwnerNameForAccount(acc);
+                        return (
+                          <button
+                            key={acc.id}
+                            type="button"
+                            onClick={() => handleSelectAccount(acc)}
+                            className={`w-full text-left p-2 rounded-lg text-xs transition-colors flex flex-col gap-0.5 ${
+                              isSelected
+                                ? "bg-[var(--wf)] text-[var(--ink)] font-semibold"
+                                : "hover:bg-[var(--paper)] text-[var(--ink)]"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold truncate">{acc.name}</span>
+                              <span className="font-mono text-[10px] text-[var(--muted)] shrink-0 ml-2">
+                                {acc.accountNumber}
+                              </span>
+                            </div>
+                            <div className="text-[11px] text-[var(--muted)] truncate flex items-center gap-1">
+                              <span>Owner / Signatory:</span>
+                              <strong className="text-[var(--ink)] font-normal">{owner}</strong>
+                            </div>
+                          </button>
+                        );
+                      })}
+                      {filteredAccounts.length === 0 && (
+                        <div className="py-4 text-center text-xs text-[var(--muted)] italic">
+                          No matching client accounts found
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
+              {/* Authorised Owner Field (Linked to Account) */}
               <div>
-                <label className="block text-xs font-mono font-bold text-[var(--muted)] mb-1">
-                  Lead Passenger / Signatory Name
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-mono font-bold text-[var(--muted)]">
+                    Authorised Owner
+                  </label>
+                  <span className="text-[10px] text-blue-600 font-mono font-medium">
+                    Linked to account
+                  </span>
+                </div>
                 <input
                   type="text"
                   value={leadPaxName}
                   onChange={(e) => setLeadPaxName(e.target.value)}
-                  className="w-full bg-[var(--paper)] border border-[var(--line)] rounded-lg px-3 py-2 text-xs text-[var(--ink)]"
+                  placeholder="Primary account owner / signatory"
+                  className="w-full bg-[var(--paper)] border border-[var(--line)] rounded-lg px-3 py-2 text-xs text-[var(--ink)] focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
+              </div>
+
+              {/* PA / Representative Reservation Section */}
+              <div className="sm:col-span-2 pt-1">
+                <label className="inline-flex items-center gap-2 text-xs font-medium text-[var(--ink)] cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={isHandledByPa}
+                    onChange={(e) => setIsHandledByPa(e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500 cursor-pointer accent-amber-600"
+                  />
+                  <span>
+                    Request handled by Personal Assistant (PA) / Representative on behalf of Authorised Owner
+                  </span>
+                </label>
+
+                {isHandledByPa && (
+                  <div className="mt-2.5 p-3.5 bg-amber-50/70 border border-amber-200/90 rounded-xl space-y-3">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-amber-950">
+                      <UserCheck className="w-3.5 h-3.5 text-amber-700" />
+                      <span>PA / Representative Reservation Details</span>
+                      <span className="text-[10px] font-normal text-amber-800 ml-auto font-mono">
+                        Authorised agent for {leadPaxName || "Owner"}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                      <div>
+                        <label className="block text-[10px] font-mono font-bold text-amber-900 mb-1">
+                          PA / Representative Name
+                        </label>
+                        <input
+                          type="text"
+                          value={paName}
+                          onChange={(e) => setPaName(e.target.value)}
+                          placeholder="e.g. Sarah Jenkins (Executive PA)"
+                          className="w-full bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 text-xs text-gray-900 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-mono font-bold text-amber-900 mb-1">
+                          PA Email (for Operational Briefs)
+                        </label>
+                        <input
+                          type="email"
+                          value={paEmail}
+                          onChange={(e) => setPaEmail(e.target.value)}
+                          placeholder="pa@clientoffice.com"
+                          className="w-full bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 text-xs text-gray-900 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-mono font-bold text-amber-900 mb-1">
+                          PA Direct Mobile / Phone
+                        </label>
+                        <input
+                          type="tel"
+                          value={paPhone}
+                          onChange={(e) => setPaPhone(e.target.value)}
+                          placeholder="+44 7700 900077"
+                          className="w-full bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 text-xs text-gray-900 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="text-[11px] text-amber-900/80 leading-relaxed">
+                      Quotation and charter agreement remain issued to Authorised Owner (<strong>{leadPaxName || "Account Holder"}</strong>), while operations and flight communications will be coordinated with <strong>{paName || "PA / Representative"}</strong>.
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="sm:col-span-2 bg-[var(--paper)] p-3 rounded-lg border border-[var(--line)] font-mono text-xs space-y-0.5 text-[var(--muted)]">
@@ -1387,42 +2129,43 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                 </div>
               </div>
 
-              {/* Step 04 Photos Row (Exact styling of Image 2) */}
+              {/* Step 04 Photos Row */}
               <div className="sm:col-span-2 pt-3 border-t border-[var(--line)] flex flex-wrap items-center gap-3">
                 <div className="flex items-center gap-2">
-                  {selectedPhotos.map((photo) => (
-                    <span
-                      key={photo}
-                      className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200"
-                    >
-                      {photo.includes("Cabin")
-                        ? "Cabin · operator"
-                        : photo.includes("Exterior")
-                        ? "Exterior · operator"
-                        : photo}
+                  {customExteriorPhoto && (
+                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                      Exterior · custom photo
                     </span>
-                  ))}
-                  {selectedPhotos.length === 0 && (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-                      Cabin · operator
+                  )}
+                  {customCabinPhoto && (
+                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                      Cabin · custom photo
+                    </span>
+                  )}
+                  {!customExteriorPhoto && !customCabinPhoto && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-50 text-gray-700 border border-gray-200">
+                      Operator defaults
                     </span>
                   )}
                 </div>
                 <button
                   type="button"
                   onClick={() => setIsPhotoPickerOpen(true)}
-                  className="bg-white border border-gray-300 hover:bg-gray-50 text-xs font-semibold px-3 py-1.5 rounded-md shadow-2xs transition-all text-gray-800"
+                  className="bg-white border border-gray-300 hover:bg-gray-50 text-xs font-semibold px-3 py-1.5 rounded-md shadow-2xs transition-all text-gray-800 flex items-center gap-1.5"
                 >
-                  Choose photos
+                  <ImageIcon className="w-3.5 h-3.5 text-gray-600" />
+                  <span>Choose photos</span>
                 </button>
                 <span className="text-xs text-gray-500 font-sans">
-                  Generic type photos are used if none are chosen
+                  Upload custom exterior/cabin or use operator defaults
                 </span>
               </div>
             </div>
           </div>
 
-          {/* SECTION 5: SERVICES (Exact styling of Image 2) */}
+          {/* SECTION 5: SERVICES */}
           <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-3.5">
             <div className="flex items-center gap-2 border-b border-[var(--line)] pb-2.5">
               <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-[var(--wf)] text-[var(--ink)]">
@@ -1433,87 +2176,182 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
               </h3>
             </div>
 
-            {/* Checkboxes Row */}
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-2.5 pt-1">
-              <label className="inline-flex items-center gap-2 text-xs font-medium text-gray-800 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={serviceOptions.limousine}
-                  onChange={(e) =>
-                    setServiceOptions({ ...serviceOptions, limousine: e.target.checked })
-                  }
-                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
-                />
-                <span>VIP limousine</span>
-              </label>
-
-              <label className="inline-flex items-center gap-2 text-xs font-medium text-gray-800 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={serviceOptions.helicopter}
-                  onChange={(e) =>
-                    setServiceOptions({ ...serviceOptions, helicopter: e.target.checked })
-                  }
-                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
-                />
-                <span>Helicopter</span>
-              </label>
-
-              <label className="inline-flex items-center gap-2 text-xs font-medium text-gray-800 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={serviceOptions.catering}
-                  onChange={(e) =>
-                    setServiceOptions({ ...serviceOptions, catering: e.target.checked })
-                  }
-                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
-                />
-                <span>Catering</span>
-              </label>
-
-              <label className="inline-flex items-center gap-2 text-xs font-medium text-gray-800 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={serviceOptions.deicing}
-                  onChange={(e) =>
-                    setServiceOptions({ ...serviceOptions, deicing: e.target.checked })
-                  }
-                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
-                />
-                <span>De-icing protection</span>
-              </label>
-
-              <label className="inline-flex items-center gap-2 text-xs font-medium text-gray-800 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={serviceOptions.carbonOffset}
-                  onChange={(e) =>
-                    setServiceOptions({ ...serviceOptions, carbonOffset: e.target.checked })
-                  }
-                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
-                />
-                <span>Carbon offset</span>
-              </label>
-
-              {customServices.map((cs) => (
-                <label
-                  key={cs.id}
-                  className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-800 cursor-pointer select-none bg-blue-50/70 px-2 py-0.5 rounded border border-blue-200"
-                >
+            {/* Checkboxes Row with Editable Prices */}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-3 pt-1">
+              {/* VIP Limousine */}
+              <div className={`flex items-center gap-2 p-1.5 px-2 rounded-lg border transition-all ${serviceOptions.limousine ? "bg-blue-50/60 border-blue-200 shadow-2xs" : "bg-transparent border-transparent"}`}>
+                <label className="inline-flex items-center gap-2 text-xs font-medium text-gray-800 cursor-pointer select-none">
                   <input
                     type="checkbox"
-                    checked={true}
-                    onChange={() => setCustomServices(customServices.filter((s) => s.id !== cs.id))}
-                    className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 cursor-pointer accent-blue-600"
+                    checked={serviceOptions.limousine}
+                    onChange={(e) =>
+                      setServiceOptions({ ...serviceOptions, limousine: e.target.checked })
+                    }
+                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
                   />
-                  <span>{cs.name}</span>
+                  <span className={serviceOptions.limousine ? "font-bold text-blue-950" : ""}>VIP limousine</span>
                 </label>
+                {serviceOptions.limousine && (
+                  <div className="flex items-center gap-1 bg-white border border-blue-200 rounded px-1.5 py-0.5 ml-1 shadow-2xs">
+                    <span className="text-[11px] font-mono font-bold text-gray-500">€</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={limousinePrice}
+                      onChange={(e) => setLimousinePrice(Math.max(0, parseFloat(e.target.value) || 0))}
+                      className="w-16 text-xs font-mono font-bold text-gray-900 bg-transparent focus:outline-none"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Helicopter */}
+              <div className={`flex items-center gap-2 p-1.5 px-2 rounded-lg border transition-all ${serviceOptions.helicopter ? "bg-blue-50/60 border-blue-200 shadow-2xs" : "bg-transparent border-transparent"}`}>
+                <label className="inline-flex items-center gap-2 text-xs font-medium text-gray-800 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={serviceOptions.helicopter}
+                    onChange={(e) =>
+                      setServiceOptions({ ...serviceOptions, helicopter: e.target.checked })
+                    }
+                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
+                  />
+                  <span className={serviceOptions.helicopter ? "font-bold text-blue-950" : ""}>Helicopter</span>
+                </label>
+                {serviceOptions.helicopter && (
+                  <div className="flex items-center gap-1 bg-white border border-blue-200 rounded px-1.5 py-0.5 ml-1 shadow-2xs">
+                    <span className="text-[11px] font-mono font-bold text-gray-500">€</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={helicopterPrice}
+                      onChange={(e) => setHelicopterPrice(Math.max(0, parseFloat(e.target.value) || 0))}
+                      className="w-16 text-xs font-mono font-bold text-gray-900 bg-transparent focus:outline-none"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Catering */}
+              <div className={`flex items-center gap-2 p-1.5 px-2 rounded-lg border transition-all ${serviceOptions.catering ? "bg-blue-50/60 border-blue-200 shadow-2xs" : "bg-transparent border-transparent"}`}>
+                <label className="inline-flex items-center gap-2 text-xs font-medium text-gray-800 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={serviceOptions.catering}
+                    onChange={(e) =>
+                      setServiceOptions({ ...serviceOptions, catering: e.target.checked })
+                    }
+                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
+                  />
+                  <span className={serviceOptions.catering ? "font-bold text-blue-950" : ""}>Catering</span>
+                </label>
+                {serviceOptions.catering && (
+                  <div className="flex items-center gap-1 bg-white border border-blue-200 rounded px-1.5 py-0.5 ml-1 shadow-2xs">
+                    <span className="text-[11px] font-mono font-bold text-gray-500">€</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={cateringPrice}
+                      onChange={(e) => setCateringPrice(Math.max(0, parseFloat(e.target.value) || 0))}
+                      className="w-16 text-xs font-mono font-bold text-gray-900 bg-transparent focus:outline-none"
+                      title="€0 = Included / Complimentary"
+                    />
+                    <span className="text-[10px] text-gray-400 font-mono">
+                      {cateringPrice === 0 ? "(incl.)" : ""}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* De-icing protection */}
+              <div className={`flex items-center gap-2 p-1.5 px-2 rounded-lg border transition-all ${serviceOptions.deicing ? "bg-blue-50/60 border-blue-200 shadow-2xs" : "bg-transparent border-transparent"}`}>
+                <label className="inline-flex items-center gap-2 text-xs font-medium text-gray-800 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={serviceOptions.deicing}
+                    onChange={(e) =>
+                      setServiceOptions({ ...serviceOptions, deicing: e.target.checked })
+                    }
+                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
+                  />
+                  <span className={serviceOptions.deicing ? "font-bold text-blue-950" : ""}>De-icing protection</span>
+                </label>
+                {serviceOptions.deicing && (
+                  <div className="flex items-center gap-1 bg-white border border-blue-200 rounded px-1.5 py-0.5 ml-1 shadow-2xs">
+                    <span className="text-[11px] font-mono font-bold text-gray-500">€</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={deicingPrice}
+                      onChange={(e) => setDeicingPrice(Math.max(0, parseFloat(e.target.value) || 0))}
+                      className="w-16 text-xs font-mono font-bold text-gray-900 bg-transparent focus:outline-none"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Carbon offset */}
+              <div className={`flex items-center gap-2 p-1.5 px-2 rounded-lg border transition-all ${serviceOptions.carbonOffset ? "bg-blue-50/60 border-blue-200 shadow-2xs" : "bg-transparent border-transparent"}`}>
+                <label className="inline-flex items-center gap-2 text-xs font-medium text-gray-800 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={serviceOptions.carbonOffset}
+                    onChange={(e) =>
+                      setServiceOptions({ ...serviceOptions, carbonOffset: e.target.checked })
+                    }
+                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
+                  />
+                  <span className={serviceOptions.carbonOffset ? "font-bold text-blue-950" : ""}>Carbon offset</span>
+                </label>
+                {serviceOptions.carbonOffset && (
+                  <div className="flex items-center gap-1 bg-white border border-blue-200 rounded px-1.5 py-0.5 ml-1 shadow-2xs">
+                    <span className="text-[11px] font-mono font-bold text-gray-500">€</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={carbonOffsetPrice}
+                      onChange={(e) => setCarbonOffsetPrice(Math.max(0, parseFloat(e.target.value) || 0))}
+                      className="w-16 text-xs font-mono font-bold text-gray-900 bg-transparent focus:outline-none"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Custom services */}
+              {customServices.map((cs) => (
+                <div
+                  key={cs.id}
+                  className="flex items-center gap-2 p-1.5 px-2 rounded-lg border bg-blue-50/70 border-blue-200 shadow-2xs"
+                >
+                  <label className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-800 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={true}
+                      onChange={() => setCustomServices(customServices.filter((s) => s.id !== cs.id))}
+                      className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 cursor-pointer accent-blue-600"
+                    />
+                    <span className="font-bold text-blue-950">{cs.name}</span>
+                  </label>
+                  <div className="flex items-center gap-1 bg-white border border-blue-200 rounded px-1.5 py-0.5 shadow-2xs">
+                    <span className="text-[11px] font-mono font-bold text-gray-500">€</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={cs.price}
+                      onChange={(e) => {
+                        const val = Math.max(0, parseFloat(e.target.value) || 0);
+                        setCustomServices(customServices.map((s) => s.id === cs.id ? { ...s, price: val } : s));
+                      }}
+                      className="w-16 text-xs font-mono font-bold text-gray-900 bg-transparent focus:outline-none"
+                    />
+                  </div>
+                </div>
               ))}
 
               <button
                 type="button"
                 onClick={() => setIsCustomDialogOpen(true)}
-                className="inline-flex items-center gap-1 text-xs font-medium text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 px-2 py-0.5 rounded shadow-2xs transition-all"
+                className="inline-flex items-center gap-1 text-xs font-medium text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 px-2.5 py-1 rounded-lg shadow-2xs transition-all"
               >
                 <span>+ Custom</span>
               </button>
@@ -1760,6 +2598,8 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                 <span>
                   {isBookingRevision
                     ? `Complete Booking Revision (${versionLabel})`
+                    : sourceRequest
+                    ? `Complete Quotation and Send to Agent (${versionLabel})`
                     : `Complete Quotation (${versionLabel})`}
                 </span>
               </button>

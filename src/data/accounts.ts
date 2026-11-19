@@ -8,7 +8,7 @@ export const initialAccounts: AccountRecord[] = [
     name: "Adeyemi Holdings Ltd",
     legalName: "Adeyemi Holdings Ltd",
     country: "Nigeria",
-    agentName: "M. Vance",
+    agentName: "Marcus Vance",
     email: "office@adeyemi-holdings.ng",
     phone: "+234 1 270 0000",
     billingAddress: "14 Bourdillon Road, Ikoyi, Lagos, Nigeria",
@@ -68,21 +68,143 @@ export const initialAccounts: AccountRecord[] = [
     ],
     recentTrips: [
       {
-        tripId: "WS0193-001",
-        flightDate: "19 Dec",
-        route: "EGLF → DNMM",
-        stage: "Booked",
-        value: 142000
-      },
-      {
-        tripId: "FE4578-005",
+        tripId: "FE4578",
         flightDate: "20 Nov",
         route: "LEIB → LSGG",
-        stage: "Paid",
+        stage: "Booked",
         value: 8250
       }
     ],
     createdAt: "2026-03-01"
+  },
+  {
+    id: "acc-okafor",
+    accountNumber: "ACC-OKAFOR",
+    accountType: "entity",
+    name: "Okafor Capital",
+    legalName: "Okafor Capital SAS",
+    country: "France",
+    agentName: "Marcus Vance",
+    email: "n.okafor@okaforcapital.com",
+    phone: "+33 1 42 68 00 00",
+    billingAddress: "10 Boulevard Haussmann, 75009 Paris, France",
+    sendDocumentsTo: "n.okafor@okaforcapital.com",
+    vatTaxNumber: "FR 92 849 201 884",
+    isAgent: false,
+    preferredContactName: "N. Okafor",
+    preferredContactEmail: "n.okafor@okaforcapital.com",
+    preferredContactPhone: "+33 1 42 68 00 00",
+    autoCommunicationsEnabled: true,
+    totalBookings: 2,
+    totalSpend: 28400,
+    invoicedAmount: 28400,
+    receivedAmount: 28400,
+    openBalance: 0,
+    preferencesList: [
+      "Phenom 300 preferred",
+      "Executive catering",
+      "Limousine at destination"
+    ],
+    lifetimeTrips: 2,
+    lifetimeSince: "May 2026",
+    conversionRate: 100,
+    vipTier: "Corporate Executive",
+    notes: "Private equity fund. Executive shuttle between Paris and Milan.",
+    authorizedPersons: [
+      {
+        id: "auth-okafor-1",
+        fullName: "N. Okafor",
+        roleTitle: "Managing Partner",
+        isPrimaryAccountName: true,
+        email: "n.okafor@okaforcapital.com",
+        phone: "+33 1 42 68 00 00",
+        idDocumentType: "passport",
+        contactId: "cnt-n-okafor",
+        hasPassport: true,
+        passportDetails: {
+          passportNumber: "P-FR994821",
+          issuingCountry: "France",
+          placeOfBirth: "Paris, France",
+          dateOfBirth: "1975-11-20",
+          expirationDate: "2032-04-14",
+          issueDate: "2022-04-15"
+        }
+      }
+    ],
+    recentTrips: [
+      {
+        tripId: "RB3310-002",
+        flightDate: "19 Nov",
+        route: "LFPB → LIML",
+        stage: "Quoted",
+        value: 14900
+      }
+    ],
+    createdAt: "2026-05-10"
+  },
+  {
+    id: "acc-nwankwo",
+    accountNumber: "ACC-NWANKWO",
+    accountType: "individual",
+    name: "Chief E. Nwankwo",
+    legalName: "Chief Emmanuel Nwankwo",
+    country: "Nigeria",
+    agentName: "Marcus Vance",
+    email: "e.nwankwo@nwankwogroup.com",
+    phone: "+234 803 555 7777",
+    billingAddress: "Asokoro District, Abuja, Nigeria",
+    sendDocumentsTo: "e.nwankwo@nwankwogroup.com",
+    vatTaxNumber: "",
+    isAgent: false,
+    preferredContactName: "Chief E. Nwankwo",
+    preferredContactEmail: "e.nwankwo@nwankwogroup.com",
+    preferredContactPhone: "+234 803 555 7777",
+    autoCommunicationsEnabled: true,
+    totalBookings: 1,
+    totalSpend: 24500,
+    invoicedAmount: 24500,
+    receivedAmount: 24500,
+    openBalance: 0,
+    preferencesList: [
+      "Midsize or Heavy jets",
+      "Special dietary requirements"
+    ],
+    lifetimeTrips: 1,
+    lifetimeSince: "Sep 2026",
+    conversionRate: 100,
+    vipTier: "Ultra HNWI",
+    notes: "Private high-profile client.",
+    authorizedPersons: [
+      {
+        id: "auth-nwankwo-1",
+        fullName: "Chief E. Nwankwo",
+        roleTitle: "Principal",
+        isPrimaryAccountName: true,
+        email: "e.nwankwo@nwankwogroup.com",
+        phone: "+234 803 555 7777",
+        idDocumentType: "passport",
+        contactId: "cnt-nwankwo",
+        hasPassport: true,
+        passportDetails: {
+          passportNumber: "A99482103",
+          issuingCountry: "Nigeria",
+          placeOfBirth: "Enugu, Nigeria",
+          dateOfBirth: "1965-03-12",
+          expirationDate: "2030-09-18",
+          issueDate: "2020-09-19"
+        }
+      }
+    ],
+    recentTrips: [
+      {
+        tripId: "NW001",
+        flightDate: "Sep 2026",
+        route: "DNAA → LFPB",
+        stage: "Paid",
+        value: 24500
+      }
+    ],
+    createdAt: "2026-09-01"
   },
   {
     id: "acc-bello",

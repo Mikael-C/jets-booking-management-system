@@ -202,14 +202,22 @@ router.post('/', async (req, res) => {
     req.body.quoteStatus ||
     ['draft', 'quoted', 'quote_sent', 'client_review', 'contract_sent'].includes(req.body.status)
   );
-  const identifiers = await createBookingIdentifiers({ isQuote, isBooked });
+  const identifiers = await createBookingIdentifiers({
+    isQuote,
+    isBooked,
+    tripId: req.body.tripId || undefined,
+    quoteVersion: req.body.quoteVersion || 1,
+  });
   const bookingData = {
-    ...req.body,
     ...identifiers,
+    ...req.body,
+    tripId: req.body.tripId || identifiers.tripId,
+    tripNumber: req.body.tripNumber || identifiers.tripNumber,
+    id: req.body.id || identifiers.id,
     isBooked,
     legs: (req.body.legs || []).map((leg) => ({
       ...leg,
-      flightNumber: isBooked ? (leg.flightNumber || identifiers.tripNumber) : (leg.flightNumber || ''),
+      flightNumber: isBooked ? (leg.flightNumber || req.body.tripNumber || identifiers.tripNumber) : (leg.flightNumber || ''),
     })),
     checklist: req.body.checklist?.length ? req.body.checklist : [...DEFAULT_CHECKLIST],
   };
