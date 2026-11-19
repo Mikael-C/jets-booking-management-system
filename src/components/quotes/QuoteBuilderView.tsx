@@ -10,6 +10,7 @@ import { formatCurrency } from "@/lib/pricingCalculator";
 import { fleetData } from "@/data/fleet";
 import { airportsData, findAirportByCode } from "@/data/airports";
 import AirportSearchSelect from "@/components/common/AirportSearchSelect";
+import AircraftSearchSelect from "@/components/common/AircraftSearchSelect";
 import {
   Plane,
   Building2,
@@ -25,15 +26,26 @@ import {
   Save,
   ArrowRight,
   Info,
-  DollarSign
+  DollarSign,
+  ChevronDown
 } from "lucide-react";
+
+export interface MultiLegItem {
+  id: string;
+  origin: any;
+  destination: any;
+  flightDate: string;
+  departureTime: string;
+  aircraft: Aircraft;
+}
 
 interface QuoteBuilderProps {
   reviseTripId?: string;
   fromRequestId?: string;
+  mode?: "quote" | "booking";
 }
 
-export default function QuoteBuilderView({ reviseTripId, fromRequestId }: QuoteBuilderProps) {
+export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: QuoteBuilderProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const reqId = fromRequestId || searchParams.get("fromRequest");
@@ -51,8 +63,26 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId }: QuoteB
   // Find source if revising or creating from request
   const sourceTrip = useMemo(() => {
     if (!reviseTripId) return undefined;
-    return bookings.find((b) => b.id === reviseTripId || b.tripNumber === reviseTripId);
+    const clean = reviseTripId.toLowerCase();
+    return bookings.find(
+      (b) =>
+        b.id.toLowerCase() === clean ||
+        b.tripNumber?.toLowerCase() === clean ||
+        b.tripId?.toLowerCase() === clean ||
+        b.id.toLowerCase().replace("booking-", "") === clean.replace("booking-", "") ||
+        b.tripId?.toLowerCase() === clean.replace("booking-", "").split("-")[0]
+    );
   }, [bookings, reviseTripId]);
+
+  const isBookingRevision = useMemo(() => {
+    if (mode === "booking") return true;
+    if (!sourceTrip) return false;
+    return Boolean(
+      sourceTrip.isBooked ||
+      ["booked", "confirmed", "paid", "flown", "dispatched"].includes(sourceTrip.status) ||
+      sourceTrip.id.toLowerCase().startsWith("booking-")
+    );
+  }, [mode, sourceTrip]);
 
   const sourceRequest = useMemo(() => {
     if (!reqId) return undefined;
@@ -62,15 +92,28 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId }: QuoteB
   // Root ID and next version
   const [rootId] = useState<string>(() => {
     if (sourceTrip) {
-      return (sourceTrip.tripId || sourceTrip.tripNumber || "FE4578").split("-")[0];
+      const raw = sourceTrip.tripId || sourceTrip.tripNumber || sourceTrip.id;
+      return raw.replace(/^booking-/i, "").replace(/^trip-/i, "").split("-")[0].toUpperCase();
     }
     return generateTripRootId();
   });
 
   const nextVersionNum = useMemo(() => {
     if (!sourceTrip) return 1;
-    return (sourceTrip.quoteVersion || 1) + 1;
-  }, [sourceTrip]);
+    const existing = bookings.filter((b) => {
+      const bRoot = (b.tripId || b.tripNumber || b.id)
+        .replace(/^booking-/i, "")
+        .replace(/^trip-/i, "")
+        .split("-")[0]
+        .toUpperCase();
+      return bRoot === rootId;
+    });
+    const maxVer = existing.reduce(
+      (max, b) => Math.max(max, b.quoteVersion || 1),
+      sourceTrip.quoteVersion || 1
+    );
+    return maxVer + 1;
+  }, [bookings, rootId, sourceTrip]);
 
   const versionLabel = formatTripVersion(rootId, nextVersionNum);
 
@@ -106,6 +149,39 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId }: QuoteB
     return sourceTrip?.legs[1]?.departureTimeLocal || "15:00";
   });
 
+  // Multi-Leg state with "Same aircraft on all legs"
+  const [sameAircraftOnAllLegs, setSameAircraftOnAllLegs] = useState<boolean>(true);
+  const [multiLegs, setMultiLegs] = useState<MultiLegItem[]>(() => {
+    if (sourceTrip && sourceTrip.legs && sourceTrip.legs.length > 1) {
+      return sourceTrip.legs.map((leg, idx) => ({
+        id: `leg-${idx + 1}`,
+        origin: leg.origin || airportsData[0],
+        destination: leg.destination || airportsData[1],
+        flightDate: leg.flightDate || "2026-11-20",
+        departureTime: leg.departureTimeLocal || "10:00",
+        aircraft: sourceTrip.aircraft || fleetData[0]
+      }));
+    }
+    return [
+      {
+        id: "leg-1",
+        origin: findAirportByCode(sourceRequest?.originIcao || "LSGG") || airportsData[0],
+        destination: findAirportByCode(sourceRequest?.destIcao || "EGSS") || airportsData[1],
+        flightDate: sourceRequest?.flightDate || "2026-11-20",
+        departureTime: sourceRequest?.departureTime || "10:00",
+        aircraft: fleetData[0]
+      },
+      {
+        id: "leg-2",
+        origin: findAirportByCode(sourceRequest?.destIcao || "EGSS") || airportsData[1],
+        destination: airportsData[2] || airportsData[0],
+        flightDate: "2026-11-22",
+        departureTime: "14:00",
+        aircraft: fleetData[0]
+      }
+    ];
+  });
+
   // 3. Passengers & Cargo
   const [paxCount, setPaxCount] = useState<number>(() => {
     return sourceTrip?.legs[0]?.paxCount || sourceRequest?.paxCount || 4;
@@ -132,27 +208,63 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId }: QuoteB
   ]);
   const [saveToOperatorAircraft, setSaveToOperatorAircraft] = useState(true);
 
-  // 5. Services
-  const [addLimousine, setAddLimousine] = useState<boolean>(Boolean(sourceTrip?.services.limousineService));
-  const [limousinePrice, setLimousinePrice] = useState<number>(480);
-  const [addCatering, setAddCatering] = useState<boolean>(false);
-  const [cateringPrice, setCateringPrice] = useState<number>(350);
+  // 5. Services (Screen 2 design)
+  const [serviceOptions, setServiceOptions] = useState({
+    limousine: true,
+    helicopter: false,
+    catering: true,
+    deicing: false,
+    carbonOffset: false,
+  });
 
-  // 6. Margins & Payment
-  const [agentCommissionPercent, setAgentCommissionPercent] = useState<number>(5.0);
+  interface CustomService {
+    id: string;
+    name: string;
+    details: string;
+    price: number;
+  }
+  const [customServices, setCustomServices] = useState<CustomService[]>([]);
+  const [isCustomDialogOpen, setIsCustomDialogOpen] = useState(false);
+  const [customServiceName, setCustomServiceName] = useState("");
+  const [customServiceDetails, setCustomServiceDetails] = useState("");
+  const [customServicePrice, setCustomServicePrice] = useState<number>(150);
 
-  // Automated Company Margin Tier from Settings (R-019, R-039)
+  // Standard prices per service
+  const [limousinePrice, setLimousinePrice] = useState<number>(300);
+  const [helicopterPrice, setHelicopterPrice] = useState<number>(850);
+  const [cateringPrice, setCateringPrice] = useState<number>(0);
+  const [deicingPrice, setDeicingPrice] = useState<number>(450);
+  const [carbonOffsetPrice, setCarbonOffsetPrice] = useState<number>(65);
+
+  // 6. Margins & Payment (Screen 2 design)
+  const [companyMarginText, setCompanyMarginText] = useState("8 % · tier > € 35k");
+  const [agentMarginText, setAgentMarginText] = useState("10 % · set by agent");
+  const [currency, setCurrency] = useState<"EUR" | "USD" | "GBP" | "CHF">("EUR");
+  const [validUntil, setValidUntil] = useState("16 Nov 18:00 LT");
+
+  // Parse percentages safely
   const companyMarginPercent = useMemo(() => {
-    const cost = operatorFlightCost;
-    if (cost < 10000) return 15;
-    if (cost <= 35000) return 10;
-    return 8;
-  }, [operatorFlightCost]);
+    const match = companyMarginText.match(/(\d+(\.\d+)?)/);
+    return match ? parseFloat(match[1]) : 8;
+  }, [companyMarginText]);
+
+  const agentCommissionPercent = useMemo(() => {
+    const match = agentMarginText.match(/(\d+(\.\d+)?)/);
+    return match ? parseFloat(match[1]) : 10;
+  }, [agentMarginText]);
 
   // Financial Calculations
+  const customServicesTotal = customServices.reduce((sum, item) => sum + item.price, 0);
+  const servicesTotal =
+    (serviceOptions.limousine ? limousinePrice : 0) +
+    (serviceOptions.helicopter ? helicopterPrice : 0) +
+    (serviceOptions.catering ? cateringPrice : 0) +
+    (serviceOptions.deicing ? deicingPrice : 0) +
+    (serviceOptions.carbonOffset ? carbonOffsetPrice : 0) +
+    customServicesTotal;
+
   const companyMarginAmount = Math.round((operatorFlightCost * companyMarginPercent) / 100);
   const agentMarginAmount = Math.round((operatorFlightCost * agentCommissionPercent) / 100);
-  const servicesTotal = (addLimousine ? limousinePrice : 0) + (addCatering ? cateringPrice : 0);
   const clientSubtotal = operatorFlightCost + companyMarginAmount + agentMarginAmount + servicesTotal;
   const clientTotal = clientSubtotal; // Zero rated VAT for international charter
   const cardAmount = Math.round(clientTotal * 1.035 * 100) / 100;
@@ -165,8 +277,51 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId }: QuoteB
   // Submission handler
   const handleCompleteQuotation = async () => {
     // Build legs
-    const legs: FlightLeg[] = [
-      {
+    const legs: FlightLeg[] = [];
+
+    if (tripType === "multi_leg") {
+      multiLegs.forEach((mLeg, idx) => {
+        legs.push({
+          legNumber: idx + 1,
+          flightDate: mLeg.flightDate,
+          origin: mLeg.origin,
+          destination: mLeg.destination,
+          departureTimeLocal: mLeg.departureTime,
+          arrivalTimeLocal: "12:30",
+          flightTimeFormatted: "1h 30m",
+          paxCount,
+          flightNumber: `OB${Math.floor(100 + Math.random() * 900)}`,
+          aircraftRegistration:
+            (!sameAircraftOnAllLegs
+              ? mLeg.aircraft?.registration
+              : selectedAircraft.registration) || "OE-FFB",
+          aircraftType: !sameAircraftOnAllLegs
+            ? mLeg.aircraft?.name
+            : selectedAircraft.name,
+          crew: [],
+          passengers: [
+            {
+              id: `pax-lead-${idx + 1}`,
+              fullName: leadPaxName,
+              isLeadPassenger: true
+            }
+          ],
+          departureHandling: {
+            name: `${mLeg.origin?.name || "VIP"} FBO`,
+            airportCode: mLeg.origin?.icao || "LSGG",
+            phone: "+41 22 717 0111",
+            email: "ops@tagaviation.com"
+          },
+          arrivalHandling: {
+            name: `${mLeg.destination?.name || "VIP"} FBO`,
+            airportCode: mLeg.destination?.icao || "EGSS",
+            phone: "+44 1279 680616",
+            email: "fbo@harrodsaviation.com"
+          }
+        });
+      });
+    } else {
+      legs.push({
         legNumber: 1,
         flightDate,
         origin: originAirport,
@@ -176,7 +331,8 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId }: QuoteB
         flightTimeFormatted: "1h 45m",
         paxCount,
         flightNumber: `OB${Math.floor(100 + Math.random() * 900)}`,
-        aircraftRegistration: "OE-FFB",
+        aircraftRegistration: selectedAircraft.registration || "OE-FFB",
+        aircraftType: selectedAircraft.name,
         crew: [],
         passengers: [
           {
@@ -196,82 +352,89 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId }: QuoteB
           airportCode: destAirport.icao,
           phone: "+44 1279 680616",
           email: "fbo@harrodsaviation.com"
-        }
-      }
-    ];
-
-    if (tripType === "round_trip") {
-      legs.push({
-        legNumber: 2,
-        flightDate: returnFlightDate,
-        origin: destAirport, // Leg 2 origin is locked to Leg 1 arrival!
-        destination: originAirport,
-        departureTimeLocal: returnDepartureTime,
-        arrivalTimeLocal: "16:45",
-        flightTimeFormatted: "1h 45m",
-        paxCount,
-        flightNumber: `OB${Math.floor(100 + Math.random() * 900)}`,
-        aircraftRegistration: "OE-FFB",
-        crew: [],
-        passengers: [
-          {
-            id: "pax-lead",
-            fullName: leadPaxName,
-            isLeadPassenger: true
-          }
-        ],
-        departureHandling: {
-          name: "Harrods Aviation FBO",
-          airportCode: destAirport.icao,
-          phone: "+44 1279 680616",
-          email: "fbo@harrodsaviation.com"
-        },
-        arrivalHandling: {
-          name: "TAG Aviation FBO",
-          airportCode: originAirport.icao,
-          phone: "+41 22 717 0111",
-          email: "gva@tagaviation.com"
         }
       });
+
+      if (tripType === "round_trip") {
+        legs.push({
+          legNumber: 2,
+          flightDate: returnFlightDate,
+          origin: destAirport, // Leg 2 origin is locked to Leg 1 arrival!
+          destination: originAirport,
+          departureTimeLocal: returnDepartureTime,
+          arrivalTimeLocal: "16:45",
+          flightTimeFormatted: "1h 45m",
+          paxCount,
+          flightNumber: `OB${Math.floor(100 + Math.random() * 900)}`,
+          aircraftRegistration: selectedAircraft.registration || "OE-FFB",
+          aircraftType: selectedAircraft.name,
+          crew: [],
+          passengers: [
+            {
+              id: "pax-lead",
+              fullName: leadPaxName,
+              isLeadPassenger: true
+            }
+          ],
+          departureHandling: {
+            name: "Harrods Aviation FBO",
+            airportCode: destAirport.icao,
+            phone: "+44 1279 680616",
+            email: "fbo@harrodsaviation.com"
+          },
+          arrivalHandling: {
+            name: "TAG Aviation FBO",
+            airportCode: originAirport.icao,
+            phone: "+41 22 717 0111",
+            email: "gva@tagaviation.com"
+          }
+        });
+      }
     }
 
     const newBooking: Booking = {
-      id: `trip-${rootId.toLowerCase()}-v${nextVersionNum}`,
+      id: isBookingRevision
+        ? `booking-${rootId.toLowerCase()}-v${nextVersionNum}`
+        : `trip-${rootId.toLowerCase()}-v${nextVersionNum}`,
       tripId: rootId,
       tripNumber: versionLabel,
       quoteReference: versionLabel,
-      invoiceNumber: `INV-${rootId}-01`,
+      invoiceNumber: sourceTrip?.invoiceNumber || `INV-${rootId}-01`,
       accountNumber: activeAccount?.accountNumber || "ACC-21737",
-      contractDate: new Date().toLocaleDateString("de-DE"),
-      quoteExpirationDate: "48 hours from issuance",
-      paymentDueDate: "Upon contract execution",
-      status: "quoted",
-      quoteStatus: "sent",
-      paymentStatus: "unpaid",
+      contractDate: sourceTrip?.contractDate || new Date().toLocaleDateString("de-DE"),
+      quoteExpirationDate: validUntil || "48 hours from issuance",
+      paymentDueDate: sourceTrip?.paymentDueDate || "Upon contract execution",
+      status: isBookingRevision ? (sourceTrip?.status || "confirmed") : "quoted",
+      isBooked: isBookingRevision ? true : false,
+      quoteStatus: isBookingRevision ? "accepted" : "sent",
+      paymentStatus: isBookingRevision
+        ? sourceTrip?.paymentStatus || "fully_paid"
+        : "unpaid",
+      bookingRevisionId: isBookingRevision ? versionLabel : undefined,
       tripType,
       aircraft: selectedAircraft,
       client: {
         fullName: leadPaxName,
-        companyName: activeAccount?.name || "Private VIP",
-        streetAddress: activeAccount?.billingAddress || "10 Mayfair Place",
-        cityPostalCountry: `${activeAccount?.country || "United Kingdom"}`,
-        phone: activeAccount?.phone || "+44 20 7946 0192",
-        email: activeAccount?.email || "charter@bgcapital.com",
+        companyName: activeAccount?.name || sourceTrip?.client.companyName || "Private VIP",
+        streetAddress: activeAccount?.billingAddress || sourceTrip?.client.streetAddress || "10 Mayfair Place",
+        cityPostalCountry: `${activeAccount?.country || sourceTrip?.client.cityPostalCountry || "United Kingdom"}`,
+        phone: activeAccount?.phone || sourceTrip?.client.phone || "+44 20 7946 0192",
+        email: activeAccount?.email || sourceTrip?.client.email || "charter@bgcapital.com",
         accountNumber: activeAccount?.accountNumber || "ACC-21737"
       },
       operator: {
-        companyName: "GlobeAir AG",
-        legalEntity: "GlobeAir Aviation Operations Ltd",
+        companyName: selectedOperator?.tradingName || sourceTrip?.operator.companyName || "GlobeAir AG",
+        legalEntity: sourceTrip?.operator.legalEntity || "GlobeAir Aviation Operations Ltd",
         representativeName: "Charter Desk",
-        supportEmail: "charter@globeair.com",
-        supportPhone: "+43 7221 727400",
-        vatNumber: "ATU 6335 7619",
+        supportEmail: selectedOperator?.opsEmail || sourceTrip?.operator.supportEmail || "charter@globeair.com",
+        supportPhone: selectedOperator?.opsPhone || sourceTrip?.operator.supportPhone || "+43 7221 727400",
+        vatNumber: sourceTrip?.operator.vatNumber || "ATU 6335 7619",
         additionalVatNumbers: [],
-        iban: "AT89 3740 0000 1122 3344",
-        bic: "LOWWAT22",
-        bankName: "Erste Bank Aviation",
-        accountHolder: "GlobeAir AG",
-        commercialRegistry: "AOC AT.AOC.0842",
+        iban: sourceTrip?.operator.iban || "AT89 3740 0000 1122 3344",
+        bic: sourceTrip?.operator.bic || "LOWWAT22",
+        bankName: sourceTrip?.operator.bankName || "Erste Bank Aviation",
+        accountHolder: selectedOperator?.tradingName || sourceTrip?.operator.accountHolder || "GlobeAir AG",
+        commercialRegistry: `AOC ${selectedOperator?.aocNumber || "AT.AOC.0842"}`,
         courtOfJurisdiction: "Linz Commercial Court"
       },
       legs,
@@ -287,20 +450,21 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId }: QuoteB
         vatRate: 0,
         vatAmount: 0,
         totalFlightPrice: clientTotal,
-        currency: "EUR"
+        currency: currency
       },
       services: {
-        limousineService: addLimousine,
+        limousineService: serviceOptions.limousine,
         luxuryCarRental: false,
-        helicopterService: false,
-        deicingInsurance: "none",
-        deicingCostPerLeg: 0,
-        carbonOffset: "none",
-        carbonOffsetRatePerHour: 0
+        helicopterService: serviceOptions.helicopter,
+        vipCateringDetails: serviceOptions.catering ? "VIP menu 1 · both legs · included" : undefined,
+        deicingInsurance: serviceOptions.deicing ? "at_reservation" : "none",
+        deicingCostPerLeg: serviceOptions.deicing ? deicingPrice : 0,
+        carbonOffset: serviceOptions.carbonOffset ? "neutral" : "none",
+        carbonOffsetRatePerHour: serviceOptions.carbonOffset ? carbonOffsetPrice : 0
       },
-      checklist: [],
+      checklist: sourceTrip?.checklist || [],
       quoteVersion: nextVersionNum,
-      createdAt: new Date().toISOString(),
+      createdAt: sourceTrip?.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
 
@@ -641,17 +805,41 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId }: QuoteB
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[var(--line)] pb-3">
         <div>
           <div className="flex items-center gap-2 text-xs font-mono text-[var(--muted)] mb-1">
-            <Link href="/quotes" className="hover:underline">Quotes</Link>
+            <Link
+              href={isBookingRevision ? "/bookings" : "/quotes"}
+              className="hover:text-[var(--ink)] transition-colors"
+            >
+              {isBookingRevision ? "Bookings" : "Quotes"}
+            </Link>
             <span>/</span>
-            <span>{reviseTripId ? "Revise Quote" : "New Quote Builder"}</span>
+            <span>
+              {reviseTripId
+                ? isBookingRevision
+                  ? "Revise Booking"
+                  : "Revise Quote"
+                : "New Quote Builder"}
+            </span>
           </div>
           <h1 className="text-2xl font-bold font-display text-[var(--ink)] m-0">
-            {reviseTripId ? `Revise Quotation (${versionLabel})` : `New Charter Quotation (${versionLabel})`}
+            {reviseTripId
+              ? isBookingRevision
+                ? `Revise Booking (${versionLabel})`
+                : `Revise Quotation (${versionLabel})`
+              : `New Charter Quotation (${versionLabel})`}
           </h1>
         </div>
 
         <div className="flex items-center gap-2">
-          <Link href="/quotes" className="btn-secondary text-xs">
+          <Link
+            href={
+              isBookingRevision
+                ? reviseTripId
+                  ? `/trips/${rootId}/itinerary`
+                  : "/bookings"
+                : "/quotes"
+            }
+            className="btn-secondary text-xs"
+          >
             Cancel
           </Link>
           <button
@@ -659,7 +847,11 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId }: QuoteB
             className="btn-primary text-xs"
           >
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Complete Quotation</span>
+            <span>
+              {isBookingRevision
+                ? `Complete Booking Revision (${versionLabel})`
+                : `Complete Quotation (${versionLabel})`}
+            </span>
           </button>
         </div>
       </div>
@@ -747,107 +939,307 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId }: QuoteB
               </div>
             </div>
 
-            {/* Leg 1 */}
-            <div className="space-y-3 p-3.5 bg-[var(--paper)] rounded-lg border border-[var(--line)]">
-              <div className="flex items-center justify-between">
-                <span className="font-display font-bold text-xs uppercase text-[var(--muted)]">
-                  Leg 01 (Outbound)
-                </span>
-              </div>
+            {/* Multi-Leg Layout if Multi Leg */}
+            {tripType === "multi_leg" ? (
+              <div className="space-y-4">
+                {/* Multi-Leg Top Bar with Same Aircraft toggle */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 bg-blue-50/70 border border-blue-200 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs font-bold text-blue-950">
+                      MULTI-LEG ROUTING ({multiLegs.length} LEGS)
+                    </span>
+                    <span className="text-[11px] text-blue-800 font-sans hidden sm:inline">
+                      • Add waypoints & chain stations
+                    </span>
+                  </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-mono text-[var(--muted)] mb-1">Origin Station</label>
-                  <AirportSearchSelect
-                    value={originAirport?.icao || "LSGG"}
-                    onChange={(icao) => {
-                      const apt = findAirportByCode(icao);
-                      if (apt) setOriginAirport(apt);
+                  <label className="inline-flex items-center gap-2 text-xs font-semibold text-gray-800 cursor-pointer select-none bg-white px-3 py-1.5 rounded-md border border-gray-300 shadow-2xs">
+                    <input
+                      type="checkbox"
+                      checked={sameAircraftOnAllLegs}
+                      onChange={(e) => {
+                        setSameAircraftOnAllLegs(e.target.checked);
+                        if (e.target.checked) {
+                          setMultiLegs((prev) =>
+                            prev.map((l) => ({ ...l, aircraft: selectedAircraft }))
+                          );
+                        }
+                      }}
+                      className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
+                    />
+                    <span>Same aircraft on all legs</span>
+                  </label>
+                </div>
+
+                {/* Legs List */}
+                <div className="space-y-3">
+                  {multiLegs.map((mLeg, idx) => (
+                    <div
+                      key={mLeg.id}
+                      className="space-y-3 p-3.5 bg-[var(--paper)] rounded-lg border border-[var(--line)]"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="font-display font-bold text-xs uppercase text-[var(--ink)]">
+                            Leg {String(idx + 1).padStart(2, "0")}{" "}
+                            {idx === 0
+                              ? "(Initial Departure)"
+                              : idx === multiLegs.length - 1
+                              ? "(Final Leg)"
+                              : `(Waypoint Leg ${idx + 1})`}
+                          </span>
+                          {idx > 0 && (
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-gray-200 text-gray-700">
+                              Chained from Leg {idx}
+                            </span>
+                          )}
+                        </div>
+
+                        {multiLegs.length > 2 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setMultiLegs(multiLegs.filter((_, i) => i !== idx));
+                            }}
+                            className="text-xs text-red-600 hover:text-red-700 font-medium inline-flex items-center gap-1 hover:underline cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Remove Leg</span>
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[11px] font-mono text-[var(--muted)] mb-1">
+                            Origin Station
+                          </label>
+                          <AirportSearchSelect
+                            value={mLeg.origin?.icao || "LSGG"}
+                            onChange={(icao) => {
+                              const apt = findAirportByCode(icao);
+                              if (apt) {
+                                const updated = [...multiLegs];
+                                updated[idx].origin = apt;
+                                setMultiLegs(updated);
+                              }
+                            }}
+                            placeholder="Departure Airport"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-mono text-[var(--muted)] mb-1">
+                            Destination Station
+                          </label>
+                          <AirportSearchSelect
+                            value={mLeg.destination?.icao || "EGSS"}
+                            onChange={(icao) => {
+                              const apt = findAirportByCode(icao);
+                              if (apt) {
+                                const updated = [...multiLegs];
+                                updated[idx].destination = apt;
+                                if (idx + 1 < updated.length) {
+                                  updated[idx + 1].origin = apt;
+                                }
+                                setMultiLegs(updated);
+                              }
+                            }}
+                            placeholder="Arrival Airport"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-mono text-[var(--muted)] mb-1">
+                            Flight Date
+                          </label>
+                          <input
+                            type="date"
+                            value={mLeg.flightDate}
+                            onChange={(e) => {
+                              const updated = [...multiLegs];
+                              updated[idx].flightDate = e.target.value;
+                              setMultiLegs(updated);
+                            }}
+                            className="w-full bg-[var(--card)] border border-[var(--line)] rounded px-3 py-1.5 text-xs font-mono"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-mono text-[var(--muted)] mb-1">
+                            Departure Time (Local)
+                          </label>
+                          <input
+                            type="time"
+                            value={mLeg.departureTime}
+                            onChange={(e) => {
+                              const updated = [...multiLegs];
+                              updated[idx].departureTime = e.target.value;
+                              setMultiLegs(updated);
+                            }}
+                            className="w-full bg-[var(--card)] border border-[var(--line)] rounded px-3 py-1.5 text-xs font-mono"
+                          />
+                        </div>
+
+                        {/* Per-leg aircraft when Same aircraft on all legs is unchecked */}
+                        {!sameAircraftOnAllLegs && (
+                          <div className="sm:col-span-2 pt-2 border-t border-[var(--line)]">
+                            <label className="block text-[11px] font-mono font-bold text-gray-700 mb-1">
+                              Aircraft for Leg {idx + 1}
+                            </label>
+                            <AircraftSearchSelect
+                              value={mLeg.aircraft?.id || selectedAircraft.id}
+                              onChange={(ac) => {
+                                const updated = [...multiLegs];
+                                updated[idx].aircraft = ac;
+                                setMultiLegs(updated);
+                              }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Add Leg button */}
+                <div className="flex items-center justify-between pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const last = multiLegs[multiLegs.length - 1];
+                      const nextDest =
+                        airportsData.find((a) => a.icao !== last?.destination?.icao) ||
+                        airportsData[2] ||
+                        airportsData[0];
+                      setMultiLegs([
+                        ...multiLegs,
+                        {
+                          id: `leg-${Date.now()}`,
+                          origin: last?.destination || airportsData[0],
+                          destination: nextDest,
+                          flightDate: last?.flightDate || flightDate,
+                          departureTime: "14:00",
+                          aircraft: sameAircraftOnAllLegs ? selectedAircraft : fleetData[0]
+                        }
+                      ]);
                     }}
-                    placeholder="Departure Airport"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-mono text-[var(--muted)] mb-1">Destination Station</label>
-                  <AirportSearchSelect
-                    value={destAirport?.icao || "EGSS"}
-                    onChange={(icao) => {
-                      const apt = findAirportByCode(icao);
-                      if (apt) setDestAirport(apt);
-                    }}
-                    placeholder="Arrival Airport"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-mono text-[var(--muted)] mb-1">Flight Date</label>
-                  <input
-                    type="date"
-                    value={flightDate}
-                    onChange={(e) => setFlightDate(e.target.value)}
-                    className="w-full bg-[var(--card)] border border-[var(--line)] rounded px-3 py-1.5 text-xs font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-mono text-[var(--muted)] mb-1">Departure Time (Local)</label>
-                  <input
-                    type="time"
-                    value={departureTime}
-                    onChange={(e) => setDepartureTime(e.target.value)}
-                    className="w-full bg-[var(--card)] border border-[var(--line)] rounded px-3 py-1.5 text-xs font-mono"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Leg 2 if Round Trip (R-014: Leg 2 origin locked to Leg 1 arrival) */}
-            {tripType === "round_trip" && (
-              <div className="space-y-3 p-3.5 bg-[var(--paper)] rounded-lg border border-[var(--line)]">
-                <div className="flex items-center justify-between">
-                  <span className="font-display font-bold text-xs uppercase text-[var(--muted)]">
-                    Leg 02 (Return Flight — Departure Locked to Leg 1 Destination)
+                    className="btn-secondary text-xs flex items-center gap-1.5"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add Leg</span>
+                  </button>
+                  <span className="text-[11px] text-[var(--muted)] font-sans">
+                    Leg {multiLegs.length + 1} origin automatically connects to{" "}
+                    {multiLegs[multiLegs.length - 1]?.destination?.icao || "previous arrival"}.
                   </span>
-                  <span className="pill grey text-[10px]">LOCKED ORIGIN</span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-mono text-[var(--muted)] mb-1">Origin (Locked)</label>
-                    <div className="p-2 bg-[var(--wf)] rounded border border-[var(--line)] text-xs font-mono font-bold text-[var(--ink)]">
-                      {destAirport?.name} ({destAirport?.icao})
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-mono text-[var(--muted)] mb-1">Destination (Return)</label>
-                    <div className="p-2 bg-[var(--wf)] rounded border border-[var(--line)] text-xs font-mono font-bold text-[var(--ink)]">
-                      {originAirport?.name} ({originAirport?.icao})
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-mono text-[var(--muted)] mb-1">Return Date</label>
-                    <input
-                      type="date"
-                      value={returnFlightDate}
-                      onChange={(e) => setReturnFlightDate(e.target.value)}
-                      className="w-full bg-[var(--card)] border border-[var(--line)] rounded px-3 py-1.5 text-xs font-mono"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-mono text-[var(--muted)] mb-1">Return Time (Local)</label>
-                    <input
-                      type="time"
-                      value={returnDepartureTime}
-                      onChange={(e) => setReturnDepartureTime(e.target.value)}
-                      className="w-full bg-[var(--card)] border border-[var(--line)] rounded px-3 py-1.5 text-xs font-mono"
-                    />
-                  </div>
                 </div>
               </div>
+            ) : (
+              <>
+                {/* Leg 1 */}
+                <div className="space-y-3 p-3.5 bg-[var(--paper)] rounded-lg border border-[var(--line)]">
+                  <div className="flex items-center justify-between">
+                    <span className="font-display font-bold text-xs uppercase text-[var(--muted)]">
+                      Leg 01 (Outbound)
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-mono text-[var(--muted)] mb-1">Origin Station</label>
+                      <AirportSearchSelect
+                        value={originAirport?.icao || "LSGG"}
+                        onChange={(icao) => {
+                          const apt = findAirportByCode(icao);
+                          if (apt) setOriginAirport(apt);
+                        }}
+                        placeholder="Departure Airport"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-mono text-[var(--muted)] mb-1">Destination Station</label>
+                      <AirportSearchSelect
+                        value={destAirport?.icao || "EGSS"}
+                        onChange={(icao) => {
+                          const apt = findAirportByCode(icao);
+                          if (apt) setDestAirport(apt);
+                        }}
+                        placeholder="Arrival Airport"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-mono text-[var(--muted)] mb-1">Flight Date</label>
+                      <input
+                        type="date"
+                        value={flightDate}
+                        onChange={(e) => setFlightDate(e.target.value)}
+                        className="w-full bg-[var(--card)] border border-[var(--line)] rounded px-3 py-1.5 text-xs font-mono"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-mono text-[var(--muted)] mb-1">Departure Time (Local)</label>
+                      <input
+                        type="time"
+                        value={departureTime}
+                        onChange={(e) => setDepartureTime(e.target.value)}
+                        className="w-full bg-[var(--card)] border border-[var(--line)] rounded px-3 py-1.5 text-xs font-mono"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Leg 2 if Round Trip (R-014: Leg 2 origin locked to Leg 1 arrival) */}
+                {tripType === "round_trip" && (
+                  <div className="space-y-3 p-3.5 bg-[var(--paper)] rounded-lg border border-[var(--line)]">
+                    <div className="flex items-center justify-between">
+                      <span className="font-display font-bold text-xs uppercase text-[var(--muted)]">
+                        Leg 02 (Return Flight — Departure Locked to Leg 1 Destination)
+                      </span>
+                      <span className="pill grey text-[10px]">LOCKED ORIGIN</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-mono text-[var(--muted)] mb-1">Origin (Locked)</label>
+                        <div className="p-2 bg-[var(--wf)] rounded border border-[var(--line)] text-xs font-mono font-bold text-[var(--ink)]">
+                          {destAirport?.name} ({destAirport?.icao})
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-mono text-[var(--muted)] mb-1">Destination (Return)</label>
+                        <div className="p-2 bg-[var(--wf)] rounded border border-[var(--line)] text-xs font-mono font-bold text-[var(--ink)]">
+                          {originAirport?.name} ({originAirport?.icao})
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-mono text-[var(--muted)] mb-1">Return Date</label>
+                        <input
+                          type="date"
+                          value={returnFlightDate}
+                          onChange={(e) => setReturnFlightDate(e.target.value)}
+                          className="w-full bg-[var(--card)] border border-[var(--line)] rounded px-3 py-1.5 text-xs font-mono"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-mono text-[var(--muted)] mb-1">Return Time (Local)</label>
+                        <input
+                          type="time"
+                          value={returnDepartureTime}
+                          onChange={(e) => setReturnDepartureTime(e.target.value)}
+                          className="w-full bg-[var(--card)] border border-[var(--line)] rounded px-3 py-1.5 text-xs font-mono"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
 
@@ -931,22 +1323,54 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId }: QuoteB
               </div>
 
               <div>
-                <label className="block text-xs font-mono font-bold text-[var(--muted)] mb-1">Aircraft Model</label>
-                <select
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-mono font-bold text-[var(--muted)]">
+                    Aircraft Model {tripType === "multi_leg" && sameAircraftOnAllLegs && "(All Legs)"}
+                  </label>
+                  {tripType === "multi_leg" && (
+                    <span className="text-[10px] font-mono text-gray-500">
+                      {sameAircraftOnAllLegs ? "Same on all legs" : "Per leg assigned"}
+                    </span>
+                  )}
+                </div>
+                <AircraftSearchSelect
                   value={selectedAircraft.id}
-                  onChange={(e) => {
-                    const ac = fleetData.find((f) => f.id === e.target.value) || fleetData[0];
+                  onChange={(ac) => {
                     setSelectedAircraft(ac);
+                    if (tripType === "multi_leg" && sameAircraftOnAllLegs) {
+                      setMultiLegs((prev) => prev.map((l) => ({ ...l, aircraft: ac })));
+                    }
                   }}
-                  className="w-full bg-[var(--paper)] border border-[var(--line)] rounded-lg px-3 py-2 text-xs text-[var(--ink)]"
-                >
-                  {fleetData.map((ac) => (
-                    <option key={ac.id} value={ac.id}>
-                      {ac.name} ({ac.categoryLabel} • {ac.passengers} pax)
-                    </option>
-                  ))}
-                </select>
+                />
               </div>
+
+              {tripType === "multi_leg" && !sameAircraftOnAllLegs && (
+                <div className="sm:col-span-2 space-y-2 p-3 bg-[var(--paper)] rounded-lg border border-[var(--line)]">
+                  <span className="text-xs font-mono font-bold text-gray-800 block">
+                    Per-Leg Aircraft Assignment ({multiLegs.length} legs):
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {multiLegs.map((mLeg, idx) => (
+                      <div
+                        key={mLeg.id}
+                        className="p-2.5 bg-white rounded border border-gray-200 space-y-1"
+                      >
+                        <span className="text-[11px] font-mono font-bold text-gray-800 block">
+                          Leg {idx + 1}: {mLeg.origin?.icao || "LSGG"} → {mLeg.destination?.icao || "EGSS"}
+                        </span>
+                        <AircraftSearchSelect
+                          value={mLeg.aircraft?.id || selectedAircraft.id}
+                          onChange={(ac) => {
+                            const updated = [...multiLegs];
+                            updated[idx].aircraft = ac;
+                            setMultiLegs(updated);
+                          }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="sm:col-span-2">
                 <label className="block text-xs font-mono font-bold text-[var(--muted)] mb-1">
@@ -963,113 +1387,313 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId }: QuoteB
                 </div>
               </div>
 
-              {/* Step 04 Photos Row */}
-              <div className="sm:col-span-2 pt-3 border-t border-[var(--line)] flex items-center justify-between">
-                <div>
-                  <span className="font-bold text-xs text-[var(--ink)] block">Aircraft Photos on Quote PDF</span>
-                  <span className="text-[11px] text-[var(--muted)]">
-                    {selectedPhotos.length} selected: {selectedPhotos.join(", ")}
-                  </span>
+              {/* Step 04 Photos Row (Exact styling of Image 2) */}
+              <div className="sm:col-span-2 pt-3 border-t border-[var(--line)] flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2">
+                  {selectedPhotos.map((photo) => (
+                    <span
+                      key={photo}
+                      className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200"
+                    >
+                      {photo.includes("Cabin")
+                        ? "Cabin · operator"
+                        : photo.includes("Exterior")
+                        ? "Exterior · operator"
+                        : photo}
+                    </span>
+                  ))}
+                  {selectedPhotos.length === 0 && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      Cabin · operator
+                    </span>
+                  )}
                 </div>
                 <button
                   type="button"
                   onClick={() => setIsPhotoPickerOpen(true)}
-                  className="bg-white border border-gray-300 hover:bg-gray-50 text-xs font-semibold px-3 py-1.5 rounded-lg shadow-sm transition-all"
+                  className="bg-white border border-gray-300 hover:bg-gray-50 text-xs font-semibold px-3 py-1.5 rounded-md shadow-2xs transition-all text-gray-800"
                 >
-                  Pick photos
+                  Choose photos
                 </button>
+                <span className="text-xs text-gray-500 font-sans">
+                  Generic type photos are used if none are chosen
+                </span>
               </div>
             </div>
           </div>
 
-          {/* SECTION 5: SERVICES */}
-          <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-4">
+          {/* SECTION 5: SERVICES (Exact styling of Image 2) */}
+          <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-3.5">
             <div className="flex items-center gap-2 border-b border-[var(--line)] pb-2.5">
               <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-[var(--wf)] text-[var(--ink)]">
                 05
               </span>
               <h3 className="text-base font-bold font-display text-[var(--ink)] m-0">
-                Concierge & Ground Services (No Cancellation Insurance per R-014)
+                Services
               </h3>
             </div>
 
-            <div className="space-y-3">
-              <div className="p-3.5 bg-[var(--paper)] rounded-lg border border-[var(--line)] flex items-center justify-between">
-                <div>
-                  <span className="font-display font-bold text-xs text-[var(--ink)] block">VIP Limousine Transfer</span>
-                  <span className="text-[11px] text-[var(--muted)] font-mono">Chauffeur service upon arrival</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="number"
-                    value={limousinePrice}
-                    onChange={(e) => setLimousinePrice(parseFloat(e.target.value) || 0)}
-                    className="w-20 text-right font-mono text-xs bg-[var(--card)] border border-[var(--line)] rounded p-1"
-                  />
-                  <input
-                    type="checkbox"
-                    checked={addLimousine}
-                    onChange={(e) => setAddLimousine(e.target.checked)}
-                    className="w-4 h-4 cursor-pointer"
-                  />
-                </div>
-              </div>
+            {/* Checkboxes Row */}
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2.5 pt-1">
+              <label className="inline-flex items-center gap-2 text-xs font-medium text-gray-800 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={serviceOptions.limousine}
+                  onChange={(e) =>
+                    setServiceOptions({ ...serviceOptions, limousine: e.target.checked })
+                  }
+                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
+                />
+                <span>VIP limousine</span>
+              </label>
 
-              <div className="p-3.5 bg-[var(--paper)] rounded-lg border border-[var(--line)] flex items-center justify-between">
-                <div>
-                  <span className="font-display font-bold text-xs text-[var(--ink)] block">Executive In-Flight Catering</span>
-                  <span className="text-[11px] text-[var(--muted)] font-mono">Champagne, caviar & custom menu</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="number"
-                    value={cateringPrice}
-                    onChange={(e) => setCateringPrice(parseFloat(e.target.value) || 0)}
-                    className="w-20 text-right font-mono text-xs bg-[var(--card)] border border-[var(--line)] rounded p-1"
-                  />
+              <label className="inline-flex items-center gap-2 text-xs font-medium text-gray-800 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={serviceOptions.helicopter}
+                  onChange={(e) =>
+                    setServiceOptions({ ...serviceOptions, helicopter: e.target.checked })
+                  }
+                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
+                />
+                <span>Helicopter</span>
+              </label>
+
+              <label className="inline-flex items-center gap-2 text-xs font-medium text-gray-800 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={serviceOptions.catering}
+                  onChange={(e) =>
+                    setServiceOptions({ ...serviceOptions, catering: e.target.checked })
+                  }
+                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
+                />
+                <span>Catering</span>
+              </label>
+
+              <label className="inline-flex items-center gap-2 text-xs font-medium text-gray-800 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={serviceOptions.deicing}
+                  onChange={(e) =>
+                    setServiceOptions({ ...serviceOptions, deicing: e.target.checked })
+                  }
+                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
+                />
+                <span>De-icing protection</span>
+              </label>
+
+              <label className="inline-flex items-center gap-2 text-xs font-medium text-gray-800 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={serviceOptions.carbonOffset}
+                  onChange={(e) =>
+                    setServiceOptions({ ...serviceOptions, carbonOffset: e.target.checked })
+                  }
+                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
+                />
+                <span>Carbon offset</span>
+              </label>
+
+              {customServices.map((cs) => (
+                <label
+                  key={cs.id}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-800 cursor-pointer select-none bg-blue-50/70 px-2 py-0.5 rounded border border-blue-200"
+                >
                   <input
                     type="checkbox"
-                    checked={addCatering}
-                    onChange={(e) => setAddCatering(e.target.checked)}
-                    className="w-4 h-4 cursor-pointer"
+                    checked={true}
+                    onChange={() => setCustomServices(customServices.filter((s) => s.id !== cs.id))}
+                    className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 cursor-pointer accent-blue-600"
                   />
+                  <span>{cs.name}</span>
+                </label>
+              ))}
+
+              <button
+                type="button"
+                onClick={() => setIsCustomDialogOpen(true)}
+                className="inline-flex items-center gap-1 text-xs font-medium text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 px-2 py-0.5 rounded shadow-2xs transition-all"
+              >
+                <span>+ Custom</span>
+              </button>
+            </div>
+
+            {/* Custom service modal / inline panel */}
+            {isCustomDialogOpen && (
+              <div className="p-3 bg-white border border-blue-200 rounded-lg shadow-sm space-y-2.5 mt-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-gray-800">Add Custom Concierge / Service</span>
+                  <button
+                    type="button"
+                    onClick={() => setIsCustomDialogOpen(false)}
+                    className="text-xs text-gray-400 hover:text-gray-600"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <input
+                    type="text"
+                    placeholder="Service Name (e.g. Tarmac Escort)"
+                    value={customServiceName}
+                    onChange={(e) => setCustomServiceName(e.target.value)}
+                    className="bg-white border border-gray-300 rounded px-2 py-1 text-xs text-gray-800"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Details (e.g. VIP ramp access · 4 pax)"
+                    value={customServiceDetails}
+                    onChange={(e) => setCustomServiceDetails(e.target.value)}
+                    className="bg-white border border-gray-300 rounded px-2 py-1 text-xs text-gray-800"
+                  />
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      placeholder="Price (€)"
+                      value={customServicePrice}
+                      onChange={(e) => setCustomServicePrice(parseFloat(e.target.value) || 0)}
+                      className="w-24 bg-white border border-gray-300 rounded px-2 py-1 text-xs text-gray-800"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (customServiceName.trim()) {
+                          setCustomServices([
+                            ...customServices,
+                            {
+                              id: `cs-${Date.now()}`,
+                              name: customServiceName.trim(),
+                              details: customServiceDetails.trim() || "Custom service",
+                              price: customServicePrice,
+                            },
+                          ]);
+                          setCustomServiceName("");
+                          setCustomServiceDetails("");
+                          setCustomServicePrice(150);
+                          setIsCustomDialogOpen(false);
+                        }
+                      }}
+                      className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1 rounded"
+                    >
+                      Add
+                    </button>
+                  </div>
                 </div>
               </div>
+            )}
+
+            {/* Selected Services Summary Box (Exact styling of Image 2) */}
+            <div className="bg-[#f8f9fa] border border-[#e5e7eb] rounded-lg p-3 text-xs text-gray-700 space-y-1 font-sans">
+              {serviceOptions.limousine && (
+                <div>
+                  Limousine · leg 1 on arrival DNAA - Maitama, Abuja · SUV · 5 pax · client price € {limousinePrice.toFixed(2)}
+                </div>
+              )}
+              {serviceOptions.catering && (
+                <div>
+                  Catering · VIP menu 1 · both legs · {cateringPrice === 0 ? "included" : `client price € ${cateringPrice.toFixed(2)}`}
+                </div>
+              )}
+              {serviceOptions.helicopter && (
+                <div>
+                  Helicopter · VIP charter connector · 5 pax · client price € {helicopterPrice.toFixed(2)}
+                </div>
+              )}
+              {serviceOptions.deicing && (
+                <div>
+                  De-icing protection · holdover protection package · client price € {deicingPrice.toFixed(2)}
+                </div>
+              )}
+              {serviceOptions.carbonOffset && (
+                <div>
+                  Carbon offset · Gold Standard certified climate credit · client price € {carbonOffsetPrice.toFixed(2)}
+                </div>
+              )}
+              {customServices.map((cs) => (
+                <div key={cs.id}>
+                  {cs.name} · {cs.details} · client price € {cs.price.toFixed(2)}
+                </div>
+              ))}
+              {!serviceOptions.limousine &&
+                !serviceOptions.catering &&
+                !serviceOptions.helicopter &&
+                !serviceOptions.deicing &&
+                !serviceOptions.carbonOffset &&
+                customServices.length === 0 && (
+                  <div className="text-gray-400 italic">No additional services selected</div>
+                )}
             </div>
           </div>
 
-          {/* SECTION 6: MARGINS & COMMISSIONS */}
+          {/* SECTION 6: MARGINS & PAYMENT (Exact styling of Image 2) */}
           <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-4">
             <div className="flex items-center gap-2 border-b border-[var(--line)] pb-2.5">
               <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-[var(--wf)] text-[var(--ink)]">
                 06
               </span>
               <h3 className="text-base font-bold font-display text-[var(--ink)] m-0">
-                Margins & Agent Commission
+                Margins & payment
               </h3>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-mono">
-              <div className="p-3 bg-[var(--paper)] rounded-lg border border-[var(--line)]">
-                <span className="text-[10px] text-[var(--muted)] uppercase block">Company Margin (Automated Tier)</span>
-                <span className="font-bold text-base text-[var(--ink)] block mt-0.5">{companyMarginPercent}%</span>
-                <span className="text-[11px] text-[var(--muted)] font-sans">
-                  Tier applied based on €{operatorFlightCost.toLocaleString()} cost
-                </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div>
+                <label className="block text-[10px] font-mono font-bold text-[var(--muted)] uppercase tracking-wider mb-1.5">
+                  COMPANY MARGIN
+                </label>
+                <input
+                  type="text"
+                  value={companyMarginText}
+                  onChange={(e) => setCompanyMarginText(e.target.value)}
+                  placeholder="8 % · tier > € 35k"
+                  className="w-full bg-white border border-gray-300 rounded-md px-3 py-2 text-xs font-semibold text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
               </div>
 
-              <div className="p-3 bg-[var(--paper)] rounded-lg border border-[var(--line)]">
-                <span className="text-[10px] text-[var(--muted)] uppercase block">Agent Commission</span>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <input
-                    type="number"
-                    step={0.5}
-                    value={agentCommissionPercent}
-                    onChange={(e) => setAgentCommissionPercent(parseFloat(e.target.value) || 0)}
-                    className="w-16 font-mono font-bold text-sm bg-[var(--card)] border border-[var(--line)] rounded p-1"
-                  />
-                  <span className="font-bold">%</span>
+              <div>
+                <label className="block text-[10px] font-mono font-bold text-[var(--muted)] uppercase tracking-wider mb-1.5">
+                  AGENT MARGIN
+                </label>
+                <input
+                  type="text"
+                  value={agentMarginText}
+                  onChange={(e) => setAgentMarginText(e.target.value)}
+                  placeholder="10 % · set by agent"
+                  className="w-full bg-white border border-gray-300 rounded-md px-3 py-2 text-xs font-semibold text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-mono font-bold text-[var(--muted)] uppercase tracking-wider mb-1.5">
+                  CURRENCY
+                </label>
+                <div className="relative">
+                  <select
+                    value={currency}
+                    onChange={(e) => setCurrency(e.target.value as any)}
+                    className="w-full bg-white border border-gray-300 rounded-md px-3 py-2 text-xs font-semibold text-gray-800 shadow-2xs appearance-none pr-8 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+                  >
+                    <option value="EUR">EUR</option>
+                    <option value="USD">USD</option>
+                    <option value="GBP">GBP</option>
+                    <option value="CHF">CHF</option>
+                  </select>
+                  <ChevronDown className="w-3.5 h-3.5 text-gray-500 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-mono font-bold text-[var(--muted)] uppercase tracking-wider mb-1.5">
+                  VALID UNTIL
+                </label>
+                <input
+                  type="text"
+                  value={validUntil}
+                  onChange={(e) => setValidUntil(e.target.value)}
+                  placeholder="16 Nov 18:00 LT"
+                  className="w-full bg-white border border-gray-300 rounded-md px-3 py-2 text-xs font-semibold text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
               </div>
             </div>
           </div>
@@ -1083,7 +1707,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId }: QuoteB
                 Live Pricing Engine
               </span>
               <h3 className="font-display font-black text-2xl text-[var(--ink)] m-0">
-                {formatCurrency(clientTotal, "EUR")}
+                {formatCurrency(clientTotal, currency)}
               </h3>
               <p className="text-[11px] font-mono text-[var(--muted)] mt-0.5">
                 Client wire settlement total
@@ -1094,34 +1718,34 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId }: QuoteB
             <div className="space-y-2 text-xs font-mono divide-y divide-[var(--line)]">
               <div className="flex justify-between pt-1">
                 <span className="text-[var(--muted)]">Direct Flight Cost:</span>
-                <span className="font-bold">€{operatorFlightCost.toLocaleString()}.00</span>
+                <span className="font-bold">{currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF "}{operatorFlightCost.toLocaleString()}.00</span>
               </div>
 
               <div className="flex justify-between pt-1">
                 <span className="text-[var(--muted)]">Company Margin ({companyMarginPercent}%):</span>
-                <span className="font-bold text-[var(--accent)]">+ €{companyMarginAmount.toLocaleString()}.00</span>
+                <span className="font-bold text-[var(--accent)]">+ {currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF "}{companyMarginAmount.toLocaleString()}.00</span>
               </div>
 
               <div className="flex justify-between pt-1">
                 <span className="text-[var(--muted)]">Agent Commission ({agentCommissionPercent}%):</span>
-                <span className="font-bold text-[var(--accent)]">+ €{agentMarginAmount.toLocaleString()}.00</span>
+                <span className="font-bold text-[var(--accent)]">+ {currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF "}{agentMarginAmount.toLocaleString()}.00</span>
               </div>
 
               {servicesTotal > 0 && (
                 <div className="flex justify-between pt-1">
                   <span className="text-[var(--muted)]">Services Total:</span>
-                  <span className="font-bold text-[var(--accent)]">+ €{servicesTotal.toLocaleString()}.00</span>
+                  <span className="font-bold text-[var(--accent)]">+ {currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF "}{servicesTotal.toLocaleString()}.00</span>
                 </div>
               )}
 
               <div className="flex justify-between pt-2 font-bold text-sm text-[var(--ink)]">
                 <span>Client Total (Wire):</span>
-                <span>{formatCurrency(clientTotal, "EUR")}</span>
+                <span>{formatCurrency(clientTotal, currency)}</span>
               </div>
 
               <div className="flex justify-between pt-1 text-[11px] bg-[var(--paper)] p-2 rounded">
                 <span className="text-[var(--muted)]">Credit Card (+3.5%):</span>
-                <span className="font-bold text-[var(--ink)]">{formatCurrency(cardAmount, "EUR")}</span>
+                <span className="font-bold text-[var(--ink)]">{formatCurrency(cardAmount, currency)}</span>
               </div>
             </div>
 
@@ -1133,12 +1757,24 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId }: QuoteB
                 className="w-full btn-primary text-xs justify-center py-2.5"
               >
                 <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                <span>Complete Quotation ({versionLabel})</span>
+                <span>
+                  {isBookingRevision
+                    ? `Complete Booking Revision (${versionLabel})`
+                    : `Complete Quotation (${versionLabel})`}
+                </span>
               </button>
 
               <button
                 type="button"
-                onClick={() => router.push("/quotes")}
+                onClick={() =>
+                  router.push(
+                    isBookingRevision
+                      ? reviseTripId
+                        ? `/trips/${rootId}/itinerary`
+                        : "/bookings"
+                      : "/quotes"
+                  )
+                }
                 className="w-full btn-secondary text-xs justify-center"
               >
                 <span>Save Draft (No Version)</span>

@@ -115,14 +115,29 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
   const [compareVersionA, setCompareVersionA] = useState<number>(1);
   const [compareVersionB, setCompareVersionB] = useState<number>(2);
 
-  // Normalize tripId (e.g. FE4578 or booking-peu842)
-  const normalizedId = tripId.toUpperCase().split("-")[0];
+  // Normalize tripId (e.g. FE4578, booking-peu842, or PEU842-001)
+  const normalizedId = useMemo(() => {
+    return tripId
+      .toUpperCase()
+      .replace(/^BOOKING-/, "")
+      .replace(/^TRIP-/, "")
+      .split("-")[0];
+  }, [tripId]);
 
   // Find all revisions for this trip root
   const tripVersions = useMemo(() => {
     return bookings.filter((b) => {
-      const bTripRoot = (b.tripId || b.tripNumber || b.id).toUpperCase().split("-")[0];
-      return bTripRoot === normalizedId || b.id === tripId || b.tripNumber?.includes(tripId);
+      const bTripRoot = (b.tripId || b.tripNumber || b.id)
+        .toUpperCase()
+        .replace(/^BOOKING-/, "")
+        .replace(/^TRIP-/, "")
+        .split("-")[0];
+      return (
+        bTripRoot === normalizedId ||
+        b.id.toUpperCase() === tripId.toUpperCase() ||
+        b.tripNumber?.toUpperCase().includes(normalizedId) ||
+        b.tripId?.toUpperCase() === normalizedId
+      );
     });
   }, [bookings, normalizedId, tripId]);
 
@@ -334,7 +349,7 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
     return (
       <div className="flex items-center gap-2">
         <Link
-          href={`/quotes/${currentTrip.id}/revise`}
+          href={`/bookings/${currentTrip.id}/revise`}
           className="btn-secondary text-xs"
         >
           <RotateCcw className="w-3.5 h-3.5" />
