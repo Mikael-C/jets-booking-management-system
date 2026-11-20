@@ -32,6 +32,11 @@ import ClientPortalView from "@/components/admin/ClientPortalView";
 import NotificationSettingsView from "@/components/admin/NotificationSettingsView";
 import UserManagementView from "@/components/admin/UserManagementView";
 import SettingsView from "@/components/admin/SettingsView";
+import FlightWatchView from "@/components/admin/FlightWatchView";
+import ManualsPoliciesView from "@/components/admin/ManualsPoliciesView";
+import MessagesAutomationsView from "@/components/admin/MessagesAutomationsView";
+import CuratorTiersView from "@/components/admin/CuratorTiersView";
+import FbosView from "@/components/admin/FbosView";
 
 // Agent Views
 import AgentOverviewView from "@/components/agent/AgentOverviewView";
@@ -117,7 +122,17 @@ export default function Home() {
       case "notifications":
         return <NotificationSettingsView />;
       case "messages":
-        return <MessagesView />;
+        return <MessagesAutomationsView />;
+      case "flight_watch":
+        return <FlightWatchView />;
+      case "manuals_policies":
+      case "library":
+        return <ManualsPoliciesView />;
+      case "curators":
+      case "curator_tiers":
+        return <CuratorTiersView />;
+      case "fbos":
+        return <FbosView />;
       case "profile":
         return <ProfileView />;
       default:

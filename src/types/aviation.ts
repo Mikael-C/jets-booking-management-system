@@ -869,3 +869,238 @@ export interface AppSettings {
     urgentTripHours: number; // e.g. 72 (3 days)
   };
 }
+
+
+// ─── Flight Watch Types ────────────────────────────────────────────────────────
+export interface FlightWatchAlert {
+  time: string;
+  message: string;
+  tag: string;
+  severity: "info" | "warning" | "critical";
+  dutyOfficerNotified: boolean;
+  createdAt?: string;
+}
+
+export interface FlightWatchItem {
+  id?: string;
+  _id?: string;
+  tripNumber: string;
+  bookingId?: string;
+  aircraft: {
+    registration: string;
+    type: string;
+    operator: string;
+  };
+  route: {
+    fromIcao: string;
+    fromCity: string;
+    toIcao: string;
+    toCity: string;
+    waypoints?: Array<{ lat: number; lng: number; name: string }>;
+  };
+  schedule: {
+    scheduledOffUtc: string;
+    scheduledOnUtc: string;
+    actualOffUtc?: string;
+    actualOnUtc?: string;
+    estimatedOnUtc?: string;
+  };
+  telemetry: {
+    altitude: string;
+    speedKts: number;
+    heading: number;
+    currentLat: number;
+    currentLng: number;
+    distanceRemainingKm: number;
+    squawk: string;
+    progressPct: number;
+  };
+  status: "airborne_on_time" | "airborne_delayed" | "boarding" | "delayed" | "scheduled" | "landed";
+  statusLabel: string;
+  nowDescription: string;
+  delayMinutes: number;
+  delayReason?: string;
+  messagesSummary: string;
+  alerts: FlightWatchAlert[];
+  liveLinkToken?: string;
+  liveLinkExpiresAt?: string;
+  isWatched?: boolean;
+}
+
+export interface FlightWatchSummary {
+  airborneCount: number;
+  airborneActiveTrip: string;
+  departingNext6hCount: number;
+  delayedCount: number;
+  delayedActiveTrip: string;
+  openAlertsCount: number;
+  openAlertsNote: string;
+}
+
+export interface FlightWatchAlertRules {
+  departureDelayMinutes: number;
+  departureTemplateCode: string;
+  squawkAlertNotification: string;
+  noPositionCallMinutes: number;
+}
+
+// ─── Library & Policy Document Types ──────────────────────────────────────────
+export interface AccessMatrixPermissions {
+  md: string;
+  dutyOfficer: string;
+  finance: string;
+  salesDesk: string;
+  curatorFounding: string;
+  curatorStandard: string;
+  operatorExternal: string;
+}
+
+export interface PolicyDocumentItem {
+  id?: string;
+  _id?: string;
+  code: string;
+  title: string;
+  type: "Manual" | "Contract template" | "Policy" | "Procedure" | "Guide" | "Checklist";
+  version: string;
+  updatedDate: string;
+  ownerApprover: string;
+  whoCanOpen: string;
+  status: "Approved" | "Lawyer review" | "Awaiting policy" | "Adviser review" | "Draft";
+  downloadFormats?: {
+    pdf: boolean;
+    docx: boolean;
+  };
+  description?: string;
+  nextReviewDate?: string;
+  accessMatrix?: AccessMatrixPermissions;
+}
+
+export interface PersonExceptionItem {
+  id: string;
+  _id?: string;
+  personName: string;
+  personRole: string;
+  exception: string;
+  grantedBy: string;
+  until: string;
+  createdAt?: string;
+}
+
+export interface LibraryAccessData {
+  matrix: Array<{
+    code: string;
+    title: string;
+    md: string;
+    dutyOfficer: string;
+    finance: string;
+    salesDesk: string;
+    curatorFounding: string;
+    curatorStandard: string;
+    operatorExternal: string;
+  }>;
+  exceptions: PersonExceptionItem[];
+}
+
+// ─── Messages & Automations Types ─────────────────────────────────────────────
+export interface MessageAutomationItem {
+  id?: string;
+  _id?: string;
+  code: string;
+  title: string;
+  group: "Request & quote" | "Booking & payment" | "Operations" | "Flight watch" | "Finance & other" | "Curator";
+  triggerDescription: string;
+  whenSchedule: string;
+  scheduleDetail?: string;
+  stopCondition?: string;
+  quietHours?: string;
+  approval?: string;
+  appliesTo?: string;
+  toRecipient: string;
+  copyRecipient?: string;
+  fallback?: string;
+  language?: string;
+  channel: string;
+  status: boolean;
+  textWhatsApp?: string;
+  textEmailSubject?: string;
+  textEmailBody?: string;
+  textCuratorCopy?: string;
+  metaStatus?: string;
+  statsSent30d?: number;
+  statsDelivered30d?: number;
+  statsRead30d?: number;
+  statsConversionRatePct?: number;
+}
+
+export interface MessageQueueItem {
+  id?: string;
+  _id?: string;
+  automationCode: string;
+  tripNumber: string;
+  recipientName: string;
+  recipientContact: string;
+  channel: string;
+  status: "due_now" | "scheduled" | "sent" | "failed";
+  failureReason?: string;
+  sentAt?: string;
+  content: string;
+  createdAt?: string;
+}
+
+export interface MessagesSummaryStats {
+  dueNowCount: number;
+  dueNowLabel: string;
+  scheduled24hCount: number;
+  scheduled24hLabel: string;
+  sent7dCount: number;
+  sent7dLabel: string;
+  deliveryFailedCount: number;
+  deliveryFailedLabel: string;
+}
+
+// ─── Curator Tiers & Token Types ──────────────────────────────────────────────
+export interface CuratorTierRow {
+  tier: string;
+  handlesTrips: string;
+  requestsRoutedTo: string;
+  monthlyTokens: number;
+  startupTokens: number;
+  expiry: string;
+  markupRange: string;
+  handlingShare: string;
+}
+
+export interface CuratorTokenRules {
+  pricePerToken: number;
+  perRequest: string;
+  afterSignature: string;
+  earnedTokens: string;
+  paidExpiry: string;
+  bundles: string;
+  freeRevisions: string;
+  returnedConditions: string;
+  orderOfUse: string;
+  assignedLeads: string;
+}
+
+export interface CuratorDirectRouteConfig {
+  bookingDeposit: number;
+  depositTerms: string;
+  assignmentRule: string;
+  standardMarkupPct: number;
+}
+
+export interface CuratorTopUpEntry {
+  curatorId: string;
+  curatorName: string;
+  tokensAdded: number;
+  grantedBy: string;
+  date: string;
+}
+
+export interface CuratorTierConfigData {
+  tiers: CuratorTierRow[];
+  tokenRules: CuratorTokenRules;
+  directRoute: CuratorDirectRouteConfig;
+  topUpHistory: CuratorTopUpEntry[];
+}

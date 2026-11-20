@@ -40,6 +40,10 @@ export default function Sidebar() {
   const isMessagesActive = activeNav === "messages" || pathname?.startsWith("/messages");
   const isActivitiesActive = activeNav === "activities" || pathname?.startsWith("/activities");
   const isProfileActive = activeNav === "profile" || pathname?.startsWith("/profile");
+  const isFlightWatchActive = activeNav === "flight_watch" || pathname?.startsWith("/flight-watch");
+  const isLibraryActive = activeNav === "manuals_policies" || activeNav === "library" || pathname?.startsWith("/manuals-and-policies") || pathname?.startsWith("/library");
+  const isCuratorsActive = activeNav === "curators" || activeNav === "curator_tiers" || pathname?.startsWith("/curators") || pathname?.startsWith("/settings/curators");
+  const isFbosActive = activeNav === "fbos" || pathname?.startsWith("/fbos");
 
   const navigateTo = (navKey: string, route: string) => {
     setActiveNav(navKey);
@@ -124,6 +128,30 @@ export default function Sidebar() {
             <span>Payments</span>
             <span className="text-xs text-gray-400 font-mono">3</span>
           </button>
+
+          <button
+            onClick={() => navigateTo("flight_watch", "/flight-watch")}
+            className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg transition-all ${
+              isFlightWatchActive
+                ? "bg-[#1E293B] text-white font-medium"
+                : "text-gray-400 hover:text-white hover:bg-[#141C2B]"
+            }`}
+          >
+            <span>Flight watch</span>
+            <span className="text-xs text-gray-400 font-mono">2 live</span>
+          </button>
+
+          <button
+            onClick={() => navigateTo("messages", "/messages")}
+            className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg transition-all ${
+              isMessagesActive
+                ? "bg-[#1E293B] text-white font-medium"
+                : "text-gray-400 hover:text-white hover:bg-[#141C2B]"
+            }`}
+          >
+            <span>Messages</span>
+            <span className="text-xs text-gray-400 font-mono">3 due</span>
+          </button>
         </div>
 
         {/* DOCUMENTS Section */}
@@ -163,6 +191,23 @@ export default function Sidebar() {
           </button>
         </div>
 
+        {/* LIBRARY Section */}
+        <div className="space-y-0.5">
+          <div className="px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-500">
+            LIBRARY
+          </div>
+          <button
+            onClick={() => navigateTo("manuals_policies", "/manuals-and-policies")}
+            className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg transition-all ${
+              isLibraryActive
+                ? "bg-[#1E293B] text-white font-medium"
+                : "text-gray-400 hover:text-white hover:bg-[#141C2B]"
+            }`}
+          >
+            <span>Manuals & policies</span>
+          </button>
+        </div>
+
         {/* DIRECTORY Section */}
         <div className="space-y-0.5">
           <div className="px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-500">
@@ -190,6 +235,16 @@ export default function Sidebar() {
             <span className="text-xs text-gray-400 font-mono">
               {contacts?.length || 8}
             </span>
+          </button>
+          <button
+            onClick={() => navigateTo("curators", "/curators")}
+            className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg transition-all ${
+              isCuratorsActive
+                ? "bg-[#1E293B] text-white font-medium"
+                : "text-gray-400 hover:text-white hover:bg-[#141C2B]"
+            }`}
+          >
+            <span>Curators</span>
           </button>
           <button
             onClick={() => navigateTo("agents", "/agents")}
@@ -233,6 +288,16 @@ export default function Sidebar() {
             }`}
           >
             <span>Airports & FBOs</span>
+          </button>
+          <button
+            onClick={() => navigateTo("fbos", "/fbos")}
+            className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg transition-all ${
+              isFbosActive
+                ? "bg-[#1E293B] text-white font-medium"
+                : "text-gray-400 hover:text-white hover:bg-[#141C2B]"
+            }`}
+          >
+            <span>FBOs</span>
           </button>
         </div>
 

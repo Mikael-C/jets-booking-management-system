@@ -35,6 +35,10 @@ const sourcingRoutes = require('./routes/sourcing');
 const userRoutes = require('./routes/users');
 const tokenRoutes = require('./routes/tokens');
 const messageRoutes = require('./routes/messages');
+const flightWatchRoutes = require('./routes/flightWatch');
+const libraryRoutes = require('./routes/library');
+const messageAutomationRoutes = require('./routes/messageAutomations');
+const curatorTierRoutes = require('./routes/curatorTiers');
 
 const app = express();
 
@@ -167,7 +171,12 @@ app.use('/api/audit-log', authenticate, auditLogRoutes);
 app.use('/api/sourcing', authenticate, sourcingRoutes);
 app.use('/api/users', authenticate, userRoutes);
 app.use('/api/tokens', authenticate, tokenRoutes);
+app.use('/api/messages', optionalAuthenticate, messageAutomationRoutes);
 app.use('/api/messages', authenticate, messageRoutes);
+app.use('/api/messages-automations', optionalAuthenticate, messageAutomationRoutes);
+app.use('/api/flight-watch', optionalAuthenticate, flightWatchRoutes);
+app.use('/api/library', optionalAuthenticate, libraryRoutes);
+app.use('/api/curator-tiers', optionalAuthenticate, curatorTierRoutes);
 
 // ─── 404 Handler ──────────────────────────────────────────────────────────────
 app.use((req, res) => {

@@ -2,12 +2,12 @@
 
 import React from "react";
 import AppShell from "@/components/layout/AppShell";
-import MessagesView from "@/components/messages/MessagesView";
+import MessagesAutomationsView from "@/components/admin/MessagesAutomationsView";
 
 export default function MessagesPage() {
   return (
     <AppShell navKey="messages">
-      <MessagesView />
+      <MessagesAutomationsView />
     </AppShell>
   );
 }

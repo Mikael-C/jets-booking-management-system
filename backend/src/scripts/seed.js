@@ -14,6 +14,10 @@ const AgentRequest = require('../models/AgentRequest');
 const Notification = require('../models/Notification');
 const AuditLog = require('../models/AuditLog');
 const Message = require('../models/Message');
+const FlightWatch = require('../models/FlightWatch');
+const { PolicyDocument, PersonException } = require('../models/PolicyDocument');
+const { MessageAutomation, MessageQueueItem } = require('../models/MessageAutomation');
+const CuratorTierConfig = require('../models/CuratorTierConfig');
 const { getFullFleet } = require('../seed/fleetData');
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/orbelo';
@@ -340,6 +344,90 @@ const seedDatabase = async (force = false) => {
   await AuditLog.insertMany([
     { timestamp: new Date(), userEmail: 'superadmin@orbelo.com', userName: 'Maximilian von Bern', action: 'SEED_COMPLETED', entityType: 'system', entityId: 'SEED', details: 'Database seeded with initial Orbelo data' }
   ]);
+
+  // ─── Flight Watch ─────────────────────────────────────────
+  const existingFlights = await FlightWatch.countDocuments();
+  if (existingFlights === 0) {
+    await FlightWatch.insertMany([
+      {
+        tripNumber: 'FE4578-005',
+        bookingId: 'BKG-FE4578',
+        aircraft: { registration: 'D-IOBA', type: 'Phenom 300E', operator: 'Air Hamburg' },
+        route: { fromIcao: 'LEIB', fromCity: 'Ibiza', toIcao: 'LSGG', toCity: 'Geneva' },
+        schedule: { scheduledOffUtc: '08:30', scheduledOnUtc: '10:05', actualOffUtc: '08:32', estimatedOnUtc: '10:03' },
+        telemetry: { altitude: 'FL410', speedKts: 425, heading: 28, currentLat: 43.1, currentLng: 4.8, distanceRemainingKm: 210, squawk: '4521', progressPct: 68 },
+        status: 'airborne_on_time',
+        statusLabel: 'Airborne · on time',
+        nowDescription: 'FL410 · 210 km to go',
+        messagesSummary: 'Curator, driver notified',
+      },
+      {
+        tripNumber: 'RB3310-002',
+        bookingId: 'BKG-RB3310',
+        aircraft: { registration: 'OE-GLX', type: 'Citation XLS+', operator: 'GlobeAir' },
+        route: { fromIcao: 'LFPB', fromCity: 'Paris Le Bourget', toIcao: 'LIML', toCity: 'Milan Linate' },
+        schedule: { scheduledOffUtc: '11:00', scheduledOnUtc: '12:20', estimatedOnUtc: '12:20' },
+        telemetry: { altitude: 'GND', speedKts: 0, heading: 0, currentLat: 48.96, currentLng: 2.44, distanceRemainingKm: 640, squawk: '1000', progressPct: 0 },
+        status: 'boarding',
+        statusLabel: 'Boarding',
+        nowDescription: 'At FBO',
+        messagesSummary: '—',
+      },
+      {
+        tripNumber: 'MX5521-001',
+        bookingId: 'BKG-MX5521',
+        aircraft: { registration: '9H-VJA', type: 'Challenger 650', operator: 'VistaJet' },
+        route: { fromIcao: 'LFPB', fromCity: 'Paris Le Bourget', toIcao: 'DNAA', toCity: 'Abuja Nnamdi Azikiwe' },
+        schedule: { scheduledOffUtc: '08:30', scheduledOnUtc: '14:00', estimatedOnUtc: '14:40' },
+        telemetry: { altitude: 'GND', speedKts: 0, heading: 175, currentLat: 48.96, currentLng: 2.44, distanceRemainingKm: 4400, squawk: '2314', progressPct: 0 },
+        status: 'delayed',
+        statusLabel: 'Delayed 40 min',
+        nowDescription: 'ETD 09:10 (crew)',
+        delayMinutes: 40,
+        delayReason: 'Crew duty start late. New ETD 09:10.',
+        messagesSummary: 'Delay alert sent 08:52',
+        alerts: [{ time: '08:52', message: 'MX5521 delayed 40 min. Crew duty start late. New ETD 09:10.', tag: 'FW-02 sent to Curator and driver', severity: 'warning' }],
+      },
+      {
+        tripNumber: 'TA2201-003',
+        bookingId: 'BKG-TA2201',
+        aircraft: { registration: '5N-BXK', type: 'Hawker 900XP', operator: 'ExecuJet' },
+        route: { fromIcao: 'DNMM', fromCity: 'Lagos Murtala Muhammed', toIcao: 'DNAA', toCity: 'Abuja Nnamdi Azikiwe' },
+        schedule: { scheduledOffUtc: '15:00', scheduledOnUtc: '16:10', estimatedOnUtc: '16:10' },
+        telemetry: { altitude: 'GND', speedKts: 0, heading: 45, currentLat: 6.57, currentLng: 3.32, distanceRemainingKm: 510, squawk: '7000', progressPct: 0 },
+        status: 'scheduled',
+        statusLabel: 'Scheduled',
+        nowDescription: '—',
+        messagesSummary: '—',
+      },
+    ]);
+    console.log('📡 Seeded flight watch initial telemetry');
+  }
+
+  // ─── Curator Tier Config ──────────────────────────────────
+  const existingCuratorConfig = await CuratorTierConfig.countDocuments();
+  if (existingCuratorConfig === 0) {
+    await CuratorTierConfig.create({
+      singletonKey: 'default_config',
+      tiers: [
+        { tier: 'Founding', handlesTrips: 'No', requestsRoutedTo: 'Desk (default) or chosen Associate', monthlyTokens: 10, startupTokens: 0, expiry: 'Month end', markupRange: '5–12 %', handlingShare: '20 % of mark-up' },
+        { tier: 'Patron', handlesTrips: 'By choice', requestsRoutedTo: 'Desk, chosen Associate, or self', monthlyTokens: 5, startupTokens: 0, expiry: 'Month end', markupRange: '5–12 %', handlingShare: '20 % of mark-up' },
+        { tier: 'Associate', handlesTrips: 'Yes', requestsRoutedTo: 'Self; receives assigned leads', monthlyTokens: 0, startupTokens: 5, expiry: 'None', markupRange: '5–12 %', handlingShare: 'Earns it when handling' }
+      ],
+      tokenRules: {
+        pricePerToken: 15, perRequest: '1 token per leg', afterSignature: 'No further tokens, including changes', earnedTokens: '+1 per booking completed or cancelled with fee',
+        paidExpiry: 'Never', bundles: '15 · $200 / 25 · $310 / 50 · $560', freeRevisions: '2 before contract signature', returnedConditions: 'No aircraft found; booking cancelled for operational reasons',
+        orderOfUse: 'Monthly → free → paid', assignedLeads: 'No tokens'
+      },
+      directRoute: {
+        bookingDeposit: 500, depositTerms: 'credited within 30 days; refunded if no aircraft.', assignmentRule: 'city / rotation / availability', standardMarkupPct: 8
+      },
+      topUpHistory: [
+        { curatorId: 'CUR-07', curatorName: 'No. 07', tokensAdded: 6, grantedBy: 'Obi (MD)', date: '12 Nov' }
+      ]
+    });
+    console.log('💎 Seeded Curator tiers & token rules');
+  }
 
   console.log('\n✅ Database seeded successfully!');
   console.log('\n🔑 Login credentials (all use password: orbelo2026!):');

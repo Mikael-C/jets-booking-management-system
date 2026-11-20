@@ -54,10 +54,17 @@ export default function AppShell({ children, navKey }: AppShellProps) {
     "accounts",
     "contacts",
     "agents",
+    "curators",
+    "curator_tiers",
     "operators",
     "aircraft_types",
     "fleet",
-    "airports"
+    "airports",
+    "fbos",
+    "flight_watch",
+    "messages",
+    "library",
+    "manuals_policies"
   ].includes(effectiveNav);
 
   if (isModernCleanPage) {

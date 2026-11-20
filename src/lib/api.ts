@@ -571,4 +571,105 @@ export const api = {
         body: JSON.stringify(data),
       }),
   },
+
+  // Flight Watch
+  flightWatch: {
+    list: () => request<{ success: boolean; data: any[]; summary: any; alertRules: any }>("/flight-watch"),
+    rules: () => request<{ success: boolean; data: any }>("/flight-watch/rules"),
+    updateRules: (rules: any) =>
+      request<{ success: boolean; data: any; message: string }>("/flight-watch/rules", {
+        method: "PUT",
+        body: JSON.stringify(rules),
+      }),
+    shareLink: (tripNumber?: string) =>
+      request<{ success: boolean; data: { token: string; expiresAt: string; tripNumber: string; url: string } }>(
+        "/flight-watch/share-link",
+        {
+          method: "POST",
+          body: JSON.stringify({ tripNumber }),
+        }
+      ),
+    getShared: (token: string) => request<{ success: boolean; data: any }>(`/flight-watch/shared/${token}`),
+    triggerAlert: (flightId: string, alertData: { message: string; tag?: string; severity?: string }) =>
+      request<{ success: boolean; data: any; alert: any }>(`/flight-watch/${flightId}/alert`, {
+        method: "POST",
+        body: JSON.stringify(alertData),
+      }),
+  },
+
+  // Library & Manuals
+  library: {
+    documents: (params?: { type?: string; status?: string; search?: string }) => {
+      const query = params ? `?${new URLSearchParams(params as any).toString()}` : "";
+      return request<{ success: boolean; data: any[]; meta: any }>(`/library/documents${query}`);
+    },
+    access: () => request<{ success: boolean; data: { matrix: any[]; exceptions: any[] } }>("/library/access"),
+    updateAccess: (matrix: any[]) =>
+      request<{ success: boolean; message: string }>("/library/access", {
+        method: "PUT",
+        body: JSON.stringify({ matrix }),
+      }),
+    addException: (data: { personName: string; personRole: string; exception: string; grantedBy?: string; until?: string }) =>
+      request<{ success: boolean; data: any; message: string }>("/library/exceptions", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    removeException: (id: string) =>
+      request<{ success: boolean; message: string }>(`/library/exceptions/${id}`, {
+        method: "DELETE",
+      }),
+    createDocument: (data: any) =>
+      request<{ success: boolean; data: any; message: string }>("/library/documents", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+  },
+
+  // Messages & Automations
+  messagesAutomations: {
+    automations: (params?: { group?: string; search?: string }) => {
+      const query = params ? `?${new URLSearchParams(params as any).toString()}` : "";
+      return request<{ success: boolean; data: any[] }>(`/messages/automations${query}`);
+    },
+    getAutomation: (code: string) => request<{ success: boolean; data: any }>(`/messages/automations/${code}`),
+    updateAutomation: (code: string, data: any) =>
+      request<{ success: boolean; data: any; message: string }>(`/messages/automations/${code}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      }),
+    toggleAutomation: (code: string) =>
+      request<{ success: boolean; data: any; status: boolean }>(`/messages/automations/${code}/toggle`, {
+        method: "PATCH",
+      }),
+    stats: () => request<{ success: boolean; data: any }>("/messages/stats"),
+    queue: (status?: string) => {
+      const query = status ? `?status=${status}` : "";
+      return request<{ success: boolean; data: any[] }>(`/messages/queue${query}`);
+    },
+    sendOneOff: (data: { recipient: string; recipientType?: string; channel?: string; content: string; tripNumber?: string }) =>
+      request<{ success: boolean; data: any; message: string }>("/messages/send-one-off", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    test: (data: { code: string; targetEmail?: string; targetPhone?: string }) =>
+      request<{ success: boolean; message: string }>("/messages/automations/test", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+  },
+
+  // Curator Tiers & Token Rules
+  curatorTiers: {
+    get: () => request<{ success: boolean; data: any }>("/curator-tiers"),
+    update: (data: { tiers?: any[]; tokenRules?: any; directRoute?: any }) =>
+      request<{ success: boolean; data: any; message: string }>("/curator-tiers", {
+        method: "PUT",
+        body: JSON.stringify(data),
+      }),
+    topUp: (data: { curatorId: string; curatorName: string; tokensAdded?: number; grantedBy?: string }) =>
+      request<{ success: boolean; data: any; message: string }>("/curator-tiers/top-up", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+  },
 };
