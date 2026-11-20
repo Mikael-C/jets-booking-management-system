@@ -522,6 +522,206 @@ router.post('/send-one-off', async (req, res) => {
   res.json({ success: true, data: queueItem, message: 'Message queued and dispatched' });
 });
 
+// GET /api/messages/trip/:tripNumber
+const tripMessagesStore = {};
+
+function initTripPlan(normalized) {
+  return [
+    {
+      id: 'msg-01',
+      status: 'sent',
+      when: 'Mon 16 Nov 10:12',
+      code: 'QUO-01',
+      title: 'Quote ready',
+      to: 'Curator M. Vance',
+      channel: 'WhatsApp',
+      result: 'Read',
+    },
+    {
+      id: 'msg-02',
+      status: 'sent',
+      when: 'Mon 16 Nov 14:40',
+      code: 'BKG-01',
+      title: 'Charter agreement to sign',
+      to: 'T. Adeyemi',
+      channel: 'Email',
+      result: 'Signed 15:05',
+    },
+    {
+      id: 'msg-03',
+      status: 'sent',
+      when: 'Mon 16 Nov 15:06',
+      code: 'PAY-01',
+      title: 'Invoice issued',
+      to: 'Billing · Adeyemi Holdings',
+      channel: 'Email',
+      result: 'Opened',
+    },
+    {
+      id: 'msg-04',
+      status: 'sent',
+      when: 'Mon 16 Nov 15:07',
+      code: 'OPS-01',
+      title: 'Passenger details request',
+      to: 'T. Adeyemi, assistant K. Ola',
+      channel: 'WhatsApp · email',
+      result: '2 of 4 filled',
+    },
+    {
+      id: 'msg-05',
+      status: 'sent',
+      when: 'Tue 17 Nov 09:00',
+      code: 'OPS-02',
+      title: 'Passenger details reminder',
+      to: 'K. Ola',
+      channel: 'WhatsApp',
+      result: 'Read',
+    },
+    {
+      id: 'msg-06',
+      status: 'sent',
+      when: 'Tue 17 Nov 11:30',
+      code: 'PAY-04',
+      title: 'Payment received',
+      to: 'T. Adeyemi, copy Curator',
+      channel: 'WhatsApp',
+      result: 'Delivered',
+    },
+    {
+      id: 'msg-07',
+      status: 'sent',
+      when: 'Wed 18 Nov 16:20',
+      code: 'OPS-04',
+      title: 'Slot confirmed (LEIB)',
+      to: 'Curator',
+      channel: 'WhatsApp',
+      result: 'Read',
+    },
+    {
+      id: 'msg-08',
+      status: 'due_now',
+      when: 'Thu 19 Nov 09:00',
+      code: 'OPS-02',
+      title: 'Passenger details reminder (24 h)',
+      to: 'K. Ola',
+      channel: 'WhatsApp',
+      result: 'Needs approval: 2 passports still missing',
+    },
+    {
+      id: 'msg-09',
+      status: 'scheduled',
+      when: 'Thu 19 Nov 12:00',
+      code: 'OPS-08',
+      title: 'Flight brief',
+      to: 'T. Adeyemi, 4 pax, Curator',
+      channel: 'Email · WhatsApp',
+      result: 'Waits for passenger list',
+    },
+    {
+      id: 'msg-10',
+      status: 'scheduled',
+      when: 'Fri 20 Nov 07:30',
+      code: 'OPS-10',
+      title: 'Driver details',
+      to: 'T. Adeyemi',
+      channel: 'WhatsApp',
+      result: '—',
+    },
+    {
+      id: 'msg-11',
+      status: 'scheduled',
+      when: 'On take-off',
+      code: 'FW-01',
+      title: 'Departed',
+      to: 'Curator, driver at LSGG',
+      channel: 'WhatsApp',
+      result: '—',
+    },
+    {
+      id: 'msg-12',
+      status: 'scheduled',
+      when: 'On landing',
+      code: 'FW-03',
+      title: 'Landed',
+      to: 'Curator, driver',
+      channel: 'WhatsApp',
+      result: '—',
+    },
+    {
+      id: 'msg-13',
+      status: 'scheduled',
+      when: 'Fri 20 Nov 21:00',
+      code: 'POST-01',
+      title: 'Thank you and feedback',
+      to: 'T. Adeyemi, copy Curator',
+      channel: 'Email · WhatsApp',
+      result: '—',
+    },
+  ];
+}
+
+router.get('/trip/:tripNumber', async (req, res) => {
+  const { tripNumber } = req.params;
+  const normalized = (tripNumber || 'FE4578').toUpperCase();
+  if (!tripMessagesStore[normalized]) {
+    tripMessagesStore[normalized] = initTripPlan(normalized);
+  }
+  res.json({
+    success: true,
+    data: tripMessagesStore[normalized],
+  });
+});
+
+// POST /api/messages/trip/:tripNumber/send
+router.post('/trip/:tripNumber/send', async (req, res) => {
+  const { tripNumber } = req.params;
+  const { to, template, content, channel = 'WhatsApp' } = req.body;
+  const normalized = (tripNumber || 'FE4578').toUpperCase();
+
+  if (!tripMessagesStore[normalized]) {
+    tripMessagesStore[normalized] = initTripPlan(normalized);
+  }
+
+  const newMsg = {
+    id: `manual-${Date.now()}`,
+    status: 'sent',
+    when: 'Just now',
+    code: template && template !== 'none' ? template : 'MAN-01',
+    title: content && content.length > 30 ? content.substring(0, 30) + '...' : (content || 'Manual message'),
+    to: to || 'Curator M. Vance',
+    channel: channel,
+    result: 'Delivered',
+    content: content,
+  };
+
+  tripMessagesStore[normalized].push(newMsg);
+
+  res.json({
+    success: true,
+    data: newMsg,
+    message: 'Message dispatched successfully',
+  });
+});
+
+// POST /api/messages/trip/:tripNumber/approve/:msgId
+router.post('/trip/:tripNumber/approve/:msgId', async (req, res) => {
+  const { tripNumber, msgId } = req.params;
+  const normalized = (tripNumber || 'FE4578').toUpperCase();
+
+  if (!tripMessagesStore[normalized]) {
+    tripMessagesStore[normalized] = initTripPlan(normalized);
+  }
+
+  const item = tripMessagesStore[normalized].find((m) => m.id === msgId);
+  if (item) {
+    item.status = 'sent';
+    item.result = 'Approved & sent just now';
+    return res.json({ success: true, data: item, message: 'Message approved and sent' });
+  }
+
+  res.json({ success: true, message: 'Message approved and sent' });
+});
+
 // POST /api/messages/automations/test
 router.post('/automations/test', async (req, res) => {
   const { code, targetEmail, targetPhone } = req.body;

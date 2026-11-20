@@ -12,8 +12,8 @@ interface TripPageProps {
 
 export default function TripPage({ params }: TripPageProps) {
   return (
-    <AppShell navKey="quotes">
-      <TripPageShell tripId={params.tripId} initialTab="itinerary" />
+    <AppShell navKey="bookings">
+      <TripPageShell tripId={params.tripId} initialTab="messages" />
     </AppShell>
   );
 }

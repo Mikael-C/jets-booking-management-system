@@ -150,7 +150,7 @@ export default function BookingsView() {
   ];
 
   const handleRowClick = (rootId: string) => {
-    router.push(`/trips/${rootId}/itinerary`);
+    router.push(`/trips/${rootId}/messages`);
   };
 
   return (
@@ -253,7 +253,7 @@ export default function BookingsView() {
                     >
                       <td>
                         <Link
-                          href={`/trips/${rootId}/itinerary`}
+                          href={`/trips/${rootId}/messages`}
                           className="font-mono font-bold text-xs block text-[var(--ink)] hover:text-[var(--accent)] hover:underline"
                         >
                           {verLabel}

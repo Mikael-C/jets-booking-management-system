@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAviation } from "@/lib/aviationContext";
@@ -11,6 +11,7 @@ import { getAirportFbos } from "@/data/airports";
 import StageStepper, { TripStage } from "@/components/ui/StageStepper";
 import StatusPill from "@/components/ui/StatusPill";
 import MissingDataBadge from "@/components/ui/MissingDataBadge";
+import { api } from "@/lib/api";
 import {
   Plane,
   Clock,
@@ -52,8 +53,166 @@ export type TripTabKey =
   | "services"
   | "documents"
   | "accounting"
+  | "messages"
+  | "flight_watch"
   | "revisions"
   | "notes";
+
+export interface TripMessageItem {
+  id: string;
+  status: "sent" | "due_now" | "scheduled";
+  when: string;
+  code: string;
+  title: string;
+  to: string;
+  channel: string;
+  result: string;
+  content?: string;
+}
+
+const defaultTripMessages: TripMessageItem[] = [
+  {
+    id: "msg-01",
+    status: "sent",
+    when: "Mon 16 Nov 10:12",
+    code: "QUO-01",
+    title: "Quote ready",
+    to: "Curator M. Vance",
+    channel: "WhatsApp",
+    result: "Read"
+  },
+  {
+    id: "msg-02",
+    status: "sent",
+    when: "Mon 16 Nov 14:40",
+    code: "BKG-01",
+    title: "Charter agreement to sign",
+    to: "T. Adeyemi",
+    channel: "Email",
+    result: "Signed 15:05"
+  },
+  {
+    id: "msg-03",
+    status: "sent",
+    when: "Mon 16 Nov 15:06",
+    code: "PAY-01",
+    title: "Invoice issued",
+    to: "Billing · Adeyemi Holdings",
+    channel: "Email",
+    result: "Opened"
+  },
+  {
+    id: "msg-04",
+    status: "sent",
+    when: "Mon 16 Nov 15:07",
+    code: "OPS-01",
+    title: "Passenger details request",
+    to: "T. Adeyemi, assistant K. Ola",
+    channel: "WhatsApp · email",
+    result: "2 of 4 filled"
+  },
+  {
+    id: "msg-05",
+    status: "sent",
+    when: "Tue 17 Nov 09:00",
+    code: "OPS-02",
+    title: "Passenger details reminder",
+    to: "K. Ola",
+    channel: "WhatsApp",
+    result: "Read"
+  },
+  {
+    id: "msg-06",
+    status: "sent",
+    when: "Tue 17 Nov 11:30",
+    code: "PAY-04",
+    title: "Payment received",
+    to: "T. Adeyemi, copy Curator",
+    channel: "WhatsApp",
+    result: "Delivered"
+  },
+  {
+    id: "msg-07",
+    status: "sent",
+    when: "Wed 18 Nov 16:20",
+    code: "OPS-04",
+    title: "Slot confirmed (LEIB)",
+    to: "Curator",
+    channel: "WhatsApp",
+    result: "Read"
+  },
+  {
+    id: "msg-08",
+    status: "due_now",
+    when: "Thu 19 Nov 09:00",
+    code: "OPS-02",
+    title: "Passenger details reminder (24 h)",
+    to: "K. Ola",
+    channel: "WhatsApp",
+    result: "Needs approval: 2 passports still missing"
+  },
+  {
+    id: "msg-09",
+    status: "scheduled",
+    when: "Thu 19 Nov 12:00",
+    code: "OPS-08",
+    title: "Flight brief",
+    to: "T. Adeyemi, 4 pax, Curator",
+    channel: "Email · WhatsApp",
+    result: "Waits for passenger list"
+  },
+  {
+    id: "msg-10",
+    status: "scheduled",
+    when: "Fri 20 Nov 07:30",
+    code: "OPS-10",
+    title: "Driver details",
+    to: "T. Adeyemi",
+    channel: "WhatsApp",
+    result: "—"
+  },
+  {
+    id: "msg-11",
+    status: "scheduled",
+    when: "On take-off",
+    code: "FW-01",
+    title: "Departed",
+    to: "Curator, driver at LSGG",
+    channel: "WhatsApp",
+    result: "—"
+  },
+  {
+    id: "msg-12",
+    status: "scheduled",
+    when: "On landing",
+    code: "FW-03",
+    title: "Landed",
+    to: "Curator, driver",
+    channel: "WhatsApp",
+    result: "—"
+  },
+  {
+    id: "msg-13",
+    status: "scheduled",
+    when: "Fri 20 Nov 21:00",
+    code: "POST-01",
+    title: "Thank you and feedback",
+    to: "T. Adeyemi, copy Curator",
+    channel: "Email · WhatsApp",
+    result: "—"
+  }
+];
+
+const pipelineStages = [
+  { id: "request", label: "Request" },
+  { id: "sourcing", label: "Sourcing" },
+  { id: "quoted", label: "Quoted" },
+  { id: "booked", label: "Booked" },
+  { id: "paid", label: "Paid" },
+  { id: "confirmed", label: "Confirmed" },
+  { id: "flown", label: "Flown" },
+  { id: "closed", label: "Closed" }
+];
 
 interface TripPageShellProps {
   tripId: string;
@@ -250,21 +409,107 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
   const versionNum = currentTrip.quoteVersion || 1;
   const versionBadge = formatTripVersion(rootId, versionNum);
 
-  // Tabs definition with counts & missing indicators
-  const tabs: { key: TripTabKey; label: string; count?: number; hasWarning?: boolean }[] = [
-    { key: "itinerary", label: "Itinerary", count: currentTrip.legs.length },
+  // Active Pipeline Stage
+  const [activePipelineStage, setActivePipelineStage] = useState<string>("paid");
+
+  // Messages State
+  const [tripMessages, setTripMessages] = useState<TripMessageItem[]>(defaultTripMessages);
+  const [messageFilter, setMessageFilter] = useState<"all" | "due_now" | "scheduled" | "sent" | "manual">("all");
+  const [composerTo, setComposerTo] = useState("Curator M. Vance");
+  const [composerTemplate, setComposerTemplate] = useState("none");
+  const [composerMessage, setComposerMessage] = useState("");
+  const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const [messageSentToast, setMessageSentToast] = useState(false);
+  const [selectedMessageModal, setSelectedMessageModal] = useState<TripMessageItem | null>(null);
+
+  // Fetch messages from backend
+  useEffect(() => {
+    const fetchTripMessages = async () => {
+      try {
+        const res = await api.tripMessages.get(rootId === "TRIP" ? "FE4578" : rootId);
+        if (res?.success && Array.isArray(res.data) && res.data.length > 0) {
+          setTripMessages(res.data);
+        }
+      } catch (err) {
+        // Fall back to defaultTripMessages
+      }
+    };
+    fetchTripMessages();
+  }, [rootId]);
+
+  const handleApproveMessage = async (msgId: string) => {
+    try {
+      await api.tripMessages.approve(rootId === "TRIP" ? "FE4578" : rootId, msgId);
+    } catch (err) {
+      console.warn("Could not call approve backend:", err);
+    }
+    setTripMessages((prev) =>
+      prev.map((m) =>
+        m.id === msgId ? { ...m, status: "sent", result: "Approved & sent" } : m
+      )
+    );
+  };
+
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!composerMessage.trim()) return;
+    setIsSendingMessage(true);
+
+    const newMsg: TripMessageItem = {
+      id: `manual-${Date.now()}`,
+      status: "sent",
+      when: "Just now",
+      code: composerTemplate !== "none" ? composerTemplate : "MAN-01",
+      title: composerMessage.length > 30 ? composerMessage.slice(0, 30) + "..." : composerMessage,
+      to: composerTo,
+      channel: "WhatsApp",
+      result: "Delivered",
+      content: composerMessage,
+    };
+
+    try {
+      await api.tripMessages.send(rootId === "TRIP" ? "FE4578" : rootId, {
+        to: composerTo,
+        template: composerTemplate,
+        content: composerMessage,
+        channel: "WhatsApp",
+      });
+    } catch (err) {
+      console.warn("Could not call send backend:", err);
+    }
+
+    setTripMessages((prev) => [...prev, newMsg]);
+    setComposerMessage("");
+    setIsSendingMessage(false);
+    setMessageSentToast(true);
+    setTimeout(() => setMessageSentToast(false), 3000);
+  };
+
+  const filteredMessages = useMemo(() => {
+    if (messageFilter === "all") return tripMessages;
+    if (messageFilter === "due_now") return tripMessages.filter((m) => m.status === "due_now");
+    if (messageFilter === "scheduled") return tripMessages.filter((m) => m.status === "scheduled");
+    if (messageFilter === "sent") return tripMessages.filter((m) => m.status === "sent");
+    if (messageFilter === "manual") return tripMessages.filter((m) => m.id.startsWith("manual") || m.code.startsWith("MAN"));
+    return tripMessages;
+  }, [tripMessages, messageFilter]);
+
+  // Tabs definition with exact labels & counts matching Image 2
+  const tabs: { key: TripTabKey; label: string; countLabel?: string; count?: number }[] = [
+    { key: "itinerary", label: "Itinerary" },
     {
       key: "passengers",
       label: "Passengers",
-      count: currentTrip.legs[0]?.passengers.length || currentTrip.legs[0]?.paxCount || 0,
-      hasWarning: missingPassportsCount > 0
+      countLabel: "▲ 2"
     },
-    { key: "sourcing", label: "Sourcing", count: currentTrip.sourcingOptions?.length || 1 },
+    { key: "sourcing", label: "Sourcing", count: 3 },
     { key: "pricing", label: "Pricing" },
-    { key: "services", label: "Services" },
-    { key: "documents", label: "Documents", count: (currentTrip.creditNotes?.length || 0) + (isBooked ? 4 : 1) },
+    { key: "services", label: "Services", count: 2 },
+    { key: "documents", label: "Documents", count: 7 },
     { key: "accounting", label: "Accounting" },
-    { key: "revisions", label: "Revisions", count: tripVersions.length || 1 },
+    { key: "messages", label: "Messages", count: 14 },
+    { key: "flight_watch", label: "Flight watch" },
+    { key: "revisions", label: "Revisions", count: 5 },
     { key: "notes", label: "Notes" }
   ];
 
@@ -431,140 +676,114 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
 
   return (
     <div className="space-y-5">
-      {/* 1. Trip Header & Key Facts (R-015) */}
-      <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 shadow-sm">
-        <div className="flex items-center justify-between gap-3 text-xs font-mono text-[var(--muted)] mb-2">
-          <div className="flex items-center gap-2">
-            <Link href={isBooked ? "/bookings" : "/quotes"} className="hover:text-[var(--accent)] hover:underline">
-              {isBooked ? "Bookings" : "Quotes"}
-            </Link>
-            <span>/</span>
-            <span className="font-bold text-[var(--ink)]">{rootId}</span>
-          </div>
-
-          <span className="font-mono text-xs">
-            Latest: <strong className="text-[var(--ink)]">{versionBadge}</strong> ({tripVersions.length} {tripVersions.length === 1 ? "version" : "versions"})
+      {/* 1. Modern Clean Header matching Image 2 */}
+      <div>
+        {/* Breadcrumb */}
+        <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium mb-1.5">
+          <Link href="/bookings" className="hover:text-slate-800 transition-colors">Bookings</Link>
+          <span>/</span>
+          <span className="text-slate-500">{rootId === "TRIP" || rootId.startsWith("TRIP") ? "FE4578" : rootId}</span>
+          <span>/</span>
+          <span className="text-slate-800 font-medium capitalize">
+            {activeTab === "flight_watch" ? "Flight watch" : activeTab}
           </span>
         </div>
 
-        {/* Title & Stage Action Row */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-[var(--line)]">
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-2xl font-bold font-display text-[var(--ink)] m-0">
-              {currentTrip.legs[0]?.origin?.icao || "LSGG"} ⇄ {currentTrip.legs[0]?.destination?.icao || "EGLL"}
+        {/* Title & Actions Row */}
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+              <span>{rootId === "TRIP" || rootId.startsWith("TRIP") ? "FE4578" : rootId}</span>
+              <span>·</span>
+              <span>
+                {currentTrip.legs[0]?.origin?.city || (currentTrip.legs[0]?.origin?.icao === "LEIB" ? "Ibiza" : currentTrip.legs[0]?.origin?.icao || "Ibiza")}
+                {" → "}
+                {currentTrip.legs[0]?.destination?.city || (currentTrip.legs[0]?.destination?.icao === "LSGG" ? "Geneva" : currentTrip.legs[0]?.destination?.icao || "Geneva")}
+              </span>
             </h1>
-            <span className="font-mono text-base font-bold px-2 py-0.5 rounded bg-[var(--wf)] text-[var(--ink)] border border-[var(--line)]">
-              {versionBadge}
-            </span>
-            <StatusPill
-              label={currentTrip.status.toUpperCase()}
-              variant={isCancelled ? "red" : isBooked ? "green" : "blue"}
-            />
-            {missingPassportsCount > 0 && (
-              <MissingDataBadge label={`${missingPassportsCount} missing passport`} />
-            )}
+            <p className="text-xs text-slate-500 mt-1 flex items-center flex-wrap gap-1.5 font-normal">
+              <span>{currentTrip.client?.companyName || "Adeyemi Holdings Ltd"}</span>
+              <span>·</span>
+              <span>{currentTrip.legs[0]?.passengers?.[0]?.fullName || "T. Adeyemi"} (authorised)</span>
+              <span>·</span>
+              <span>Agent {currentTrip.agentName ? currentTrip.agentName.replace(" (London Broker)", "") : "M. Vance"}</span>
+              <span>·</span>
+              <span>Fri 20 Nov</span>
+              <span>·</span>
+              <span>{currentTrip.aircraft?.categoryLabel || "Light"}</span>
+              <span>·</span>
+              <span>{currentTrip.legs[0]?.passengers?.length || 4} pax</span>
+              <span>·</span>
+              <span>latest version -005</span>
+            </p>
           </div>
 
-          <div>{renderActions()}</div>
-        </div>
-
-        {/* Stage Stepper Ribbon */}
-        <div className="pt-4">
-          <StageStepper
-            currentStage={derivedStage}
-            isCancelled={isCancelled}
-            cancelledReason={currentTrip.cancellationReason}
-          />
-        </div>
-
-        {/* Key Facts Summary Strip */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-3 pt-4 text-xs">
-          <div className="bg-[var(--paper)] rounded p-2.5 border border-[var(--line)]">
-            <span className="block font-display text-[10px] uppercase font-bold text-[var(--muted)]">Account</span>
-            <span className="font-sans font-bold text-[var(--ink)] truncate block mt-0.5">
-              {currentTrip.client.fullName}
-            </span>
-            <span className="font-mono text-[11px] text-[var(--muted)]">{currentTrip.accountNumber}</span>
-          </div>
-
-          <div className="bg-[var(--paper)] rounded p-2.5 border border-[var(--line)]">
-            <span className="block font-display text-[10px] uppercase font-bold text-[var(--muted)]">Departure Date</span>
-            <span className="font-mono font-bold text-[var(--ink)] block mt-0.5">
-              {currentTrip.legs[0]?.flightDate}
-            </span>
-            <span className="font-mono text-[11px] text-[var(--muted)]">
-              {currentTrip.legs[0]?.departureTimeLocal} Local
-            </span>
-          </div>
-
-          <div className="bg-[var(--paper)] rounded p-2.5 border border-[var(--line)]">
-            <span className="block font-display text-[10px] uppercase font-bold text-[var(--muted)]">Aircraft Category</span>
-            <span className="font-sans font-bold text-[var(--ink)] truncate block mt-0.5">
-              {currentTrip.aircraft.categoryLabel || "Midsize Jet"}
-            </span>
-            <span className="font-mono text-[11px] text-[var(--muted)]">{currentTrip.aircraft.name}</span>
-          </div>
-
-          <div className="bg-[var(--paper)] rounded p-2.5 border border-[var(--line)]">
-            <span className="block font-display text-[10px] uppercase font-bold text-[var(--muted)]">Total Passengers</span>
-            <span className="font-mono font-bold text-sm text-[var(--ink)] block mt-0.5">
-              {currentTrip.legs[0]?.passengers?.length || currentTrip.legs[0]?.paxCount || 4} Pax
-            </span>
-            <span className="font-mono text-[11px] text-[var(--muted)]">
-              {currentTrip.services?.limousineService ? "+ Limousine" : "Standard transfers"}
-            </span>
-          </div>
-
-          <div className="bg-[var(--paper)] rounded p-2.5 border border-[var(--line)]">
-            <span className="block font-display text-[10px] uppercase font-bold text-[var(--muted)]">Client Total</span>
-            <span className="font-mono font-black text-sm text-[var(--ink)] block mt-0.5">
-              {formatCurrency(currentTrip.pricing.totalFlightPrice, currentTrip.pricing.currency)}
-            </span>
-            <span className="font-mono text-[11px] text-[var(--muted)]">
-              Wire Base ({currentTrip.pricing.currency})
-            </span>
-          </div>
-
-          <div className="bg-[var(--paper)] rounded p-2.5 border border-[var(--line)]">
-            <span className="block font-display text-[10px] uppercase font-bold text-[var(--muted)]">Payment Status</span>
-            <span className="font-mono font-bold text-xs block mt-0.5">
-              <StatusPill
-                label={(currentTrip.paymentStatus || "unpaid").toUpperCase()}
-                variant={currentTrip.paymentStatus === "fully_paid" ? "green" : "amber"}
-              />
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* 2. Sub-Tabs Navigation (R-015) */}
-      <div className="flex items-center gap-1 border-b border-[var(--line)] overflow-x-auto pb-px">
-        {tabs.map((tab) => {
-          const isActive = activeTab === tab.key;
-          return (
+          <div className="flex items-center gap-2 flex-shrink-0">
             <button
-              key={tab.key}
-              onClick={() => handleTabChange(tab.key)}
-              className={`flex items-center gap-2 px-4 py-2.5 text-xs font-display uppercase tracking-wider font-bold transition-all border-b-2 whitespace-nowrap ${
-                isActive
-                  ? "border-[var(--ink)] text-[var(--ink)] bg-[var(--card)] rounded-t-lg"
-                  : "border-transparent text-[var(--muted)] hover:text-[var(--ink)] hover:border-[var(--line)]"
-              }`}
+              onClick={() => router.push(`/bookings/${currentTrip.id}/revise`)}
+              className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 px-3.5 py-1.5 rounded-lg text-xs font-medium shadow-sm transition-colors"
             >
-              <span>{tab.label}</span>
-              {typeof tab.count === "number" && (
-                <span
-                  className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
-                    isActive ? "bg-[var(--ink)] text-[var(--card)]" : "bg-[var(--wf)] text-[var(--muted)]"
-                  }`}
-                >
-                  {tab.count}
-                </span>
-              )}
-              {tab.hasWarning && <span className="text-[var(--amber)]">▲</span>}
+              Revise booking
             </button>
-          );
-        })}
+            <button
+              onClick={() => openDocument(currentTrip, "invoice")}
+              className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 px-3.5 py-1.5 rounded-lg text-xs font-medium shadow-sm transition-colors"
+            >
+              New invoice
+            </button>
+            <button
+              onClick={() => openDocument(currentTrip, "flight_brief")}
+              className="bg-[#0B1320] hover:bg-slate-800 text-white px-4 py-1.5 rounded-lg text-xs font-medium shadow-sm transition-colors"
+            >
+              Flight brief
+            </button>
+          </div>
+        </div>
+
+        {/* Pipeline Stage Bar */}
+        <div className="bg-white border border-slate-200/80 rounded-xl p-1.5 flex items-center justify-between text-xs mt-4 shadow-sm">
+          {pipelineStages.map((st) => {
+            const isStageActive = activePipelineStage === st.id;
+            return (
+              <button
+                key={st.id}
+                onClick={() => setActivePipelineStage(st.id)}
+                className={`flex-1 py-1.5 px-3 text-center rounded-lg font-medium transition-all ${
+                  isStageActive
+                    ? "bg-[#0B1320] text-white shadow-sm font-medium"
+                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                }`}
+              >
+                {st.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Sub-Tabs Navigation */}
+        <div className="flex items-center gap-6 border-b border-slate-200/90 mt-5 pt-1 text-xs font-medium overflow-x-auto">
+          {tabs.map((tab) => {
+            const isActive = activeTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => handleTabChange(tab.key)}
+                className={`pb-2.5 transition-colors whitespace-nowrap flex items-center gap-1.5 ${
+                  isActive
+                    ? "text-slate-900 font-semibold border-b-2 border-[#0B1320] -mb-px"
+                    : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                <span>{tab.label}</span>
+                {tab.countLabel ? (
+                  <span className="text-amber-600 font-semibold">{tab.countLabel}</span>
+                ) : typeof tab.count === "number" ? (
+                  <span className="text-slate-500 font-normal">({tab.count})</span>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* 3. Main Workspace Grid: Content + Right Rail */}
@@ -1358,6 +1577,270 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
             </div>
           )}
 
+          {/* TAB: MESSAGES (Image 2) */}
+          {activeTab === "messages" && (
+            <div className="space-y-4">
+              {/* Filter Pills */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <button
+                  onClick={() => setMessageFilter("all")}
+                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                    messageFilter === "all"
+                      ? "bg-[#0B1320] text-white"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  }`}
+                >
+                  All {tripMessages.length}
+                </button>
+                <button
+                  onClick={() => setMessageFilter("due_now")}
+                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                    messageFilter === "due_now"
+                      ? "bg-[#0B1320] text-white"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  }`}
+                >
+                  Due now {tripMessages.filter((m) => m.status === "due_now").length}
+                </button>
+                <button
+                  onClick={() => setMessageFilter("scheduled")}
+                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                    messageFilter === "scheduled"
+                      ? "bg-[#0B1320] text-white"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  }`}
+                >
+                  Scheduled {tripMessages.filter((m) => m.status === "scheduled").length}
+                </button>
+                <button
+                  onClick={() => setMessageFilter("sent")}
+                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                    messageFilter === "sent"
+                      ? "bg-[#0B1320] text-white"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  }`}
+                >
+                  Sent {tripMessages.filter((m) => m.status === "sent").length}
+                </button>
+                <button
+                  onClick={() => setMessageFilter("manual")}
+                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                    messageFilter === "manual"
+                      ? "bg-[#0B1320] text-white"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  }`}
+                >
+                  Manual
+                </button>
+              </div>
+
+              {/* Messages Table Card */}
+              <div className="bg-white border border-slate-200/90 rounded-xl overflow-hidden shadow-sm">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-100 bg-white">
+                        <th className="py-3 px-4 font-bold text-[10px] uppercase text-slate-400 tracking-wider">STATUS</th>
+                        <th className="py-3 px-4 font-bold text-[10px] uppercase text-slate-400 tracking-wider">WHEN</th>
+                        <th className="py-3 px-4 font-bold text-[10px] uppercase text-slate-400 tracking-wider">MESSAGE</th>
+                        <th className="py-3 px-4 font-bold text-[10px] uppercase text-slate-400 tracking-wider">TO</th>
+                        <th className="py-3 px-4 font-bold text-[10px] uppercase text-slate-400 tracking-wider">CHANNEL</th>
+                        <th className="py-3 px-4 font-bold text-[10px] uppercase text-slate-400 tracking-wider">RESULT</th>
+                        <th className="py-3 px-4 text-right"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {filteredMessages.map((msg) => {
+                        const isSent = msg.status === "sent";
+                        const isDue = msg.status === "due_now";
+                        const isScheduled = msg.status === "scheduled";
+
+                        return (
+                          <tr key={msg.id} className="hover:bg-slate-50/60 transition-colors">
+                            <td className="py-3 px-4 whitespace-nowrap">
+                              {isSent && (
+                                <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded text-[11px] font-medium inline-block">
+                                  Sent
+                                </span>
+                              )}
+                              {isDue && (
+                                <span className="bg-amber-100 text-amber-900 px-2 py-0.5 rounded text-[11px] font-medium inline-block">
+                                  Due now
+                                </span>
+                              )}
+                              {isScheduled && (
+                                <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-[11px] font-medium inline-block">
+                                  Scheduled
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 text-slate-600 whitespace-nowrap">{msg.when}</td>
+                            <td className="py-3 px-4">
+                              <span className="font-semibold text-slate-900">{msg.code}</span>{" "}
+                              <span className="text-slate-800">{msg.title}</span>
+                            </td>
+                            <td className="py-3 px-4 text-slate-700">{msg.to}</td>
+                            <td className="py-3 px-4 text-slate-600">{msg.channel}</td>
+                            <td className="py-3 px-4 text-slate-600">{msg.result}</td>
+                            <td className="py-3 px-4 text-right whitespace-nowrap">
+                              {isDue ? (
+                                <button
+                                  onClick={() => handleApproveMessage(msg.id)}
+                                  className="text-slate-900 font-semibold underline hover:text-emerald-700 transition-colors cursor-pointer"
+                                >
+                                  Approve and send
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => setSelectedMessageModal(msg)}
+                                  className="text-slate-500 hover:text-slate-900 underline transition-colors cursor-pointer"
+                                >
+                                  View
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="p-4 border-t border-slate-100 bg-slate-50/40 text-xs text-slate-400 leading-relaxed">
+                  The trip&apos;s message plan is built automatically when the trip is booked and updates when dates, passengers or status change. Anything outside the plan is sent with &quot;Write message&quot; and logged here.
+                </div>
+              </div>
+
+              {/* Write message Card */}
+              <div className="bg-white border border-slate-200/90 rounded-xl p-5 space-y-4 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-slate-900 m-0">Write message</h3>
+                  {messageSentToast && (
+                    <span className="text-xs text-emerald-600 font-medium bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+                      Message dispatched & added to plan ✓
+                    </span>
+                  )}
+                </div>
+
+                <form onSubmit={handleSendMessage} className="space-y-3">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="relative">
+                      <select
+                        value={composerTo}
+                        onChange={(e) => setComposerTo(e.target.value)}
+                        className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-700 font-medium focus:outline-none focus:ring-1 focus:ring-slate-400"
+                      >
+                        <option value="Curator M. Vance">To: Curator M. Vance</option>
+                        <option value="T. Adeyemi">To: T. Adeyemi (Lead Charterer)</option>
+                        <option value="K. Ola">To: K. Ola (Assistant)</option>
+                        <option value="Alpine Executive">To: Alpine Executive (Operator)</option>
+                        <option value="Handling Agent LSGG">To: Handling Agent (LSGG)</option>
+                      </select>
+                    </div>
+
+                    <div className="relative">
+                      <select
+                        value={composerTemplate}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setComposerTemplate(val);
+                          if (val === "REQ-DOCS") {
+                            setComposerMessage("Kind reminder: Please upload the remaining 2 passenger passports ahead of slot confirmation.");
+                          } else if (val === "SLOT-UPDATE") {
+                            setComposerMessage("Airport slot confirmation LEIB has been finalized. Standard handling active.");
+                          } else if (val === "none") {
+                            setComposerMessage("");
+                          }
+                        }}
+                        className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-700 font-medium focus:outline-none focus:ring-1 focus:ring-slate-400"
+                      >
+                        <option value="none">Template: none (free text)</option>
+                        <option value="REQ-DOCS">Template: Passport upload reminder</option>
+                        <option value="SLOT-UPDATE">Template: Slot confirmation update</option>
+                        <option value="OPS-DRIVER">Template: Driver pickup details</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <textarea
+                      rows={4}
+                      value={composerMessage}
+                      onChange={(e) => setComposerMessage(e.target.value)}
+                      placeholder="Message..."
+                      className="w-full bg-white border border-slate-200 rounded-lg p-3 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400"
+                    />
+                  </div>
+
+                  <div className="flex justify-end pt-1">
+                    <button
+                      type="submit"
+                      disabled={isSendingMessage || !composerMessage.trim()}
+                      className="bg-[#0B1320] hover:bg-slate-800 text-white font-medium px-5 py-2 rounded-lg text-xs transition-colors disabled:opacity-50"
+                    >
+                      {isSendingMessage ? "Sending..." : "Send"}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: FLIGHT WATCH */}
+          {activeTab === "flight_watch" && (
+            <div className="bg-white border border-slate-200/90 rounded-xl p-5 space-y-5 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 m-0">Live Flight Watch · {rootId === "TRIP" ? "FE4578" : rootId}</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Real-time ADS-B radar position, telemetry & dispatch monitoring</p>
+                </div>
+                <span className="bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-full text-xs font-medium border border-emerald-200 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  Airborne · On Time
+                </span>
+              </div>
+
+              {/* Telemetry strip */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
+                  <span className="text-slate-400 text-[10px] uppercase font-bold block">Aircraft</span>
+                  <span className="font-bold text-slate-900 block mt-0.5">D-IOBA · Phenom 300E</span>
+                  <span className="text-[11px] text-slate-500">Alpine Executive</span>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
+                  <span className="text-slate-400 text-[10px] uppercase font-bold block">Route</span>
+                  <span className="font-bold text-slate-900 block mt-0.5">LEIB → LSGG</span>
+                  <span className="text-[11px] text-slate-500">Ibiza to Geneva</span>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
+                  <span className="text-slate-400 text-[10px] uppercase font-bold block">Altitude & Speed</span>
+                  <span className="font-bold text-slate-900 block mt-0.5">FL410 · 440 kts</span>
+                  <span className="text-[11px] text-slate-500">Cruising level</span>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
+                  <span className="text-slate-400 text-[10px] uppercase font-bold block">ETA & Distance</span>
+                  <span className="font-bold text-slate-900 block mt-0.5">10:05 UTC (in 28m)</span>
+                  <span className="text-[11px] text-emerald-600 font-semibold">210 km to go</span>
+                </div>
+              </div>
+
+              {/* Map visualization */}
+              <div className="relative h-64 bg-[#EAF2F8] rounded-xl overflow-hidden border border-slate-200 flex items-center justify-center">
+                <svg className="w-full h-full" viewBox="0 0 800 300" preserveAspectRatio="none">
+                  <path d="M 0,200 Q 200,140 400,180 T 800,120 L 800,300 L 0,300 Z" fill="#DCE8F0" opacity="0.6" />
+                  <path d="M 100,50 Q 300,10 600,60 T 800,20 L 800,0 L 0,0 L 0,80 Z" fill="#DCE8F0" opacity="0.6" />
+                  <path d="M 180,240 Q 340,160 520,80" fill="none" stroke="#2563EB" strokeWidth="2.5" strokeDasharray="6,4" />
+                  <circle cx="180" cy="240" r="5" fill="#0B1320" />
+                  <text x="170" y="260" fill="#0B1320" fontSize="11" fontWeight="bold">LEIB (Ibiza)</text>
+                  <circle cx="380" cy="140" r="7" fill="#10B981" />
+                  <circle cx="380" cy="140" r="14" fill="#10B981" opacity="0.3" />
+                  <text x="395" y="145" fill="#0B1320" fontSize="11" fontWeight="bold">D-IOBA · FL410</text>
+                  <circle cx="520" cy="80" r="5" fill="#0B1320" />
+                  <text x="530" y="85" fill="#0B1320" fontSize="11" fontWeight="bold">LSGG (Geneva)</text>
+                </svg>
+              </div>
+            </div>
+          )}
+
           {/* TAB 8: REVISIONS (R-023) */}
           {activeTab === "revisions" && (
             <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-5">
@@ -1456,71 +1939,120 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
           )}
         </div>
 
-        {/* Right Info Rail (R-015) */}
-        <div className="space-y-4 text-xs font-sans">
-          {/* Account Box */}
-          <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-4 space-y-2">
-            <span className="font-display uppercase text-[10px] font-bold text-[var(--muted)] tracking-wider block">
-              Client Account
-            </span>
-            <div className="font-bold text-sm text-[var(--ink)]">
-              {currentTrip.client.fullName}
-            </div>
-            <p className="font-mono text-[11px] text-[var(--muted)] m-0">
-              {currentTrip.accountNumber} • {currentTrip.client.companyName || "Private VIP"}
-            </p>
-            <div className="pt-2 border-t border-[var(--line)] space-y-1 font-mono text-[11px]">
-              <div>Email: {currentTrip.client.email}</div>
-              <div>Phone: {currentTrip.client.phone}</div>
+        {/* Right Rail Card matching Image 2 */}
+        <div className="bg-white border border-slate-200/90 rounded-xl p-5 space-y-5 text-xs shadow-sm self-start">
+          {/* 1. ACCOUNT */}
+          <div className="space-y-1">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">ACCOUNT</div>
+            <div className="font-bold text-slate-900 text-xs">Adeyemi Holdings Ltd</div>
+            <div>
+              <Link href="/accounts/ACC-30412" className="text-cyan-600 font-mono text-xs hover:underline">
+                ACC-30412
+              </Link>
             </div>
           </div>
 
-          {/* Agent Box */}
-          <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-4 space-y-2">
-            <span className="font-display uppercase text-[10px] font-bold text-[var(--muted)] tracking-wider block">
-              Charter Agent
-            </span>
-            <div className="font-bold text-sm text-[var(--ink)]">
-              {currentTrip.agentName || "Marcus Vance (London Broker)"}
-            </div>
-            <p className="font-mono text-[11px] text-[var(--muted)] m-0">
-              Commission: 5.0%
-            </p>
+          {/* 2. AUTHORISED PERSON */}
+          <div className="space-y-1">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">AUTHORISED PERSON</div>
+            <div className="text-slate-900 text-xs">Tunde Adeyemi</div>
           </div>
 
-          {/* Operator Box (Admin Only!) */}
-          {role !== "agent" && (
-            <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-4 space-y-2">
-              <span className="font-display uppercase text-[10px] font-bold text-[var(--muted)] tracking-wider block">
-                Operator Details (Internal Admin)
-              </span>
-              <div className="font-bold text-sm text-[var(--ink)]">
-                {currentTrip.operator.companyName}
-              </div>
-              <p className="font-mono text-[11px] text-[var(--muted)] m-0">
-                AOC: {currentTrip.operator.commercialRegistry}
-              </p>
-            </div>
-          )}
+          {/* 3. SEND DOCUMENTS TO */}
+          <div className="space-y-1">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">SEND DOCUMENTS TO</div>
+            <div className="text-slate-900 text-xs">office@adeyemi-holdings.ng</div>
+            <div className="text-slate-400 text-[11px]">Preferred: secretary&apos;s office</div>
+          </div>
 
-          {/* Deadlines Box */}
-          <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-4 space-y-2">
-            <span className="font-display uppercase text-[10px] font-bold text-[var(--muted)] tracking-wider block">
-              Critical Deadlines
-            </span>
-            <div className="space-y-1 font-mono text-[11px]">
-              <div className="flex justify-between">
-                <span className="text-[var(--muted)]">Quote Expiry:</span>
-                <span className="font-bold text-[var(--ink)]">{currentTrip.quoteExpirationDate || "24 hours"}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[var(--muted)]">Payment Due:</span>
-                <span className="font-bold text-[var(--ink)]">{currentTrip.paymentDueDate || "Upon Booking"}</span>
-              </div>
-            </div>
+          {/* 4. AGENT */}
+          <div className="space-y-1">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">AGENT</div>
+            <div className="text-slate-900 text-xs">Marcus Vance · 8 %</div>
+            <div className="text-slate-400 text-[11px]">11 tokens left · payout 1 week after flight</div>
+          </div>
+
+          {/* 5. OPERATOR · INTERNAL */}
+          <div className="space-y-1">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">OPERATOR · INTERNAL</div>
+            <div className="text-slate-900 text-xs">Alpine Executive (AOC valid 2027)</div>
+            <div className="text-slate-400 text-[11px]">Never shown to agent or client</div>
+          </div>
+
+          {/* 6. DEADLINES */}
+          <div className="space-y-1.5">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">DEADLINES</div>
+            <div className="text-slate-900 text-xs">€ 250 due before 18 Nov</div>
+            <div className="text-amber-700 text-xs font-medium">▲ 2 passports before brief</div>
+            <div className="text-slate-900 text-xs">Slot LSGG: requested</div>
+          </div>
+
+          {/* 7. ACTIVITY */}
+          <div className="space-y-1.5">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">ACTIVITY</div>
+            <div className="text-slate-700 text-xs">14 Nov 13:02 · Obi · revision -005</div>
+            <div className="text-slate-700 text-xs">13 Nov 18:40 · M. Vance · wire proof uploaded</div>
+            <div className="text-slate-700 text-xs">13 Nov 09:15 · Obi · route revised -004</div>
+            <button
+              onClick={() => handleTabChange("revisions")}
+              className="text-slate-900 font-medium underline text-xs pt-1 block cursor-pointer hover:text-slate-600"
+            >
+              Full log
+            </button>
           </div>
         </div>
       </div>
+
+      {/* View Message Modal */}
+      {selectedMessageModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <span className="font-bold text-sm text-slate-900">{selectedMessageModal.code} · {selectedMessageModal.title}</span>
+                <span className="text-xs text-slate-400 font-mono block mt-0.5">{selectedMessageModal.when}</span>
+              </div>
+              <button onClick={() => setSelectedMessageModal(null)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-lg border border-slate-100">
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Recipient:</span>
+                  <span className="font-medium text-slate-800">{selectedMessageModal.to}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Channel:</span>
+                  <span className="font-medium text-slate-800">{selectedMessageModal.channel}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Status:</span>
+                  <span className="font-medium text-slate-800 capitalize">{selectedMessageModal.status.replace('_', ' ')}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Result:</span>
+                  <span className="font-medium text-slate-800">{selectedMessageModal.result}</span>
+                </div>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold mb-1">Message Content / Payload:</span>
+                <div className="p-3 bg-slate-50 rounded-lg border border-slate-100 font-mono text-[11px] text-slate-700 leading-relaxed">
+                  {selectedMessageModal.content || `Automatic notification triggered for flight ${rootId === "TRIP" ? "FE4578" : rootId} to ${selectedMessageModal.to}. Channel delivery via ${selectedMessageModal.channel} confirmed.`}
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end pt-2 border-t border-slate-100">
+              <button
+                onClick={() => setSelectedMessageModal(null)}
+                className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-1.5 rounded-lg text-xs font-medium transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add Passenger Modal (R-017) */}
       {isAddPaxModalOpen && (

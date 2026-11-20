@@ -672,4 +672,20 @@ export const api = {
         body: JSON.stringify(data),
       }),
   },
+
+  // Trip Messages Plan & Real-time Messages
+  tripMessages: {
+    get: (tripNumber: string) =>
+      request<{ success: boolean; data: any[] }>(`/messages/trip/${encodeURIComponent(tripNumber)}`),
+    send: (tripNumber: string, data: { to: string; template?: string; content: string; channel?: string }) =>
+      request<{ success: boolean; data: any; message: string }>(`/messages/trip/${encodeURIComponent(tripNumber)}/send`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    approve: (tripNumber: string, msgId: string) =>
+      request<{ success: boolean; data?: any; message: string }>(
+        `/messages/trip/${encodeURIComponent(tripNumber)}/approve/${encodeURIComponent(msgId)}`,
+        { method: "POST" }
+      ),
+  },
 };

@@ -15,7 +15,7 @@ export default function TripTabPage({ params }: TripTabPageProps) {
   const tabKey = (params.tab || "itinerary") as TripTabKey;
 
   return (
-    <AppShell navKey="quotes">
+    <AppShell navKey="bookings">
       <TripPageShell tripId={params.tripId} initialTab={tabKey} />
     </AppShell>
   );
