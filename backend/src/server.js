@@ -27,6 +27,10 @@ const startServer = async () => {
       } else {
         logger.info(`ℹ️  Database contains ${userCount} existing users, ${clientCount} clients, ${bookingCount} bookings — skipping seed.`);
       }
+
+      // Synchronize chronological REQ-FE###, QUO-FE###, TRI-FE### IDs
+      const { migrateLegacyIdentifiers } = require('./services/migrateIdentifiers');
+      await migrateLegacyIdentifiers();
     } catch (seedErr) {
       logger.warn('Auto-seed check notice: ' + seedErr.message);
     }

@@ -1,9 +1,9 @@
 [
   {
     "id": "booking-peu842",
-    "tripNumber": "PEU842-001",
-    "quoteReference": "QTE-2026-842",
-    "invoiceNumber": "00106020",
+    "tripNumber": "TRI-FE001",
+    "quoteReference": "QUO-FE001",
+    "invoiceNumber": "INV-FE001-01",
     "accountNumber": "ACC-21737",
     "contractDate": "01.10.2026",
     "quoteExpirationDate": "02.10.2026, 19:53z",
@@ -471,13 +471,14 @@
     "createdAt": "2026-10-01T10:00:00Z",
     "updatedAt": "2026-10-02T18:00:00Z",
     "_id": "booking-peu842",
-    "isDeleted": false
+    "isDeleted": false,
+    "tripId": "TRI-FE001"
   },
   {
     "id": "booking-zfl433",
-    "tripNumber": "ZFL433",
-    "quoteReference": "QTE-2026-433",
-    "invoiceNumber": "00105892",
+    "tripNumber": "TRI-FE002",
+    "quoteReference": "QUO-FE002",
+    "invoiceNumber": "INV-FE002-01",
     "accountNumber": "ACC-48392",
     "contractDate": "30.06.2026",
     "quoteExpirationDate": "01.07.2026, 18:00z",
@@ -928,13 +929,14 @@
     "createdAt": "2026-06-30T11:00:00Z",
     "updatedAt": "2026-07-01T18:00:00Z",
     "_id": "booking-zfl433",
-    "isDeleted": false
+    "isDeleted": false,
+    "tripId": "TRI-FE002"
   },
   {
     "id": "booking-orb914",
-    "tripNumber": "ORB-914",
-    "quoteReference": "QTE-2026-914",
-    "invoiceNumber": "00106045",
+    "tripNumber": "TRI-FE003",
+    "quoteReference": "QUO-FE003",
+    "invoiceNumber": "INV-FE003-01",
     "accountNumber": "ACC-88210",
     "contractDate": "10.10.2026",
     "quoteExpirationDate": "12.10.2026, 12:00z",
@@ -1303,13 +1305,14 @@
     "createdAt": "2026-10-10T09:00:00Z",
     "updatedAt": "2026-10-12T09:30:00Z",
     "_id": "booking-orb914",
-    "isDeleted": false
+    "isDeleted": false,
+    "tripId": "TRI-FE003"
   },
   {
     "id": "booking-orb582",
     "tripNumber": "",
-    "quoteReference": "QTE-2026-582",
-    "invoiceNumber": "00106098",
+    "quoteReference": "QUO-FE004",
+    "invoiceNumber": "INV-FE004-01",
     "accountNumber": "ACC-10984",
     "contractDate": "16.10.2026",
     "quoteExpirationDate": "19.10.2026, 17:00z",
@@ -1653,13 +1656,14 @@
     "createdAt": "2026-10-16T12:00:00Z",
     "updatedAt": "2026-10-16T16:00:00Z",
     "_id": "booking-orb582",
-    "isDeleted": false
+    "isDeleted": false,
+    "tripId": "TRI-FE004"
   },
   {
     "id": "booking-orb309",
     "tripNumber": "",
-    "quoteReference": "QTE-2026-309",
-    "invoiceNumber": "00106110",
+    "quoteReference": "QUO-FE005",
+    "invoiceNumber": "INV-FE005-01",
     "accountNumber": "ACC-10029",
     "contractDate": "17.10.2026",
     "quoteExpirationDate": "19.10.2026, 20:00z",
@@ -1993,13 +1997,14 @@
     "createdAt": "2026-10-17T09:30:00Z",
     "updatedAt": "2026-10-17T11:00:00Z",
     "_id": "booking-orb309",
-    "isDeleted": false
+    "isDeleted": false,
+    "tripId": "TRI-FE005"
   },
   {
     "id": "booking-qte101",
     "tripNumber": "",
-    "quoteReference": "QTE-2026-101",
-    "invoiceNumber": "00106115",
+    "quoteReference": "QUO-FE006",
+    "invoiceNumber": "INV-FE006-01",
     "accountNumber": "ACC-99482",
     "contractDate": "20.10.2026",
     "quoteExpirationDate": "24.10.2026, 18:00z",
@@ -2336,6 +2341,7 @@
     "createdAt": "2026-10-20T09:30:00Z",
     "updatedAt": "2026-10-20T11:00:00Z",
     "_id": "booking-qte101",
-    "isDeleted": false
+    "isDeleted": false,
+    "tripId": "TRI-FE006"
   }
 ]

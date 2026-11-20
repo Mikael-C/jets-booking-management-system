@@ -26,9 +26,10 @@ export const defaultOperator: OperatorDetails = {
 export const initialBookings: Booking[] = [
   {
     id: "booking-peu842",
-    tripNumber: "PEU842-001", // Booked flight has official trip number
-    quoteReference: "QTE-2026-842",
-    invoiceNumber: "00106020",
+    tripId: "TRI-FE001",
+    tripNumber: "TRI-FE001", // Booked flight has official trip number
+    quoteReference: "QUO-FE001",
+    invoiceNumber: "INV-FE001-01",
     accountNumber: "ACC-21737", // Linked directly to Edward Brinkmann
     contractDate: "01.10.2026",
     quoteExpirationDate: "02.10.2026, 19:53z",
@@ -201,9 +202,10 @@ export const initialBookings: Booking[] = [
   },
   {
     id: "booking-zfl433",
-    tripNumber: "ZFL433", // Booked flight
-    quoteReference: "QTE-2026-433",
-    invoiceNumber: "00105892",
+    tripId: "TRI-FE002",
+    tripNumber: "TRI-FE002", // Booked flight
+    quoteReference: "QUO-FE002",
+    invoiceNumber: "INV-FE002-01",
     accountNumber: "ACC-48392", // Linked to Alexander Moretti / Moretti Yachts
     contractDate: "30.06.2026",
     quoteExpirationDate: "01.07.2026, 18:00z",
@@ -359,9 +361,10 @@ export const initialBookings: Booking[] = [
   },
   {
     id: "booking-orb914",
-    tripNumber: "ORB-914", // Booked flight
-    quoteReference: "QTE-2026-914",
-    invoiceNumber: "00106045",
+    tripId: "TRI-FE003",
+    tripNumber: "TRI-FE003", // Booked flight
+    quoteReference: "QUO-FE003",
+    invoiceNumber: "INV-FE003-01",
     accountNumber: "ACC-88210", // Linked to Lord Julian Sterling
     contractDate: "10.10.2026",
     quoteExpirationDate: "12.10.2026, 12:00z",
@@ -488,9 +491,10 @@ export const initialBookings: Booking[] = [
   },
   {
     id: "booking-orb582",
+    tripId: "TRI-FE004",
     tripNumber: "", // Unbooked quote: Trip numbers only appear if booked as a flight!
-    quoteReference: "QTE-2026-582",
-    invoiceNumber: "00106098",
+    quoteReference: "QUO-FE004",
+    invoiceNumber: "INV-FE004-01",
     accountNumber: "ACC-10984", // Linked to Dr. Aris Thorne
     contractDate: "16.10.2026",
     quoteExpirationDate: "19.10.2026, 17:00z",
@@ -613,9 +617,10 @@ export const initialBookings: Booking[] = [
   },
   {
     id: "booking-orb309",
+    tripId: "TRI-FE005",
     tripNumber: "", // Unbooked quote: Trip numbers only appear if booked as a flight!
-    quoteReference: "QTE-2026-309",
-    invoiceNumber: "00106110",
+    quoteReference: "QUO-FE005",
+    invoiceNumber: "INV-FE005-01",
     accountNumber: "ACC-10029", // Linked to Elena Rostova
     contractDate: "17.10.2026",
     quoteExpirationDate: "19.10.2026, 20:00z",
@@ -735,9 +740,10 @@ export const initialBookings: Booking[] = [
   },
   {
     id: "booking-qte101",
+    tripId: "TRI-FE006",
     tripNumber: "", // Unbooked quote: Trip numbers only appear if booked as a flight!
-    quoteReference: "QTE-2026-101",
-    invoiceNumber: "00106115",
+    quoteReference: "QUO-FE006",
+    invoiceNumber: "INV-FE006-01",
     accountNumber: "ACC-99482", // Linked to Countess Sophie von Habsburg
     contractDate: "20.10.2026",
     quoteExpirationDate: "24.10.2026, 18:00z",
@@ -860,9 +866,10 @@ export const initialBookings: Booking[] = [
   },
   {
     id: "booking-rb3310",
-    tripNumber: "RB3310-002",
-    quoteReference: "RB3310-002",
-    invoiceNumber: "INV-RB3310-01",
+    tripId: "TRI-FE007",
+    tripNumber: "TRI-FE007",
+    quoteReference: "QUO-FE007",
+    invoiceNumber: "INV-FE007-01",
     accountNumber: "ACC-OKAFOR",
     contractDate: "19.11.2026",
     quoteExpirationDate: "today 18:00",
@@ -980,9 +987,10 @@ export const initialBookings: Booking[] = [
   },
   {
     id: "booking-fe4578",
-    tripNumber: "FE4578",
-    quoteReference: "Q-FE4578-002",
-    invoiceNumber: "INV-FE4578-01",
+    tripId: "TRI-FE008",
+    tripNumber: "TRI-FE008",
+    quoteReference: "QUO-FE008",
+    invoiceNumber: "INV-FE008-01",
     accountNumber: "ACC-30412",
     contractDate: "18.11.2026",
     quoteExpirationDate: "19.11.2026",

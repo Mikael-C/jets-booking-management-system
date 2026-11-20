@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAviation } from "@/lib/aviationContext";
+import { formatRequestId, formatQuoteId, formatTripId } from "@/lib/idGenerator";
 
 type FilterKey = "all" | "waiting" | "quoted" | "confirmed" | "expired";
 
@@ -38,7 +39,9 @@ export default function AgentRequestsListView() {
   const rows: RequestRow[] = [];
 
   // From agentRequests
-  agentRequests.forEach((req) => {
+  agentRequests.forEach((req, index) => {
+    const fallbackIdx = index + 1;
+    const reqCleanId = formatRequestId(req.requestNumber || req.id, fallbackIdx);
     const linkedBooking = bookings.find(
       (b) => b.id === req.bookingId || b.id === (req as any).generatedBookingId
     );
@@ -49,7 +52,7 @@ export default function AgentRequestsListView() {
     let expires: string | null = null;
     let actionLabel: string | null = "Message desk";
     let actionHref: string | null = `/agent/requests`;
-    let reference = req.id;
+    let reference = reqCleanId;
 
     if (req.status === "declined") {
       status = "expired";
@@ -72,7 +75,7 @@ export default function AgentRequestsListView() {
         expires = "—";
         actionLabel = "Open trip";
         actionHref = `/agent/trips/${linkedBooking.id}`;
-        reference = linkedBooking.tripNumber || req.id;
+        reference = formatTripId(linkedBooking.tripNumber || linkedBooking.tripId || req.tripId || reqCleanId, fallbackIdx);
       } else if (
         ["quote_sent", "client_review", "draft"].includes(bStatus) ||
         req.status === "completed"
@@ -114,8 +117,11 @@ export default function AgentRequestsListView() {
         })}`;
         actionLabel = "View quote";
         actionHref = `/agent/quotes/${linkedBooking.id}`;
-        reference =
-          (linkedBooking as any).quoteReference || linkedBooking.tripNumber || req.id;
+        reference = formatQuoteId(
+          (linkedBooking as any).quoteReference || linkedBooking.quoteId || req.quoteGroupId || reqCleanId,
+          fallbackIdx,
+          linkedBooking.quoteVersion || 1
+        );
       }
     } else if (req.status === "completed") {
       status = "waiting";
@@ -199,9 +205,10 @@ export default function AgentRequestsListView() {
           });
         } catch {}
       }
+      const tripCleanId = formatTripId(b.tripNumber || b.tripId || b.id, agentRequests.length + rows.length + 1);
       rows.push({
         id: `bk-${b.id}`,
-        reference: b.tripNumber || b.id,
+        reference: tripCleanId,
         client: b.client?.fullName || (b.client as any)?.companyName || "—",
         route,
         flight: flightDisplay,

@@ -84,11 +84,19 @@ router.get('/:id', async (req, res) => {
 
 // POST /api/agent-requests
 router.post('/', async (req, res) => {
-  const { id, requestNumber, status, isDeleted, tripId, quoteGroupId, ...submittedData } = req.body;
+  const { getNextFeSequence } = require('../services/bookingIdentifiers');
+  const token = await getNextFeSequence();
+  const requestNumber = `REQ-${token}`;
+  const tripId = `TRI-${token}`;
+  const quoteGroupId = `QUO-${token}`;
+
+  const { id, status, isDeleted, ...submittedData } = req.body;
   const requestData = {
     ...submittedData,
-    tripId: submittedData.type === 'quote' ? await createTripId() : '',
-    quoteGroupId: submittedData.type === 'quote' ? randomUUID() : '',
+    id: requestNumber,
+    requestNumber,
+    tripId,
+    quoteGroupId,
     agentName: req.user.name,
     agentEmail: req.user.email,
     status: 'pending',

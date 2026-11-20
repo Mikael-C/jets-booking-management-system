@@ -89,7 +89,7 @@ export default function AgentRequestsQueueView({ selectedRequestId }: AgentReque
       // Search query
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
-        const matchId = req.id.toLowerCase().includes(q);
+        const matchId = (req.requestNumber || req.id).toLowerCase().includes(q);
         const matchAgent = req.agentName?.toLowerCase().includes(q);
         const matchRoute = req.route?.toLowerCase().includes(q) || req.originIcao?.toLowerCase().includes(q) || req.destIcao?.toLowerCase().includes(q);
         const matchClient = req.clientName?.toLowerCase().includes(q) || req.companyName?.toLowerCase().includes(q);
@@ -211,14 +211,14 @@ export default function AgentRequestsQueueView({ selectedRequestId }: AgentReque
             Requests
           </button>
           <span>/</span>
-          <span className="text-gray-800">{activeRequest.id}</span>
+          <span className="text-gray-800">{activeRequest.requestNumber || activeRequest.id}</span>
         </div>
 
         {/* Header Row */}
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
-              {activeRequest.title || `${activeRequest.id} · Paris ⇄ Abuja`}
+              {activeRequest.title || `${activeRequest.requestNumber || activeRequest.id} · Paris ⇄ Abuja`}
             </h1>
             <p className="text-xs text-gray-500 mt-1">
               From agent {activeRequest.agentName}{" "}
@@ -545,7 +545,7 @@ export default function AgentRequestsQueueView({ selectedRequestId }: AgentReque
             </div>
 
             <p className="text-[11px] text-gray-400 px-1 leading-relaxed">
-              &ldquo;Create quote&rdquo; opens the New quote builder pre-filled with everything above and creates trip {activeRequest.createdTripId || `MX${activeRequest.id.replace(/[^0-9]/g, "") || "5521"}`}.
+              &ldquo;Create quote&rdquo; opens the New quote builder pre-filled with everything above and creates trip {activeRequest.tripId || activeRequest.createdTripId || "TRI-FE001"}.
             </p>
           </div>
         </div>
@@ -692,7 +692,7 @@ export default function AgentRequestsQueueView({ selectedRequestId }: AgentReque
                   className="hover:bg-gray-50/70 transition-colors cursor-pointer group"
                 >
                   <td className="py-3.5 px-4 font-mono font-medium text-gray-900">
-                    {req.id}
+                    {req.requestNumber || req.id}
                   </td>
                   <td className="py-3.5 px-4 whitespace-nowrap">
                     {getReceivedBadge(req)}

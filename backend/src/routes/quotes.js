@@ -242,7 +242,7 @@ router.post('/:id/convert-to-booking', authorize('super_admin', 'admin', 'operat
   booking.id = booking.id || identifiers.id;
   booking.quoteGroupId = quoteGroupId;
   booking.tripId = tripId;
-  booking.tripNumber = await createTripNumber(`PEU${groupToken}-001`);
+  booking.tripNumber = identifiers.tripNumber;
   booking.quoteId = booking.quoteId || identifiers.quoteId;
   booking.quoteReference = booking.quoteReference || booking.quoteId;
   booking.isBooked = true;
@@ -338,8 +338,11 @@ router.post('/generate', authorize('super_admin', 'admin', 'operations'), async 
     manualServices
   });
 
-  // Trip number
+  // Trip & Quote identifiers linked to agent request
+  const { extractFeToken } = require('../services/bookingIdentifiers');
+  const token = extractFeToken(agentRequest.requestNumber) || extractFeToken(agentRequest.tripId) || extractFeToken(agentRequest.id);
   const identifiers = await createBookingIdentifiers({
+    token,
     quoteGroupId: agentRequest.quoteGroupId || undefined,
     tripId: agentRequest.tripId || undefined,
   });

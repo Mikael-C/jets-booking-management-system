@@ -1,28 +1,64 @@
-const { createHash, randomUUID } = require('crypto');
+const { randomUUID } = require('crypto');
 const Booking = require('../models/Booking');
 const AgentRequest = require('../models/AgentRequest');
 const Sequence = require('../models/Sequence');
 
-const createTripId = async () => {
-  const year = new Date().getFullYear();
-  const sequenceId = `trip:${year}`;
+const pad3 = (num) => String(num).padStart(3, '0');
+
+/**
+ * Extracts the FE code token from any string, e.g.:
+ * "REQ-FE001" -> "FE001"
+ * "QUO-FE001-01" -> "FE001"
+ * "TRI-FE001" -> "FE001"
+ * "FE4578" -> "FE4578"
+ */
+const extractFeToken = (str) => {
+  if (!str) return null;
+  const match = String(str).match(/FE\d+/i);
+  return match ? match[0].toUpperCase() : null;
+};
+
+/**
+ * Gets or increments the global chronological FE sequence counter.
+ * Returns e.g. "FE001", "FE002", "FE003", etc.
+ */
+const getNextFeSequence = async () => {
+  const sequenceId = 'fe_global_counter';
   let counter = await Sequence.findById(sequenceId);
 
   if (!counter) {
-    const pattern = new RegExp(`^TRIP-${year}-(\\d+)$`);
-    const [bookingIds, requestIds] = await Promise.all([
-      Booking.distinct('tripId', { tripId: pattern, isDeleted: { $ne: true } }),
-      AgentRequest.distinct('tripId', { tripId: pattern, isDeleted: { $ne: true } }),
-    ]);
-    const currentValue = [...bookingIds, ...requestIds].reduce((max, tripId) => {
-      const match = String(tripId).match(pattern);
-      return match ? Math.max(max, Number(match[1])) : max;
-    }, 0);
-
     try {
-      await Sequence.create({ _id: sequenceId, value: currentValue });
-    } catch (error) {
-      if (error.code !== 11000) throw error;
+      // Find the highest existing FE sequence number across collections
+      const [bookingTripNumbers, bookingTripIds, bookingQuoteIds, requestNumbers, requestIds] = await Promise.all([
+        Booking.distinct('tripNumber', { isDeleted: { $ne: true } }),
+        Booking.distinct('tripId', { isDeleted: { $ne: true } }),
+        Booking.distinct('quoteId', { isDeleted: { $ne: true } }),
+        AgentRequest.distinct('requestNumber', { isDeleted: { $ne: true } }),
+        AgentRequest.distinct('id', { isDeleted: { $ne: true } }),
+      ]);
+
+      const allStrings = [
+        ...bookingTripNumbers,
+        ...bookingTripIds,
+        ...bookingQuoteIds,
+        ...requestNumbers,
+        ...requestIds,
+      ];
+
+      let maxVal = 0;
+      for (const s of allStrings) {
+        const match = String(s).match(/FE(\d+)/i);
+        if (match) {
+          const val = parseInt(match[1], 10);
+          if (!isNaN(val) && val > maxVal) {
+            maxVal = val;
+          }
+        }
+      }
+
+      counter = await Sequence.create({ _id: sequenceId, value: maxVal });
+    } catch (err) {
+      if (err.code !== 11000) console.warn('Sequence initialization notice:', err.message);
     }
   }
 
@@ -31,44 +67,60 @@ const createTripId = async () => {
     { $inc: { value: 1 } },
     { new: true, upsert: true }
   );
-  return `TRIP-${year}-${String(next.value).padStart(3, '0')}`;
+
+  return `FE${pad3(next.value)}`;
 };
 
-const createTripNumber = async (preferred) => {
-  if (preferred && !(await Booking.exists({ tripNumber: preferred }))) return preferred;
+const createTripId = async (providedToken) => {
+  const token = extractFeToken(providedToken) || await getNextFeSequence();
+  return `TRI-${token}`;
+};
 
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    const candidate = `QTE-${new Date().getFullYear()}-${randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()}`;
-    if (!(await Booking.exists({ tripNumber: candidate }))) return candidate;
-  }
-  throw new Error('Unable to allocate a unique trip number');
+const createTripNumber = async (preferred, providedToken) => {
+  const token = extractFeToken(providedToken) || extractFeToken(preferred) || await getNextFeSequence();
+  return `TRI-${token}`;
 };
 
 const createBookingIdentifiers = async ({
-  quoteGroupId = randomUUID(),
+  quoteGroupId,
   tripId,
+  token: explicitToken,
   quoteVersion = 1,
   isQuote = true,
   isBooked = false,
 } = {}) => {
-  const token = createHash('sha256').update(quoteGroupId).digest('hex').slice(0, 10).toUpperCase();
-  const version = String(quoteVersion).padStart(2, '0');
-  const quoteId = isQuote ? `QUO-${token}-${version}` : '';
-  if (quoteId && await Booking.exists({ quoteId })) {
-    throw new Error(`Quote ID ${quoteId} already exists`);
+  // Determine the shared FE sequence token
+  let token = explicitToken ||
+    extractFeToken(tripId) ||
+    extractFeToken(quoteGroupId);
+
+  if (!token) {
+    token = await getNextFeSequence();
   }
 
+  const version = String(quoteVersion).padStart(2, '0');
+  const tripIdStr = `TRI-${token}`;
+  const tripNumberStr = isBooked && quoteVersion > 1 ? `TRI-${token}-${version}` : `TRI-${token}`;
+  const quoteIdStr = isQuote ? (quoteVersion > 1 ? `QUO-${token}-${version}` : `QUO-${token}`) : '';
+
   return {
-    id: `booking-${randomUUID()}`,
-    tripId: tripId || await createTripId(),
-    quoteGroupId: isQuote ? quoteGroupId : '',
-    quoteId,
-    quoteReference: quoteId,
+    id: `booking-${token.toLowerCase()}-${randomUUID().slice(0, 8)}`,
+    token,
+    tripId: tripIdStr,
+    quoteGroupId: quoteGroupId || `QUO-${token}`,
+    quoteId: quoteIdStr,
+    quoteReference: quoteIdStr || `QUO-${token}`,
     quoteVersion: isQuote ? quoteVersion : undefined,
     bookingRevisionId: isBooked ? `BK-${token}-${version}` : '',
-    tripNumber: await createTripNumber(isBooked ? `PEU${token}-001` : undefined),
-    invoiceNumber: isBooked ? `INV-${token}-Q${version}` : '',
+    tripNumber: tripNumberStr,
+    invoiceNumber: isBooked ? `INV-${token}-${version}` : '',
   };
 };
 
-module.exports = { createBookingIdentifiers, createTripId, createTripNumber };
+module.exports = {
+  getNextFeSequence,
+  extractFeToken,
+  createBookingIdentifiers,
+  createTripId,
+  createTripNumber,
+};

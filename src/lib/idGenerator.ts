@@ -1,65 +1,181 @@
 /**
- * Orbelo Aviation Management System - ID Generation & Deduplication Engine (R-010)
+ * Orbelo Aviation Management System - ID Generation & Deduplication Engine
  *
- * Rules:
- * 1. Root Trip ID: 2 letters + 4 digits (e.g. FE4578, MX5521, RB3310).
- * 2. Versioned Trip ID: Root ID + 3-digit iteration (e.g. FE4578-001, FE4578-002).
- * 3. Document IDs derive from the trip version:
- *    - Quotation: Q-FE4578-002
- *    - Charter Agreement / Contract: C-FE4578-002
- *    - Commercial Invoice: INV-FE4578-01
- *    - Credit Note: CN-FE4578-01
- *    - Flight Brief: FB-FE4578-005
- * 4. Account IDs: ACC-xxxxx (5 digits, e.g. ACC-21737). One record per entity, never per trip.
- * 5. Contacts & Accounts exist once. Agents are filtered via `isAgent: true`, never duplicated.
+ * Requirements:
+ * 1. Request IDs: REQ-FE001, REQ-FE002, REQ-FE003...
+ * 2. Quotes IDs:  QUO-FE001, QUO-FE002, QUO-FE003...
+ * 3. Trip IDs:    TRI-FE001, TRI-FE002, TRI-FE003...
+ * 4. All chronologically linked by shared FE token (e.g. FE001).
+ * 5. Document IDs:
+ *    - Quotation: QUO-FE001
+ *    - Commercial Invoice: INV-FE001-01
+ *    - Credit Note: CN-FE001-01
+ *    - Flight Brief: FB-FE001
+ *    - Charter Contract: CTR-FE001-01
  */
 
 import { ContactRecord, AccountRecord } from "@/types/aviation";
 
 /**
- * Generates a standard root trip ID: 2 uppercase letters + 4 digits (e.g. "FE4578").
+ * Extract the shared chronological FE token from any identifier:
+ * "REQ-FE001" -> "FE001"
+ * "QUO-FE001-01" -> "FE001"
+ * "TRI-FE001" -> "FE001"
+ * "FE4578" -> "FE4578"
+ */
+export function extractFeToken(id?: string): string | null {
+  if (!id) return null;
+  const match = String(id).match(/FE\d+/i);
+  return match ? match[0].toUpperCase() : null;
+}
+
+/**
+ * Creates clean chronological linked IDs from a sequence number or token:
+ * getLinkedIds(1) => { token: "FE001", requestId: "REQ-FE001", quoteId: "QUO-FE001", tripId: "TRI-FE001" }
+ */
+export function getLinkedIds(tokenOrNum: string | number, version: number = 1) {
+  let token: string;
+  if (typeof tokenOrNum === "number") {
+    token = `FE${String(tokenOrNum).padStart(3, "0")}`;
+  } else {
+    token = extractFeToken(tokenOrNum) || tokenOrNum.toUpperCase();
+  }
+  const verStr = version > 1 ? `-${String(version).padStart(2, "0")}` : "";
+  return {
+    token,
+    requestId: `REQ-${token}`,
+    quoteId: `QUO-${token}${verStr}`,
+    tripId: `TRI-${token}`,
+    tripNumber: `TRI-${token}${verStr}`,
+    invoiceNumber: `INV-${token}-${String(version).padStart(2, "0")}`,
+    contractNumber: `CTR-${token}-${String(version).padStart(2, "0")}`,
+    flightBriefNumber: `FB-${token}`,
+  };
+}
+
+/**
+ * Deterministic mapping helper so that raw legacy IDs (e.g. UUIDs)
+ * always render the same chronological REQ-FE### / TRI-FE###.
+ */
+const legacyIdMapping = new Map<string, string>();
+let globalFeCounter = 1;
+
+/**
+ * Formats any request ID into standard REQ-FE### format:
+ * - "REQ-FE001" -> "REQ-FE001"
+ * - "request-61cb8dd1..." -> "REQ-FE001"
+ * - "RQ-0434" -> "REQ-FE001"
+ */
+export function formatRequestId(rawId?: string, fallbackIndex?: number): string {
+  if (!rawId) {
+    const idx = fallbackIndex ?? globalFeCounter++;
+    return `REQ-FE${String(idx).padStart(3, "0")}`;
+  }
+  const feMatch = rawId.match(/FE\d+/i);
+  if (feMatch) return `REQ-${feMatch[0].toUpperCase()}`;
+
+  if (legacyIdMapping.has(rawId)) {
+    return legacyIdMapping.get(rawId)!;
+  }
+
+  const idx = fallbackIndex ?? globalFeCounter++;
+  const formatted = `REQ-FE${String(idx).padStart(3, "0")}`;
+  legacyIdMapping.set(rawId, formatted);
+  return formatted;
+}
+
+/**
+ * Formats any quote ID into standard QUO-FE### format.
+ */
+export function formatQuoteId(rawId?: string, fallbackIndex?: number, version: number = 1): string {
+  const verStr = version > 1 ? `-${String(version).padStart(2, "0")}` : "";
+  if (!rawId) {
+    const idx = fallbackIndex ?? 1;
+    return `QUO-FE${String(idx).padStart(3, "0")}${verStr}`;
+  }
+  const feMatch = rawId.match(/FE\d+/i);
+  if (feMatch) return `QUO-${feMatch[0].toUpperCase()}${verStr}`;
+
+  if (legacyIdMapping.has(rawId)) {
+    const reqForm = legacyIdMapping.get(rawId)!;
+    return reqForm.replace("REQ-", "QUO-") + verStr;
+  }
+
+  const idx = fallbackIndex ?? 1;
+  return `QUO-FE${String(idx).padStart(3, "0")}${verStr}`;
+}
+
+/**
+ * Formats any trip ID into standard TRI-FE### format:
+ * - "TRI-FE001" -> "TRI-FE001"
+ * - "PEUD590D961D0-001" -> "TRI-FE001"
+ * - "QTE-2026-D22AC30943" -> "TRI-FE002"
+ */
+export function formatTripId(rawId?: string, fallbackIndex?: number): string {
+  if (!rawId) {
+    const idx = fallbackIndex ?? 1;
+    return `TRI-FE${String(idx).padStart(3, "0")}`;
+  }
+  const feMatch = rawId.match(/FE\d+/i);
+  if (feMatch) return `TRI-${feMatch[0].toUpperCase()}`;
+
+  if (legacyIdMapping.has(rawId)) {
+    const reqForm = legacyIdMapping.get(rawId)!;
+    return reqForm.replace("REQ-", "TRI-");
+  }
+
+  const idx = fallbackIndex ?? 1;
+  const formatted = `TRI-FE${String(idx).padStart(3, "0")}`;
+  legacyIdMapping.set(rawId, formatted);
+  return formatted;
+}
+
+/**
+ * Generates a standard root trip ID: "TRI-FExxx" or "FExxx".
  */
 export function generateTripRootId(existingIds: string[] = []): string {
-  const letters = "ABCDEFGHJKLMNPQRSTUVWXYZ"; // exclude easily confused I, O
-  let id = "";
   let attempts = 0;
+  let id = "";
   do {
-    const l1 = letters.charAt(Math.floor(Math.random() * letters.length));
-    const l2 = letters.charAt(Math.floor(Math.random() * letters.length));
-    const num = Math.floor(1000 + Math.random() * 9000); // 4-digit number
-    id = `${l1}${l2}${num}`;
+    const num = Math.floor(1 + Math.random() * 999);
+    id = `TRI-FE${String(num).padStart(3, "0")}`;
     attempts++;
   } while (existingIds.includes(id) && attempts < 100);
   return id;
 }
 
 /**
- * Formats a trip version string (e.g. "FE4578-001").
+ * Formats a trip version string (e.g. "TRI-FE001-001" or "TRI-FE001").
  */
 export function formatTripVersion(rootId: string, versionNumber: number): string {
-  const cleanRoot = rootId.split("-")[0].toUpperCase();
-  const padVer = String(versionNumber).padStart(3, "0");
-  return `${cleanRoot}-${padVer}`;
+  const feToken = extractFeToken(rootId);
+  const base = feToken ? `TRI-${feToken}` : (rootId.startsWith("TRI-") ? rootId : `TRI-${rootId}`);
+  if (versionNumber > 1) {
+    const padVer = String(versionNumber).padStart(3, "0");
+    return `${base}-${padVer}`;
+  }
+  return base;
 }
 
 /**
  * Parses a trip identifier into its root ID and version number.
  */
 export function parseTripVersion(tripIdentifier: string): { rootId: string; versionNumber: number } {
-  if (!tripIdentifier) return { rootId: "FE0000", versionNumber: 1 };
-  const parts = tripIdentifier.trim().toUpperCase().split("-");
-  const rootId = parts[0];
-  const versionNumber = parts[1] ? parseInt(parts[1], 10) || 1 : 1;
+  if (!tripIdentifier) return { rootId: "TRI-FE001", versionNumber: 1 };
+  const feToken = extractFeToken(tripIdentifier);
+  const rootId = feToken ? `TRI-${feToken}` : tripIdentifier;
+  const lastPart = tripIdentifier.trim().split("-").pop();
+  const versionNumber = lastPart && /^\d+$/.test(lastPart) && lastPart.length === 3 ? parseInt(lastPart, 10) : 1;
   return { rootId, versionNumber };
 }
 
 /**
  * Derives document numbers from the trip root and version.
- * - Q: Q-FE4578-002
- * - C: C-FE4578-002
- * - INV: INV-FE4578-01
- * - CN: CN-FE4578-01
- * - FB: FB-FE4578-005
+ * - Q: QUO-FE001 (or QUO-FE001-02)
+ * - C: CTR-FE001-01
+ * - INV: INV-FE001-01
+ * - CN: CN-FE001-01
+ * - FB: FB-FE001
  */
 export function formatDocumentId(
   kind: "Q" | "C" | "INV" | "CN" | "FB",
@@ -67,14 +183,26 @@ export function formatDocumentId(
   versionNumber: number,
   sequenceNumber: number = 1
 ): string {
-  const cleanRoot = rootId.split("-")[0].toUpperCase();
-  if (kind === "INV" || kind === "CN") {
-    // Invoices and Credit notes use 2-digit sequence per trip
-    const padSeq = String(sequenceNumber).padStart(2, "0");
-    return `${kind}-${cleanRoot}-${padSeq}`;
+  const feToken = extractFeToken(rootId) || rootId.replace(/^(TRI-|QUO-|REQ-)/, "");
+  const padSeq = String(sequenceNumber).padStart(2, "0");
+  const padVer = String(versionNumber).padStart(2, "0");
+
+  if (kind === "Q") {
+    return versionNumber > 1 ? `QUO-${feToken}-${padVer}` : `QUO-${feToken}`;
   }
-  const padVer = String(versionNumber).padStart(3, "0");
-  return `${kind}-${cleanRoot}-${padVer}`;
+  if (kind === "INV") {
+    return `INV-${feToken}-${padSeq}`;
+  }
+  if (kind === "CN") {
+    return `CN-${feToken}-${padSeq}`;
+  }
+  if (kind === "C") {
+    return `CTR-${feToken}-${padSeq}`;
+  }
+  if (kind === "FB") {
+    return `FB-${feToken}`;
+  }
+  return `${kind}-${feToken}`;
 }
 
 /**
@@ -115,21 +243,21 @@ export function findContactDuplicates(
 }
 
 /**
- * Filters the master Contacts list to return agents (R-010: Agents is a filtered view, not a copy).
+ * Filters the master Contacts list to return agents.
  */
 export function getAgentContacts(contacts: ContactRecord[]): ContactRecord[] {
   return contacts.filter((c) => c.isAgent);
 }
 
 /**
- * Filters the master Accounts list to return agent accounts (R-010: Agents is a filtered view, not a copy).
+ * Filters the master Accounts list to return agent accounts.
  */
 export function getAgentAccounts(accounts: AccountRecord[]): AccountRecord[] {
   return accounts.filter((a) => a.isAgent);
 }
 
 /**
- * Masks passport number, displaying only the last 4 characters (R-010 / R-017).
+ * Masks passport number, displaying only the last 4 characters.
  */
 export function maskPassportNumber(passportNumber?: string): string {
   if (!passportNumber) return "—";

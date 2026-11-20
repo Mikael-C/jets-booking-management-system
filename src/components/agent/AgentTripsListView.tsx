@@ -2,6 +2,7 @@
 import React from "react";
 import Link from "next/link";
 import { useAviation } from "@/lib/aviationContext";
+import { formatTripId } from "@/lib/idGenerator";
 
 export default function AgentTripsListView() {
   const { bookings } = useAviation();
@@ -50,7 +51,8 @@ export default function AgentTripsListView() {
                 </td>
               </tr>
             ) : (
-              myTrips.map((b) => {
+              myTrips.map((b, index) => {
+                const tripDisplay = formatTripId(b.tripNumber || b.tripId || b.id, index + 1);
                 const leg = b.legs?.[0];
                 const route =
                   b.legs
@@ -69,7 +71,7 @@ export default function AgentTripsListView() {
                 return (
                   <tr key={b.id} className="border-b border-white/5 hover:bg-white/5">
                     <td className="px-4 py-3 font-mono text-[#C9A052] font-semibold">
-                      {b.tripNumber || b.id}
+                      {tripDisplay}
                     </td>
                     <td className="px-4 py-3 text-gray-200">
                       {(b.client as any)?.companyName || b.client?.fullName || "—"}

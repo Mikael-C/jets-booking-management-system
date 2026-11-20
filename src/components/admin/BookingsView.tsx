@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAviation } from "@/lib/aviationContext";
 import { Booking } from "@/types/aviation";
-import { formatTripVersion, formatDocumentId } from "@/lib/idGenerator";
+import { formatTripVersion, formatDocumentId, extractFeToken } from "@/lib/idGenerator";
 import { formatCurrency } from "@/lib/pricingCalculator";
 import StatusPill from "@/components/ui/StatusPill";
 import MissingDataBadge from "@/components/ui/MissingDataBadge";
@@ -52,7 +52,8 @@ export default function BookingsView() {
   const latestBookings = useMemo(() => {
     const rootMap = new Map<string, Booking[]>();
     bookedTrips.forEach((b) => {
-      const root = (b.tripId || b.tripNumber || b.id).toUpperCase().split("-")[0];
+      const feToken = extractFeToken(b.tripId || b.tripNumber || b.id);
+      const root = feToken ? `TRI-${feToken}` : (b.tripId || b.tripNumber || b.id).toUpperCase().replace(/^BOOKING-/, "");
       const list = rootMap.get(root) || [];
       list.push(b);
       rootMap.set(root, list);

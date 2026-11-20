@@ -2,9 +2,12 @@ import { AgentRequest } from "@/types/aviation";
 
 export const initialAgentRequests: AgentRequest[] = [
   {
-    id: "RQ-0434",
+    id: "REQ-FE001",
+    requestNumber: "REQ-FE001",
+    tripId: "TRI-FE001",
+    quoteGroupId: "QUO-FE001",
     type: "quote",
-    title: "RQ-0434 · Lagos → Teterboro",
+    title: "REQ-FE001 · Lagos → Teterboro",
     agentName: "T. Bello",
     agentEmail: "t.bello@bellobrokers.com",
     clientName: "Adeyemi Holdings Ltd · ACC-30412",
@@ -38,9 +41,12 @@ export const initialAgentRequests: AgentRequest[] = [
     createdAt: new Date(Date.now() - 40 * 60 * 1000).toISOString()
   },
   {
-    id: "RQ-0433",
+    id: "REQ-FE002",
+    requestNumber: "REQ-FE002",
+    tripId: "TRI-FE002",
+    quoteGroupId: "QUO-FE002",
     type: "quote",
-    title: "RQ-0433 · Accra → Dubai",
+    title: "REQ-FE002 · Accra → Dubai",
     agentName: "A. Okafor",
     agentEmail: "a.okafor@okaforcharter.com",
     clientName: "Gold Coast Global · ACC-28901",
@@ -74,9 +80,12 @@ export const initialAgentRequests: AgentRequest[] = [
     createdAt: new Date(Date.now() - 12 * 60 * 1000).toISOString()
   },
   {
-    id: "RQ-0431",
+    id: "REQ-FE003",
+    requestNumber: "REQ-FE003",
+    tripId: "TRI-FE003",
+    quoteGroupId: "QUO-FE003",
     type: "quote",
-    title: "RQ-0431 · Paris ⇄ Abuja",
+    title: "REQ-FE003 · Paris ⇄ Abuja",
     agentName: "Camille Laurent",
     agentCompany: "Monaco Luxury Jet Brokers",
     agentEmail: "c.laurent@monacojets.mc",
@@ -114,7 +123,7 @@ export const initialAgentRequests: AgentRequest[] = [
     askOperatorText: "De-icing protection",
     agentMarginPct: 10,
     paymentMethodText: "Bank transfer",
-    createdTripId: "MX5521",
+    createdTripId: "TRI-FE003",
     createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
     messages: [
       {
@@ -136,9 +145,12 @@ export const initialAgentRequests: AgentRequest[] = [
     ]
   },
   {
-    id: "RQ-0436",
+    id: "REQ-FE004",
+    requestNumber: "REQ-FE004",
+    tripId: "TRI-FE004",
+    quoteGroupId: "QUO-FE004",
     type: "quote",
-    title: "RQ-0436 · Lagos → London Farnborough",
+    title: "REQ-FE004 · Lagos → London Farnborough",
     agentName: "Marcus Vance",
     agentEmail: "agent@orbelo.com",
     clientName: "Adeyemi Holdings",
@@ -171,9 +183,12 @@ export const initialAgentRequests: AgentRequest[] = [
     createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
   },
   {
-    id: "RQ-0430",
+    id: "REQ-FE005",
+    requestNumber: "REQ-FE005",
+    tripId: "TRI-FE005",
+    quoteGroupId: "QUO-FE005",
     type: "quote",
-    title: "RQ-0430 · Paris → Milan",
+    title: "REQ-FE005 · Paris → Milan",
     agentName: "Marcus Vance",
     agentEmail: "agent@orbelo.com",
     clientName: "Okafor Capital",
@@ -195,8 +210,8 @@ export const initialAgentRequests: AgentRequest[] = [
     receivedAgo: "5 h",
     isOverdue: false,
     status: "completed",
-    statusLabel: "Quoted → RB3310",
-    offersLoggedText: "Quote RB3310 issued (€ 14,900)",
+    statusLabel: "Quoted → QUO-FE005",
+    offersLoggedText: "Quote QUO-FE005 issued (€ 14,900)",
     lavatoryPreference: "Standard",
     luggageDetailsText: "3 suitcases · ≈ 60 kg",
     petDetailsText: "None",
@@ -204,13 +219,16 @@ export const initialAgentRequests: AgentRequest[] = [
     askOperatorText: "Quick turn-around slot",
     agentMarginPct: 8,
     paymentMethodText: "Bank wire",
-    createdTripId: "booking-rb3310",
+    createdTripId: "TRI-FE005",
     createdAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString()
   },
   {
-    id: "RQ-0428",
+    id: "REQ-FE006",
+    requestNumber: "REQ-FE006",
+    tripId: "TRI-FE006",
+    quoteGroupId: "QUO-FE006",
     type: "quote",
-    title: "RQ-0428 · Farnborough → Ibiza",
+    title: "REQ-FE006 · Farnborough → Ibiza",
     agentName: "C. Laurent",
     agentCompany: "Monaco Luxury Jet Brokers",
     agentEmail: "c.laurent@monacojets.mc",
@@ -245,9 +263,12 @@ export const initialAgentRequests: AgentRequest[] = [
     createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
   },
   {
-    id: "req-101",
+    id: "REQ-FE007",
+    requestNumber: "REQ-FE007",
+    tripId: "TRI-FE007",
+    quoteGroupId: "QUO-FE007",
     type: "quote",
-    title: "Quote Request: London Luton → Nice Côte d'Azur",
+    title: "REQ-FE007 · London Luton → Nice Côte d'Azur",
     agentName: "Marcus Vance",
     agentEmail: "marcus.vance@orbelo-brokerage.com",
     clientName: "Lord Julian Sterling",

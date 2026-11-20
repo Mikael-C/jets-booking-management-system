@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAviation } from "@/lib/aviationContext";
 import { Booking, FlightLeg, PricingBreakdown, PassengerManifestItem, SourcingOption } from "@/types/aviation";
-import { formatTripVersion, formatDocumentId, maskPassportNumber } from "@/lib/idGenerator";
+import { formatTripVersion, formatDocumentId, maskPassportNumber, formatTripId } from "@/lib/idGenerator";
 import { formatCurrency } from "@/lib/pricingCalculator";
 import { getAirportFbos } from "@/data/airports";
 import StageStepper, { TripStage } from "@/components/ui/StageStepper";
@@ -285,6 +285,7 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
       .toUpperCase()
       .replace(/^BOOKING-/, "")
       .replace(/^TRIP-/, "")
+      .replace(/^TRI-/, "")
       .split("-")[0];
   }, [tripId]);
 
@@ -307,6 +308,7 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
         .toUpperCase()
         .replace(/^BOOKING-/, "")
         .replace(/^TRIP-/, "")
+        .replace(/^TRI-/, "")
         .split("-")[0];
 
       if (normalizedId && bTripRoot === normalizedId) {
@@ -410,7 +412,8 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
     (p) => !p.passportNumber || p.passportNumber.length < 5
   ).length;
 
-  const rootId = (currentTrip.tripId || currentTrip.tripNumber || "FE4578").split("-")[0];
+  const tripNumberDisplay = currentTrip.tripNumber || currentTrip.tripId || (currentTrip.id?.startsWith("booking-") ? formatTripId(currentTrip.id) : currentTrip.id) || "TRI-FE001";
+  const rootId = tripNumberDisplay;
   const versionNum = currentTrip.quoteVersion || 1;
   const versionBadge = formatTripVersion(rootId, versionNum);
 
@@ -481,7 +484,7 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
   useEffect(() => {
     const fetchTripMessages = async () => {
       try {
-        const res = await api.tripMessages.get(rootId === "TRIP" ? "FE4578" : rootId);
+        const res = await api.tripMessages.get(rootId);
         if (res?.success && Array.isArray(res.data) && res.data.length > 0) {
           setTripMessages(res.data);
         }
@@ -494,7 +497,7 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
 
   const handleApproveMessage = async (msgId: string) => {
     try {
-      await api.tripMessages.approve(rootId === "TRIP" ? "FE4578" : rootId, msgId);
+      await api.tripMessages.approve(rootId, msgId);
     } catch (err) {
       console.warn("Could not call approve backend:", err);
     }
@@ -523,7 +526,7 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
     };
 
     try {
-      await api.tripMessages.send(rootId === "TRIP" ? "FE4578" : rootId, {
+      await api.tripMessages.send(rootId, {
         to: composerTo,
         template: composerTemplate,
         content: composerMessage,
@@ -737,7 +740,7 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
         <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium mb-1.5">
           <Link href="/bookings" className="hover:text-slate-800 transition-colors">Bookings</Link>
           <span>/</span>
-          <span className="text-slate-500">{rootId === "TRIP" || rootId.startsWith("TRIP") ? "FE4578" : rootId}</span>
+          <span className="text-slate-500">{rootId}</span>
           <span>/</span>
           <span className="text-slate-800 font-medium capitalize">
             {activeTab === "flight_watch" ? "Flight watch" : activeTab}
@@ -748,7 +751,7 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-              <span>{rootId === "TRIP" || rootId.startsWith("TRIP") ? "FE4578" : rootId}</span>
+              <span>{rootId}</span>
               <span>·</span>
               <span>
                 {currentTrip.legs[0]?.origin?.city || (currentTrip.legs[0]?.origin?.icao === "LEIB" ? "Ibiza" : currentTrip.legs[0]?.origin?.icao || "Ibiza")}
@@ -2013,7 +2016,7 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
             <div className="bg-white border border-slate-200/90 rounded-xl p-5 space-y-5 shadow-sm">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-base font-bold text-slate-900 m-0">Live Flight Watch · {rootId === "TRIP" ? "FE4578" : rootId}</h3>
+                  <h3 className="text-base font-bold text-slate-900 m-0">Live Flight Watch · {rootId}</h3>
                   <p className="text-xs text-slate-500 mt-0.5">Real-time ADS-B radar position, telemetry & dispatch monitoring</p>
                 </div>
                 <span className="bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-full text-xs font-medium border border-emerald-200 flex items-center gap-1.5">
@@ -2261,7 +2264,7 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
               <div>
                 <span className="text-slate-400 block text-[10px] uppercase font-bold mb-1">Message Content / Payload:</span>
                 <div className="p-3 bg-slate-50 rounded-lg border border-slate-100 font-mono text-[11px] text-slate-700 leading-relaxed">
-                  {selectedMessageModal.content || `Automatic notification triggered for flight ${rootId === "TRIP" ? "FE4578" : rootId} to ${selectedMessageModal.to}. Channel delivery via ${selectedMessageModal.channel} confirmed.`}
+                  {selectedMessageModal.content || `Automatic notification triggered for flight ${rootId} to ${selectedMessageModal.to}. Channel delivery via ${selectedMessageModal.channel} confirmed.`}
                 </div>
               </div>
             </div>

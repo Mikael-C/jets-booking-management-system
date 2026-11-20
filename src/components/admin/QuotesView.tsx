@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAviation } from "@/lib/aviationContext";
 import { Booking } from "@/types/aviation";
-import { formatTripVersion, formatDocumentId } from "@/lib/idGenerator";
+import { formatTripVersion, formatDocumentId, extractFeToken } from "@/lib/idGenerator";
 import { formatCurrency } from "@/lib/pricingCalculator";
 import StatusPill from "@/components/ui/StatusPill";
 import MissingDataBadge from "@/components/ui/MissingDataBadge";
@@ -65,18 +65,13 @@ export default function QuotesView() {
     });
 
     const getQuoteGroupRoot = (b: Booking): string => {
+      const feToken = extractFeToken(b.tripId || b.tripNumber || b.quoteReference || b.id);
+      if (feToken) return `TRI-${feToken}`;
       if (b.tripNumber && !b.tripNumber.toUpperCase().startsWith("QTE-")) {
-        return b.tripNumber.split("-")[0].toUpperCase();
+        return b.tripNumber;
       }
-      if (b.tripId && !b.tripId.toUpperCase().startsWith("TRIP-") && !b.tripId.toUpperCase().startsWith("BOOKING-")) {
-        return b.tripId.toUpperCase().split("-")[0];
-      }
-      if (b.tripId && b.tripId.toUpperCase().startsWith("TRIP-")) {
-        return b.tripId.toUpperCase();
-      }
-      const clean = (b.id || "").replace(/^booking-/i, "").replace(/^trip-/i, "");
-      if (clean) {
-        return clean.split("-")[0].toUpperCase();
+      if (b.tripId) {
+        return b.tripId;
       }
       return b.id;
     };

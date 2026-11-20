@@ -133,10 +133,20 @@ agentRequestSchema.index({ agentEmail: 1, status: 1 });
 agentRequestSchema.index({ createdAt: -1 });
 
 agentRequestSchema.pre('validate', async function (next) {
-  if (this.isNew && !this.id) this.id = `request-${randomUUID()}`;
-  if (this.isNew && !this.requestNumber) {
+  if (this.isNew || !this.requestNumber || !this.requestNumber.includes('FE')) {
     const { generateRequestNumber } = require('../utils/generateId');
-    this.requestNumber = await generateRequestNumber();
+    if (!this.requestNumber || !this.requestNumber.includes('FE')) {
+      this.requestNumber = await generateRequestNumber();
+    }
+    this.id = this.requestNumber;
+    if (!this.tripId || !this.tripId.includes('FE')) {
+      this.tripId = this.requestNumber.replace('REQ-', 'TRI-');
+    }
+    if (!this.quoteGroupId || !this.quoteGroupId.includes('FE')) {
+      this.quoteGroupId = this.requestNumber.replace('REQ-', 'QUO-');
+    }
+  } else if (!this.id || this.id.startsWith('request-')) {
+    this.id = this.requestNumber;
   }
   next();
 });

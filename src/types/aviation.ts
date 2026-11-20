@@ -607,6 +607,7 @@ export interface RequestLegItem {
 
 export interface AgentRequest {
   id: string;
+  requestNumber?: string;
   tripId?: string;
   quoteGroupId?: string;
   accountId?: string;
