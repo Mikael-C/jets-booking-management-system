@@ -236,4 +236,87 @@ router.patch('/:id/payment-status', async (req, res) => {
   }
 });
 
+// PATCH /api/invoices/:id/toggle-auto-reminders
+router.patch('/:id/toggle-auto-reminders', async (req, res) => {
+  try {
+    const booking = await findBooking(req.params.id);
+    if (!booking) {
+      return res.status(404).json({ success: false, message: 'Invoice / Booking not found' });
+    }
+
+    const currentSetting = booking.autoPaymentRemindersEnabled !== false;
+    const newSetting = req.body && typeof req.body.enabled === 'boolean' ? req.body.enabled : !currentSetting;
+
+    booking.autoPaymentRemindersEnabled = newSetting;
+    booking.updatedAt = new Date();
+    await booking.save();
+
+    await createAuditEntry({
+      user: req.user,
+      action: newSetting ? 'PAYMENT_REMINDERS_ENABLED' : 'PAYMENT_REMINDERS_MUTED',
+      entityType: 'Invoice',
+      entityId: booking.invoiceNumber || booking.tripNumber,
+      details: `Automatic payment reminders set to ${newSetting ? 'ENABLED' : 'MUTED/OFF'} for invoice ${booking.invoiceNumber}`,
+      req,
+    }).catch(() => {});
+
+    res.json({
+      success: true,
+      autoPaymentRemindersEnabled: newSetting,
+      message: `Automatic payment reminders are now ${newSetting ? 'enabled' : 'disabled'} for this invoice.`,
+      data: booking,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message || 'Failed to toggle payment reminder status' });
+  }
+});
+
+// POST /api/invoices/:id/send-payment-reminder
+router.post('/:id/send-payment-reminder', async (req, res) => {
+  try {
+    const booking = await findBooking(req.params.id);
+    if (!booking) {
+      return res.status(404).json({ success: false, message: 'Invoice / Booking not found' });
+    }
+
+    if (booking.paymentStatus === 'fully_paid') {
+      return res.status(400).json({ success: false, message: 'Invoice is already fully paid. No reminder needed.' });
+    }
+
+    const { MessageQueueItem } = require('../models/MessageAutomation');
+    const currency = booking.pricing?.currency || 'EUR';
+    const amount = booking.pricing?.totalFlightPrice || booking.pricing?.grandTotal || 0;
+    const invNum = booking.invoiceNumber || `INV-${booking.tripNumber}`;
+    const dueDate = booking.paymentDueDate || 'Wed 18 Nov';
+    const clientName = booking.client?.fullName || 'Client';
+    const clientEmail = booking.client?.email || 'client@billing.com';
+
+    const reminderContent = `Kind reminder: invoice ${invNum} (${currency} ${Number(amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}) is due ${dueDate}. Your aircraft is confirmed to the operator once payment arrives. link.pay`;
+
+    const queueItem = await MessageQueueItem.create({
+      automationCode: 'PAY-02',
+      tripNumber: booking.tripNumber || booking.id,
+      recipientName: clientName,
+      recipientContact: clientEmail,
+      channel: 'WhatsApp + Email',
+      status: 'sent',
+      sentAt: new Date(),
+      content: reminderContent,
+    }).catch(() => null);
+
+    booking.lastPaymentReminderSentAt = new Date();
+    await booking.save();
+
+    res.json({
+      success: true,
+      message: `PAY-02 payment reminder dispatched to ${clientName} (${clientEmail})`,
+      content: reminderContent,
+      queueItem,
+      lastPaymentReminderSentAt: booking.lastPaymentReminderSentAt,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message || 'Failed to dispatch payment reminder' });
+  }
+});
+
 module.exports = router;

@@ -365,6 +365,10 @@ router.post('/generate', authorize('super_admin', 'admin', 'operations'), async 
     legs,
     pricing,
     notes: agentRequest.specialRequests,
+    specialRequests: agentRequest.specialRequests,
+    petDetails: agentRequest.petDetails,
+    groundTransportation: agentRequest.groundTransportation,
+    helicopterTransfer: agentRequest.helicopterTransfer,
     source: 'agent_request',
     sourceAgentRequestId: agentRequest._id
   });

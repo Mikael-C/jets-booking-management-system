@@ -179,8 +179,96 @@ export interface PetDetails {
   hasPets: boolean;
   petCount: number;
   totalWeightKg: number;
+  petWeight?: number;
+  breed?: string;
   petType?: string;
   notes?: string;
+}
+
+export type GroundVehiclePreference = "Sedan" | "SUV" | "Van" | "Luxury";
+
+export interface GroundTransferItem {
+  id?: string;
+  leg: string; // "Leg 1", "Leg 2", "Leg 3", "Other: ..."
+  otherLegText?: string;
+  onArrival: {
+    required: boolean;
+    dropoffLocation: string;
+    vehiclePreference: GroundVehiclePreference;
+  };
+  onDeparture: {
+    required: boolean;
+    pickupLocation: string;
+    vehiclePreference: GroundVehiclePreference;
+  };
+  passengerCount: number;
+  specialRequests?: string;
+}
+
+export interface GroundTransportationRequirements {
+  required?: boolean;
+  enabled?: boolean;
+  flightLeg?: string[];
+  flightLegOther?: string;
+  onArrival?: {
+    required?: boolean;
+    dropOffLocation?: string;
+    dropoffLocation?: string;
+    vehiclePreference?: GroundVehiclePreference | string;
+  };
+  onDeparture?: {
+    required?: boolean;
+    pickUpLocation?: string;
+    pickupLocation?: string;
+    vehiclePreference?: GroundVehiclePreference | string;
+  };
+  additionalRequirements?: {
+    passengers?: number;
+    specialInstructions?: string;
+  };
+  transfers?: GroundTransferItem[];
+  extraTransfers?: Array<{ route: string; notes: string }>;
+}
+
+export interface HeliTransferItem {
+  id?: string;
+  leg: string;
+  otherLegText?: string;
+  onArrival: {
+    required: boolean;
+    dropoffLocation: string;
+  };
+  onDeparture: {
+    required: boolean;
+    pickupLocation: string;
+  };
+  passengerCount: number;
+  specialRequests?: string;
+}
+
+export interface HelicopterTransferRequirements {
+  required?: boolean;
+  enabled?: boolean;
+  flightLeg?: string[];
+  flightLegOther?: string;
+  onArrival?: {
+    required?: boolean;
+    dropOffLocation?: string;
+    dropoffLocation?: string;
+    vehiclePreference?: string;
+  };
+  onDeparture?: {
+    required?: boolean;
+    pickUpLocation?: string;
+    pickupLocation?: string;
+    vehiclePreference?: string;
+  };
+  additionalRequirements?: {
+    passengers?: number;
+    specialInstructions?: string;
+  };
+  transfers?: HeliTransferItem[];
+  extraTransfers?: Array<{ route: string; notes: string }>;
 }
 
 export interface LuggageDetails {
@@ -428,6 +516,12 @@ export interface Booking {
   adminMarginValue?: number;
   agentMarginType?: "percentage" | "fixed";
   agentMarginValue?: number;
+  autoPaymentRemindersEnabled?: boolean;
+  lastPaymentReminderSentAt?: string;
+  groundTransportation?: GroundTransportationRequirements;
+  helicopterTransfer?: HelicopterTransferRequirements;
+  petDetails?: PetDetails;
+  specialRequests?: string;
   manualServices?: Array<{ id: string; name: string; price: number; details?: string; description?: string }>;
   isHandledByPa?: boolean;
   paName?: string;
@@ -571,6 +665,9 @@ export interface AgentRequest {
   agentMarginPct?: number;
   agentMarginFixed?: number;
   pets?: PetDetails;
+  petDetails?: PetDetails;
+  groundTransportation?: GroundTransportationRequirements;
+  helicopterTransfer?: HelicopterTransferRequirements;
   luggage?: LuggageDetails;
 
   // New design fields

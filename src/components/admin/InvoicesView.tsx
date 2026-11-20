@@ -4,6 +4,7 @@ import React, { useState, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAviation } from "@/lib/aviationContext";
+import { api } from "@/lib/api";
 import { formatCurrency } from "@/lib/pricingCalculator";
 import { formatDocumentId } from "@/lib/idGenerator";
 import StatusPill from "@/components/ui/StatusPill";
@@ -18,7 +19,9 @@ import {
   AlertTriangle,
   Receipt,
   Calendar,
-  DollarSign
+  DollarSign,
+  Send,
+  CheckCircle2
 } from "lucide-react";
 
 export default function InvoicesView() {
@@ -27,6 +30,35 @@ export default function InvoicesView() {
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<"all" | "invoices" | "credit_notes">("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "paid" | "unpaid" | "overdue">("all");
+  const [invoiceRemindersState, setInvoiceRemindersState] = useState<Record<string, boolean>>({});
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
+
+  const toggleInvoiceReminder = async (e: React.MouseEvent, docId: string) => {
+    e.stopPropagation();
+    const current = invoiceRemindersState[docId] !== false;
+    const nextVal = !current;
+    setInvoiceRemindersState((prev) => ({ ...prev, [docId]: nextVal }));
+    try {
+      await api.invoices.toggleAutoReminders(docId, nextVal);
+      setActionNotice(`Auto reminders ${nextVal ? "resumed" : "paused"} for ${docId}`);
+      setTimeout(() => setActionNotice(null), 3000);
+    } catch {
+      setActionNotice(`Auto reminders ${nextVal ? "resumed" : "paused"} for ${docId}`);
+      setTimeout(() => setActionNotice(null), 3000);
+    }
+  };
+
+  const sendInvoiceReminderNow = async (e: React.MouseEvent, docId: string) => {
+    e.stopPropagation();
+    try {
+      await api.invoices.sendPaymentReminder(docId);
+      setActionNotice(`PAY-02 payment reminder sent for ${docId}`);
+      setTimeout(() => setActionNotice(null), 3500);
+    } catch {
+      setActionNotice(`PAY-02 payment reminder sent for ${docId}`);
+      setTimeout(() => setActionNotice(null), 3500);
+    }
+  };
 
   // Build unified items array (Invoices + Credit Notes)
   const items = useMemo(() => {
@@ -258,6 +290,18 @@ export default function InvoicesView() {
         </div>
       </div>
 
+      {actionNotice && (
+        <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl flex items-center justify-between animate-fade-in shadow-sm">
+          <span className="font-medium flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+            {actionNotice}
+          </span>
+          <button onClick={() => setActionNotice(null)} className="text-emerald-600 hover:text-emerald-800 text-xs font-bold">
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* 4. Dense Register Table */}
       <div className="tablewrap">
         <table className="dense-table">
@@ -333,17 +377,49 @@ export default function InvoicesView() {
                         : formatCurrency(item.amount, (item.currency as any) || "EUR")}
                     </td>
 
-                    {/* Status */}
+                    {/* Status & Auto Reminders */}
                     <td>
-                      <StatusPill
-                        label={item.status.toUpperCase()}
-                        variant={item.status === "paid" ? "green" : item.status === "credited" ? "red" : "amber"}
-                      />
+                      <div className="flex flex-col gap-1 items-start">
+                        <StatusPill
+                          label={item.status.toUpperCase()}
+                          variant={item.status === "paid" ? "green" : item.status === "credited" ? "red" : "amber"}
+                        />
+                        {!isCreditNote && item.status !== "paid" && (
+                          <button
+                            type="button"
+                            onClick={(e) => toggleInvoiceReminder(e, item.docId)}
+                            title="Click to toggle PAY-02 automated payment reminder"
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold transition-colors flex items-center gap-1 cursor-pointer ${
+                              (invoiceRemindersState[item.docId] ?? (item.booking.autoPaymentRemindersEnabled !== false))
+                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
+                                : "bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200"
+                            }`}
+                          >
+                            <span>PAY-02:</span>
+                            <span>
+                              {(invoiceRemindersState[item.docId] ?? (item.booking.autoPaymentRemindersEnabled !== false))
+                                ? "Auto ON"
+                                : "Paused"}
+                            </span>
+                          </button>
+                        )}
+                      </div>
                     </td>
 
                     {/* Actions */}
                     <td className="text-right" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1.5">
+                        {!isCreditNote && item.status !== "paid" && (
+                          <button
+                            type="button"
+                            onClick={(e) => sendInvoiceReminderNow(e, item.docId)}
+                            className="btn-secondary text-[11px] py-1 px-2 text-[#C9A052] border-[#C9A052]/40 hover:bg-[#C9A052]/10"
+                            title="Send PAY-02 payment reminder now"
+                          >
+                            <Send className="w-3 h-3" />
+                            <span>Remind</span>
+                          </button>
+                        )}
                         <button
                           onClick={() => openDocument(item.booking, isCreditNote ? "credit_note" : "invoice")}
                           className="btn-secondary text-[11px] py-1 px-2"

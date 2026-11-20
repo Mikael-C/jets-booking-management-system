@@ -354,7 +354,14 @@ export default function AgentRequestsQueueView({ selectedRequestId }: AgentReque
                     PETS
                   </div>
                   <div className="font-medium text-gray-900">
-                    {activeRequest.petDetailsText || "None"}
+                    {activeRequest.petDetails ? (
+                      <span>
+                        {activeRequest.petDetails.petCount || 1}x {activeRequest.petDetails.breed || activeRequest.petDetails.petType || "Pet"} ({activeRequest.petDetails.totalWeightKg || activeRequest.petDetails.petWeight || 8} kg)
+                        {activeRequest.petDetails.notes ? ` · ${activeRequest.petDetails.notes}` : ""}
+                      </span>
+                    ) : (
+                      activeRequest.petDetailsText || (activeRequest.hasPets ? "1 pet" : "None")
+                    )}
                   </div>
                 </div>
 
@@ -363,8 +370,26 @@ export default function AgentRequestsQueueView({ selectedRequestId }: AgentReque
                   <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1">
                     SERVICES
                   </div>
-                  <div className="font-medium text-gray-900">
-                    {activeRequest.servicesText || "Limousine on arrival DNAA · VIP menu 1"}
+                  <div className="font-medium text-gray-900 space-y-1">
+                    {activeRequest.groundTransportation?.enabled && (
+                      <div className="text-xs">
+                        🚗 Ground: {activeRequest.groundTransportation.onArrival?.dropOffLocation ? `Drop-off: ${activeRequest.groundTransportation.onArrival.dropOffLocation} (${activeRequest.groundTransportation.onArrival.vehiclePreference})` : "Transfer requested"}
+                        {activeRequest.groundTransportation.onDeparture?.pickUpLocation ? ` · Pick-up: ${activeRequest.groundTransportation.onDeparture.pickUpLocation}` : ""}
+                      </div>
+                    )}
+                    {activeRequest.helicopterTransfer?.enabled && (
+                      <div className="text-xs">
+                        🚁 Heli: {activeRequest.helicopterTransfer.onArrival?.dropOffLocation || activeRequest.helicopterTransfer.onDeparture?.pickUpLocation || "Helicopter transfer"}
+                      </div>
+                    )}
+                    {!activeRequest.groundTransportation?.enabled && !activeRequest.helicopterTransfer?.enabled && (
+                      <span>{activeRequest.servicesText || (activeRequest.limousineService ? "Limousine requested" : "None")}</span>
+                    )}
+                    {activeRequest.specialRequests && (
+                      <div className="text-xs text-gray-500">
+                        Catering / Special: {activeRequest.specialRequests}
+                      </div>
+                    )}
                   </div>
                 </div>
 

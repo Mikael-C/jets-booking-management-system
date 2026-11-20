@@ -234,6 +234,21 @@ export const api = {
         method: "POST",
         body: JSON.stringify(data),
       }),
+    toggleAutoReminders: (id: string, enabled?: boolean) =>
+      request<{ success: boolean; autoPaymentRemindersEnabled: boolean; message: string; data?: any }>(
+        `/invoices/${encodeURIComponent(id)}/toggle-auto-reminders`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ enabled }),
+        }
+      ),
+    sendPaymentReminder: (id: string) =>
+      request<{ success: boolean; message: string; content?: string }>(
+        `/invoices/${encodeURIComponent(id)}/send-payment-reminder`,
+        {
+          method: "POST",
+        }
+      ),
   },
 
   // Flight Operations Briefs API

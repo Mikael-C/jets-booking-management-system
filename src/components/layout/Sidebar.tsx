@@ -289,16 +289,7 @@ export default function Sidebar() {
           >
             <span>Airports & FBOs</span>
           </button>
-          <button
-            onClick={() => navigateTo("fbos", "/fbos")}
-            className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg transition-all ${
-              isFbosActive
-                ? "bg-[#1E293B] text-white font-medium"
-                : "text-gray-400 hover:text-white hover:bg-[#141C2B]"
-            }`}
-          >
-            <span>FBOs</span>
-          </button>
+         
         </div>
 
         {/* CONFIGURATION & SYSTEM Section */}

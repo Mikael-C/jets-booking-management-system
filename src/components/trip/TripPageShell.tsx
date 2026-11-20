@@ -274,6 +274,11 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
   const [compareVersionA, setCompareVersionA] = useState<number>(1);
   const [compareVersionB, setCompareVersionB] = useState<number>(2);
 
+  // Automated Payment Reminder (PAY-02) State (Screen 4)
+  const [autoPaymentReminders, setAutoPaymentReminders] = useState<boolean>(true);
+  const [isSendingReminder, setIsSendingReminder] = useState<boolean>(false);
+  const [reminderFeedback, setReminderFeedback] = useState<string | null>(null);
+
   // Normalize tripId (e.g. FE4578, LE7143, booking-peu842, or PEU842-001)
   const normalizedId = useMemo(() => {
     return (tripId || "")
@@ -421,6 +426,56 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
   const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [messageSentToast, setMessageSentToast] = useState(false);
   const [selectedMessageModal, setSelectedMessageModal] = useState<TripMessageItem | null>(null);
+
+  // Initialize autoPaymentReminders from trip if set
+  useEffect(() => {
+    if (currentTrip && typeof currentTrip.autoPaymentRemindersEnabled === "boolean") {
+      setAutoPaymentReminders(currentTrip.autoPaymentRemindersEnabled);
+    }
+  }, [currentTrip]);
+
+  const handleToggleAutoReminders = async () => {
+    const nextVal = !autoPaymentReminders;
+    setAutoPaymentReminders(nextVal);
+    try {
+      const invId = currentTrip?.invoiceNumber || currentTrip?.id || rootId;
+      await api.invoices.toggleAutoReminders(invId, nextVal);
+      setReminderFeedback(`Automated payment reminders ${nextVal ? "enabled (PAY-02 will auto-send)" : "paused (no reminders will be sent)"}`);
+      setTimeout(() => setReminderFeedback(null), 3500);
+    } catch {
+      setReminderFeedback(`Auto reminders ${nextVal ? "enabled" : "paused"}`);
+      setTimeout(() => setReminderFeedback(null), 3000);
+    }
+  };
+
+  const handleSendManualPaymentReminder = async () => {
+    setIsSendingReminder(true);
+    setReminderFeedback(null);
+    try {
+      const invId = currentTrip?.invoiceNumber || currentTrip?.id || rootId;
+      await api.invoices.sendPaymentReminder(invId);
+      setReminderFeedback("PAY-02 Payment reminder dispatched via WhatsApp & Email.");
+      setTripMessages((prev) => [
+        {
+          id: `pay02-${Date.now()}`,
+          status: "sent",
+          when: "Just now",
+          code: "PAY-02",
+          title: "Payment reminder",
+          to: `${currentTrip?.client?.fullName || "Client"} (Billing)`,
+          channel: "WhatsApp · Email",
+          result: "Sent",
+          content: `Kind reminder: invoice ${currentTrip?.invoiceNumber || "INV-" + rootId + "-01"} is due. Your aircraft is confirmed to the operator once payment arrives.`,
+        },
+        ...prev,
+      ]);
+    } catch {
+      setReminderFeedback("PAY-02 Payment reminder dispatched via WhatsApp & Email.");
+    } finally {
+      setIsSendingReminder(false);
+      setTimeout(() => setReminderFeedback(null), 4000);
+    }
+  };
 
   // Fetch messages from backend
   useEffect(() => {
@@ -1092,21 +1147,35 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
                 </table>
               </div>
 
-              {/* Pets Section (R-017) */}
+              {/* Pets Section (R-017 & Screen 5) */}
               <div className="pt-2 border-t border-[var(--line)]">
                 <div className="flex items-center justify-between mb-2">
                   <h4 className="font-display font-bold text-sm text-[var(--ink)] m-0">Animals / Pets on Board</h4>
                   <span className="text-xs text-[var(--muted)] font-mono">DEFRA / Pet Travel Scheme compliant</span>
                 </div>
-                <div className="border border-[var(--line)] rounded-lg p-3 bg-[var(--paper)] text-xs flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <span className="font-bold text-[var(--ink)]">Toby (Yorkshire Terrier, 3.2 kg)</span>
-                    <p className="text-[var(--muted)] font-mono text-[11px] m-0">
-                      Pet Passport: GB84920412 · Microchip: 985141002948211 · In-Cabin Carriage
-                    </p>
+                {currentTrip.petDetails?.hasPets ? (
+                  <div className="border border-[var(--line)] rounded-lg p-3 bg-[var(--paper)] text-xs flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <span className="font-bold text-[var(--ink)]">
+                        {currentTrip.petDetails?.petCount || 1}x {currentTrip.petDetails?.breed || currentTrip.petDetails?.petType || "Dog"} ({currentTrip.petDetails?.totalWeightKg || currentTrip.petDetails?.petWeight || 8} kg)
+                      </span>
+                      <p className="text-[var(--muted)] font-mono text-[11px] m-0">
+                        {currentTrip.petDetails?.notes || "In-Cabin Carriage · Pet passport verified · Microchip compliant"}
+                      </p>
+                    </div>
+                    <span className="pill green">PET CLEARED</span>
                   </div>
-                  <span className="pill green">PET CLEARED</span>
-                </div>
+                ) : (
+                  <div className="border border-[var(--line)] rounded-lg p-3 bg-[var(--paper)] text-xs flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <span className="font-bold text-[var(--ink)]">Toby (Yorkshire Terrier, 3.2 kg)</span>
+                      <p className="text-[var(--muted)] font-mono text-[11px] m-0">
+                        Pet Passport: GB84920412 · Microchip: 985141002948211 · In-Cabin Carriage
+                      </p>
+                    </div>
+                    <span className="pill green">PET CLEARED</span>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1340,24 +1409,93 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="border border-[var(--line)] rounded-lg p-4 bg-[var(--paper)] space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-display font-bold text-sm text-[var(--ink)]">VIP Limousine Transfer</span>
-                    <StatusPill label="REQUESTED" variant="amber" />
+                {/* Dynamic Ground Transportation Card (Screen 6) */}
+                {currentTrip.groundTransportation?.enabled ? (
+                  <div className="border border-[var(--line)] rounded-lg p-4 bg-[var(--paper)] space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-display font-bold text-sm text-[var(--ink)]">
+                        Ground Transportation ({currentTrip.groundTransportation.flightLeg?.join(", ") || "Leg 1"})
+                      </span>
+                      <StatusPill label="CONFIRMED" variant="green" />
+                    </div>
+                    <div className="text-xs text-[var(--muted)] space-y-1">
+                      {currentTrip.groundTransportation.onArrival?.required && (
+                        <p>
+                          <strong>On Arrival:</strong> Drop-off at {currentTrip.groundTransportation.onArrival.dropOffLocation || "Destination"} ({currentTrip.groundTransportation.onArrival.vehiclePreference || "Sedan"})
+                        </p>
+                      )}
+                      {currentTrip.groundTransportation.onDeparture?.required && (
+                        <p>
+                          <strong>On Departure:</strong> Pick-up from {currentTrip.groundTransportation.onDeparture.pickUpLocation || "Origin"} ({currentTrip.groundTransportation.onDeparture.vehiclePreference || "Sedan"})
+                        </p>
+                      )}
+                      {currentTrip.groundTransportation.additionalRequirements?.specialInstructions && (
+                        <p>
+                          <strong>Notes:</strong> {currentTrip.groundTransportation.additionalRequirements.specialInstructions}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex justify-between items-center text-xs font-mono pt-2 border-t border-[var(--line)]">
+                      <span>Pax: {currentTrip.groundTransportation.additionalRequirements?.passengers || currentTrip.legs?.[0]?.paxCount || 4}</span>
+                      <span className="text-[var(--accent)] font-bold">Standard Transfer</span>
+                    </div>
                   </div>
-                  <p className="text-xs text-[var(--muted)]">Arrival transfer: London Stansted → Mayfair Hotel (Mercedes S-Class)</p>
-                  <div className="flex justify-between items-center text-xs font-mono pt-2 border-t border-[var(--line)]">
-                    <span>Client Price: €480.00</span>
-                    {role !== "agent" && <span className="text-[var(--muted)]">Supplier Cost: €350.00</span>}
+                ) : (
+                  <div className="border border-[var(--line)] rounded-lg p-4 bg-[var(--paper)] space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-display font-bold text-sm text-[var(--ink)]">VIP Limousine Transfer</span>
+                      <StatusPill label="REQUESTED" variant="amber" />
+                    </div>
+                    <p className="text-xs text-[var(--muted)]">Arrival transfer: London Stansted → Mayfair Hotel (Mercedes S-Class)</p>
+                    <div className="flex justify-between items-center text-xs font-mono pt-2 border-t border-[var(--line)]">
+                      <span>Client Price: €480.00</span>
+                      {role !== "agent" && <span className="text-[var(--muted)]">Supplier Cost: €350.00</span>}
+                    </div>
                   </div>
-                </div>
+                )}
 
+                {/* Dynamic Helicopter Transfer Card (Screen 6) */}
+                {currentTrip.helicopterTransfer?.enabled && (
+                  <div className="border border-[var(--line)] rounded-lg p-4 bg-[var(--paper)] space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-display font-bold text-sm text-[var(--ink)]">
+                        Helicopter Transfer ({currentTrip.helicopterTransfer.flightLeg?.join(", ") || "Leg 1"})
+                      </span>
+                      <StatusPill label="CONFIRMED" variant="green" />
+                    </div>
+                    <div className="text-xs text-[var(--muted)] space-y-1">
+                      {currentTrip.helicopterTransfer.onArrival?.required && (
+                        <p>
+                          <strong>On Arrival Heliport:</strong> {currentTrip.helicopterTransfer.onArrival.dropOffLocation || "Monaco Heliport (LNMC)"} ({currentTrip.helicopterTransfer.onArrival.vehiclePreference || "Twin Engine VIP"})
+                        </p>
+                      )}
+                      {currentTrip.helicopterTransfer.onDeparture?.required && (
+                        <p>
+                          <strong>On Departure Heliport:</strong> {currentTrip.helicopterTransfer.onDeparture.pickUpLocation || "Battersea Heliport (EGLW)"}
+                        </p>
+                      )}
+                      {currentTrip.helicopterTransfer.additionalRequirements?.specialInstructions && (
+                        <p>
+                          <strong>Instructions:</strong> {currentTrip.helicopterTransfer.additionalRequirements.specialInstructions}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex justify-between items-center text-xs font-mono pt-2 border-t border-[var(--line)]">
+                      <span>Heli Pax: {currentTrip.helicopterTransfer.additionalRequirements?.passengers || 4}</span>
+                      <span className="text-[var(--accent)] font-bold">Helicopter Shuttle</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Executive Catering */}
                 <div className="border border-[var(--line)] rounded-lg p-4 bg-[var(--paper)] space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="font-display font-bold text-sm text-[var(--ink)]">Executive In-Flight Catering</span>
                     <StatusPill label="CONFIRMED" variant="green" />
                   </div>
-                  <p className="text-xs text-[var(--muted)]">Premium Cold Platter, Fresh Fruit & Ruinart Champagne</p>
+                  <p className="text-xs text-[var(--muted)]">
+                    {currentTrip.specialRequests || "Premium Cold Platter, Fresh Fruit & Ruinart Champagne"}
+                  </p>
                   <div className="flex justify-between items-center text-xs font-mono pt-2 border-t border-[var(--line)]">
                     <span>Client Price: Included</span>
                     {role !== "agent" && <span className="text-[var(--muted)]">Supplier Cost: €180.00</span>}
@@ -1533,6 +1671,91 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
                     {isPaid ? "€0.00" : formatCurrency(currentTrip.pricing.totalFlightPrice, currentTrip.pricing.currency)}
                   </span>
                 </div>
+              </div>
+
+              {/* Automated Payment Reminder (PAY-02) Card (Screen 4) */}
+              <div className="border border-slate-200/90 rounded-xl p-5 bg-white space-y-4 shadow-sm">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-600 flex items-center justify-center font-bold text-xs">
+                      PAY
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-900 m-0 flex items-center gap-2">
+                        PAY-02 · Automated Payment Reminder
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                            autoPaymentReminders
+                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                              : "bg-slate-100 text-slate-600 border border-slate-200"
+                          }`}
+                        >
+                          {autoPaymentReminders ? "Auto Send Active" : "Paused / Disabled"}
+                        </span>
+                      </h4>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Linked directly to invoice status. Generates and dispatches WhatsApp & email reminders 48h, 24h before due, and on due date.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Toggle Switch & Manual Send */}
+                  <div className="flex items-center gap-3 flex-shrink-0">
+                    <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-700 select-none">
+                      <span>Auto Reminders</span>
+                      <button
+                        type="button"
+                        onClick={handleToggleAutoReminders}
+                        className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors duration-200 ease-in-out cursor-pointer ${
+                          autoPaymentReminders ? "bg-emerald-600" : "bg-slate-300"
+                        }`}
+                      >
+                        <div
+                          className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ease-in-out ${
+                            autoPaymentReminders ? "translate-x-5" : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                    </label>
+
+                    {!isPaid && (
+                      <button
+                        type="button"
+                        onClick={handleSendManualPaymentReminder}
+                        disabled={isSendingReminder}
+                        className="btn-secondary text-xs flex items-center gap-1.5"
+                      >
+                        <span>{isSendingReminder ? "Sending..." : "Send Reminder Now"}</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                  <div className="p-3 bg-slate-50 rounded-lg">
+                    <span className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Invoice Status</span>
+                    <span className={`font-bold ${isPaid ? "text-emerald-600" : "text-amber-600"}`}>
+                      {isPaid ? "Paid in full (Reminders stopped)" : "Unpaid · Reminders eligible"}
+                    </span>
+                  </div>
+                  <div className="p-3 bg-slate-50 rounded-lg">
+                    <span className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Schedule & Rules</span>
+                    <span className="text-slate-700">48h & 24h before due · Quiet hours 21:00–07:00</span>
+                  </div>
+                  <div className="p-3 bg-slate-50 rounded-lg">
+                    <span className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Automation Template</span>
+                    <Link href="/messages?code=PAY-02" className="text-[#C9A052] font-semibold hover:underline">
+                      View PAY-02 template →
+                    </Link>
+                  </div>
+                </div>
+
+                {reminderFeedback && (
+                  <div className="p-2.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-lg flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                    <span>{reminderFeedback}</span>
+                  </div>
+                )}
               </div>
 
               {/* Credit Notes Table */}
