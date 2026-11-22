@@ -52,10 +52,7 @@ export default function FlightBriefDoc({ booking }: FlightBriefDocProps) {
   const manifestItems = firstLeg?.passengers && firstLeg.passengers.length > 0
     ? firstLeg.passengers
     : [
-        { fullName: `${client?.fullName || "Mr Tunde Adeyemi"} (Lead)`, nationality: "British", isLead: true },
-        { fullName: "Mrs Ada Adeyemi", nationality: "British" },
-        { fullName: "Miss Kemi Adeyemi", nationality: "British" },
-        { fullName: "Mr Bayo Adeyemi", nationality: "British" }
+        { fullName: `${client?.fullName || "Lead Passenger"} (Lead)`, nationality: "Confirmed on APIS", isLead: true }
       ];
 
   const cateringText = services?.vipCateringDetails || "Executive VIP catering: cold platters, fresh fruit, artisan bakery & champagne";

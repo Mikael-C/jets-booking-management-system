@@ -71,10 +71,10 @@ const DEFAULT_MOVEMENTS: MovementRow[] = [
 ];
 
 const PACKAGES = [
-  { id: "p1", count: 1, label: "1 token", price: "$15", priceNum: 15 },
-  { id: "p15", count: 15, label: "15 tokens · save 11%", price: "$200", priceNum: 200 },
-  { id: "p25", count: 25, label: "25 tokens · save 17%", price: "$310", priceNum: 310 },
-  { id: "p50", count: 50, label: "50 tokens · save 25%", price: "$560", priceNum: 560 },
+  { id: "p1", count: 1, label: "1 token", price: "$10", priceNum: 10 },
+  { id: "p15", count: 15, label: "15 tokens · save 10%", price: "$135", priceNum: 135 },
+  { id: "p25", count: 25, label: "25 tokens · save 16%", price: "$210", priceNum: 210 },
+  { id: "p50", count: 50, label: "50 tokens · save 25%", price: "$375", priceNum: 375 },
 ];
 
 export default function AgentTokensView() {
@@ -84,6 +84,11 @@ export default function AgentTokensView() {
   const [purchaseSuccess, setPurchaseSuccess] = useState<string | null>(null);
 
   const selectedPkg = PACKAGES.find((p) => p.id === selectedPackageId) || PACKAGES[1];
+
+  const monthlyTokens = 3;
+  const freeTokens = 2;
+  const paidTokens = tokenBalance !== undefined && tokenBalance > 5 ? tokenBalance - 5 : 6;
+  const totalBalance = monthlyTokens + freeTokens + paidTokens;
 
   const handleBuy = async () => {
     setIsPurchasing(true);
@@ -105,7 +110,7 @@ export default function AgentTokensView() {
       <div>
         <h1 className="text-2xl font-bold text-white tracking-tight">Tokens</h1>
         <p className="text-sm text-gray-400 mt-1">
-          1 token per leg of a quote request. Once the contract is signed, no more tokens for that trip.
+          1 token per leg of a quote request ($10/token). Once the contract is signed, no more tokens for that trip.
         </p>
       </div>
 
@@ -115,9 +120,9 @@ export default function AgentTokensView() {
         <div className="bg-[#141C2E] border border-white/10 rounded-xl p-5 space-y-3">
           <p className="text-xs text-gray-400 font-medium">Balance</p>
           <p className="text-4xl font-bold text-white font-mono leading-none">
-            {tokenBalance ?? 11}
+            {totalBalance}
           </p>
-          <p className="text-xs text-gray-500">Monthly 3 · free 2 · paid 6</p>
+          <p className="text-xs text-gray-500">Monthly {monthlyTokens} · free {freeTokens} · paid {paidTokens}</p>
         </div>
 
         {/* 2. Monthly allowance */}

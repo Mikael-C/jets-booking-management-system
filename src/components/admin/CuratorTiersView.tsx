@@ -55,12 +55,12 @@ export default function CuratorTiersView() {
   ]);
 
   const [tokenRules, setTokenRules] = useState<CuratorTokenRules>({
-    pricePerToken: 15,
+    pricePerToken: 10,
     perRequest: "1 token per leg",
     afterSignature: "No further tokens, including changes",
     earnedTokens: "+1 per booking completed or cancelled with fee",
     paidExpiry: "Never",
-    bundles: "15 · $200 / 25 · $310 / 50 · $560",
+    bundles: "15 · $135 / 25 · $210 / 50 · $375",
     freeRevisions: "2 before contract signature",
     returnedConditions: "No aircraft found; booking cancelled for operational reasons",
     orderOfUse: "Monthly → free → paid",

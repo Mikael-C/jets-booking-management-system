@@ -264,22 +264,22 @@ export const initialNotifications: Notification[] = [
   {
     id: "notif-3",
     type: "warning",
-    title: "Quote Expiration Approaching",
-    message: "Trip PEU842-001 proposal expires in less than 24 hours (02.10.2026 19:53z). Follow up with client.",
+    title: "AOC Document Renewal",
+    message: "Zenith Aviation AOC verification audit due for quarterly review.",
     timestamp: "1 hour ago",
     read: false,
-    entityId: "booking-peu842",
-    entityType: "quote"
+    entityId: "op-2",
+    entityType: "operator"
   },
   {
     id: "notif-4",
-    type: "success",
-    title: "Wire Transfer Verified",
-    message: "Payment of €18,450.00 received for Trip PEU842-001 from Brinkmann Global Capital.",
+    type: "info",
+    title: "Slot & Schedule Advisory",
+    message: "Eurocontrol CTOT slot updates published for European airspace.",
     timestamp: "3 hours ago",
     read: true,
-    entityId: "booking-peu842",
-    entityType: "payment"
+    entityId: "sys-1",
+    entityType: "system"
   },
   {
     id: "notif-5",
@@ -300,19 +300,19 @@ export const initialAuditLog: AuditLogEntry[] = [
     userEmail: "admin@orbelo.com",
     userName: "Capt. Alexander Vance",
     action: "STATUS_UPDATE",
-    entityType: "Booking",
-    entityId: "PEU842-001",
-    details: "Changed status from 'quote_sent' to 'confirmed' upon client signing"
+    entityType: "System",
+    entityId: "SYS-INIT",
+    details: "Initialized system operations and audit ledger"
   },
   {
     id: "aud-2",
     timestamp: "2026-10-21 20:30:15",
     userEmail: "finance@orbelo.com",
     userName: "Elena Rostova",
-    action: "PAYMENT_RECORDED",
-    entityType: "Payment",
-    entityId: "INV-00106020",
-    details: "Recorded wire transfer of €18,450.00 (Ref: RLB-8492041)"
+    action: "LEDGER_VERIFIED",
+    entityType: "Finance",
+    entityId: "FIN-INIT",
+    details: "Reconciled treasury banking accounts with multi-currency ledgers"
   },
   {
     id: "aud-3",
@@ -320,29 +320,9 @@ export const initialAuditLog: AuditLogEntry[] = [
     userEmail: "ops@orbelo.com",
     userName: "David Schneider",
     action: "DISPATCH_CHECKLIST",
-    entityType: "Checklist",
-    entityId: "PEU842-001",
-    details: "Completed verification: 'Aircraft Airworthiness & ARC Validity Verified'"
-  },
-  {
-    id: "aud-4",
-    timestamp: "2026-10-21 18:05:44",
-    userEmail: "admin@orbelo.com",
-    userName: "Capt. Alexander Vance",
-    action: "PRICE_OVERRIDE",
-    entityType: "Quote",
-    entityId: "PEU842-001",
-    details: "Applied margin discount override of 5% for VIP client account"
-  },
-  {
-    id: "aud-5",
-    timestamp: "2026-10-21 16:20:00",
-    userEmail: "ops@orbelo.com",
-    userName: "David Schneider",
-    action: "PASSPORT_DATA_VIEW",
-    entityType: "Passenger",
-    entityId: "p1-manifest",
-    details: "Accessed passport details for lead passenger Edward Brinkmann for APIS filing"
+    entityType: "Fleet",
+    entityId: "FLT-INIT",
+    details: "Verified fleet airworthiness certificates and operator ARC validity"
   },
   {
     id: "aud-6",
@@ -1055,7 +1035,36 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
         try {
           const parsed = JSON.parse(savedBookings);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            setBookings(parsed.map(normalizeBooking));
+            const clean = parsed.filter((b: any) => {
+              const id = String(b.id || "").toLowerCase();
+              const quoteRef = String(b.quoteReference || "").toLowerCase();
+              const tripNum = String(b.tripNumber || "").toLowerCase();
+              const tripId = String(b.tripId || "").toLowerCase();
+              const clientName = String(b.client?.fullName || "").toLowerCase();
+
+              // Purge all legacy seeded/hardcoded mock quotes and bookings (e.g. Elena Rostova QTE-2026-309, Dr. Aris Thorne QTE-2026-582, PEU842, etc.)
+              const isSeededMock =
+                id.startsWith("booking-") ||
+                id.includes("peu") ||
+                id.includes("orb") ||
+                id.includes("zfl") ||
+                id.includes("mock") ||
+                id.includes("rb3310") ||
+                quoteRef.startsWith("qte-") ||
+                quoteRef.startsWith("quo-fe00") ||
+                quoteRef.startsWith("q-") ||
+                tripNum.startsWith("peu") ||
+                tripNum.startsWith("orb-") ||
+                tripNum.startsWith("zfl") ||
+                tripNum.startsWith("rb3310") ||
+                tripId.startsWith("tri-fe00") ||
+                clientName.includes("elena rostova") ||
+                clientName.includes("aris thorne");
+
+              return !isSeededMock;
+            });
+            setBookings(clean.map(normalizeBooking));
+            localStorage.setItem("orbelo_bookings_v2", JSON.stringify(clean));
           }
         } catch {
           // ignore
@@ -2215,7 +2224,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
         arrivalTimeLocal: "12:15 h",
         flightTimeFormatted: formatFlightTime(flightMinutes),
         paxCount: req.paxCount || 2,
-        flightNumber: `PEU${randomSuffix}`,
+        flightNumber: `OBL${randomSuffix}`,
         aircraftRegistration: matchedAircraft.registration || "OE-FFB",
         crew: [
           { role: "CMDR", name: "Capt. Audrain, Emmanuel", phone: "+43 664 8489 904" },
@@ -2249,7 +2258,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
         arrivalTimeLocal: "17:15 h",
         flightTimeFormatted: formatFlightTime(flightMinutes),
         paxCount: req.paxCount || 2,
-        flightNumber: `PEU${randomSuffix}`,
+        flightNumber: `OBL${randomSuffix}`,
         aircraftRegistration: matchedAircraft.registration || "OE-FFB",
         crew: [
           { role: "CMDR", name: "Capt. Audrain, Emmanuel", phone: "+43 664 8489 904" },

@@ -17,50 +17,50 @@ export default function AgentTripDetailView({ tripId }: Props) {
   const [passportsSaved, setPassportsSaved] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // Match by id or tripNumber (FE4578)
-  const booking =
-    bookings.find(
-      (b) =>
-        b.id === tripId ||
-        b.tripNumber?.toLowerCase() === tripId.toLowerCase() ||
-        b.id.toLowerCase() === `booking-${tripId.toLowerCase()}`
-    ) || bookings.find((b) => b.tripNumber === "FE4578") || bookings[0];
+  // Match strictly by id, tripNumber, tripId, or quoteReference
+  const booking = bookings.find(
+    (b) =>
+      b.id === tripId ||
+      b.tripNumber?.toLowerCase() === tripId.toLowerCase() ||
+      b.tripId?.toLowerCase() === tripId.toLowerCase() ||
+      b.quoteReference?.toLowerCase() === tripId.toLowerCase() ||
+      b.id.toLowerCase() === `booking-${tripId.toLowerCase()}`
+  );
 
   if (!booking) {
     return (
       <div className="text-gray-400 py-20 text-center">
         <p className="text-lg">Trip not found.</p>
+        <p className="text-xs text-gray-500 mt-1">Reference: {tripId}</p>
       </div>
     );
   }
 
   const leg = booking.legs?.[0];
-  const origin = leg?.origin?.city || leg?.origin?.icao || "Ibiza";
-  const dest = leg?.destination?.city || leg?.destination?.icao || "Geneva";
-  const pax = booking.legs?.reduce((sum, l) => sum + (l.paxCount || 0), 0) || 4;
+  const origin = leg?.origin?.city || leg?.origin?.icao || "Departure";
+  const dest = leg?.destination?.city || leg?.destination?.icao || "Destination";
+  const pax = booking.legs?.reduce((sum, l) => sum + (l.paxCount || 0), 0) || 1;
   const dateStr = leg?.flightDate
     ? new Date(leg.flightDate).toLocaleDateString("en-GB", {
         weekday: "short",
         day: "numeric",
         month: "short",
       })
-    : "Fri 20 Nov";
+    : "Date TBD";
   const timeStr = (leg as any)?.departureTimeLocal || "10:00";
 
-  const currency = booking.pricing.currency || "EUR";
+  const currency = booking.pricing?.currency || "EUR";
   const commissionPct = (booking as any).commissionPercentage || 8;
-  const commissionAmt = 593; // Matches € 593.00 in screenshot
+  const commissionAmt = (booking.pricing?.agentMargin && booking.pricing.agentMargin > 0)
+    ? booking.pricing.agentMargin
+    : ((booking.pricing?.totalFlightPrice || 0) * (commissionPct / 100));
 
   // Passengers from legs
-  const defaultPassengers = [
-    { id: "p1", fullName: "Tunde Adeyemi", passportNumber: "A10849201" },
-    { id: "p2", fullName: "Ada Adeyemi", passportNumber: "A10849202" },
-    { id: "p3", fullName: "Kemi Adeyemi", passportNumber: passportInputs["p3"] || "" },
-    { id: "p4", fullName: "Bayo Adeyemi", passportNumber: passportInputs["p4"] || "" },
-  ];
-
   const rawPax = booking.legs?.flatMap((l) => (l as any).passengers || []) || [];
-  const passengers = rawPax.length >= 4 ? rawPax : defaultPassengers;
+  const passengers = rawPax.length > 0
+    ? rawPax
+    : [{ id: "p1", fullName: booking.client?.fullName || "Lead Passenger", passportNumber: passportInputs["p1"] || "" }];
+
   const uniquePax = passengers.filter(
     (p: any, i: number, arr: any[]) =>
       arr.findIndex((x: any) => x.fullName === p.fullName) === i
@@ -69,8 +69,9 @@ export default function AgentTripDetailView({ tripId }: Props) {
   const missingPax = uniquePax.filter((p: any) => !p.passportNumber);
   const missingPassports = missingPax.length;
 
-  const charterInvoiceNum = `INV-${booking.tripNumber || "FE4578"}-01`;
-  const extraInvoiceNum = `INV-${booking.tripNumber || "FE4578"}-02`;
+  const tripRefToken = booking.tripNumber || booking.tripId || "FE4455";
+  const charterInvoiceNum = booking.invoiceNumber || `INV-${tripRefToken}-001`;
+  const extraInvoiceNum = `INV-${tripRefToken}-002`;
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -86,11 +87,11 @@ export default function AgentTripDetailView({ tripId }: Props) {
       {/* Header */}
       <div className="mb-2">
         <h1 className="text-2xl font-bold text-[#C9A052] mb-1">
-          {booking.tripNumber || "FE4578"} · {origin} → {dest}
+          {booking.tripNumber || booking.tripId || "Charter Flight"} · {origin} → {dest}
         </h1>
         <p className="text-sm text-gray-400">
-          {(booking.client as any)?.companyName || booking.client?.fullName || "Adeyemi Holdings"} ·{" "}
-          {dateStr} {timeStr} LT · {booking.aircraft?.name || "CJ3+"} · {pax} pax
+          {(booking.client as any)?.companyName || booking.client?.fullName || "Private Client"} ·{" "}
+          {dateStr} {timeStr} LT · {booking.aircraft?.name || "Aircraft Assigned"} · {pax} pax
         </p>
       </div>
 

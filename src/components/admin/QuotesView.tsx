@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAviation } from "@/lib/aviationContext";
 import { Booking } from "@/types/aviation";
-import { formatTripVersion, formatDocumentId, extractFeToken } from "@/lib/idGenerator";
+import { formatTripVersion, formatDocumentId, extractFeToken, renderFormattedId } from "@/lib/idGenerator";
 import { formatCurrency } from "@/lib/pricingCalculator";
 import StatusPill from "@/components/ui/StatusPill";
 import MissingDataBadge from "@/components/ui/MissingDataBadge";
@@ -85,7 +85,7 @@ export default function QuotesView() {
       rootMap.set(root, list);
     });
 
-    // Return the latest version of each group
+    // Return the latest version of each group, newest first (MOD-16)
     const latestList: { booking: Booking; versionsCount: number; rootId: string }[] = [];
     rootMap.forEach((versions, rootId) => {
       const sorted = [...versions].sort((a, b) => (a.quoteVersion || 1) - (b.quoteVersion || 1));
@@ -95,6 +95,13 @@ export default function QuotesView() {
         versionsCount: versions.length,
         rootId
       });
+    });
+
+    latestList.sort((a, b) => {
+      const dateA = a.booking.createdAt ? new Date(a.booking.createdAt).getTime() : 0;
+      const dateB = b.booking.createdAt ? new Date(b.booking.createdAt).getTime() : 0;
+      if (dateA !== dateB) return dateB - dateA;
+      return (b.booking.quoteVersion || 1) - (a.booking.quoteVersion || 1);
     });
 
     return latestList;
@@ -163,15 +170,15 @@ export default function QuotesView() {
   const chips: { id: QuoteFilter; label: string; count: number }[] = [
     { id: "open", label: "Open", count: counts.open },
     { id: "expiring_today", label: "Expiring today", count: counts.expiring_today },
-    { id: "agent_confirmed", label: "Agent confirmed", count: counts.agent_confirmed },
+    { id: "agent_confirmed", label: "Curator confirmed", count: counts.agent_confirmed },
     { id: "draft", label: "Draft", count: counts.draft },
     { id: "expired", label: "Expired", count: counts.expired },
     { id: "declined", label: "Declined", count: counts.declined },
     { id: "all", label: "All quotes", count: counts.all }
   ];
 
-  const handleOpenTrip = (targetTripId: string) => {
-    router.push(`/trips/${encodeURIComponent(targetTripId)}/itinerary`);
+  const handleOpenQuote = (quoteTargetId: string) => {
+    router.push(`/quotes/${encodeURIComponent(quoteTargetId)}`);
   };
 
   return (
@@ -244,7 +251,7 @@ export default function QuotesView() {
                   <th>Quote</th>
                   <th>Flight Date & Time</th>
                   <th>Route & Type</th>
-                  <th>Account & Agent</th>
+                  <th>Account & Curator</th>
                   <th>Aircraft</th>
                   <th>Pax</th>
                   <th>Client Price</th>
@@ -262,31 +269,30 @@ export default function QuotesView() {
                 ) : (
                   filteredRows.map(({ booking, versionsCount, rootId }) => {
                     const isSelected = selectedItem?.booking.id === booking.id;
-                    const targetId = booking.tripId || rootId || booking.id;
-                    const verLabel = booking.tripNumber || formatTripVersion(rootId, booking.quoteVersion || 1);
+                    const quoteIdentifier = booking.quoteId || formatDocumentId("Q", rootId, booking.quoteVersion || 1);
                     const leg = booking.legs[0];
 
                     return (
                       <tr
                         key={booking.id}
                         onClick={() => setSelectedQuoteId(booking.id)}
-                        onDoubleClick={() => handleOpenTrip(targetId)}
+                        onDoubleClick={() => handleOpenQuote(quoteIdentifier)}
                         className={`clickable-row ${isSelected ? "bg-[var(--accent-soft)]" : ""}`}
                       >
                         <td>
                           <Link
-                            href={`/trips/${encodeURIComponent(targetId)}/itinerary`}
+                            href={`/quotes/${encodeURIComponent(quoteIdentifier)}`}
                             className="font-mono font-bold text-xs block text-[var(--ink)] hover:text-[var(--accent)] hover:underline"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            {verLabel}
+                            {renderFormattedId(quoteIdentifier)}
                           </Link>
                           <span className="font-mono text-[10px] text-[var(--muted)]">
                             {versionsCount} {versionsCount === 1 ? "version" : "versions"}
                           </span>
                         </td>
                         <td>
-                          <span className="font-mono text-xs font-semibold block">
+                          <span className="font-mono text-xs font-semibold block whitespace-nowrap">
                             {leg?.flightDate || "—"}
                           </span>
                           <span className="font-mono text-[11px] text-[var(--muted)]">
@@ -294,7 +300,7 @@ export default function QuotesView() {
                           </span>
                         </td>
                         <td>
-                          <span className="font-display font-bold text-sm block">
+                          <span className="font-display font-bold text-sm block whitespace-nowrap">
                             {leg?.origin?.icao || "LSGG"} ⇄ {leg?.destination?.icao || "EGSS"}
                           </span>
                           <span className="font-mono text-[10px] uppercase text-[var(--muted)]">
@@ -303,10 +309,10 @@ export default function QuotesView() {
                         </td>
                         <td>
                           <span className="font-sans font-semibold text-xs block text-[var(--ink)]">
-                            {booking.client?.fullName || "Edward Brinkmann"}
+                            {booking.client?.fullName || "Private Client"}
                           </span>
                           <span className="font-mono text-[10px] text-[var(--muted)]">
-                            {booking.agentName ? `Rep: ${booking.agentName.split(" ")[0]}` : booking.accountNumber}
+                            {booking.agentName ? `Curator: ${booking.agentName}` : booking.accountNumber}
                           </span>
                         </td>
                         <td>
@@ -321,7 +327,7 @@ export default function QuotesView() {
                           {leg?.paxCount || 4}
                         </td>
                         <td>
-                          <span className="font-mono font-bold text-xs text-[var(--ink)]">
+                          <span className="font-mono font-bold text-xs text-[var(--ink)] whitespace-nowrap">
                             {formatCurrency(booking.pricing.totalFlightPrice, booking.pricing.currency)}
                           </span>
                         </td>
@@ -353,8 +359,7 @@ export default function QuotesView() {
 
         {/* Right 1 Col: Preview Panel (R-012) */}
         {selectedItem && (() => {
-          const previewTargetId = selectedItem.booking.tripId || selectedItem.rootId || selectedItem.booking.id;
-          const previewLabel = selectedItem.booking.tripNumber || formatTripVersion(selectedItem.rootId, selectedItem.booking.quoteVersion || 1);
+          const previewQuoteId = selectedItem.booking.quoteId || formatDocumentId("Q", selectedItem.rootId, selectedItem.booking.quoteVersion || 1);
 
           return (
             <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-4">
@@ -364,15 +369,15 @@ export default function QuotesView() {
                     Quote Preview
                   </span>
                   <h3 className="font-mono font-bold text-lg text-[var(--ink)] m-0">
-                    {previewLabel}
+                    {renderFormattedId(previewQuoteId)}
                   </h3>
                 </div>
 
                 <button
-                  onClick={() => handleOpenTrip(previewTargetId)}
+                  onClick={() => handleOpenQuote(previewQuoteId)}
                   className="btn-secondary text-xs"
                 >
-                  <span>Open trip</span>
+                  <span>Open Quote</span>
                   <ArrowRight className="w-3 h-3" />
                 </button>
               </div>
@@ -383,7 +388,7 @@ export default function QuotesView() {
                 Routing & Schedule
               </span>
               <div className="p-3 bg-[var(--paper)] rounded-lg border border-[var(--line)] space-y-1">
-                <div className="font-display font-bold text-sm text-[var(--ink)]">
+                <div className="font-display font-bold text-sm text-[var(--ink)] whitespace-nowrap">
                   {selectedItem.booking.legs[0]?.origin?.name || "Geneva"} ({selectedItem.booking.legs[0]?.origin?.icao}) ⇄{" "}
                   {selectedItem.booking.legs[0]?.destination?.name || "London"} ({selectedItem.booking.legs[0]?.destination?.icao})
                 </div>
@@ -417,15 +422,15 @@ export default function QuotesView() {
               <div className="p-3 bg-[var(--paper)] rounded-lg border border-[var(--line)] space-y-1 text-xs">
                 <div className="flex justify-between">
                   <span className="text-[var(--muted)]">Direct Flight Cost:</span>
-                  <span>€11,200.00</span>
+                  <span>{formatCurrency(selectedItem.booking.pricing.operatorCost || (selectedItem.booking.pricing.totalFlightPrice * 0.85), selectedItem.booking.pricing.currency)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-[var(--muted)]">Company Margin (Tier 2):</span>
-                  <span>+ €1,120.00</span>
+                  <span className="text-[var(--muted)]">Company Margin:</span>
+                  <span>+ {formatCurrency(selectedItem.booking.pricing.companyMargin || (selectedItem.booking.pricing.totalFlightPrice * 0.10), selectedItem.booking.pricing.currency)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-[var(--muted)]">Agent Commission:</span>
-                  <span>+ €550.00</span>
+                  <span className="text-[var(--muted)]">Curator Commission:</span>
+                  <span>+ {formatCurrency(selectedItem.booking.pricing.agentCommission || (selectedItem.booking.pricing.totalFlightPrice * 0.05), selectedItem.booking.pricing.currency)}</span>
                 </div>
                 <div className="flex justify-between pt-1 border-t border-[var(--line)] font-bold text-sm text-[var(--ink)]">
                   <span>Client Total:</span>
@@ -446,7 +451,7 @@ export default function QuotesView() {
                 </button>
 
                 <Link
-                  href={`/quotes/${selectedItem.booking.id}/revise`}
+                  href={`/quotes/new?reviseQuote=${encodeURIComponent(previewQuoteId)}`}
                   className="btn-secondary text-xs justify-center"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />

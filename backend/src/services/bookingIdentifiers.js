@@ -3,32 +3,32 @@ const Booking = require('../models/Booking');
 const AgentRequest = require('../models/AgentRequest');
 const Sequence = require('../models/Sequence');
 
+const pad4 = (num) => String(num).padStart(4, '0');
 const pad3 = (num) => String(num).padStart(3, '0');
 
 /**
- * Extracts the FE code token from any string, e.g.:
- * "REQ-FE001" -> "FE001"
- * "QUO-FE001-01" -> "FE001"
- * "TRI-FE001" -> "FE001"
- * "FE4578" -> "FE4578"
+ * Extracts the 2-letter + 4-digit (or 3+ digit) token from any string, e.g.:
+ * "REQ-FE4455" -> "FE4455"
+ * "QUO-FE4455-001" -> "FE4455"
+ * "TRI-FE4455-001" -> "FE4455"
+ * "CA-FE4455-001" -> "FE4455"
  */
 const extractFeToken = (str) => {
   if (!str) return null;
-  const match = String(str).match(/FE\d+/i);
+  const match = String(str).match(/([A-Za-z]{2}\d{4})/i) || String(str).match(/([A-Za-z]{2}\d{3})/i) || String(str).match(/FE\d+/i);
   return match ? match[0].toUpperCase() : null;
 };
 
 /**
- * Gets or increments the global chronological FE sequence counter.
- * Returns e.g. "FE001", "FE002", "FE003", etc.
+ * Gets or increments the global chronological 2-letter + 4-digit sequence counter.
+ * Returns e.g. "FE1001", "FE1002", "FE4455", etc.
  */
 const getNextFeSequence = async () => {
-  const sequenceId = 'fe_global_counter';
+  const sequenceId = 'fe_global_counter_v2';
   let counter = await Sequence.findById(sequenceId);
 
   if (!counter) {
     try {
-      // Find the highest existing FE sequence number across collections
       const [bookingTripNumbers, bookingTripIds, bookingQuoteIds, requestNumbers, requestIds] = await Promise.all([
         Booking.distinct('tripNumber', { isDeleted: { $ne: true } }),
         Booking.distinct('tripId', { isDeleted: { $ne: true } }),
@@ -45,7 +45,7 @@ const getNextFeSequence = async () => {
         ...requestIds,
       ];
 
-      let maxVal = 0;
+      let maxVal = 1000;
       for (const s of allStrings) {
         const match = String(s).match(/FE(\d+)/i);
         if (match) {
@@ -68,7 +68,7 @@ const getNextFeSequence = async () => {
     { new: true, upsert: true }
   );
 
-  return `FE${pad3(next.value)}`;
+  return `FE${pad4(next.value)}`;
 };
 
 const createTripId = async (providedToken) => {
@@ -76,9 +76,9 @@ const createTripId = async (providedToken) => {
   return `TRI-${token}`;
 };
 
-const createTripNumber = async (preferred, providedToken) => {
+const createTripNumber = async (preferred, providedToken, version = 1) => {
   const token = extractFeToken(providedToken) || extractFeToken(preferred) || await getNextFeSequence();
-  return `TRI-${token}`;
+  return `TRI-${token}-${pad3(version)}`;
 };
 
 const createBookingIdentifiers = async ({
@@ -89,7 +89,7 @@ const createBookingIdentifiers = async ({
   isQuote = true,
   isBooked = false,
 } = {}) => {
-  // Determine the shared FE sequence token
+  // Determine the shared FE sequence token (e.g. FE4455)
   let token = explicitToken ||
     extractFeToken(tripId) ||
     extractFeToken(quoteGroupId);
@@ -98,22 +98,29 @@ const createBookingIdentifiers = async ({
     token = await getNextFeSequence();
   }
 
-  const version = String(quoteVersion).padStart(2, '0');
-  const tripIdStr = `TRI-${token}`;
-  const tripNumberStr = isBooked && quoteVersion > 1 ? `TRI-${token}-${version}` : `TRI-${token}`;
-  const quoteIdStr = isQuote ? (quoteVersion > 1 ? `QUO-${token}-${version}` : `QUO-${token}`) : '';
+  const version = pad3(quoteVersion || 1);
+  const tripRoot = `TRI-${token}`;
+  const tripNumberStr = `TRI-${token}-${version}`;
+  const quoteIdStr = `QUO-${token}-${version}`;
+  const agreementNumberStr = `CA-${token}-${version}`;
+  const invoiceNumberStr = `INV-${token}-${version}`;
+  const flightBriefNumberStr = `FB-${token}-${version}`;
+  const creditNoteNumberStr = `CN-${token}-${version}`;
 
   return {
-    id: `booking-${token.toLowerCase()}-${randomUUID().slice(0, 8)}`,
+    id: `booking-${token.toLowerCase()}-${version}`,
     token,
-    tripId: tripIdStr,
+    tripId: tripRoot,
     quoteGroupId: quoteGroupId || `QUO-${token}`,
     quoteId: quoteIdStr,
-    quoteReference: quoteIdStr || `QUO-${token}`,
-    quoteVersion: isQuote ? quoteVersion : undefined,
-    bookingRevisionId: isBooked ? `BK-${token}-${version}` : '',
+    quoteReference: isBooked ? tripNumberStr : quoteIdStr,
+    quoteVersion: quoteVersion || 1,
+    bookingRevisionId: `TRI-${token}-${version}`,
     tripNumber: tripNumberStr,
-    invoiceNumber: isBooked ? `INV-${token}-${version}` : '',
+    agreementNumber: agreementNumberStr,
+    invoiceNumber: isBooked ? invoiceNumberStr : '',
+    flightBriefNumber: isBooked ? flightBriefNumberStr : '',
+    creditNoteNumber: creditNoteNumberStr,
   };
 };
 

@@ -150,10 +150,12 @@ export default function QuotationDoc({ booking }: QuotationDocProps) {
               <p className="text-[10px] font-bold text-slate-900 tracking-wider uppercase mb-1.5">
                 PREPARED FOR
               </p>
-              <p className="font-bold text-slate-900 text-sm">{client?.companyName || client?.fullName || "Adeyemi Holdings Ltd"}</p>
-              <p className="text-slate-800">
-                Authorised Owner: <span className="font-semibold text-slate-900">{client?.fullName || "Edward Brinkmann"}</span>
-              </p>
+              <p className="font-bold text-slate-900 text-sm">{client?.companyName || client?.fullName || "Private Charter Client"}</p>
+              {client?.fullName && (
+                <p className="text-slate-800">
+                  Authorised Owner: <span className="font-semibold text-slate-900">{client.fullName}</span>
+                </p>
+              )}
               {(client?.isHandledByPa || booking.isHandledByPa) && (client?.paName || booking.paName) && (
                 <div className="text-[11px] text-amber-900 font-medium bg-amber-50/90 border border-amber-200 rounded px-2 py-1 mt-1">
                   c/o Representative / PA: <span className="font-bold">{client?.paName || booking.paName}</span>
@@ -164,9 +166,9 @@ export default function QuotationDoc({ booking }: QuotationDocProps) {
                   )}
                 </div>
               )}
-              <p className="text-slate-600 mt-1">{client?.streetAddress || "14 Bourdillon Road, Ikoyi"}</p>
-              <p className="text-slate-600">{client?.cityPostalCountry || "Lagos, Nigeria"}</p>
-              <p className="text-slate-600 font-mono mt-0.5">Account {accountNumber || "ACC-30412"}</p>
+              {client?.streetAddress && <p className="text-slate-600 mt-1">{client.streetAddress}</p>}
+              {client?.cityPostalCountry && <p className="text-slate-600">{client.cityPostalCountry}</p>}
+              {accountNumber && <p className="text-slate-600 font-mono mt-0.5">Account {accountNumber}</p>}
             </div>
 
             <div>

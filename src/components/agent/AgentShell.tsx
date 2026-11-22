@@ -40,8 +40,8 @@ export default function AgentShell({ children }: { children: React.ReactNode }) 
           <Link href="/agent/requests" className="flex items-center gap-2 hover:opacity-90 transition-opacity">
             <div className="w-5 h-5 rounded-full border-2 border-[#C9A052] flex items-center justify-center" />
             <span className="font-bold text-white text-sm tracking-wide">ORBELO</span>
-            <span className="text-[10px] uppercase font-bold text-gray-400 bg-white/5 border border-white/10 px-1.5 py-0.5 rounded tracking-wider">
-              AGENT
+            <span className="text-[10px] uppercase font-bold text-[#C9A052] bg-white/5 border border-[#C9A052]/30 px-1.5 py-0.5 rounded tracking-wider">
+              CURATOR
             </span>
           </Link>
 

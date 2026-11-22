@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAviation } from "@/lib/aviationContext";
 import { Booking, FlightLeg, PricingBreakdown, PassengerManifestItem, SourcingOption } from "@/types/aviation";
-import { formatTripVersion, formatDocumentId, maskPassportNumber, formatTripId } from "@/lib/idGenerator";
+import { formatTripVersion, formatDocumentId, maskPassportNumber, formatTripId, renderFormattedId } from "@/lib/idGenerator";
 import { formatCurrency } from "@/lib/pricingCalculator";
 import { getAirportFbos } from "@/data/airports";
 import StageStepper, { TripStage } from "@/components/ui/StageStepper";
@@ -278,6 +278,25 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
   const [autoPaymentReminders, setAutoPaymentReminders] = useState<boolean>(true);
   const [isSendingReminder, setIsSendingReminder] = useState<boolean>(false);
   const [reminderFeedback, setReminderFeedback] = useState<string | null>(null);
+
+  // Admin -> Curator Document Flow State (NF-02)
+  const [docFlowState, setDocFlowState] = useState<Record<string, { status: "Draft" | "Sent" | "Viewed" | "Accepted"; sentAt?: string }>>({
+    quotation: { status: "Sent", sentAt: "16 Nov 10:12" },
+    charter_agreement: { status: "Sent", sentAt: "16 Nov 14:40" },
+    invoice: { status: "Sent", sentAt: "16 Nov 15:06" },
+    flight_brief: { status: "Draft" },
+  });
+  const [docFlowToast, setDocFlowToast] = useState<string | null>(null);
+
+  const handleSendDocToCurator = (docType: string, docLabel: string) => {
+    const now = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+    setDocFlowState((prev) => ({
+      ...prev,
+      [docType]: { status: "Sent", sentAt: now },
+    }));
+    setDocFlowToast(`${docLabel} dispatched to Curator portal & WhatsApp`);
+    setTimeout(() => setDocFlowToast(null), 4000);
+  };
 
   // Normalize tripId (e.g. FE4578, LE7143, booking-peu842, or PEU842-001)
   const normalizedId = useMemo(() => {
@@ -1530,6 +1549,16 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
                 )}
               </div>
 
+              {docFlowToast && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-lg flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                    <span>{docFlowToast}</span>
+                  </span>
+                  <span className="text-[10px] font-mono text-emerald-600">NF-02 Admin → Curator</span>
+                </div>
+              )}
+
               <div className="tablewrap">
                 <table className="dense-table">
                   <thead>
@@ -1537,49 +1566,97 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
                       <th>Document</th>
                       <th>Type</th>
                       <th>Version</th>
-                      <th>Sent To</th>
+                      <th>Curator Flow</th>
                       <th>State</th>
                       <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr>
-                      <td className="font-mono font-bold">{formatDocumentId("Q", rootId, versionNum)}</td>
+                      <td className="font-mono font-bold">{renderFormattedId(formatDocumentId("Q", rootId, versionNum))}</td>
                       <td>Quotation</td>
                       <td className="font-mono text-xs">{versionBadge}</td>
-                      <td className="font-sans text-xs">{currentTrip.client.email}</td>
-                      <td><StatusPill label="SENT" variant="blue" /></td>
                       <td>
-                        <button
-                          onClick={() => openDocument(currentTrip, "quotation")}
-                          className="text-xs font-mono text-[var(--accent)] hover:underline"
-                        >
-                          View PDF →
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          <StatusPill
+                            label={docFlowState.quotation?.status || "SENT"}
+                            variant={docFlowState.quotation?.status === "Accepted" ? "green" : docFlowState.quotation?.status === "Sent" ? "blue" : "grey"}
+                          />
+                          {docFlowState.quotation?.sentAt && (
+                            <span className="text-[10px] font-mono text-[var(--muted)]">{docFlowState.quotation.sentAt}</span>
+                          )}
+                        </div>
+                      </td>
+                      <td><StatusPill label="ACTIVE" variant="blue" /></td>
+                      <td>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => openDocument(currentTrip, "quotation")}
+                            className="text-xs font-mono text-[var(--accent)] hover:underline"
+                          >
+                            View PDF
+                          </button>
+                          <span className="text-slate-300">·</span>
+                          <button
+                            onClick={() => handleSendDocToCurator("quotation", "Quotation")}
+                            className="text-xs font-mono text-slate-600 hover:text-slate-900 font-medium hover:underline"
+                          >
+                            Send to Curator
+                          </button>
+                        </div>
                       </td>
                     </tr>
                     {isBooked && (
                       <>
                         <tr>
-                          <td className="font-mono font-bold">{formatDocumentId("C", rootId, versionNum)}</td>
+                          <td className="font-mono font-bold">{renderFormattedId(formatDocumentId("C", rootId, versionNum))}</td>
                           <td>Charter Agreement</td>
                           <td className="font-mono text-xs">{versionBadge}</td>
-                          <td className="font-sans text-xs">{currentTrip.client.email}</td>
+                          <td>
+                            <div className="flex items-center gap-1.5">
+                              <StatusPill
+                                label={docFlowState.charter_agreement?.status || "SIGNED"}
+                                variant={docFlowState.charter_agreement?.status === "Accepted" ? "green" : "blue"}
+                              />
+                              {docFlowState.charter_agreement?.sentAt && (
+                                <span className="text-[10px] font-mono text-[var(--muted)]">{docFlowState.charter_agreement.sentAt}</span>
+                              )}
+                            </div>
+                          </td>
                           <td><StatusPill label="SIGNED" variant="green" /></td>
                           <td>
-                            <button
-                              onClick={() => openDocument(currentTrip, "charter_agreement")}
-                              className="text-xs font-mono text-[var(--accent)] hover:underline"
-                            >
-                              View PDF →
-                            </button>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => openDocument(currentTrip, "charter_agreement")}
+                                className="text-xs font-mono text-[var(--accent)] hover:underline"
+                              >
+                                View PDF
+                              </button>
+                              <span className="text-slate-300">·</span>
+                              <button
+                                onClick={() => handleSendDocToCurator("charter_agreement", "Charter Agreement")}
+                                className="text-xs font-mono text-slate-600 hover:text-slate-900 font-medium hover:underline"
+                              >
+                                Send to Curator
+                              </button>
+                            </div>
                           </td>
                         </tr>
                         <tr>
-                          <td className="font-mono font-bold">{formatDocumentId("INV", rootId, versionNum, 1)}</td>
-                          <td>Invoice</td>
+                          <td className="font-mono font-bold">{renderFormattedId(formatDocumentId("INV", rootId, versionNum, 1))}</td>
+                          <td>Invoice (Primary)</td>
                           <td className="font-mono text-xs">{versionBadge}</td>
-                          <td className="font-sans text-xs">{currentTrip.client.email}</td>
+                          <td>
+                            <div className="flex items-center gap-1.5">
+                              <StatusPill
+                                label={docFlowState.invoice?.status || "SENT"}
+                                variant={docFlowState.invoice?.status === "Accepted" ? "green" : "blue"}
+                              />
+                              {docFlowState.invoice?.sentAt && (
+                                <span className="text-[10px] font-mono text-[var(--muted)]">{docFlowState.invoice.sentAt}</span>
+                              )}
+                            </div>
+                          </td>
                           <td>
                             <StatusPill
                               label={(currentTrip.paymentStatus || "unpaid").toUpperCase()}
@@ -1587,27 +1664,52 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
                             />
                           </td>
                           <td>
-                            <button
-                              onClick={() => openDocument(currentTrip, "invoice")}
-                              className="text-xs font-mono text-[var(--accent)] hover:underline"
-                            >
-                              View PDF →
-                            </button>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => openDocument(currentTrip, "invoice")}
+                                className="text-xs font-mono text-[var(--accent)] hover:underline"
+                              >
+                                View PDF
+                              </button>
+                              <span className="text-slate-300">·</span>
+                              <button
+                                onClick={() => handleSendDocToCurator("invoice", "Invoice")}
+                                className="text-xs font-mono text-slate-600 hover:text-slate-900 font-medium hover:underline"
+                              >
+                                Send to Curator
+                              </button>
+                            </div>
                           </td>
                         </tr>
                         <tr>
-                          <td className="font-mono font-bold">{formatDocumentId("FB", rootId, versionNum)}</td>
+                          <td className="font-mono font-bold">{renderFormattedId(formatDocumentId("FB", rootId, versionNum))}</td>
                           <td>Flight Brief</td>
                           <td className="font-mono text-xs">{versionBadge}</td>
-                          <td className="font-sans text-xs">Operations & Dispatch</td>
+                          <td>
+                            <div className="flex items-center gap-1.5">
+                              <StatusPill
+                                label={docFlowState.flight_brief?.status || "DRAFT"}
+                                variant={docFlowState.flight_brief?.status === "Sent" ? "blue" : "grey"}
+                              />
+                            </div>
+                          </td>
                           <td><StatusPill label="BRIEFED" variant="green" /></td>
                           <td>
-                            <button
-                              onClick={() => openDocument(currentTrip, "flight_brief")}
-                              className="text-xs font-mono text-[var(--accent)] hover:underline"
-                            >
-                              View PDF →
-                            </button>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => openDocument(currentTrip, "flight_brief")}
+                                className="text-xs font-mono text-[var(--accent)] hover:underline"
+                              >
+                                View PDF
+                              </button>
+                              <span className="text-slate-300">·</span>
+                              <button
+                                onClick={() => handleSendDocToCurator("flight_brief", "Flight Brief")}
+                                className="text-xs font-mono text-slate-600 hover:text-slate-900 font-medium hover:underline"
+                              >
+                                Send to Curator
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       </>
@@ -1761,7 +1863,115 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
                 )}
               </div>
 
-              {/* Credit Notes Table */}
+              {/* Invoices Table (MOD-04 / R-055: Primary invoice never edited; Supplementary for increases) */}
+              <div className="space-y-2 pt-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-display font-bold text-sm text-[var(--ink)] m-0">Commercial Invoices</h4>
+                  <button
+                    onClick={() => {
+                      alert("Balance statement pulled and dispatched to billing contact via Email and PDF.");
+                    }}
+                    className="text-xs font-mono text-cyan-700 hover:underline flex items-center gap-1 font-semibold"
+                  >
+                    <Receipt className="w-3.5 h-3.5" />
+                    <span>Pull &amp; Send Balance Statement</span>
+                  </button>
+                </div>
+                <div className="tablewrap">
+                  <table className="dense-table">
+                    <thead>
+                      <tr>
+                        <th>Invoice Number</th>
+                        <th>Type</th>
+                        <th>Issue Date</th>
+                        <th>Due Date</th>
+                        <th>Amount</th>
+                        <th>Status</th>
+                        <th className="text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td className="font-mono font-bold whitespace-nowrap">
+                          {renderFormattedId(formatDocumentId("INV", rootId, versionNum, 1))}
+                        </td>
+                        <td>
+                          <span className="text-xs font-medium">Primary Invoice</span>
+                        </td>
+                        <td className="font-mono text-xs">{currentTrip.contractDate || "16.11.2026"}</td>
+                        <td className="font-mono text-xs">{currentTrip.legs[0]?.flightDate || "18.11.2026"}</td>
+                        <td className="font-mono font-bold text-[var(--ink)]">
+                          {formatCurrency(currentTrip.pricing.totalFlightPrice, currentTrip.pricing.currency)}
+                        </td>
+                        <td>
+                          <StatusPill
+                            label={(currentTrip.paymentStatus || "unpaid").toUpperCase()}
+                            variant={currentTrip.paymentStatus === "fully_paid" ? "green" : "amber"}
+                          />
+                        </td>
+                        <td className="text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => openDocument(currentTrip, "invoice")}
+                              className="text-xs font-mono text-[var(--accent)] hover:underline"
+                            >
+                              View PDF
+                            </button>
+                            <span className="text-slate-300">·</span>
+                            <button
+                              onClick={() => {
+                                handleSendDocToCurator("invoice", "Invoice INV-001");
+                              }}
+                              className="text-xs font-mono text-slate-600 hover:text-slate-900 font-medium hover:underline"
+                            >
+                              Send Invoice
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                      {(currentTrip.quoteVersion || 1) > 1 && (
+                        <tr>
+                          <td className="font-mono font-bold whitespace-nowrap">
+                            {renderFormattedId(formatDocumentId("INV", rootId, versionNum, 2))}
+                          </td>
+                          <td>
+                            <span className="text-xs font-medium text-amber-700">Supplementary Invoice</span>
+                          </td>
+                          <td className="font-mono text-xs">{currentTrip.contractDate || "17.11.2026"}</td>
+                          <td className="font-mono text-xs">{currentTrip.legs[0]?.flightDate || "18.11.2026"}</td>
+                          <td className="font-mono font-bold text-[var(--ink)]">
+                            {formatCurrency(350, currentTrip.pricing.currency)}
+                          </td>
+                          <td>
+                            <StatusPill label="PENDING" variant="amber" />
+                          </td>
+                          <td className="text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => openDocument(currentTrip, "invoice")}
+                                className="text-xs font-mono text-[var(--accent)] hover:underline"
+                              >
+                                View PDF
+                              </button>
+                              <span className="text-slate-300">·</span>
+                              <button
+                                onClick={() => {
+                                  handleSendDocToCurator("invoice", "Supplementary Invoice INV-002");
+                                }}
+                                className="text-xs font-mono text-slate-600 hover:text-slate-900 font-medium hover:underline"
+                              >
+                                Send Invoice
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Credit Notes Table (MOD-04) */}
               {currentTrip.creditNotes && currentTrip.creditNotes.length > 0 && (
                 <div className="space-y-2 pt-2">
                   <h4 className="font-display font-bold text-sm text-[var(--ink)] m-0">Issued Credit Notes</h4>
@@ -1779,19 +1989,30 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
                       <tbody>
                         {currentTrip.creditNotes.map((cn, i) => (
                           <tr key={i}>
-                            <td className="font-mono font-bold">{cn.creditNoteNumber || `CN-${rootId}-01`}</td>
+                            <td className="font-mono font-bold whitespace-nowrap">{renderFormattedId(cn.creditNoteNumber || `CN-${rootId}-01`)}</td>
                             <td className="font-mono text-xs">{cn.issueDate || cn.date || "15.11.2026"}</td>
                             <td className="text-xs">{cn.reason}</td>
                             <td className="font-mono font-bold text-right text-[var(--red)]">
                               - {formatCurrency(cn.amount || 0, currentTrip.pricing.currency)}
                             </td>
                             <td className="text-right">
-                              <button
-                                onClick={() => openDocument(currentTrip, "credit_note")}
-                                className="text-xs font-mono text-[var(--accent)] hover:underline"
-                              >
-                                View PDF →
-                              </button>
+                              <div className="flex items-center justify-end gap-2">
+                                <button
+                                  onClick={() => openDocument(currentTrip, "credit_note")}
+                                  className="text-xs font-mono text-[var(--accent)] hover:underline"
+                                >
+                                  View PDF
+                                </button>
+                                <span className="text-slate-300">·</span>
+                                <button
+                                  onClick={() => {
+                                    alert(`Credit Note ${cn.creditNoteNumber || `CN-${rootId}-01`} pulled and dispatched.`);
+                                  }}
+                                  className="text-xs font-mono text-slate-600 hover:text-slate-900 font-medium hover:underline"
+                                >
+                                  Send Credit Note
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -2067,12 +2288,21 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
             </div>
           )}
 
-          {/* TAB 8: REVISIONS (R-023) */}
+          {/* TAB 8: REVISIONS (R-023 / MOD-03) */}
           {activeTab === "revisions" && (
             <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-5">
-              <div>
-                <h3 className="text-lg font-bold font-display text-[var(--ink)] m-0">Version Control Timeline</h3>
-                <p className="text-xs text-[var(--muted)]">All historical iterations newest first. Older versions remain read-only.</p>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-bold font-display text-[var(--ink)] m-0">Version Control Timeline</h3>
+                  <p className="text-xs text-[var(--muted)]">All historical iterations newest first. Older versions remain frozen and read-only.</p>
+                </div>
+                <Link
+                  href={`/quotes/new?reviseTrip=${encodeURIComponent(currentTrip.id)}`}
+                  className="btn-secondary text-xs flex items-center gap-1.5"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Create New Revision</span>
+                </Link>
               </div>
 
               <div className="tablewrap">
@@ -2081,63 +2311,152 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
                     <tr>
                       <th>Version</th>
                       <th>Type</th>
-                      <th>Changes & Remarks</th>
+                      <th>Route &amp; Aircraft</th>
                       <th>Total Amount</th>
                       <th>State</th>
-                      <th>Date</th>
+                      <th>Documents</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {tripVersions.map((ver, idx) => (
-                      <tr key={ver.id || idx}>
-                        <td className="font-mono font-bold">{formatTripVersion(rootId, ver.quoteVersion || (idx + 1))}</td>
-                        <td>{ver.isBooked ? "Booking" : "Quote"}</td>
-                        <td className="text-xs">
-                          {idx === tripVersions.length - 1 ? "Active latest version" : "Superseded route iteration"}
-                        </td>
-                        <td className="font-mono font-bold">
-                          {formatCurrency(ver.pricing.totalFlightPrice, ver.pricing.currency)}
-                        </td>
-                        <td>
-                          <StatusPill
-                            label={idx === tripVersions.length - 1 ? "CURRENT" : "SUPERSEDED"}
-                            variant={idx === tripVersions.length - 1 ? "green" : "grey"}
-                          />
-                        </td>
-                        <td className="font-mono text-xs">{ver.contractDate || "01.10.2026"}</td>
-                      </tr>
-                    ))}
+                    {tripVersions
+                      .slice()
+                      .sort((a, b) => (b.quoteVersion || 1) - (a.quoteVersion || 1))
+                      .map((ver, idx) => {
+                        const isCurrent = (ver.quoteVersion || 1) === (currentTrip.quoteVersion || 1);
+                        const verLeg = ver.legs[0];
+                        const verDocId = ver.isBooked
+                          ? formatTripVersion(rootId, ver.quoteVersion || 1)
+                          : formatDocumentId("Q", rootId, ver.quoteVersion || 1);
+
+                        return (
+                          <tr key={ver.id || idx}>
+                            <td className="font-mono font-bold whitespace-nowrap">
+                              {renderFormattedId(verDocId)}
+                            </td>
+                            <td>
+                              <span className="text-xs font-semibold">
+                                {ver.isBooked ? "Booked Trip" : "Quote Iteration"}
+                              </span>
+                            </td>
+                            <td>
+                              <span className="font-display font-bold text-xs block whitespace-nowrap">
+                                {verLeg?.origin?.icao || "—"} ⇄ {verLeg?.destination?.icao || "—"}
+                              </span>
+                              <span className="font-mono text-[10px] text-[var(--muted)]">
+                                {ver.aircraft?.name || "Private Jet"}
+                              </span>
+                            </td>
+                            <td className="font-mono font-bold whitespace-nowrap">
+                              {formatCurrency(ver.pricing.totalFlightPrice, ver.pricing.currency)}
+                            </td>
+                            <td>
+                              <StatusPill
+                                label={isCurrent ? "ACTIVE" : "FROZEN"}
+                                variant={isCurrent ? "green" : "grey"}
+                              />
+                            </td>
+                            <td>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => openDocument(ver, ver.isBooked ? "charter_agreement" : "quotation")}
+                                  className="text-xs font-mono text-[var(--accent)] hover:underline flex items-center gap-1"
+                                >
+                                  <FileText className="w-3 h-3" />
+                                  <span>View</span>
+                                </button>
+                                <button
+                                  onClick={() => openDocument(ver, "quotation")}
+                                  className="text-xs font-mono text-[var(--muted)] hover:text-[var(--ink)] flex items-center gap-1"
+                                >
+                                  <Download className="w-3 h-3" />
+                                  <span>PDF</span>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                   </tbody>
                 </table>
               </div>
 
-              {/* Version Compare Diff Tool (R-023) */}
+              {/* Dynamic Version Compare Diff Tool (R-023 / MOD-03) */}
               <div className="border border-[var(--line)] rounded-xl p-4 bg-[var(--paper)] space-y-3">
-                <div className="flex items-center justify-between">
-                  <h4 className="font-display font-bold text-sm text-[var(--ink)] m-0">Version Compare Tool</h4>
-                  <span className="text-[11px] font-mono text-[var(--muted)]">Side-by-side revision audit</span>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <h4 className="font-display font-bold text-sm text-[var(--ink)] m-0">Dynamic Version Compare Tool</h4>
+                  <div className="flex items-center gap-2 text-xs font-mono">
+                    <span>Compare Version:</span>
+                    <select
+                      value={compareVersionA}
+                      onChange={(e) => setCompareVersionA(Number(e.target.value))}
+                      className="bg-white border border-[var(--line)] rounded px-2 py-1 text-xs"
+                    >
+                      {tripVersions.map((v) => (
+                        <option key={v.quoteVersion || 1} value={v.quoteVersion || 1}>
+                          v{v.quoteVersion || 1}
+                        </option>
+                      ))}
+                    </select>
+                    <span>with:</span>
+                    <select
+                      value={compareVersionB}
+                      onChange={(e) => setCompareVersionB(Number(e.target.value))}
+                      className="bg-white border border-[var(--line)] rounded px-2 py-1 text-xs"
+                    >
+                      {tripVersions.map((v) => (
+                        <option key={v.quoteVersion || 1} value={v.quoteVersion || 1}>
+                          v{v.quoteVersion || 1}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4 text-xs">
-                  <div className="p-3 bg-[var(--card)] border border-[var(--line)] rounded-lg space-y-2">
-                    <span className="font-mono font-bold text-xs text-[var(--muted)] block">VERSION 001 (Original)</span>
-                    <p className="m-0 font-display font-bold text-[var(--ink)]">LSGG → EGSS</p>
-                    <p className="m-0 font-mono text-[11px] text-[var(--muted)]">Aircraft: Citation XLS+ · 4 Pax</p>
-                    <p className="m-0 font-mono font-bold text-sm text-[var(--ink)]">€14,800.00</p>
-                  </div>
+                {(() => {
+                  const verA = tripVersions.find((v) => (v.quoteVersion || 1) === compareVersionA) || tripVersions[0];
+                  const verB = tripVersions.find((v) => (v.quoteVersion || 1) === compareVersionB) || tripVersions[tripVersions.length - 1];
+                  const legA = verA?.legs[0];
+                  const legB = verB?.legs[0];
 
-                  <div className="p-3 bg-[var(--card)] border border-[var(--accent)] rounded-lg space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono font-bold text-xs text-[var(--accent)] block">VERSION 002 (Current)</span>
-                      <span className="pill green">ACTIVE</span>
+                  return (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                      <div className="p-3 bg-[var(--card)] border border-[var(--line)] rounded-lg space-y-2">
+                        <span className="font-mono font-bold text-xs text-[var(--muted)] block">
+                          VERSION {String(verA?.quoteVersion || 1).padStart(3, "0")} ({verA?.quoteVersion === currentTrip.quoteVersion ? "Current" : "Historical"})
+                        </span>
+                        <p className="m-0 font-display font-bold text-[var(--ink)]">
+                          {legA?.origin?.icao || "—"} ⇄ {legA?.destination?.icao || "—"}
+                        </p>
+                        <p className="m-0 font-mono text-[11px] text-[var(--muted)]">
+                          Aircraft: {verA?.aircraft?.name || "—"} · {legA?.paxCount || 4} Pax
+                        </p>
+                        <p className="m-0 font-mono font-bold text-sm text-[var(--ink)]">
+                          {verA ? formatCurrency(verA.pricing.totalFlightPrice, verA.pricing.currency) : "—"}
+                        </p>
+                      </div>
+
+                      <div className="p-3 bg-[var(--card)] border border-[var(--accent)] rounded-lg space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="font-mono font-bold text-xs text-[var(--accent)] block">
+                            VERSION {String(verB?.quoteVersion || 2).padStart(3, "0")} ({verB?.quoteVersion === currentTrip.quoteVersion ? "Current" : "Revision"})
+                          </span>
+                          {verB?.quoteVersion === currentTrip.quoteVersion && (
+                            <span className="pill green">ACTIVE</span>
+                          )}
+                        </div>
+                        <p className="m-0 font-display font-bold text-[var(--ink)]">
+                          {legB?.origin?.icao || "—"} ⇄ {legB?.destination?.icao || "—"}
+                        </p>
+                        <p className="m-0 font-mono text-[11px] text-[var(--muted)]">
+                          Aircraft: {verB?.aircraft?.name || "—"} · {legB?.paxCount || 4} Pax
+                        </p>
+                        <p className="m-0 font-mono font-bold text-sm text-[var(--ink)]">
+                          {verB ? formatCurrency(verB.pricing.totalFlightPrice, verB.pricing.currency) : "—"}
+                        </p>
+                      </div>
                     </div>
-                    <p className="m-0 font-display font-bold text-[var(--ink)]">LSGG ⇄ EGSS (Round Trip)</p>
-                    <p className="m-0 font-mono text-[11px] text-[var(--muted)]">Aircraft: Challenger 350 · 5 Pax</p>
-                    <p className="m-0 font-mono font-bold text-sm text-[var(--ink)]">
-                      {formatCurrency(currentTrip.pricing.totalFlightPrice, currentTrip.pricing.currency)}
-                    </p>
-                  </div>
-                </div>
+                  );
+                })()}
               </div>
             </div>
           )}
@@ -2165,60 +2484,90 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
           )}
         </div>
 
-        {/* Right Rail Card matching Image 2 */}
+        {/* Right Rail Card matching MOD-10 */}
         <div className="bg-white border border-slate-200/90 rounded-xl p-5 space-y-5 text-xs shadow-sm self-start">
           {/* 1. ACCOUNT */}
           <div className="space-y-1">
             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">ACCOUNT</div>
-            <div className="font-bold text-slate-900 text-xs">Adeyemi Holdings Ltd</div>
+            <div className="font-bold text-slate-900 text-xs">
+              {currentTrip.client?.companyName || currentTrip.client?.fullName || "Private Account"}
+            </div>
             <div>
-              <Link href="/accounts/ACC-30412" className="text-cyan-600 font-mono text-xs hover:underline">
-                ACC-30412
-              </Link>
+              <span className="text-cyan-600 font-mono text-xs">
+                {currentTrip.accountNumber || "ACC-10001"}
+              </span>
             </div>
           </div>
 
-          {/* 2. AUTHORISED PERSON */}
+          {/* 2. AUTHORISED OWNER */}
           <div className="space-y-1">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">AUTHORISED PERSON</div>
-            <div className="text-slate-900 text-xs">Tunde Adeyemi</div>
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">AUTHORISED OWNER</div>
+            <div className="text-slate-900 text-xs font-semibold">
+              {currentTrip.client?.fullName || "—"}
+            </div>
+            {currentTrip.paContact && (
+              <div className="text-slate-500 text-[11px]">
+                PA: {currentTrip.paContact.name} {currentTrip.paContact.phone ? `(${currentTrip.paContact.phone})` : ""}
+              </div>
+            )}
           </div>
 
           {/* 3. SEND DOCUMENTS TO */}
           <div className="space-y-1">
             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">SEND DOCUMENTS TO</div>
-            <div className="text-slate-900 text-xs">office@adeyemi-holdings.ng</div>
-            <div className="text-slate-400 text-[11px]">Preferred: secretary&apos;s office</div>
+            <div className="text-slate-900 text-xs font-mono">{currentTrip.client?.email || "—"}</div>
+            {currentTrip.client?.phone && (
+              <div className="text-slate-400 text-[11px] font-mono">{currentTrip.client.phone}</div>
+            )}
           </div>
 
-          {/* 4. AGENT */}
+          {/* 4. CURATOR (MOD-14) */}
           <div className="space-y-1">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">AGENT</div>
-            <div className="text-slate-900 text-xs">Marcus Vance · 8 %</div>
-            <div className="text-slate-400 text-[11px]">11 tokens left · payout 1 week after flight</div>
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">CURATOR</div>
+            <div className="text-slate-900 text-xs font-semibold">
+              {currentTrip.curatorName || currentTrip.agentName || "OrbAero Desk"} · {currentTrip.pricing?.agentCommissionRate ? `${(currentTrip.pricing.agentCommissionRate * 100).toFixed(0)} %` : "10 %"}
+            </div>
+            <div className="text-slate-500 text-[11px]">
+              Commission: {formatCurrency(currentTrip.pricing?.agentCommission || (currentTrip.pricing.totalFlightPrice * 0.1), currentTrip.pricing.currency)} · Payout 1 week after flight
+            </div>
           </div>
 
-          {/* 5. OPERATOR · INTERNAL */}
+          {/* 5. OPERATOR · INTERNAL (MOD-15: admin visible, marked with docs pending if applicable) */}
           <div className="space-y-1">
             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">OPERATOR · INTERNAL</div>
-            <div className="text-slate-900 text-xs">Alpine Executive (AOC valid 2027)</div>
-            <div className="text-slate-400 text-[11px]">Never shown to agent or client</div>
+            <div className="text-slate-900 text-xs flex items-center gap-1.5 font-medium">
+              <span>{currentTrip.operator?.name || currentTrip.operatorName || "Approved AOC Holder"}</span>
+              {currentTrip.operator?.documentsPending && (
+                <span className="bg-amber-100 text-amber-800 text-[9px] px-1.5 py-0.5 rounded font-mono font-semibold">
+                  Documents pending
+                </span>
+              )}
+            </div>
+            <div className="text-slate-400 text-[11px]">Never shown on client or Curator documents</div>
           </div>
 
-          {/* 6. DEADLINES */}
+          {/* 6. DEADLINES & TIME ZONES */}
           <div className="space-y-1.5">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">DEADLINES</div>
-            <div className="text-slate-900 text-xs">€ 250 due before 18 Nov</div>
-            <div className="text-amber-700 text-xs font-medium">▲ 2 passports before brief</div>
-            <div className="text-slate-900 text-xs">Slot LSGG: requested</div>
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">DEADLINES &amp; FLIGHT TIME</div>
+            <div className="text-slate-900 text-xs font-mono">
+              Block: {currentTrip.legs[0]?.flightTimeFormatted || "1h 45m"} · {currentTrip.legs[0]?.originTz || "UTC"} to {currentTrip.legs[0]?.destTz || "UTC"}
+            </div>
+            {missingPassportsCount > 0 ? (
+              <div className="text-amber-700 text-xs font-medium">▲ {missingPassportsCount} passports before brief</div>
+            ) : (
+              <div className="text-emerald-700 text-xs font-medium">✓ Passports verified</div>
+            )}
+            <div className="text-slate-900 text-xs">
+              Payment: {isPaid ? "Paid in full" : `Due before ${currentTrip.legs[0]?.flightDate || "departure"}`}
+            </div>
           </div>
 
           {/* 7. ACTIVITY */}
           <div className="space-y-1.5">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">ACTIVITY</div>
-            <div className="text-slate-700 text-xs">14 Nov 13:02 · Obi · revision -005</div>
-            <div className="text-slate-700 text-xs">13 Nov 18:40 · M. Vance · wire proof uploaded</div>
-            <div className="text-slate-700 text-xs">13 Nov 09:15 · Obi · route revised -004</div>
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">ACTIVITY LOG</div>
+            <div className="text-slate-700 text-xs">
+              {currentTrip.legs[0]?.flightDate || "Recent"} · Desk · Version {formatTripVersion(rootId, versionNum)}
+            </div>
             <button
               onClick={() => handleTabChange("revisions")}
               className="text-slate-900 font-medium underline text-xs pt-1 block cursor-pointer hover:text-slate-600"

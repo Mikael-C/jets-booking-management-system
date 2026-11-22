@@ -206,7 +206,7 @@ export default function GenerateInvoiceView() {
       departureTime: "11:00 h",
       arrivalTime: "11:55 h",
       paxCount: 2,
-      flightNumber: "PEU842"
+      flightNumber: "FE4455"
     },
     {
       flightDate: "06.10.2026",
@@ -215,7 +215,7 @@ export default function GenerateInvoiceView() {
       departureTime: "15:00 h",
       arrivalTime: "16:04 h",
       paxCount: 2,
-      flightNumber: "PEU842"
+      flightNumber: "FE4455"
     }
   ]);
 
@@ -395,7 +395,7 @@ export default function GenerateInvoiceView() {
         departureTime: "15:00 h",
         arrivalTime: "16:04 h",
         paxCount: last ? last.paxCount : 2,
-        flightNumber: last ? last.flightNumber : "PEU842"
+        flightNumber: last ? last.flightNumber : "FE4455"
       }
     ]);
   };
@@ -877,7 +877,7 @@ export default function GenerateInvoiceView() {
             <Search className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
             <input
               type="text"
-              placeholder="Key in Trip Number (e.g. PEU842-001), Invoice #, Quote Ref, Account #, or Client Name to auto-fill..."
+              placeholder="Key in Trip Number (e.g. TRI-FE4455-001), Invoice #, Quote Ref, Account #, or Client Name to auto-fill..."
               value={lookupQuery}
               onChange={(e) => handleKeyedLookup(e.target.value)}
               className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl pl-9 pr-4 py-2 text-xs font-mono text-[#0F1420] placeholder-gray-400 focus:outline-none focus:border-[#C9A052]"
@@ -1393,7 +1393,7 @@ export default function GenerateInvoiceView() {
                     </label>
                     <input
                       type="text"
-                      placeholder="PEU842"
+                      placeholder="FE4455"
                       value={leg.flightNumber}
                       onChange={(e) => handleLegChange(index, "flightNumber", e.target.value)}
                       className="w-full bg-white border border-[#E0DAD0] rounded-lg px-1.5 py-1.5 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"

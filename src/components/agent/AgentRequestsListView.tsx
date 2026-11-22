@@ -74,7 +74,7 @@ export default function AgentRequestsListView() {
         })}`;
         expires = "—";
         actionLabel = "Open trip";
-        actionHref = `/agent/trips/${linkedBooking.id}`;
+        actionHref = `/agent/trips/${encodeURIComponent(linkedBooking.tripId || linkedBooking.tripNumber || linkedBooking.id)}`;
         reference = formatTripId(linkedBooking.tripNumber || linkedBooking.tripId || req.tripId || reqCleanId, fallbackIdx);
       } else if (
         ["quote_sent", "client_review", "draft"].includes(bStatus) ||

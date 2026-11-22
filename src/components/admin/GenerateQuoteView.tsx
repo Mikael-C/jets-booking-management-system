@@ -168,8 +168,14 @@ function updateQuoteLegArrival(leg: QuoteLegInput): QuoteLegInput {
 export default function GenerateQuoteView() {
   const { clients, addBooking, openDocument, prefillClientForQuote, setPrefillClientForQuote, currentUser, addAuditEntry, operators, setActiveNav } = useAviation();
 
-  // Operator selection (OPR-3: only approved operators selectable)
+  // Operator selection (NF-08: Add unlisted operator with "documents pending" flag)
   const [selectedOperatorId, setSelectedOperatorId] = useState<string>("op-1");
+  const [isAddOperatorOpen, setIsAddOperatorOpen] = useState(false);
+  const [unlistedOperatorName, setUnlistedOperatorName] = useState("");
+  const [unlistedOperatorCountry, setUnlistedOperatorCountry] = useState("");
+  const [unlistedOperatorAoc, setUnlistedOperatorAoc] = useState("");
+  const [unlistedOperatorEmail, setUnlistedOperatorEmail] = useState("");
+  const [customOperators, setCustomOperators] = useState<Array<{ id: string; name: string; country: string; aocNumber?: string; documentsPending?: boolean }>>([]);
 
   // Document & Contract Identifiers (Page 1 Details Box)
   const [contractDate, setContractDate] = useState("01.10.2026");
@@ -177,15 +183,25 @@ export default function GenerateQuoteView() {
   const [quoteExpirationDate, setQuoteExpirationDate] = useState("02.10.2026, 19:53z");
   const [currency, setCurrency] = useState<"EUR" | "USD" | "GBP" | "CHF">("EUR");
 
-  // Margin Rules & Commission
+  // Margin Rules & Commission (MOD-05: Margin tier by trip value: 10% on €11,200, override switch without reason)
+  const [isMarginOverride, setIsMarginOverride] = useState(false);
+  const [overrideMarginAmount, setOverrideMarginAmount] = useState<number>(1120);
+  const [curatorMarkupPct, setCuratorMarkupPct] = useState<number>(8); // Curator mark-up on cost + company margin (5–12%)
   const [isMarginPanelOpen, setIsMarginPanelOpen] = useState(false);
   const [marginType, setMarginType] = useState<"percentage" | "fixed">("percentage");
-  const [marginValue, setMarginValue] = useState<number>(12); // default 12% company margin
-  const [commissionPct, setCommissionPct] = useState<number>(8); // default 8% agent commission
+  const [marginValue, setMarginValue] = useState<number>(10);
+  const [commissionPct, setCommissionPct] = useState<number>(8);
   const [quoteStatus, setQuoteStatus] = useState<"Draft" | "Sent" | "Pending" | "Undecided">("Draft");
   const [activeLegTabs, setActiveLegTabs] = useState<Record<number, "routing" | "pets" | "luggage" | "handling">>({});
 
-  // Client Details (Page 1 TO Box)
+  // Itemized Passenger Fees (NF-21)
+  const [itemizePassengerFees, setItemizePassengerFees] = useState(false);
+  const [paxFeeLegOption, setPaxFeeLegOption] = useState<"leg1" | "leg2" | "both">("both");
+  const [paxFeeCalculation, setPaxFeeCalculation] = useState<"per_pax" | "flat">("per_pax");
+  const [paxFeeAmount, setPaxFeeAmount] = useState<number>(40);
+  const [customPaxCount, setCustomPaxCount] = useState<number>(4);
+
+  // Client Details (Page 1 TO Box) & PA Representative (MOD-05)
   const [selectedClientId, setSelectedClientId] = useState<string>(
     prefillClientForQuote ? prefillClientForQuote.id : clients[0]?.id || ""
   );
@@ -198,6 +214,54 @@ export default function GenerateQuoteView() {
     prefillClientForQuote?.cityPostalCountry || "FL-34104 Naples, United States"
   );
   const [vatNumber, setVatNumber] = useState(prefillClientForQuote?.vatNumber || "US-8492041");
+
+  // Separate PA / Representative Contact (MOD-05)
+  const [isHandledByPa, setIsHandledByPa] = useState(false);
+  const [paName, setPaName] = useState("");
+  const [paEmail, setPaEmail] = useState("");
+  const [paPhone, setPaPhone] = useState("");
+
+  // Combined Operators List (NF-08)
+  const allOperators = useMemo(() => {
+    const list = [...(operators || [])];
+    customOperators.forEach((co) => {
+      if (!list.find((o) => o.id === co.id)) {
+        list.push({
+          id: co.id,
+          name: co.name,
+          country: co.country,
+          aocNumber: co.aocNumber,
+          rating: 4.8,
+          isApproved: true,
+          documentsPending: true,
+          fleetCount: 2,
+          contactEmail: co.aocNumber,
+          notes: "Unlisted operator - Documents pending",
+        } as any);
+      }
+    });
+    return list;
+  }, [operators, customOperators]);
+
+  // Handler for adding unlisted operator (NF-08)
+  const handleAddCustomOperator = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!unlistedOperatorName.trim()) return;
+    const newId = `custom-op-${Date.now()}`;
+    const newOp = {
+      id: newId,
+      name: unlistedOperatorName.trim(),
+      country: unlistedOperatorCountry.trim() || "Malta",
+      aocNumber: unlistedOperatorAoc.trim() || `AOC-${Math.floor(1000 + Math.random() * 9000)}`,
+      documentsPending: true
+    };
+    setCustomOperators((prev) => [...prev, newOp]);
+    setSelectedOperatorId(newId);
+    setUnlistedOperatorName("");
+    setUnlistedOperatorCountry("");
+    setUnlistedOperatorAoc("");
+    setIsAddOperatorOpen(false);
+  };
 
   // ================= Aircraft Selection & Manual Overrides =================
   const [selectedAircraftId, setSelectedAircraftId] = useState(DEFAULT_AIRCRAFT_ID);
@@ -620,11 +684,23 @@ export default function GenerateQuoteView() {
     return calculatePricing(effectiveAircraft, compiledLegs, services, currency, aircraftByLeg);
   }, [effectiveAircraft, compiledLegs, services, currency, aircraftByLeg]);
 
-  const effectivePricing = overridePricing
-    ? {
+  // Itemized Passenger Fee Calculation (NF-21)
+  const calculatedPassengerFee = useMemo(() => {
+    if (!itemizePassengerFees) return autoPricing.passengerFees;
+    const legMultiplier = paxFeeLegOption === "both" ? (activeLegs.length || 2) : 1;
+    if (paxFeeCalculation === "per_pax") {
+      return paxFeeAmount * customPaxCount * legMultiplier;
+    } else {
+      return paxFeeAmount * legMultiplier;
+    }
+  }, [itemizePassengerFees, paxFeeLegOption, activeLegs.length, paxFeeCalculation, paxFeeAmount, customPaxCount, autoPricing.passengerFees]);
+
+  const effectivePricing = useMemo(() => {
+    if (overridePricing) {
+      return {
         flightPrice: customFlightPrice,
         airportFees: customAirportFees,
-        passengerFees: customPassengerFees,
+        passengerFees: itemizePassengerFees ? calculatedPassengerFee : customPassengerFees,
         dayOfWeekDiscount: customDayOfWeekDiscount,
         inboundPassengerTax: customInboundTax,
         outboundPassengerTax: customOutboundTax,
@@ -632,7 +708,7 @@ export default function GenerateQuoteView() {
         subtotal:
           customFlightPrice +
           customAirportFees +
-          customPassengerFees +
+          (itemizePassengerFees ? calculatedPassengerFee : customPassengerFees) +
           customDayOfWeekDiscount +
           customInboundTax +
           customOutboundTax +
@@ -642,14 +718,36 @@ export default function GenerateQuoteView() {
         totalFlightPrice:
           customFlightPrice +
           customAirportFees +
-          customPassengerFees +
+          (itemizePassengerFees ? calculatedPassengerFee : customPassengerFees) +
           customDayOfWeekDiscount +
           customInboundTax +
           customOutboundTax +
           customAdditionalServices,
         currency
-      }
-    : autoPricing;
+      };
+    }
+    const paxDiff = itemizePassengerFees ? (calculatedPassengerFee - autoPricing.passengerFees) : 0;
+    return {
+      ...autoPricing,
+      passengerFees: itemizePassengerFees ? calculatedPassengerFee : autoPricing.passengerFees,
+      subtotal: autoPricing.subtotal + paxDiff,
+      totalFlightPrice: autoPricing.totalFlightPrice + paxDiff,
+      currency
+    };
+  }, [
+    overridePricing,
+    customFlightPrice,
+    customAirportFees,
+    customPassengerFees,
+    customDayOfWeekDiscount,
+    customInboundTax,
+    customOutboundTax,
+    customAdditionalServices,
+    currency,
+    autoPricing,
+    itemizePassengerFees,
+    calculatedPassengerFee
+  ]);
 
   useEffect(() => {
     if (!overridePricing) {
@@ -669,6 +767,8 @@ export default function GenerateQuoteView() {
     const quoteStatusVal = isBookedFlight ? "accepted" : (quoteStatus.toLowerCase() as any);
     const cardFee = calculateCardFee(effectivePricing.totalFlightPrice);
 
+    const chosenOp = allOperators.find((o) => o.id === selectedOperatorId);
+
     return {
       id: "",
       tripId: "",
@@ -685,7 +785,7 @@ export default function GenerateQuoteView() {
       status: statusVal,
       quoteStatus: quoteStatusVal,
       quoteVersion: 1,
-      commissionPercentage: commissionPct,
+      commissionPercentage: curatorMarkupPct,
       paymentStatus: "unpaid",
       tripType,
       aircraft: effectiveAircraft,
@@ -699,19 +799,34 @@ export default function GenerateQuoteView() {
         vatNumber,
         accountNumber
       },
+      paContact: isHandledByPa && paName ? { name: paName, email: paEmail, phone: paPhone } : undefined,
+      isHandledByPa,
+      paName: isHandledByPa ? paName : undefined,
+      paEmail: isHandledByPa ? paEmail : undefined,
+      paPhone: isHandledByPa ? paPhone : undefined,
       operator: {
         ...defaultOperator,
+        name: (chosenOp as any)?.name || (chosenOp as any)?.tradingName || (chosenOp as any)?.legalName || defaultOperator.name,
+        country: (chosenOp as any)?.country || defaultOperator.country,
+        documentsPending: Boolean((chosenOp as any)?.documentsPending),
         representativeName: repName || defaultOperator.representativeName,
         bankName: bankName || defaultOperator.bankName,
         iban: iban || defaultOperator.iban,
         bic: bic || defaultOperator.bic,
         accountHolder: accountHolder || defaultOperator.accountHolder
       },
+      operatorName: (chosenOp as any)?.name || (chosenOp as any)?.tradingName || (chosenOp as any)?.legalName || defaultOperator.name,
       legs: compiledLegs.map(l => ({
         ...l,
         flightNumber: ""
       })),
-      pricing: effectivePricing,
+      pricing: {
+        ...effectivePricing,
+        operatorCost: autoPricing.flightPrice,
+        companyMargin: isMarginOverride ? overrideMarginAmount : Math.round(autoPricing.flightPrice * (autoPricing.flightPrice < 25000 ? 0.10 : autoPricing.flightPrice <= 60000 ? 0.08 : 0.06)),
+        agentCommission: Math.round(autoPricing.flightPrice * (curatorMarkupPct / 100)),
+        agentCommissionRate: curatorMarkupPct / 100,
+      },
       services,
       cardFeePercentage: 3.5,
       cardFeeAmount: cardFee.feeAmount,
@@ -729,8 +844,25 @@ export default function GenerateQuoteView() {
     };
   };
 
+  const validateQuoteSum = (): boolean => {
+    const flightPrice = effectivePricing.flightPrice;
+    const airportFees = effectivePricing.airportFees;
+    const passengerFees = effectivePricing.passengerFees;
+    const discount = effectivePricing.dayOfWeekDiscount || 0;
+    const taxes = (effectivePricing.inboundPassengerTax || 0) + (effectivePricing.outboundPassengerTax || 0);
+    const services = effectivePricing.additionalServicesTotal || 0;
+    const lineSum = flightPrice + airportFees + passengerFees + discount + taxes + services;
+    const grandTotal = effectivePricing.totalFlightPrice;
+    if (Math.abs(lineSum - grandTotal) > 0.01) {
+      alert(`Validation Error (MOD-09): Individual PDF lines (${formatCurrency(lineSum, currency)}) do not match the total quote price (${formatCurrency(grandTotal, currency)}). Generation blocked.`);
+      return false;
+    }
+    return true;
+  };
+
   const handleGenerateQuote = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!validateQuoteSum()) return;
     const newBooking = await addBooking(createBookingObject(false));
     addAuditEntry({
       userEmail: currentUser?.email || "admin@orbelo.com",
@@ -746,6 +878,7 @@ export default function GenerateQuoteView() {
 
   // Flow Step 2: Quote -> Contract
   const handleProceedToContract = async () => {
+    if (!validateQuoteSum()) return;
     const newBooking = await addBooking(createBookingObject(false));
     addAuditEntry({
       userEmail: currentUser?.email || "admin@orbelo.com",
@@ -1045,7 +1178,180 @@ export default function GenerateQuoteView() {
                 className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3.5 py-2 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
               />
             </div>
+
+            {/* PA / Representative Contact (MOD-05) */}
+            <div className="sm:col-span-2 md:col-span-3 pt-3 border-t border-[#E0DAD0]/60">
+              <label className="flex items-center gap-2 cursor-pointer mb-2">
+                <input
+                  type="checkbox"
+                  checked={isHandledByPa}
+                  onChange={(e) => setIsHandledByPa(e.target.checked)}
+                  className="rounded text-[#C9A052] focus:ring-[#C9A052]"
+                />
+                <span className="text-xs font-bold text-[#0F1420]">
+                  Personal Assistant / Representative Contact (separate from Authorised Owner - MOD-05)
+                </span>
+              </label>
+
+              {isHandledByPa && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3.5 bg-[#FAF9F6] border border-[#E0DAD0] rounded-xl mt-2">
+                  <div>
+                    <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
+                      PA / Rep Full Name *
+                    </label>
+                    <input
+                      type="text"
+                      value={paName}
+                      onChange={(e) => setPaName(e.target.value)}
+                      placeholder="e.g. Sarah Jenkins"
+                      className="w-full bg-white border border-[#E0DAD0] rounded-lg px-3 py-1.5 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
+                      PA Direct Email *
+                    </label>
+                    <input
+                      type="email"
+                      value={paEmail}
+                      onChange={(e) => setPaEmail(e.target.value)}
+                      placeholder="s.jenkins@familyoffice.com"
+                      className="w-full bg-white border border-[#E0DAD0] rounded-lg px-3 py-1.5 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
+                      PA Mobile / WhatsApp *
+                    </label>
+                    <input
+                      type="tel"
+                      value={paPhone}
+                      onChange={(e) => setPaPhone(e.target.value)}
+                      placeholder="+44 7700 900077"
+                      className="w-full bg-white border border-[#E0DAD0] rounded-lg px-3 py-1.5 text-xs text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
+        </div>
+
+        {/* OPERATOR SOURCING & FLEET PARTNER (NF-08, MOD-05, MOD-15) */}
+        <div className="bg-white border border-[#E0DAD0] rounded-2xl p-6 shadow-sm space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-[#E0DAD0]">
+            <div className="flex items-center gap-2.5">
+              <Shield className="w-4 h-4 text-[#C9A052]" />
+              <h3 className="text-sm font-bold font-mono uppercase tracking-wider text-[#0F1420]">
+                Operating Carrier / Sourced Operator (Admin Internal)
+              </h3>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsAddOperatorOpen(!isAddOperatorOpen)}
+              className="text-xs font-mono font-bold text-[#C9A052] hover:text-[#9A7A35] flex items-center gap-1.5"
+            >
+              <span>+ Add Unlisted Operator (NF-08)</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-[11px] font-bold text-[#0F1420]/80 uppercase font-mono mb-1">
+                Select Sourced Operator (AOC Holder)
+              </label>
+              <select
+                value={selectedOperatorId}
+                onChange={(e) => setSelectedOperatorId(e.target.value)}
+                className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3.5 py-2 text-xs font-medium text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
+              >
+                {allOperators.map((op: any) => (
+                  <option key={op.id} value={op.id}>
+                    {op.name || op.tradingName || op.legalName} {op.country ? `(${op.country})` : ""} {op.documentsPending ? "[DOCUMENTS PENDING]" : ""}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-[11px] text-[#0F1420]/60 italic">
+                * Note (MOD-15): Carrier identity is masked on client/curator documents as &quot;approved AOC holder (the operating carrier)&quot;.
+              </p>
+            </div>
+
+            {/* Selected Operator Status Pill */}
+            {(() => {
+              const op = allOperators.find((o) => o.id === selectedOperatorId) as any;
+              return (
+                <div className="p-3 bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-xs text-[#0F1420]">
+                        {op?.name || op?.tradingName || op?.legalName || "Standard Partner Carrier"}
+                      </span>
+                      {op?.documentsPending ? (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                          Documents Pending
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                          AOC Approved
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[11px] font-mono text-[#0F1420]/70 block">
+                      AOC: {op?.aocNumber || "AOC-EU-8921"} • Country: {op?.country || "Malta"}
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* Form to add an unlisted operator (NF-08) */}
+          {isAddOperatorOpen && (
+            <div className="p-4 bg-amber-50/60 border border-amber-200 rounded-xl space-y-3 mt-3">
+              <span className="text-xs font-bold text-amber-900 block font-mono uppercase">
+                Add New Unlisted Operator (Saved with &quot;Documents Pending&quot; Flag - NF-08)
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <input
+                  type="text"
+                  placeholder="Operator / Airline Name *"
+                  value={unlistedOperatorName}
+                  onChange={(e) => setUnlistedOperatorName(e.target.value)}
+                  className="bg-white border border-[#E0DAD0] rounded-lg px-3 py-1.5 text-xs text-[#0F1420]"
+                />
+                <input
+                  type="text"
+                  placeholder="Country of AOC (e.g. Austria)"
+                  value={unlistedOperatorCountry}
+                  onChange={(e) => setUnlistedOperatorCountry(e.target.value)}
+                  className="bg-white border border-[#E0DAD0] rounded-lg px-3 py-1.5 text-xs text-[#0F1420]"
+                />
+                <input
+                  type="text"
+                  placeholder="AOC Number (optional)"
+                  value={unlistedOperatorAoc}
+                  onChange={(e) => setUnlistedOperatorAoc(e.target.value)}
+                  className="bg-white border border-[#E0DAD0] rounded-lg px-3 py-1.5 text-xs text-[#0F1420]"
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAddOperatorOpen(false)}
+                  className="px-3 py-1 text-xs text-gray-600 hover:text-black"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAddCustomOperator}
+                  className="px-4 py-1.5 bg-[#0F1420] text-white rounded-lg text-xs font-mono font-bold hover:bg-black"
+                >
+                  Save Operator (Pending Docs)
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* SECTION 2: Searchable Aircraft Dropdown & Manual Overrides (Clean Layout) */}
@@ -2210,7 +2516,7 @@ export default function GenerateQuoteView() {
                 type="number"
                 value={effectivePricing.passengerFees}
                 onChange={(e) => setCustomPassengerFees(Number(e.target.value))}
-                disabled={!overridePricing}
+                disabled={!overridePricing || itemizePassengerFees}
                 className="w-full bg-[#FDFCFA] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-bold text-[#0F1420] disabled:bg-[#F5F2EC]"
               />
             </div>
@@ -2221,6 +2527,143 @@ export default function GenerateQuoteView() {
                 {formatCurrency(effectivePricing.totalFlightPrice, currency)}
               </div>
             </div>
+          </div>
+
+          {/* Internal Margin Tier & Override Switch (MOD-05, NF-01) */}
+          <div className="p-4 bg-[#FAF9F6] border border-[#E0DAD0] rounded-xl space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#E0DAD0] pb-2">
+              <span className="text-xs font-mono font-bold uppercase text-[#0F1420]">
+                Internal Margin Tier &amp; Curator Mark-up (MOD-05, NF-01)
+              </span>
+              <span className="text-[11px] font-mono text-[#9A7A35] font-bold">
+                Tier: {effectivePricing.flightPrice < 25000 ? "10% (< €25k)" : effectivePricing.flightPrice <= 60000 ? "8% (€25k - €60k)" : "6% (> €60k)"}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs font-mono">
+              <div>
+                <label className="block text-[10px] text-gray-500 mb-1">
+                  Company Margin (% tier or override)
+                </label>
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-1.5 cursor-pointer text-[11px] text-[#0F1420]">
+                    <input
+                      type="checkbox"
+                      checked={isMarginOverride}
+                      onChange={(e) => setIsMarginOverride(e.target.checked)}
+                      className="rounded text-[#C9A052] focus:ring-[#C9A052]"
+                    />
+                    <span>Override (Type Currency Amount)</span>
+                  </label>
+                  {isMarginOverride ? (
+                    <input
+                      type="number"
+                      value={overrideMarginAmount}
+                      onChange={(e) => setOverrideMarginAmount(Number(e.target.value))}
+                      placeholder="e.g. 1120"
+                      className="w-full bg-white border border-[#C9A052] rounded-lg px-2.5 py-1.5 text-xs font-bold text-[#0F1420]"
+                    />
+                  ) : (
+                    <div className="text-xs font-bold text-gray-700 p-1.5 bg-gray-100 rounded">
+                      {formatCurrency(Math.round(effectivePricing.flightPrice * (effectivePricing.flightPrice < 25000 ? 0.10 : effectivePricing.flightPrice <= 60000 ? 0.08 : 0.06)), currency)} (Automatic Tier)
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] text-gray-500 mb-1">
+                  Curator Mark-up (5% - 12%): <strong>{curatorMarkupPct}%</strong>
+                </label>
+                <input
+                  type="range"
+                  min="5"
+                  max="12"
+                  value={curatorMarkupPct}
+                  onChange={(e) => setCuratorMarkupPct(Number(e.target.value))}
+                  className="w-full accent-[#C9A052] cursor-pointer"
+                />
+                <span className="text-[10px] text-gray-500 block">
+                  Amount: {formatCurrency(Math.round(effectivePricing.flightPrice * (curatorMarkupPct / 100)), currency)}
+                </span>
+              </div>
+
+              <div className="p-2.5 bg-amber-50 rounded-lg border border-amber-200 text-[11px] text-amber-900 leading-snug">
+                <strong>MOD-09 &amp; MOD-15 Notice:</strong> Internal company margin and Curator mark-up are folded directly into the charter price on client documents.
+              </div>
+            </div>
+          </div>
+
+          {/* Itemized Passenger Fees (NF-21) */}
+          <div className="p-4 bg-[#FAF9F6] border border-[#E0DAD0] rounded-xl space-y-3">
+            <div className="flex items-center justify-between border-b border-[#E0DAD0] pb-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={itemizePassengerFees}
+                  onChange={(e) => setItemizePassengerFees(e.target.checked)}
+                  className="rounded text-[#C9A052] focus:ring-[#C9A052]"
+                />
+                <span className="text-xs font-mono font-bold uppercase text-[#0F1420]">
+                  Itemize Passenger Fees (NF-21)
+                </span>
+              </label>
+              {itemizePassengerFees && (
+                <span className="text-xs font-mono font-bold text-[#9A7A35]">
+                  Calculated Fee: {formatCurrency(calculatedPassengerFee, currency)}
+                </span>
+              )}
+            </div>
+
+            {itemizePassengerFees && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
+                <div>
+                  <label className="block text-[10px] text-gray-500 mb-1">Applicable Legs</label>
+                  <select
+                    value={paxFeeLegOption}
+                    onChange={(e) => setPaxFeeLegOption(e.target.value as any)}
+                    className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 text-xs text-[#0F1420]"
+                  >
+                    <option value="both">Both Legs (All {activeLegs.length || 2} Legs)</option>
+                    <option value="leg1">Leg 1 Only</option>
+                    <option value="leg2">Leg 2 Only</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] text-gray-500 mb-1">Fee Basis</label>
+                  <select
+                    value={paxFeeCalculation}
+                    onChange={(e) => setPaxFeeCalculation(e.target.value as any)}
+                    className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 text-xs text-[#0F1420]"
+                  >
+                    <option value="per_pax">Per Passenger</option>
+                    <option value="flat">Flat per Leg</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] text-gray-500 mb-1">Unit Fee ({currency})</label>
+                  <input
+                    type="number"
+                    value={paxFeeAmount}
+                    onChange={(e) => setPaxFeeAmount(Number(e.target.value))}
+                    className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 text-xs text-[#0F1420]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] text-gray-500 mb-1">Passenger Count</label>
+                  <input
+                    type="number"
+                    value={customPaxCount}
+                    disabled={paxFeeCalculation === "flat"}
+                    onChange={(e) => setCustomPaxCount(Number(e.target.value))}
+                    className="w-full bg-white border border-[#E0DAD0] rounded-lg px-2.5 py-1.5 text-xs text-[#0F1420] disabled:bg-gray-100"
+                  />
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

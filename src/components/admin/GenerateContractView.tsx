@@ -68,7 +68,7 @@ export default function GenerateContractView() {
   const [selectedBookingId, setSelectedBookingId] = useState<string>(bookings[0]?.id || "");
 
   // Contract Metadata
-  const [contractRef, setContractRef] = useState("CA-PEU842-001");
+  const [contractRef, setContractRef] = useState("CA-FE4455-001");
   const [tripNumber, setTripNumber] = useState("");
   const [accountNumber, setAccountNumber] = useState("ACC-21737");
   const [contractDate, setContractDate] = useState("02.10.2026");
@@ -105,7 +105,7 @@ export default function GenerateContractView() {
       arrivalTimeLocal: "11:55 h",
       flightTimeFormatted: "00:55",
       paxCount: 2,
-      flightNumber: "PEU842",
+      flightNumber: "FE4455",
       aircraftRegistration: "OE-FFB",
       crew: [
         { role: "CMDR", name: "Captain Audrain", phone: "+43 664 8489 904" },
@@ -127,7 +127,7 @@ export default function GenerateContractView() {
       arrivalTimeLocal: "16:04 h",
       flightTimeFormatted: "01:04",
       paxCount: 2,
-      flightNumber: "PEU842",
+      flightNumber: "FE4455",
       aircraftRegistration: "OE-FFB",
       crew: [
         { role: "CMDR", name: "Captain Audrain", phone: "+43 664 8489 904" },
@@ -413,7 +413,7 @@ export default function GenerateContractView() {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search by Contract Ref (e.g. CA-PEU842), Trip #, Client Name, or Aircraft..."
+                placeholder="Search by Contract Ref (e.g. CA-FE4455), Trip #, Client Name, or Aircraft..."
                 className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-[#E0DAD0] bg-[#F5F2EC] text-xs text-[#0F1420] font-medium placeholder-gray-400 focus:outline-none focus:border-[#C9A052] focus:bg-white transition-all"
               />
               {searchQuery && (
@@ -650,7 +650,7 @@ export default function GenerateContractView() {
             type="text"
             value={lookupQuery}
             onChange={(e) => handleKeyedLookup(e.target.value)}
-            placeholder="Type e.g. PEU842, 00106020, QTE-2026, or ACC-21737 to auto-fill..."
+            placeholder="Type e.g. FE4455, INV-FE4455-001, QUO-FE4455-001, or ACC-21737 to auto-fill..."
             className="w-full text-xs bg-[#FBF9F5] border border-gray-300 rounded-xl px-3.5 py-2.5 font-mono focus:border-[#C9A052] focus:bg-white outline-none"
           />
         </div>
@@ -881,7 +881,7 @@ export default function GenerateContractView() {
                   arrivalTimeLocal: "15:30 h",
                   flightTimeFormatted: "01:30",
                   paxCount: 2,
-                  flightNumber: `PEU842-00${legs.length + 1}`,
+                  flightNumber: `FE4455-00${legs.length + 1}`,
                   aircraftRegistration: last ? last.aircraftRegistration : "OE-FFB",
                   crew: last ? last.crew : [],
                   passengers: last ? last.passengers : [],

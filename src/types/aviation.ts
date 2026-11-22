@@ -327,6 +327,11 @@ export interface PricingBreakdown {
   vatAmount: number;
   totalFlightPrice: number;
   currency: "EUR" | "USD" | "GBP" | "CHF";
+  operatorCost?: number;
+  companyMargin?: number;
+  agentCommission?: number;
+  agentCommissionRate?: number;
+  agentMargin?: number;
 }
 
 export interface AdditionalServices {
@@ -371,6 +376,9 @@ export interface ClientDetails {
 export interface OperatorDetails {
   companyName: string; // e.g. "Orbelo GmbH"
   legalEntity: string;
+  name?: string;
+  country?: string;
+  documentsPending?: boolean;
   representativeName: string; // e.g. "Ezeokeke, Obiefuna"
   supportEmail: string;
   supportPhone: string;
@@ -484,7 +492,7 @@ export interface Booking {
   cancellationReason?: string;
   isBooked?: boolean;
   supersededBy?: string;
-  tripNumber: string; // e.g. "PEU842-001" or "ZFL433" (Assigned when booked as a flight)
+  tripNumber: string; // e.g. "TRI-FE4455-001" (Assigned when booked as a flight)
   invoiceNumber: string; // e.g. "00106020"
   accountNumber: string; // Linked to client account e.g. "ACC-21737"
   contractDate: string; // DD.MM.YYYY
@@ -501,6 +509,13 @@ export interface Booking {
   checklist: DispatchChecklistStep[];
   agentName?: string;
   agentEmail?: string;
+  curatorName?: string;
+  operatorName?: string;
+  paContact?: {
+    name: string;
+    email?: string;
+    phone?: string;
+  };
   sourceAgentRequestId?: string;
   commissionPercentage?: number;
   quoteVersion?: number;

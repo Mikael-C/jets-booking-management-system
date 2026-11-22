@@ -41,16 +41,23 @@ const seedDatabase = async (force = false) => {
   if (existingUsers > 0 && existingClients > 0 && existingOperators > 0 && !forceSeed) {
     console.log(`ℹ️ Database already contains data (${existingUsers} users, ${existingClients} clients, ${existingOperators} operators, ${existingBookings} bookings).`);
 
-    // Ensure bookings collection is seeded if empty
-    if (existingBookings === 0) {
-      console.log('✈️ Existing database has 0 bookings. Seeding initial flight bookings...');
-      try {
-        const bookingsData = require('../seed/initialBookingsData.json');
-        await Booking.insertMany(bookingsData);
-        console.log(`✅ Seeded ${bookingsData.length} flight bookings into database!`);
-      } catch (err) {
-        console.warn('Booking seeding error:', err.message);
-      }
+    // Clean any legacy seeded mock bookings if present
+    const legacyMockCount = await Booking.countDocuments({
+      $or: [
+        { id: { $regex: /peu|legacy/i } },
+        { tripNumber: { $regex: /peu|qte-2026/i } },
+        { quoteReference: { $regex: /peu/i } }
+      ]
+    });
+    if (legacyMockCount > 0) {
+      console.log(`🧹 Removing ${legacyMockCount} legacy seeded mock bookings...`);
+      await Booking.deleteMany({
+        $or: [
+          { id: { $regex: /peu|legacy/i } },
+          { tripNumber: { $regex: /peu|qte-2026/i } },
+          { quoteReference: { $regex: /peu/i } }
+        ]
+      });
     }
 
     // Ensure initial communications messages exist
@@ -64,8 +71,7 @@ const seedDatabase = async (force = false) => {
           senderName: 'David Schneider',
           senderEmail: 'ops@orbelo.com',
           senderRole: 'operations',
-          content: 'Eurocontrol CFMU slot issued for PEU842-001 (LSGG → LIMJ). CTOT is confirmed at 11:24z. Ground handling at Genoa AGS notified.',
-          tripNumber: 'PEU842-001',
+          content: 'Operations Control Center active. Monitoring fleet availability, Eurocontrol CTOT slots, and airport FBO coordination.',
           readBy: [{ userEmail: 'ops@orbelo.com', readAt: new Date() }],
         },
         {
@@ -74,8 +80,7 @@ const seedDatabase = async (force = false) => {
           senderName: 'Maximilian von Bern',
           senderEmail: 'superadmin@orbelo.com',
           senderRole: 'super_admin',
-          content: 'Excellent. Please verify crew FDP limits for Captain Audrain prior to departure.',
-          tripNumber: 'PEU842-001',
+          content: 'Excellent. Ensure all crew duty limits and AOC compliance standards are strictly observed.',
           readBy: [{ userEmail: 'superadmin@orbelo.com', readAt: new Date() }],
         },
         {
@@ -84,58 +89,8 @@ const seedDatabase = async (force = false) => {
           senderName: 'Marcus Vance',
           senderEmail: 'agent@orbelo.com',
           senderRole: 'agent',
-          content: 'Hello Operations Team! Submitting quotation request for Lord Julian Sterling: London Luton (EGGW) → Nice (LFMN) for 4 VIP passengers. Challenger 350 or Citation Latitude preferred.',
-          requestId: 'req-101',
+          content: 'Curator desk standing by for upcoming charter inquiries.',
           readBy: [{ userEmail: 'agent@orbelo.com', readAt: new Date() }],
-        },
-        {
-          id: 'msg-1004',
-          channel: 'broker_desk',
-          senderName: 'Capt. Alexander Vance',
-          senderEmail: 'admin@orbelo.com',
-          senderRole: 'admin',
-          content: 'Hi Marcus, quote PEU603-001 has been compiled with Citation Latitude (OE-LGT) at €31,800 all-inclusive. Document attached below.',
-          requestId: 'req-101',
-          tripNumber: 'PEU603-001',
-          attachments: [
-            {
-              name: 'Official_Quotation_PEU603-001.pdf',
-              type: 'quotation',
-              tripNumber: 'PEU603-001',
-              docType: 'quotation',
-              fileSize: '284 KB',
-            },
-          ],
-          readBy: [{ userEmail: 'admin@orbelo.com', readAt: new Date() }],
-        },
-        {
-          id: 'msg-1005',
-          channel: 'finance',
-          senderName: 'Elena Rostova',
-          senderEmail: 'finance@orbelo.com',
-          senderRole: 'finance',
-          content: 'Wire transfer of €13,320.45 received from Brinkmann Global Capital for invoice #00106020. Payment status updated to Fully Paid.',
-          tripNumber: 'PEU842-001',
-          attachments: [
-            {
-              name: 'Tax_Invoice_00106020.pdf',
-              type: 'invoice',
-              tripNumber: 'PEU842-001',
-              docType: 'invoice',
-              fileSize: '210 KB',
-            },
-          ],
-          readBy: [{ userEmail: 'finance@orbelo.com', readAt: new Date() }],
-        },
-        {
-          id: 'msg-1006',
-          channel: 'client_services',
-          senderName: 'Sophia Laurent',
-          senderEmail: 'sophia@orbelo.com',
-          senderRole: 'agent',
-          content: 'Client has requested onboard catering update: 1 bottle Dom Pérignon Vintage 2013 and gluten-free canapés. Please coordinate with Signature Flight Support.',
-          requestId: 'req-102',
-          readBy: [{ userEmail: 'sophia@orbelo.com', readAt: new Date() }],
         },
         {
           id: 'msg-1007',
@@ -146,7 +101,7 @@ const seedDatabase = async (force = false) => {
           recipientName: 'Marcus Vance',
           recipientEmail: 'agent@orbelo.com',
           recipientRole: 'agent',
-          content: 'Welcome to the dispatch channel Marcus. Your broker credentials and 2,000 sourcing tokens have been configured. Let me know if you need assistance with the Nice routing.',
+          content: 'Welcome to the dispatch channel Marcus. Your curator credentials and token allowances are active.',
           readBy: [{ userEmail: 'admin@orbelo.com', readAt: new Date() }, { userEmail: 'agent@orbelo.com', readAt: new Date() }],
         },
         {
@@ -158,7 +113,7 @@ const seedDatabase = async (force = false) => {
           recipientName: 'Capt. Alexander Vance',
           recipientEmail: 'admin@orbelo.com',
           recipientRole: 'admin',
-          content: 'Thank you Captain Vance! Sourcing quotes on Avinode now. Will attach the formal quotation once ready.',
+          content: 'Thank you Captain Vance! Sourcing quotes on live channels now.',
           readBy: [{ userEmail: 'agent@orbelo.com', readAt: new Date() }, { userEmail: 'admin@orbelo.com', readAt: new Date() }],
         },
       ]);
@@ -327,16 +282,13 @@ const seedDatabase = async (force = false) => {
   ]);
   console.log(`🏢 Created ${operators.length} operators`);
 
-  // ─── Flight Bookings ─────────────────────────────────────
-  const bookingsData = require('../seed/initialBookingsData.json');
-  const seededBookings = await Booking.insertMany(bookingsData);
-  console.log(`✈️  Created ${seededBookings.length} initial flight bookings`);
+  // ─── Flight Bookings (Empty for real workflow creation) ───────────
+  console.log('✈️  Quotes, bookings, invoices and briefs will be created through live operations workflow.');
 
   // ─── Sample Notifications ──────────────────────────────
   await Notification.insertMany([
     { userEmail: 'superadmin@orbelo.com', type: 'warning', title: 'AOC Expiry Warning', message: 'Zenith Executive Aviation AOC expires in 15 days. Renewal verification required.', read: false, entityType: 'operator' },
-    { userEmail: 'superadmin@orbelo.com', type: 'info', title: 'New Agent RFQ Received', message: 'Marcus Vance submitted a quote request for LSGG ⇄ LIMJ.', read: false, entityType: 'request' },
-    { userEmail: 'superadmin@orbelo.com', type: 'success', title: 'Wire Transfer Verified', message: 'Payment of €18,450.00 received for Trip PEU842-001.', read: true, entityType: 'payment' }
+    { userEmail: 'superadmin@orbelo.com', type: 'info', title: 'New Curator RFQ Received', message: 'Curator submitted a quote request for review.', read: false, entityType: 'request' }
   ]);
   console.log('🔔 Created sample notifications');
 

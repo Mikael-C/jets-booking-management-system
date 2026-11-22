@@ -34,12 +34,9 @@ const tripSuffix = (booking) =>
 
 const createUniqueTripNumber = async (preferred) => {
   if (preferred && !(await Booking.exists({ tripNumber: preferred }))) return preferred;
-
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    const candidate = `QTE-${new Date().getFullYear()}-${randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()}`;
-    if (!(await Booking.exists({ tripNumber: candidate }))) return candidate;
-  }
-  throw new Error('Unable to allocate a unique booking trip number');
+  const { getNextFeSequence } = require('../services/bookingIdentifiers');
+  const token = await getNextFeSequence();
+  return `TRI-${token}-001`;
 };
 
 // Valid booking status transitions
@@ -431,20 +428,48 @@ router.post('/:id/revise', authorize('super_admin', 'admin', 'operations'), asyn
   const hasLineAdjustments = Array.isArray(revisedData.revisionAdjustments) &&
     revisedData.revisionAdjustments.length > 0;
   revisedData.isSupplementalRevision = isSupplementalRevision;
-  revisedData.creditNotes = isSupplementalRevision || (delta === 0 && !hasLineAdjustments) ? [] : [{
-    id: `cn-${Date.now()}`,
-    number: `CN-${identifiers.bookingRevisionId.replace(/^BK-/, '')}`,
-    creditNoteNumber: `CN-${identifiers.bookingRevisionId.replace(/^BK-/, '')}`,
-    date: new Date().toISOString().slice(0, 10),
-    issueDate: new Date().toISOString().slice(0, 10),
-    amount: Math.abs(delta),
-    reason: req.body?.revisionReason || `Booking price adjustment for ${identifiers.bookingRevisionId}`,
-    originalTotal: oldTotal,
-    newTotal,
-    netBalance: delta,
-    clientOwes: Math.max(delta, 0),
-    weOweClient: Math.max(-delta, 0)
-  }];
+
+  // Preserve original primary invoice number
+  revisedData.originalInvoiceNumber = original.originalInvoiceNumber || original.invoiceNumber || `INV-${identifiers.token}-001`;
+
+  // Credit notes and supplementary invoices
+  revisedData.creditNotes = [...(original.creditNotes || [])];
+  revisedData.supplementaryInvoices = [...(original.supplementaryInvoices || [])];
+
+  if (delta < 0 || (!isSupplementalRevision && hasLineAdjustments && delta < 0)) {
+    // Price reduction -> issue Credit Note (MOD-04)
+    const cnNumber = `CN-${identifiers.token}-${String(nextRevision).padStart(3, '0')}`;
+    revisedData.creditNotes.push({
+      id: `cn-${Date.now()}`,
+      number: cnNumber,
+      creditNoteNumber: cnNumber,
+      date: new Date().toISOString().slice(0, 10),
+      issueDate: new Date().toISOString().slice(0, 10),
+      amount: Math.abs(delta),
+      reason: req.body?.revisionReason || `Booking price adjustment for revision ${identifiers.bookingRevisionId}`,
+      originalTotal: oldTotal,
+      newTotal,
+      netBalance: delta,
+      clientOwes: 0,
+      weOweClient: Math.abs(delta),
+      currency: revisedData.pricing?.currency || 'EUR',
+      sentToClient: false,
+    });
+  } else if (delta > 0) {
+    // Price increase -> issue Supplementary Invoice (MOD-04)
+    const suppInvNumber = `INV-${identifiers.token}-${String(nextRevision).padStart(3, '0')}`;
+    revisedData.invoiceNumber = suppInvNumber;
+    revisedData.supplementaryInvoices.push({
+      id: `inv-${Date.now()}`,
+      invoiceNumber: suppInvNumber,
+      date: new Date().toISOString().slice(0, 10),
+      amount: delta,
+      reason: req.body?.revisionReason || `Supplementary charge for revision ${identifiers.bookingRevisionId}`,
+      currency: revisedData.pricing?.currency || 'EUR',
+      status: 'unpaid',
+      sentToClient: false,
+    });
+  }
 
   const revised = await Booking.create(revisedData);
   await logBookingAction(req.user, 'booking_revised', revised, req);

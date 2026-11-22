@@ -19,8 +19,8 @@ const startServer = async () => {
       const userCount = await User.countDocuments();
       const clientCount = await Client.countDocuments();
       const bookingCount = await Booking.countDocuments();
-      if (userCount === 0 || clientCount === 0 || bookingCount === 0 || process.env.FORCE_SEED === 'true') {
-        logger.info('🌱 Empty or partially seeded database detected on startup — automatically seeding initial data...');
+      if (userCount === 0 || clientCount === 0 || process.env.FORCE_SEED === 'true') {
+        logger.info('🌱 Empty database detected on startup — automatically seeding initial data...');
         const { seedDatabase } = require('./scripts/seed');
         await seedDatabase(process.env.FORCE_SEED === 'true');
         logger.info('✅ Auto-seed completed successfully!');

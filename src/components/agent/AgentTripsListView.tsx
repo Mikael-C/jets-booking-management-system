@@ -87,7 +87,7 @@ export default function AgentTripsListView() {
                     </td>
                     <td className="px-4 py-3 text-right">
                       <Link
-                        href={`/agent/trips/${b.id}`}
+                        href={`/agent/trips/${encodeURIComponent(b.tripNumber || b.tripId || b.id)}`}
                         className="text-[#C9A052] hover:underline text-sm"
                       >
                         Open trip

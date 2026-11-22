@@ -115,6 +115,12 @@ router.post('/', async (req, res) => {
     let booking = await findBooking(body.id || body.tripNumber || body.invoiceNumber);
 
     if (booking) {
+      if (!booking.isBooked && !booking.isContractSigned && booking.status !== 'confirmed') {
+        return res.status(400).json({
+          success: false,
+          message: 'Boundary enforcement (MOD-02): Invoices cannot be issued before the charter agreement is signed.'
+        });
+      }
       if (!booking.tripId || !booking.bookingRevisionId || !booking.tripNumber || !booking.invoiceNumber) {
         const identifiers = await createBookingIdentifiers({
           quoteGroupId: booking.quoteGroupId || booking.id || booking._id.toString(),

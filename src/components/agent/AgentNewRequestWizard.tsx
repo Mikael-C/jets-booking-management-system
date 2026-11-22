@@ -25,6 +25,8 @@ export default function AgentNewRequestWizard() {
     tokenBalance,
     checkAndSpendTokens,
     openTokenModal,
+    clients,
+    contacts,
   } = useAviation();
 
   // Mode: "wizard" vs "estimate" (Screen 3)
@@ -468,36 +470,87 @@ export default function AgentNewRequestWizard() {
 
           {/* Main Content Area */}
           <div className="flex-1 p-8 overflow-y-auto">
-            {/* STEP 1: CLIENT */}
+            {/* STEP 1: CLIENT (MOD-12: Pick an existing client from My clients) */}
             {step === 1 && (
-              <div className="max-w-xl space-y-4">
-                <h1 className="text-2xl font-bold text-white mb-6">Client details</h1>
-                <div>
-                  <label className="text-xs text-gray-400 uppercase tracking-wide block mb-1">Company / Entity</label>
-                  <input
-                    type="text"
-                    value={clientName}
-                    onChange={(e) => setClientName(e.target.value)}
-                    className="w-full bg-[#141C2E] border border-white/20 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
-                  />
+              <div className="max-w-xl space-y-5">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h1 className="text-2xl font-bold text-white mb-1">Client details</h1>
+                    <p className="text-xs text-gray-400">Select an existing client from your portfolio or enter a new client.</p>
+                  </div>
                 </div>
-                <div>
-                  <label className="text-xs text-gray-400 uppercase tracking-wide block mb-1">Authorized Contact</label>
-                  <input
-                    type="text"
-                    value={clientContact}
-                    onChange={(e) => setClientContact(e.target.value)}
-                    className="w-full bg-[#141C2E] border border-white/20 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
-                  />
+
+                {/* Existing client picker */}
+                <div className="p-4 bg-[#101726] border border-white/10 rounded-xl space-y-2">
+                  <label className="text-xs text-[#C9A052] font-semibold uppercase tracking-wider block">
+                    Pick from My Clients
+                  </label>
+                  <select
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (!val) return;
+                      const foundClient = (clients || []).find((c) => c.id === val);
+                      if (foundClient) {
+                        setClientName(foundClient.companyName || foundClient.fullName);
+                        setClientContact(foundClient.fullName);
+                        setClientEmail(foundClient.email);
+                        return;
+                      }
+                      const foundContact = (contacts || []).find((c) => c.id === val);
+                      if (foundContact) {
+                        setClientName((foundContact as any).company || (foundContact as any).organization || foundContact.fullName || "");
+                        setClientContact(foundContact.fullName || "");
+                        setClientEmail(foundContact.email || "");
+                        return;
+                      }
+                    }}
+                    className="w-full bg-[#080D1A] border border-white/20 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
+                  >
+                    <option value="">-- Choose existing client --</option>
+                    {(clients || []).map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.fullName} {c.companyName ? `(${c.companyName})` : ""}
+                      </option>
+                    ))}
+                    {(contacts || []).map((cnt) => (
+                      <option key={cnt.id} value={cnt.id}>
+                        {cnt.fullName} {(cnt as any).company ? `(${(cnt as any).company})` : ""}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-                <div>
-                  <label className="text-xs text-gray-400 uppercase tracking-wide block mb-1">Email</label>
-                  <input
-                    type="email"
-                    value={clientEmail}
-                    onChange={(e) => setClientEmail(e.target.value)}
-                    className="w-full bg-[#141C2E] border border-white/20 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
-                  />
+
+                <div className="space-y-4 pt-2">
+                  <div>
+                    <label className="text-xs text-gray-400 uppercase tracking-wide block mb-1">Company / Entity</label>
+                    <input
+                      type="text"
+                      value={clientName}
+                      placeholder="e.g. Adeyemi Holdings Ltd"
+                      onChange={(e) => setClientName(e.target.value)}
+                      className="w-full bg-[#141C2E] border border-white/20 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-400 uppercase tracking-wide block mb-1">Authorized Contact</label>
+                    <input
+                      type="text"
+                      value={clientContact}
+                      placeholder="e.g. Tunde Adeyemi"
+                      onChange={(e) => setClientContact(e.target.value)}
+                      className="w-full bg-[#141C2E] border border-white/20 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-400 uppercase tracking-wide block mb-1">Email</label>
+                    <input
+                      type="email"
+                      value={clientEmail}
+                      placeholder="client@company.com"
+                      onChange={(e) => setClientEmail(e.target.value)}
+                      className="w-full bg-[#141C2E] border border-white/20 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
+                    />
+                  </div>
                 </div>
               </div>
             )}

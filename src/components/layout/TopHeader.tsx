@@ -161,7 +161,7 @@ export default function TopHeader() {
           <Search className="w-4 h-4 text-[#0F1420]/40 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Search Trip # (PEU842), Client, Airport (LSGG), Tail..."
+            placeholder="Search Trip # (FE4455), Client, Airport (LSGG), Tail..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-white border border-[#E0DAD0] rounded-xl pl-9 pr-4 py-2 text-xs text-[#0F1420] placeholder-[#0F1420]/40 focus:outline-none focus:border-[#C9A052] focus:ring-1 focus:ring-[#C9A052] transition-colors shadow-sm"

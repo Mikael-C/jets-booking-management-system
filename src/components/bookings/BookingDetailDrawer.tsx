@@ -243,7 +243,7 @@ export default function BookingDetailDrawer() {
               </h2>
               <p className="text-[11px] text-gray-400 font-mono mt-0.5">
                 {isBooked ? (
-                  <>Callsign: <strong className="text-white">{booking.legs[0]?.flightNumber || "PEU842"}</strong> • Tail: <strong className="text-white">{booking.aircraft.registration || "OE-FFB"}</strong></>
+                  <>Callsign: <strong className="text-white">{booking.legs[0]?.flightNumber || booking.tripNumber || "FE4455"}</strong> • Tail: <strong className="text-white">{booking.aircraft.registration || "OE-FFB"}</strong></>
                 ) : (
                   <span className="text-[#C9A052]">Quote reference: {booking.quoteReference || "Pending server assignment"}</span>
                 )}

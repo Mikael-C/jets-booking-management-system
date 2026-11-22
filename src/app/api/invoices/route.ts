@@ -58,7 +58,7 @@ export async function POST(request: Request) {
 
     const bookingId = payload.id || `booking-inv-${Date.now()}`;
     const invoiceNumber = payload.invoiceNumber || `0010${Math.floor(6020 + Math.random() * 3970)}`;
-    const tripNumber = payload.tripNumber || `PEU${Math.floor(100 + Math.random() * 899)}-001`;
+    const tripNumber = payload.tripNumber || `TRI-FE${Math.floor(1000 + Math.random() * 9000)}-001`;
 
     const updatedBooking: Booking = {
       ...payload,

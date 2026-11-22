@@ -90,7 +90,7 @@ export default function Sidebar() {
             }`}
           >
             <span>Requests</span>
-            <span className="text-xs text-gray-400 font-mono">4</span>
+            <span className="text-xs text-gray-400 font-mono">{agentRequests?.length || 0}</span>
           </button>
 
           <button
@@ -102,7 +102,9 @@ export default function Sidebar() {
             }`}
           >
             <span>Quotes</span>
-            <span className="text-xs text-gray-400 font-mono">9</span>
+            <span className="text-xs text-gray-400 font-mono">
+              {bookings.filter((b) => !b.isBooked && !["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(b.status)).length}
+            </span>
           </button>
 
           <button
@@ -114,7 +116,9 @@ export default function Sidebar() {
             }`}
           >
             <span>Bookings</span>
-            <span className="text-xs text-gray-400 font-mono">5</span>
+            <span className="text-xs text-gray-400 font-mono">
+              {bookings.filter((b) => b.isBooked || ["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(b.status)).length}
+            </span>
           </button>
 
           <button
@@ -126,7 +130,9 @@ export default function Sidebar() {
             }`}
           >
             <span>Payments</span>
-            <span className="text-xs text-gray-400 font-mono">3</span>
+            <span className="text-xs text-gray-400 font-mono">
+              {bookings.filter((b) => b.paymentStatus === "deposit_paid" || b.paymentStatus === "unpaid").length}
+            </span>
           </button>
 
           <button
@@ -245,16 +251,6 @@ export default function Sidebar() {
             }`}
           >
             <span>Curators</span>
-          </button>
-          <button
-            onClick={() => navigateTo("agents", "/agents")}
-            className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg transition-all ${
-              isAgentsActive
-                ? "bg-[#1E293B] text-white font-medium"
-                : "text-gray-400 hover:text-white hover:bg-[#141C2B]"
-            }`}
-          >
-            <span>Agents</span>
           </button>
           <button
             onClick={() => navigateTo("operators", "/operators")}

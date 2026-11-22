@@ -511,7 +511,7 @@ export default function GenerateBriefView() {
                 type="text"
                 value={listSearchQuery}
                 onChange={(e) => setListSearchQuery(e.target.value)}
-                placeholder="Search by Trip ID (e.g. PEU842-001), Client, Aircraft, or Airport code..."
+                placeholder="Search by Trip ID (e.g. TRI-FE4455-001), Client, Aircraft, or Airport code..."
                 className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-[#E0DAD0] bg-[#F5F2EC] text-xs text-[#0F1420] font-medium placeholder-gray-400 focus:outline-none focus:border-[#C9A052] focus:bg-white transition-all"
               />
               {listSearchQuery && (
@@ -758,7 +758,7 @@ export default function GenerateBriefView() {
               setIsSearchOpen(true);
             }}
             onFocus={() => setIsSearchOpen(true)}
-            placeholder="Type Trip ID (e.g. PEU842, ZFL433) or Client Name (e.g. Edward Brinkmann, Somaco)..."
+            placeholder="Type Trip ID (e.g. TRI-FE4455-001) or Client Name (e.g. Edward Brinkmann)..."
             className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl pl-10 pr-20 py-3 text-xs text-[#0F1420] font-medium focus:outline-none focus:border-[#C9A052] transition-all shadow-inner"
           />
           <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />

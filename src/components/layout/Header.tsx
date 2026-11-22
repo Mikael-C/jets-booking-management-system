@@ -44,7 +44,7 @@ export default function Header() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
-              placeholder="Search by Trip # (PEU842), Client, Airport (LSGG), Tail..."
+              placeholder="Search by Trip # (FE4455), Client, Airport (LSGG), Tail..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-[#080C14] border border-gray-800 rounded-xl pl-9 pr-4 py-2 text-xs text-gray-200 placeholder-gray-500 focus:outline-none focus:border-gold/60 transition-colors"
