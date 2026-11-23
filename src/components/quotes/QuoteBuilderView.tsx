@@ -228,6 +228,15 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
     ? formatTripVersion(rootId, nextVersionNum)
     : `QUO-${rootId}-${pad3(nextVersionNum)}`;
 
+  const formattedQuoteId = useMemo(() => {
+    const qRef = ((sourceRequest as any)?.quoteReference || "").trim();
+    if (qRef) {
+      return qRef.toLowerCase().startsWith("quo-") ? `quo-${qRef.slice(4)}` : `quo-${qRef}`;
+    }
+    const clean = versionLabel.replace(/^QUO-/i, "quo-");
+    return clean.toLowerCase().startsWith("quo-") ? `quo-${clean.slice(4)}` : clean;
+  }, [versionLabel, sourceRequest]);
+
   // Form State
   // 1. Client
   const [selectedAccountId, setSelectedAccountId] = useState<string>(() => {
@@ -490,6 +499,12 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
     depArrLocation: string;
     destination: string;
     clientPrice: number;
+    departurePickup?: string;
+    departureAirport?: string;
+    departurePrice?: number;
+    arrivalAirport?: string;
+    arrivalDestination?: string;
+    arrivalPrice?: number;
     luggageDetails: string;
     specialRequests: string;
   }>>({
@@ -499,6 +514,12 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
       prefType: "Twin-engine, e.g. AW109 or similar",
       depArrLocation: "EGLF Farnborough Airport",
       destination: "Battersea Heliport, London",
+      departurePickup: "Battersea Heliport, London",
+      departureAirport: "EGLF Farnborough Airport",
+      departurePrice: 1200,
+      arrivalAirport: "EGLF Farnborough Airport",
+      arrivalDestination: "Battersea Heliport, London",
+      arrivalPrice: 1200,
       clientPrice: 2400,
       luggageDetails: "4 cabin bags, 2 suitcases (soft)",
       specialRequests: "Landing permission at the hotel helipad to be confirmed"
@@ -711,7 +732,24 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
   const [deicingPrice, setDeicingPrice] = useState<number>(450);
   const [carbonOffsetPrice, setCarbonOffsetPrice] = useState<number>(65);
 
-  // 6. Margins & Payment (Screen 2 design)
+  // 6. Margins, Passenger Fees & Payment (Step 06 - Screen 1 design)
+  const [passengerFeesItemised, setPassengerFeesItemised] = useState<boolean>(true);
+  const [passengerFeesAppliesTo, setPassengerFeesAppliesTo] = useState<"leg-1" | "leg-2" | "both">("leg-2");
+  const [passengerFeesDesc, setPassengerFeesDesc] = useState<string>("Abuja (DNAA) departure passenger charge");
+  const [passengerFeesAmount, setPassengerFeesAmount] = useState<number>(45);
+  const [passengerFeesCharged, setPassengerFeesCharged] = useState<"pax" | "flat">("pax");
+  const [passengerFeesPax, setPassengerFeesPax] = useState<number>(() => paxCount || 5);
+
+  const [companyMarginTierPct, setCompanyMarginTierPct] = useState<number>(8);
+  const [companyMarginOverride, setCompanyMarginOverride] = useState<boolean>(false);
+  const [companyMarginOverrideAmount, setCompanyMarginOverrideAmount] = useState<number>(3500);
+
+  const [agentMarginTierPct, setAgentMarginTierPct] = useState<number>(() => {
+    return sourceRequest?.agentMarginPct || 10;
+  });
+  const [agentMarginOverride, setAgentMarginOverride] = useState<boolean>(false);
+  const [agentMarginOverrideAmount, setAgentMarginOverrideAmount] = useState<number>(5000);
+
   const [companyMarginText, setCompanyMarginText] = useState("8 % · tier > € 35k");
   const [agentMarginText, setAgentMarginText] = useState(() => {
     if (sourceRequest?.agentMarginPct) {
@@ -757,16 +795,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
     }
   }, [sourceRequest]);
 
-  // Parse percentages safely
-  const companyMarginPercent = useMemo(() => {
-    const match = companyMarginText.match(/(\d+(\.\d+)?)/);
-    return match ? parseFloat(match[1]) : 8;
-  }, [companyMarginText]);
 
-  const agentCommissionPercent = useMemo(() => {
-    const match = agentMarginText.match(/(\d+(\.\d+)?)/);
-    return match ? parseFloat(match[1]) : 10;
-  }, [agentMarginText]);
 
   // Helper for per-leg photo picker
   const openPhotoPickerForLeg = (legIndex: number) => {
@@ -801,14 +830,80 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
     });
   };
 
-  // Effective operator cost across legs
+  const displayLegs = useMemo(() => {
+    if (tripType === "multi_leg") {
+      return multiLegs;
+    } else if (tripType === "round_trip") {
+      return [
+        {
+          id: "leg-1",
+          origin: originAirport,
+          destination: destAirport,
+          flightDate: flightDate,
+          departureTime: departureTime,
+          aircraft: multiLegs[0]?.aircraft || selectedAircraft,
+          operatorId: multiLegs[0]?.operatorId || selectedOperatorId,
+          buyingPrice: multiLegs[0]?.buyingPrice ?? (operatorFlightCost > 0 ? Math.round(operatorFlightCost * 26400 / 49280) : 26400),
+          exteriorPhoto: multiLegs[0]?.exteriorPhoto || customExteriorPhoto,
+          cabinPhoto: multiLegs[0]?.cabinPhoto || customCabinPhoto,
+          yearOfMake: multiLegs[0]?.yearOfMake || 2018,
+          yearOfRefurbishment: multiLegs[0]?.yearOfRefurbishment || "2023",
+          seats: multiLegs[0]?.seats || selectedAircraft.passengers || 9,
+          smokingCabin: multiLegs[0]?.smokingCabin || false,
+          lavatoryOnBoard: multiLegs[0]?.lavatoryOnBoard ?? true,
+          lavatoryType: multiLegs[0]?.lavatoryType || "Enclosed"
+        },
+        {
+          id: "leg-2",
+          origin: destAirport,
+          destination: originAirport,
+          flightDate: returnFlightDate,
+          departureTime: returnDepartureTime,
+          aircraft: multiLegs[1]?.aircraft || selectedAircraft,
+          operatorId: multiLegs[1]?.operatorId || "op-2",
+          buyingPrice: multiLegs[1]?.buyingPrice ?? (operatorFlightCost > 0 ? Math.round(operatorFlightCost * 22880 / 49280) : 22880),
+          exteriorPhoto: multiLegs[1]?.exteriorPhoto || customExteriorPhoto,
+          cabinPhoto: multiLegs[1]?.cabinPhoto || customCabinPhoto,
+          yearOfMake: multiLegs[1]?.yearOfMake || 2019,
+          yearOfRefurbishment: multiLegs[1]?.yearOfRefurbishment || "—",
+          seats: multiLegs[1]?.seats || selectedAircraft.passengers || 9,
+          smokingCabin: multiLegs[1]?.smokingCabin || false,
+          lavatoryOnBoard: multiLegs[1]?.lavatoryOnBoard ?? true,
+          lavatoryType: multiLegs[1]?.lavatoryType || "Semi-private"
+        }
+      ];
+    } else {
+      return [
+        {
+          id: "leg-1",
+          origin: originAirport,
+          destination: destAirport,
+          flightDate: flightDate,
+          departureTime: departureTime,
+          aircraft: selectedAircraft,
+          operatorId: selectedOperatorId,
+          buyingPrice: operatorFlightCost || 26400,
+          exteriorPhoto: customExteriorPhoto,
+          cabinPhoto: customCabinPhoto,
+          yearOfMake: 2018,
+          yearOfRefurbishment: "2023",
+          seats: selectedAircraft.passengers || 8,
+          smokingCabin: false,
+          lavatoryOnBoard: true,
+          lavatoryType: "Enclosed"
+        }
+      ];
+    }
+  }, [tripType, multiLegs, originAirport, destAirport, flightDate, departureTime, returnFlightDate, returnDepartureTime, selectedAircraft, selectedOperatorId, operatorFlightCost, customExteriorPhoto, customCabinPhoto]);
+
+  // Effective operator cost across legs (from Step 04 buying prices)
   const effectiveOperatorFlightCost = useMemo(() => {
-    if (tripType === "multi_leg" && !sameAircraftOnAllLegs) {
-      const sum = multiLegs.reduce((acc, leg) => acc + (leg.buyingPrice || 0), 0);
+    if (displayLegs.length > 0) {
+      const sum = displayLegs.reduce((acc, leg) => acc + (leg.buyingPrice || 0), 0);
       return sum > 0 ? sum : operatorFlightCost;
     }
     return operatorFlightCost;
-  }, [tripType, sameAircraftOnAllLegs, multiLegs, operatorFlightCost]);
+  }, [displayLegs, operatorFlightCost]);
 
   // Dynamic Ground Transportation Total (Image 7)
   const groundServicesTotal = useMemo(() => {
@@ -846,11 +941,119 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
     (serviceOptions.carbonOffset ? carbonOffsetPrice : 0) +
     customServicesTotal;
 
-  const companyMarginAmount = Math.round((effectiveOperatorFlightCost * companyMarginPercent) / 100);
-  const agentMarginAmount = Math.round((effectiveOperatorFlightCost * agentCommissionPercent) / 100);
-  const clientSubtotal = effectiveOperatorFlightCost + companyMarginAmount + agentMarginAmount + servicesTotal;
-  const clientTotal = clientSubtotal; // Zero rated VAT for international charter
+  // Passenger fees line at cost (Step 06 - Screen 1 design)
+  const passengerFeesLineAtCost = useMemo(() => {
+    if (!passengerFeesItemised) return 0;
+    const perUnit = passengerFeesCharged === "pax" ? passengerFeesAmount * (passengerFeesPax || paxCount || 5) : passengerFeesAmount;
+    if (passengerFeesAppliesTo === "both") return perUnit * (displayLegs.length || 2);
+    return perUnit;
+  }, [passengerFeesItemised, passengerFeesCharged, passengerFeesAmount, passengerFeesPax, paxCount, passengerFeesAppliesTo, displayLegs.length]);
+
+  // Total Cost Base: Direct Buying Prices + Passenger Fees at Cost
+  const totalCostBase = effectiveOperatorFlightCost + passengerFeesLineAtCost;
+
+  // Company Margin calculation: Handles override cleanly as normal currency figure!
+  const companyMarginAmount = useMemo(() => {
+    if (companyMarginOverride) {
+      return Number(companyMarginOverrideAmount) || 0;
+    }
+    const text = companyMarginText.trim();
+    if (text && !text.includes("%") && (/[€$£]/.test(text) || parseFloat(text.replace(/[^0-9.]/g, "")) >= 100)) {
+      const parsed = parseFloat(text.replace(/[^0-9.]/g, ""));
+      if (!isNaN(parsed) && parsed > 0) return parsed;
+    }
+    return Math.round((totalCostBase * companyMarginTierPct) / 100 * 100) / 100;
+  }, [companyMarginOverride, companyMarginOverrideAmount, companyMarginText, totalCostBase, companyMarginTierPct]);
+
+  // Curator / Agent Mark-up calculation: Handles override cleanly as normal currency figure!
+  const agentMarginAmount = useMemo(() => {
+    if (agentMarginOverride) {
+      return Number(agentMarginOverrideAmount) || 0;
+    }
+    const text = agentMarginText.trim();
+    if (text && !text.includes("%") && (/[€$£]/.test(text) || parseFloat(text.replace(/[^0-9.]/g, "")) >= 100)) {
+      const parsed = parseFloat(text.replace(/[^0-9.]/g, ""));
+      if (!isNaN(parsed) && parsed > 0) return parsed;
+    }
+    // Screen 1: 10% on (costBase + companyMargin) -> (49505 + 3960.40) * 0.10 = 5346.54
+    return Math.round(((totalCostBase + companyMarginAmount) * agentMarginTierPct) / 100 * 100) / 100;
+  }, [agentMarginOverride, agentMarginOverrideAmount, agentMarginText, totalCostBase, companyMarginAmount, agentMarginTierPct]);
+
+  // Effective percentages for display
+  const effectiveCompanyMarginPct = useMemo(() => {
+    if (totalCostBase > 0) {
+      return Math.round((companyMarginAmount / totalCostBase) * 1000) / 10;
+    }
+    return companyMarginTierPct;
+  }, [companyMarginAmount, totalCostBase, companyMarginTierPct]);
+
+  const effectiveAgentMarginPct = useMemo(() => {
+    const base = totalCostBase + companyMarginAmount;
+    if (base > 0) {
+      return Math.round((agentMarginAmount / base) * 1000) / 10;
+    }
+    return agentMarginTierPct;
+  }, [agentMarginAmount, totalCostBase, companyMarginAmount, agentMarginTierPct]);
+
+  // Backward-compatible percentage aliases
+  const companyMarginPercent = effectiveCompanyMarginPct;
+  const agentCommissionPercent = effectiveAgentMarginPct;
+
+  const clientSubtotal = totalCostBase + companyMarginAmount + agentMarginAmount + servicesTotal;
+  const clientTotal = Math.round(clientSubtotal * 100) / 100;
   const cardAmount = Math.round(clientTotal * 1.035 * 100) / 100;
+
+  // Leg pricing breakdown for "What the documents show"
+  const legPricingBreakdown = useMemo(() => {
+    const totalMargin = companyMarginAmount + agentMarginAmount;
+    const marginRatio = totalCostBase > 0 ? totalMargin / totalCostBase : 0;
+    
+    let allocatedTotal = 0;
+    const legs = displayLegs.map((leg, idx) => {
+      const legBuyingPrice = leg.buyingPrice || Math.round(effectiveOperatorFlightCost / (displayLegs.length || 1));
+      
+      let legPassengerFee = 0;
+      if (passengerFeesItemised) {
+        if (passengerFeesAppliesTo === "both") {
+          legPassengerFee = passengerFeesLineAtCost / (displayLegs.length || 2);
+        } else if (passengerFeesAppliesTo === "leg-1" && idx === 0) {
+          legPassengerFee = passengerFeesLineAtCost;
+        } else if (passengerFeesAppliesTo === "leg-2" && idx === 1) {
+          legPassengerFee = passengerFeesLineAtCost;
+        }
+      }
+      
+      const legBase = legBuyingPrice + legPassengerFee;
+      const legMargin = Math.round(legBase * marginRatio * 100) / 100;
+      const charterPrice = Math.round((legBuyingPrice + legMargin) * 100) / 100;
+      allocatedTotal += charterPrice;
+      
+      return {
+        legNumber: idx + 1,
+        buyingPrice: legBuyingPrice,
+        passengerFee: legPassengerFee,
+        margin: legMargin,
+        charterPrice
+      };
+    });
+    
+    // Balance any fractional cent so sum of documents matches clientTotal exactly
+    const expectedCharterSum = Math.round((effectiveOperatorFlightCost + totalMargin) * 100) / 100;
+    const diff = Math.round((expectedCharterSum - allocatedTotal) * 100) / 100;
+    if (diff !== 0 && legs.length > 0) {
+      legs[legs.length - 1].charterPrice = Math.round((legs[legs.length - 1].charterPrice + diff) * 100) / 100;
+    }
+    
+    return legs;
+  }, [displayLegs, effectiveOperatorFlightCost, passengerFeesItemised, passengerFeesAppliesTo, passengerFeesLineAtCost, totalCostBase, companyMarginAmount, agentMarginAmount]);
+
+  const documentLinesSum = useMemo(() => {
+    const charterTotal = legPricingBreakdown.reduce((s, l) => s + l.charterPrice, 0);
+    const feeCost = passengerFeesItemised ? passengerFeesLineAtCost : 0;
+    return Math.round((charterTotal + feeCost + servicesTotal) * 100) / 100;
+  }, [legPricingBreakdown, passengerFeesItemised, passengerFeesLineAtCost, servicesTotal]);
+
+  const documentsAddUp = Math.abs(documentLinesSum - clientTotal) < 0.05;
 
   // Selected Account details
   const activeAccount = useMemo(() => {
@@ -872,72 +1075,6 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
     }
     return accounts[0];
   }, [accounts, selectedAccountId, sourceRequest]);
-
-  const displayLegs = useMemo(() => {
-    if (tripType === "multi_leg") {
-      return multiLegs;
-    } else if (tripType === "round_trip") {
-      return [
-        {
-          id: "leg-1",
-          origin: originAirport,
-          destination: destAirport,
-          flightDate: flightDate,
-          departureTime: departureTime,
-          aircraft: multiLegs[0]?.aircraft || selectedAircraft,
-          operatorId: multiLegs[0]?.operatorId || selectedOperatorId,
-          buyingPrice: multiLegs[0]?.buyingPrice || Math.round(operatorFlightCost / 2),
-          exteriorPhoto: multiLegs[0]?.exteriorPhoto || customExteriorPhoto,
-          cabinPhoto: multiLegs[0]?.cabinPhoto || customCabinPhoto,
-          yearOfMake: multiLegs[0]?.yearOfMake || 2018,
-          yearOfRefurbishment: multiLegs[0]?.yearOfRefurbishment || "2023",
-          seats: multiLegs[0]?.seats || selectedAircraft.passengers || 9,
-          smokingCabin: multiLegs[0]?.smokingCabin || false,
-          lavatoryOnBoard: multiLegs[0]?.lavatoryOnBoard ?? true,
-          lavatoryType: multiLegs[0]?.lavatoryType || "Enclosed"
-        },
-        {
-          id: "leg-2",
-          origin: destAirport,
-          destination: originAirport,
-          flightDate: returnFlightDate,
-          departureTime: returnDepartureTime,
-          aircraft: multiLegs[1]?.aircraft || selectedAircraft,
-          operatorId: multiLegs[1]?.operatorId || selectedOperatorId,
-          buyingPrice: multiLegs[1]?.buyingPrice || Math.round(operatorFlightCost / 2),
-          exteriorPhoto: multiLegs[1]?.exteriorPhoto || customExteriorPhoto,
-          cabinPhoto: multiLegs[1]?.cabinPhoto || customCabinPhoto,
-          yearOfMake: multiLegs[1]?.yearOfMake || 2019,
-          yearOfRefurbishment: multiLegs[1]?.yearOfRefurbishment || "—",
-          seats: multiLegs[1]?.seats || selectedAircraft.passengers || 9,
-          smokingCabin: multiLegs[1]?.smokingCabin || false,
-          lavatoryOnBoard: multiLegs[1]?.lavatoryOnBoard ?? true,
-          lavatoryType: multiLegs[1]?.lavatoryType || "Semi-private"
-        }
-      ];
-    } else {
-      return [
-        {
-          id: "leg-1",
-          origin: originAirport,
-          destination: destAirport,
-          flightDate: flightDate,
-          departureTime: departureTime,
-          aircraft: selectedAircraft,
-          operatorId: selectedOperatorId,
-          buyingPrice: operatorFlightCost,
-          exteriorPhoto: customExteriorPhoto,
-          cabinPhoto: customCabinPhoto,
-          yearOfMake: 2018,
-          yearOfRefurbishment: "2023",
-          seats: selectedAircraft.passengers || 8,
-          smokingCabin: false,
-          lavatoryOnBoard: true,
-          lavatoryType: "Enclosed"
-        }
-      ];
-    }
-  }, [tripType, multiLegs, originAirport, destAirport, flightDate, departureTime, returnFlightDate, returnDepartureTime, selectedAircraft, selectedOperatorId, operatorFlightCost, customExteriorPhoto, customCabinPhoto]);
 
   // Submission handler
   const handleCompleteQuotation = async () => {
@@ -1217,9 +1354,9 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
       },
       legs,
       pricing: {
-        flightPrice: operatorFlightCost,
+        flightPrice: effectiveOperatorFlightCost,
         airportFees: 0,
-        passengerFees: 0,
+        passengerFees: passengerFeesItemised ? passengerFeesLineAtCost : 0,
         dayOfWeekDiscount: 0,
         inboundPassengerTax: 0,
         outboundPassengerTax: 0,
@@ -1228,7 +1365,10 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
         vatRate: 0,
         vatAmount: 0,
         totalFlightPrice: clientTotal,
-        currency: currency
+        currency: currency,
+        companyMargin: companyMarginAmount,
+        agentCommission: agentMarginAmount,
+        operatorCost: effectiveOperatorFlightCost
       },
       services: {
         limousineService: serviceOptions.limousine,
@@ -1244,8 +1384,8 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
       quoteVersion: nextVersionNum,
       agentName: sourceRequest?.agentName,
       agentEmail: sourceRequest?.agentEmail,
-      commissionPercentage: agentCommissionPercent,
-      adminMarginValue: companyMarginPercent,
+      commissionPercentage: effectiveAgentMarginPct,
+      adminMarginValue: effectiveCompanyMarginPct,
       manualServices: activeServicesList,
       sourceAgentRequestId: sourceRequest?.id,
       createdAt: sourceTrip?.createdAt || new Date().toISOString(),
@@ -1860,9 +2000,9 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
           <h1 className="text-2xl font-bold font-display text-[var(--ink)] m-0">
             {effectiveReviseId
               ? isBookingRevision
-                ? `Revise Booking (${versionLabel})`
-                : `Revise Quotation (${versionLabel})`
-              : `New Charter Quotation (${versionLabel})`}
+                ? `Revise Booking · ${versionLabel}`
+                : `Revise quote · ${formattedQuoteId}`
+              : `New quote · ${formattedQuoteId}`}
           </h1>
         </div>
 
@@ -3326,81 +3466,349 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                         </div>
                       </div>
 
-                      {/* 2 · Helicopter details */}
-                      <div className="space-y-2">
-                        <span className="text-[11px] font-bold text-gray-700 block">
-                          2 · Helicopter details
-                        </span>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                          <div>
-                            <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
-                              PASSENGERS
-                            </label>
-                            <input
-                              type="number"
-                              min={1}
-                              value={curHeli.passengers}
-                              onChange={(e) => updateHeliField("passengers", parseInt(e.target.value, 10) || 1)}
-                              className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs font-mono font-bold text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            />
+                      {/* 2 · Helicopter details - Dynamically adapts format based on transferType */}
+                      {curHeli.transferType === "arrival" && (
+                        <div className="space-y-3 bg-blue-50/40 p-3.5 rounded-lg border border-blue-100">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-bold text-gray-800">
+                              2 · Arrival helicopter details (Airport → Helicopter destination)
+                            </span>
+                            <span className="text-[10px] font-mono font-bold text-blue-700 bg-blue-100/80 px-2 py-0.5 rounded">
+                              On arrival
+                            </span>
                           </div>
-                          <div>
-                            <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
-                              PREFERRED HELICOPTER TYPE
-                            </label>
-                            <select
-                              value={curHeli.prefType}
-                              onChange={(e) => updateHeliField("prefType", e.target.value)}
-                              className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs font-semibold text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
-                            >
-                              <option value="Twin-engine, e.g. AW109 or similar">Twin-engine, e.g. AW109 or similar</option>
-                              <option value="Single-engine, e.g. Bell 407">Single-engine, e.g. Bell 407</option>
-                              <option value="Heavy twin, e.g. Sikorsky S-76">Heavy twin, e.g. Sikorsky S-76</option>
-                              <option value="Airbus H145 / EC145">Airbus H145 / EC145</option>
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
-                              DEPARTURE / ARRIVAL LOCATION
-                            </label>
-                            <input
-                              type="text"
-                              value={curHeli.depArrLocation}
-                              onChange={(e) => updateHeliField("depArrLocation", e.target.value)}
-                              className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                          <div>
-                            <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
-                              TRANSFER DESTINATION
-                            </label>
-                            <input
-                              type="text"
-                              value={curHeli.destination}
-                              onChange={(e) => updateHeliField("destination", e.target.value)}
-                              className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
-                              CLIENT PRICE
-                            </label>
-                            <div className="relative">
-                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono font-bold text-gray-400">€</span>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                                DEPARTURE AIRPORT (FLIGHT ARRIVAL)
+                              </label>
                               <input
-                                type="number"
-                                min={0}
-                                value={curHeli.clientPrice}
-                                onChange={(e) => updateHeliField("clientPrice", parseFloat(e.target.value) || 0)}
-                                className="w-full bg-white border border-gray-300 rounded-md pl-7 pr-3 py-1.5 text-xs font-mono font-bold text-gray-900 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                type="text"
+                                value={curHeli.depArrLocation || `${destCode} Airport`}
+                                onChange={(e) => updateHeliField("depArrLocation", e.target.value)}
+                                placeholder={`${destCode} Airport`}
+                                className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                                TRANSFER DESTINATION
+                              </label>
+                              <input
+                                type="text"
+                                value={curHeli.destination}
+                                onChange={(e) => updateHeliField("destination", e.target.value)}
+                                placeholder="Battersea Heliport, London"
+                                className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold"
                               />
                             </div>
                           </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                            <div>
+                              <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                                PASSENGERS
+                              </label>
+                              <input
+                                type="number"
+                                min={1}
+                                value={curHeli.passengers}
+                                onChange={(e) => updateHeliField("passengers", parseInt(e.target.value, 10) || 1)}
+                                className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs font-mono font-bold text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                                PREFERRED HELICOPTER TYPE
+                              </label>
+                              <select
+                                value={curHeli.prefType}
+                                onChange={(e) => updateHeliField("prefType", e.target.value)}
+                                className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs font-semibold text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+                              >
+                                <option value="Twin-engine, e.g. AW109 or similar">Twin-engine, e.g. AW109 or similar</option>
+                                <option value="Single-engine, e.g. Bell 407">Single-engine, e.g. Bell 407</option>
+                                <option value="Heavy twin, e.g. Sikorsky S-76">Heavy twin, e.g. Sikorsky S-76</option>
+                                <option value="Airbus H145 / EC145">Airbus H145 / EC145</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                                CLIENT PRICE
+                              </label>
+                              <div className="relative">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono font-bold text-gray-400">€</span>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={curHeli.clientPrice}
+                                  onChange={(e) => updateHeliField("clientPrice", parseFloat(e.target.value) || 0)}
+                                  className="w-full bg-white border border-gray-300 rounded-md pl-7 pr-3 py-1.5 text-xs font-mono font-bold text-gray-900 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                />
+                              </div>
+                            </div>
+                          </div>
                         </div>
-                      </div>
+                      )}
+
+                      {curHeli.transferType === "departure" && (
+                        <div className="space-y-3 bg-amber-50/40 p-3.5 rounded-lg border border-amber-100">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-bold text-gray-800">
+                              2 · Departure helicopter details (Helicopter destination → Airport)
+                            </span>
+                            <span className="text-[10px] font-mono font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded">
+                              On departure
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                                HELICOPTER PICKUP LOCATION
+                              </label>
+                              <input
+                                type="text"
+                                value={curHeli.destination || "Battersea Heliport, London"}
+                                onChange={(e) => updateHeliField("destination", e.target.value)}
+                                placeholder="Battersea Heliport, London"
+                                className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-amber-500 font-semibold"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                                DESTINATION AIRPORT (FLIGHT DEPARTURE)
+                              </label>
+                              <input
+                                type="text"
+                                value={curHeli.depArrLocation || `${origCode} Airport`}
+                                onChange={(e) => updateHeliField("depArrLocation", e.target.value)}
+                                placeholder={`${origCode} Airport`}
+                                className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-amber-500 font-semibold"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                            <div>
+                              <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                                PASSENGERS
+                              </label>
+                              <input
+                                type="number"
+                                min={1}
+                                value={curHeli.passengers}
+                                onChange={(e) => updateHeliField("passengers", parseInt(e.target.value, 10) || 1)}
+                                className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs font-mono font-bold text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-amber-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                                PREFERRED HELICOPTER TYPE
+                              </label>
+                              <select
+                                value={curHeli.prefType}
+                                onChange={(e) => updateHeliField("prefType", e.target.value)}
+                                className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs font-semibold text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer"
+                              >
+                                <option value="Twin-engine, e.g. AW109 or similar">Twin-engine, e.g. AW109 or similar</option>
+                                <option value="Single-engine, e.g. Bell 407">Single-engine, e.g. Bell 407</option>
+                                <option value="Heavy twin, e.g. Sikorsky S-76">Heavy twin, e.g. Sikorsky S-76</option>
+                                <option value="Airbus H145 / EC145">Airbus H145 / EC145</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                                CLIENT PRICE
+                              </label>
+                              <div className="relative">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono font-bold text-gray-400">€</span>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={curHeli.clientPrice}
+                                  onChange={(e) => updateHeliField("clientPrice", parseFloat(e.target.value) || 0)}
+                                  className="w-full bg-white border border-gray-300 rounded-md pl-7 pr-3 py-1.5 text-xs font-mono font-bold text-gray-900 shadow-2xs focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {curHeli.transferType === "both" && (
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between border-b border-gray-100 pb-1.5">
+                            <span className="text-[11px] font-bold text-gray-800">
+                              2 · Dual Helicopter Transfers (Both Departure & Arrival Legs)
+                            </span>
+                            <span className="text-[10px] font-mono font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
+                              Both transfers configured
+                            </span>
+                          </div>
+
+                          {/* Segment A: Departure transfer */}
+                          <div className="bg-amber-50/30 border border-amber-200/70 rounded-lg p-3 space-y-2.5">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] font-bold text-amber-900 flex items-center gap-1.5">
+                                <span className="w-4 h-4 rounded-full bg-amber-200 text-amber-800 text-[10px] font-mono flex items-center justify-center font-bold">A</span>
+                                Departure Transfer: Helicopter Destination → Departure Airport
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                              <div>
+                                <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                                  PICKUP LOCATION
+                                </label>
+                                <input
+                                  type="text"
+                                  value={curHeli.departurePickup || "Battersea Heliport, London"}
+                                  onChange={(e) => updateHeliField("departurePickup", e.target.value)}
+                                  placeholder="Battersea Heliport, London"
+                                  className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                                  DESTINATION AIRPORT
+                                </label>
+                                <input
+                                  type="text"
+                                  value={curHeli.departureAirport || `${origCode} Airport`}
+                                  onChange={(e) => updateHeliField("departureAirport", e.target.value)}
+                                  placeholder={`${origCode} Airport`}
+                                  className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                                  DEPARTURE HELI PRICE
+                                </label>
+                                <div className="relative">
+                                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono font-bold text-gray-400">€</span>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    value={curHeli.departurePrice ?? 1200}
+                                    onChange={(e) => {
+                                      const depP = parseFloat(e.target.value) || 0;
+                                      const arrP = curHeli.arrivalPrice ?? 1200;
+                                      setHeliTransfers((prev) => ({
+                                        ...prev,
+                                        [legKey]: { ...curHeli, departurePrice: depP, clientPrice: depP + arrP }
+                                      }));
+                                    }}
+                                    className="w-full bg-white border border-gray-300 rounded-md pl-7 pr-3 py-1.5 text-xs font-mono font-bold text-gray-900 shadow-2xs focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Segment B: Arrival transfer */}
+                          <div className="bg-blue-50/30 border border-blue-200/70 rounded-lg p-3 space-y-2.5">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] font-bold text-blue-900 flex items-center gap-1.5">
+                                <span className="w-4 h-4 rounded-full bg-blue-200 text-blue-800 text-[10px] font-mono flex items-center justify-center font-bold">B</span>
+                                Arrival Transfer: Arrival Airport → Helicopter Destination
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                              <div>
+                                <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                                  DEPARTURE AIRPORT
+                                </label>
+                                <input
+                                  type="text"
+                                  value={curHeli.arrivalAirport || `${destCode} Airport`}
+                                  onChange={(e) => updateHeliField("arrivalAirport", e.target.value)}
+                                  placeholder={`${destCode} Airport`}
+                                  className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                                  TRANSFER DESTINATION
+                                </label>
+                                <input
+                                  type="text"
+                                  value={curHeli.arrivalDestination || "Battersea Heliport, London"}
+                                  onChange={(e) => updateHeliField("arrivalDestination", e.target.value)}
+                                  placeholder="Battersea Heliport, London"
+                                  className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                                  ARRIVAL HELI PRICE
+                                </label>
+                                <div className="relative">
+                                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono font-bold text-gray-400">€</span>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    value={curHeli.arrivalPrice ?? 1200}
+                                    onChange={(e) => {
+                                      const arrP = parseFloat(e.target.value) || 0;
+                                      const depP = curHeli.departurePrice ?? 1200;
+                                      setHeliTransfers((prev) => ({
+                                        ...prev,
+                                        [legKey]: { ...curHeli, arrivalPrice: arrP, clientPrice: depP + arrP }
+                                      }));
+                                    }}
+                                    className="w-full bg-white border border-gray-300 rounded-md pl-7 pr-3 py-1.5 text-xs font-mono font-bold text-gray-900 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Shared Specs & Combined Total */}
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                            <div>
+                              <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                                PASSENGERS
+                              </label>
+                              <input
+                                type="number"
+                                min={1}
+                                value={curHeli.passengers}
+                                onChange={(e) => updateHeliField("passengers", parseInt(e.target.value, 10) || 1)}
+                                className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs font-mono font-bold text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                                PREFERRED HELICOPTER TYPE
+                              </label>
+                              <select
+                                value={curHeli.prefType}
+                                onChange={(e) => updateHeliField("prefType", e.target.value)}
+                                className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs font-semibold text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+                              >
+                                <option value="Twin-engine, e.g. AW109 or similar">Twin-engine, e.g. AW109 or similar</option>
+                                <option value="Single-engine, e.g. Bell 407">Single-engine, e.g. Bell 407</option>
+                                <option value="Heavy twin, e.g. Sikorsky S-76">Heavy twin, e.g. Sikorsky S-76</option>
+                                <option value="Airbus H145 / EC145">Airbus H145 / EC145</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                                CLIENT PRICE (TOTAL FOR BOTH)
+                              </label>
+                              <div className="relative">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono font-bold text-gray-400">€</span>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={curHeli.clientPrice}
+                                  onChange={(e) => updateHeliField("clientPrice", parseFloat(e.target.value) || 0)}
+                                  className="w-full bg-white border border-gray-300 rounded-md pl-7 pr-3 py-1.5 text-xs font-mono font-bold text-gray-900 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
 
                       {/* 3 · Additional requirements */}
                       <div className="space-y-2">
@@ -3434,7 +3842,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                   );
                 })}
 
-                {/* Write-up on the quote preview card (Image 6) */}
+                {/* Write-up on the quote preview card (Image 6 & Image 3) */}
                 <div className="p-3.5 bg-gray-50 border border-gray-200 rounded-xl space-y-1">
                   <span className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider block">
                     WRITE-UP ON THE QUOTE
@@ -3447,16 +3855,38 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                       const destCode = leg.destination?.icao || "LFMN";
                       const h = heliTransfers[legKey] || {
                         transferType: "arrival",
-                        destination: "Battersea Heliport",
-                        prefType: "twin-engine (AW109 or similar)",
+                        destination: "Battersea Heliport, London",
+                        prefType: "Twin-engine, e.g. AW109 or similar",
                         passengers: 4,
                         clientPrice: 2400
                       };
-                      return (
-                        <div key={legKey}>
-                          Leg {lIdx + 1} · helicopter on {h.transferType} · {origCode} → {h.destination || destCode} · {h.prefType} · {h.passengers} pax · € {h.clientPrice.toLocaleString()}
-                        </div>
-                      );
+                      if (h.transferType === "both") {
+                        const depPick = h.departurePickup || "Battersea Heliport, London";
+                        const depApt = h.departureAirport || `${origCode} Airport`;
+                        const arrApt = h.arrivalAirport || `${destCode} Airport`;
+                        const arrDest = h.arrivalDestination || h.destination || "Battersea Heliport, London";
+                        return (
+                          <div key={legKey}>
+                            Leg {lIdx + 1} · helicopter on both · Departure: {depPick} → {depApt} & Arrival: {arrApt} → {arrDest} · {h.prefType} · {h.passengers} pax · € {h.clientPrice.toLocaleString()}
+                          </div>
+                        );
+                      } else if (h.transferType === "departure") {
+                        const depPick = h.destination || "Battersea Heliport, London";
+                        const depApt = h.depArrLocation || `${origCode} Airport`;
+                        return (
+                          <div key={legKey}>
+                            Leg {lIdx + 1} · helicopter on departure · {depPick} → {depApt} · {h.prefType} · {h.passengers} pax · € {h.clientPrice.toLocaleString()}
+                          </div>
+                        );
+                      } else {
+                        const arrApt = h.depArrLocation || `${destCode} Airport`;
+                        const arrDest = h.destination || "Battersea Heliport, London";
+                        return (
+                          <div key={legKey}>
+                            Leg {lIdx + 1} · helicopter on arrival · {arrApt} → {arrDest} · {h.prefType} · {h.passengers} pax · € {h.clientPrice.toLocaleString()}
+                          </div>
+                        );
+                      }
                     })}
                   </div>
                 </div>
@@ -3882,194 +4312,584 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
             </div>
           </div>
 
-          {/* SECTION 6: MARGINS & PAYMENT (Exact styling of Image 2) */}
-          <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-4">
+          {/* SECTION 6: BUYING PRICES, PASSENGER FEES & MARGINS (Image 1 Screen Design) */}
+          <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-6">
             <div className="flex items-center gap-2 border-b border-[var(--line)] pb-2.5">
               <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-[var(--wf)] text-[var(--ink)]">
                 06
               </span>
               <h3 className="text-base font-bold font-display text-[var(--ink)] m-0">
-                Margins & payment
+                Buying prices (from step 04)
               </h3>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div>
-                <label className="block text-[10px] font-mono font-bold text-[var(--muted)] uppercase tracking-wider mb-1.5">
-                  COMPANY MARGIN
-                </label>
-                <input
-                  type="text"
-                  value={companyMarginText}
-                  onChange={(e) => setCompanyMarginText(e.target.value)}
-                  placeholder="8 % · tier > € 35k"
-                  className="w-full bg-white border border-gray-300 rounded-md px-3 py-2 text-xs font-semibold text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
+            {/* 1. Buying prices table per leg */}
+            <div className="border border-gray-200 rounded-xl p-4 bg-white shadow-2xs space-y-2.5 font-mono text-xs">
+              {displayLegs.map((leg, lIdx) => {
+                const op = operators.find((o) => o.id === leg.operatorId);
+                const opName = op?.tradingName || op?.legalName || (lIdx === 0 ? "Alpine Executive" : "Sahel Jet Services");
+                const acName = leg.aircraft?.name || (lIdx === 0 ? "Challenger 350" : "Citation Latitude");
+                const price = leg.buyingPrice || Math.round(effectiveOperatorFlightCost / (displayLegs.length || 1));
+                return (
+                  <div key={leg.id || lIdx} className="flex items-center justify-between py-1 border-b border-gray-100 last:border-b-0">
+                    <span className="font-bold text-gray-900 w-16">Leg {lIdx + 1}</span>
+                    <span className="text-gray-600 font-sans font-medium text-xs flex-1 text-center sm:text-left px-2">
+                      {opName} · {acName}
+                    </span>
+                    <span className="font-bold text-gray-900 font-mono text-right">
+                      {currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF "} {price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                );
+              })}
+              <div className="flex items-center justify-between pt-2 border-t border-gray-200 font-bold">
+                <span className="text-gray-900 w-16">Trip</span>
+                <span className="text-gray-500 font-sans font-normal text-xs flex-1 text-center sm:text-left px-2">
+                  Sum of legs · sets the margin tier
+                </span>
+                <span className="text-gray-900 font-mono text-right">
+                  {currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF "} {effectiveOperatorFlightCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
               </div>
+            </div>
 
-              <div>
-                <label className="block text-[10px] font-mono font-bold text-[var(--muted)] uppercase tracking-wider mb-1.5">
-                  AGENT MARGIN
-                </label>
-                <input
-                  type="text"
-                  value={agentMarginText}
-                  onChange={(e) => setAgentMarginText(e.target.value)}
-                  placeholder="10 % · set by agent"
-                  className="w-full bg-white border border-gray-300 rounded-md px-3 py-2 text-xs font-semibold text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-mono font-bold text-[var(--muted)] uppercase tracking-wider mb-1.5">
-                  CURRENCY
-                </label>
-                <div className="relative">
-                  <select
-                    value={currency}
-                    onChange={(e) => setCurrency(e.target.value as any)}
-                    className="w-full bg-white border border-gray-300 rounded-md px-3 py-2 text-xs font-semibold text-gray-800 shadow-2xs appearance-none pr-8 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
-                  >
-                    <option value="EUR">EUR</option>
-                    <option value="USD">USD</option>
-                    <option value="GBP">GBP</option>
-                    <option value="CHF">CHF</option>
-                  </select>
-                  <ChevronDown className="w-3.5 h-3.5 text-gray-500 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            {/* 2. Passenger fees section */}
+            <div className="border border-gray-200 rounded-xl p-4 bg-white shadow-2xs space-y-3.5">
+              <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                <div className="flex items-center gap-3">
+                  <span className="font-bold text-sm text-gray-900 font-display">
+                    Passenger fees
+                  </span>
+                  <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={passengerFeesItemised}
+                      onChange={(e) => setPassengerFeesItemised(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-8 h-4 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-gray-900 relative"></div>
+                    <span className="text-xs text-gray-500 font-sans font-medium">itemise</span>
+                  </label>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-[10px] font-mono font-bold text-[var(--muted)] uppercase tracking-wider mb-1.5">
-                  VALID UNTIL
-                </label>
-                <input
-                  type="text"
-                  value={validUntil}
-                  onChange={(e) => setValidUntil(e.target.value)}
-                  placeholder="16 Nov 18:00 LT"
-                  className="w-full bg-white border border-gray-300 rounded-md px-3 py-2 text-xs font-semibold text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
+              {passengerFeesItemised && (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+                    {/* APPLIES TO */}
+                    <div className="sm:col-span-3">
+                      <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                        APPLIES TO
+                      </label>
+                      <div className="inline-flex rounded-md shadow-2xs border border-gray-300 p-0.5 bg-gray-50 w-full justify-between">
+                        {[
+                          { id: "leg-1", label: "Leg 1" },
+                          { id: "leg-2", label: "Leg 2" },
+                          { id: "both", label: "Both" }
+                        ].map((btn) => (
+                          <button
+                            key={btn.id}
+                            type="button"
+                            onClick={() => setPassengerFeesAppliesTo(btn.id as any)}
+                            className={`flex-1 py-1 text-xs font-semibold rounded text-center transition-all ${passengerFeesAppliesTo === btn.id ? "bg-gray-900 text-white shadow-2xs" : "text-gray-700 hover:text-gray-900"}`}
+                          >
+                            {btn.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* DESCRIPTION */}
+                    <div className="sm:col-span-9">
+                      <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                        DESCRIPTION
+                      </label>
+                      <input
+                        type="text"
+                        value={passengerFeesDesc}
+                        onChange={(e) => setPassengerFeesDesc(e.target.value)}
+                        placeholder="Abuja (DNAA) departure passenger charge"
+                        className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 items-end">
+                    {/* AMOUNT */}
+                    <div>
+                      <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                        AMOUNT
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono font-bold text-gray-400">
+                          {currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF "}
+                        </span>
+                        <input
+                          type="number"
+                          min={0}
+                          step={1}
+                          value={passengerFeesAmount}
+                          onChange={(e) => setPassengerFeesAmount(parseFloat(e.target.value) || 0)}
+                          className="w-full bg-white border border-gray-300 rounded-md pl-7 pr-3 py-1.5 text-xs font-mono font-bold text-gray-900 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        />
+                      </div>
+                    </div>
+
+                    {/* CHARGED */}
+                    <div>
+                      <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                        CHARGED
+                      </label>
+                      <div className="inline-flex rounded-md shadow-2xs border border-gray-300 p-0.5 bg-gray-50 w-full">
+                        <button
+                          type="button"
+                          onClick={() => setPassengerFeesCharged("pax")}
+                          className={`flex-1 py-1 text-xs font-semibold rounded text-center transition-all ${passengerFeesCharged === "pax" ? "bg-gray-900 text-white shadow-2xs" : "text-gray-700 hover:text-gray-900"}`}
+                        >
+                          Per pax
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPassengerFeesCharged("flat")}
+                          className={`flex-1 py-1 text-xs font-semibold rounded text-center transition-all ${passengerFeesCharged === "flat" ? "bg-gray-900 text-white shadow-2xs" : "text-gray-700 hover:text-gray-900"}`}
+                        >
+                          Flat
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* PAX */}
+                    <div>
+                      <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                        PAX
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={passengerFeesPax}
+                        onChange={(e) => setPassengerFeesPax(parseInt(e.target.value, 10) || 1)}
+                        className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs font-mono font-bold text-gray-900 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500 text-center"
+                      />
+                    </div>
+
+                    {/* LINE AT COST */}
+                    <div>
+                      <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                        LINE AT COST
+                      </label>
+                      <div className="bg-gray-50 border border-gray-200 rounded-md px-3 py-1.5 text-xs font-mono font-bold text-gray-900 shadow-2xs text-right">
+                        {currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF "} {passengerFeesLineAtCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                    </div>
+                  </div>
+
+                  <p className="text-[11px] text-gray-500 font-sans m-0 leading-relaxed pt-1">
+                    Added on top of the buying price; margins apply to them internally; documents show each fee at cost, and its margin sits in that leg&apos;s charter price.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* 3. Margins on the whole trip */}
+            <div className="border border-gray-200 rounded-xl p-4 bg-white shadow-2xs space-y-3.5">
+              <span className="font-bold text-sm text-gray-900 font-display block border-b border-gray-100 pb-2">
+                Margins on the whole trip
+              </span>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                {/* COMPANY MARGIN */}
+                <div className="space-y-2">
+                  <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider">
+                    COMPANY MARGIN
+                  </label>
+                  <div className="text-xs font-semibold text-gray-800">
+                    {companyMarginTierPct} % · trip above € 35k (tier from Settings) = {currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF "} {Math.round(totalCostBase * companyMarginTierPct / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+
+                  {/* Override toggle & currency amount input */}
+                  <div className="pt-1.5 space-y-2">
+                    <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={companyMarginOverride}
+                        onChange={(e) => setCompanyMarginOverride(e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-8 h-4 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-gray-900 relative"></div>
+                      <span className="text-xs text-gray-700 font-sans font-semibold">Override</span>
+                    </label>
+
+                    {companyMarginOverride && (
+                      <div className="relative animate-in fade-in duration-150">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono font-bold text-gray-400">
+                          {currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF "}
+                        </span>
+                        <input
+                          type="number"
+                          min={0}
+                          step={50}
+                          value={companyMarginOverrideAmount}
+                          onChange={(e) => setCompanyMarginOverrideAmount(Math.max(0, parseFloat(e.target.value) || 0))}
+                          placeholder="Amount, e.g. € 3,500.00"
+                          className="w-full bg-white border border-gray-300 rounded-md pl-7 pr-3 py-1.5 text-xs font-mono font-bold text-gray-900 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        />
+                      </div>
+                    )}
+                    <p className="text-[10px] text-gray-500 font-sans m-0">
+                      Type an amount instead of the tier. No reason needed.
+                    </p>
+                  </div>
+                </div>
+
+                {/* CURATOR MARK-UP */}
+                <div className="space-y-2">
+                  <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider">
+                    CURATOR MARK-UP
+                  </label>
+                  <div className="text-xs font-semibold text-gray-800">
+                    {agentMarginTierPct} % · {activeAccount?.agentName || "M. Vance"} (range 5–12 %) = {currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF "} {Math.round((totalCostBase + companyMarginAmount) * agentMarginTierPct / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+
+                  {/* Override toggle & currency amount input */}
+                  <div className="pt-1.5 space-y-2">
+                    <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={agentMarginOverride}
+                        onChange={(e) => setAgentMarginOverride(e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-8 h-4 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-gray-900 relative"></div>
+                      <span className="text-xs text-gray-700 font-sans font-semibold">Override</span>
+                    </label>
+
+                    {agentMarginOverride && (
+                      <div className="relative animate-in fade-in duration-150">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono font-bold text-gray-400">
+                          {currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF "}
+                        </span>
+                        <input
+                          type="number"
+                          min={0}
+                          step={50}
+                          value={agentMarginOverrideAmount}
+                          onChange={(e) => setAgentMarginOverrideAmount(Math.max(0, parseFloat(e.target.value) || 0))}
+                          placeholder="Amount, e.g. € 5,000.00"
+                          className="w-full bg-white border border-gray-300 rounded-md pl-7 pr-3 py-1.5 text-xs font-mono font-bold text-gray-900 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        />
+                      </div>
+                    )}
+                    <p className="text-[10px] text-gray-500 font-sans m-0 leading-relaxed">
+                      Both margins are spread over the legs at the same percentage, so each leg carries its share in proportion to its buying price.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Currency & Valid Until controls */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-gray-100">
+                <div>
+                  <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                    CURRENCY
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={currency}
+                      onChange={(e) => setCurrency(e.target.value as any)}
+                      className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs font-semibold text-gray-800 shadow-2xs appearance-none pr-8 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+                    >
+                      <option value="EUR">EUR (€)</option>
+                      <option value="USD">USD ($)</option>
+                      <option value="GBP">GBP (£)</option>
+                      <option value="CHF">CHF</option>
+                    </select>
+                    <ChevronDown className="w-3.5 h-3.5 text-gray-500 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                    VALID UNTIL
+                  </label>
+                  <input
+                    type="text"
+                    value={validUntil}
+                    onChange={(e) => setValidUntil(e.target.value)}
+                    placeholder="16 Nov 18:00 LT"
+                    className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs font-semibold text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* 4. Services on the quote (client prices) */}
+            <div className="border border-gray-200 rounded-xl p-4 bg-white shadow-2xs space-y-2.5">
+              <span className="font-bold text-sm text-gray-900 font-display block border-b border-gray-100 pb-2">
+                Services on the quote (client prices)
+              </span>
+
+              <div className="space-y-2 text-xs font-sans">
+                {/* Ground Transport / Limousine */}
+                {(hasGroundTransport || serviceOptions.limousine) && (
+                  <div className="flex items-center justify-between py-1 border-b border-gray-50 last:border-b-0">
+                    <span className="text-gray-800">
+                      VIP limousine · leg 1 on arrival {destAirport?.icao || "DNAA"} · SUV · {paxCount || 5} pax
+                    </span>
+                    <span className="font-mono font-bold text-gray-900">
+                      {currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF "} {(hasGroundTransport ? groundServicesTotal : limousinePrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                )}
+
+                {/* Catering */}
+                {serviceOptions.catering && (
+                  <div className="flex items-center justify-between py-1 border-b border-gray-50 last:border-b-0">
+                    <span className="text-gray-800">
+                      Catering · VIP menu 1 · both legs
+                    </span>
+                    <span className="font-sans font-semibold text-gray-600">
+                      {cateringPrice > 0
+                        ? `${currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF "} ${cateringPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                        : "Included"}
+                    </span>
+                  </div>
+                )}
+
+                {/* Helicopter Transfer */}
+                {(hasHeliTransfer || serviceOptions.helicopter) && (
+                  <div className="flex items-center justify-between py-1 border-b border-gray-50 last:border-b-0">
+                    <span className="text-gray-800">
+                      Helicopter transfer · {hasHeliTransfer ? "configured per flight legs" : "VIP connector"}
+                    </span>
+                    <span className="font-mono font-bold text-gray-900">
+                      {currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF "} {(hasHeliTransfer ? heliServicesTotal : helicopterPrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                )}
+
+                {/* De-icing */}
+                {serviceOptions.deicing && (
+                  <div className="flex items-center justify-between py-1 border-b border-gray-50 last:border-b-0">
+                    <span className="text-gray-800">De-icing insurance (at reservation)</span>
+                    <span className="font-mono font-bold text-gray-900">
+                      {currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF "} {deicingPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                )}
+
+                {/* Carbon Offset */}
+                {serviceOptions.carbonOffset && (
+                  <div className="flex items-center justify-between py-1 border-b border-gray-50 last:border-b-0">
+                    <span className="text-gray-800">Carbon offset (neutral)</span>
+                    <span className="font-mono font-bold text-gray-900">
+                      {currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF "} {carbonOffsetPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                )}
+
+                {/* Custom Services */}
+                {customServices.map((c) => (
+                  <div key={c.id} className="flex items-center justify-between py-1 border-b border-gray-50 last:border-b-0">
+                    <span className="text-gray-800">{c.name} · {c.details}</span>
+                    <span className="font-mono font-bold text-gray-900">
+                      {currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF "} {c.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                ))}
+
+                {!hasGroundTransport && !serviceOptions.limousine && !serviceOptions.catering && !hasHeliTransfer && !serviceOptions.helicopter && !serviceOptions.deicing && !serviceOptions.carbonOffset && customServices.length === 0 && (
+                  <div className="text-gray-400 italic py-1">No optional services selected</div>
+                )}
               </div>
             </div>
           </div>
         </div>
 
-        {/* Right 1 Col: Live Price Panel (R-014) */}
+        {/* Right 1 Col: Internal Build & What the Documents Show (Screen 1 Design) */}
         <div>
-          <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-4 sticky top-6 shadow-sm">
-            <div className="border-b border-[var(--line)] pb-3">
-              <span className="font-mono text-[10px] uppercase font-bold text-[var(--muted)]">
-                Live Pricing Engine
+          <div className="space-y-4 sticky top-6">
+            {/* Card 1: Internal build (admin only) */}
+            <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-3.5 shadow-sm">
+              <div className="flex items-center justify-between border-b border-[var(--line)] pb-2.5">
+                <h4 className="text-sm font-bold font-display text-[var(--ink)] m-0">
+                  Internal build
+                </h4>
+                <span className="font-mono text-[10px] text-gray-500 font-semibold px-1.5 py-0.5 rounded bg-gray-100">
+                  admin only
+                </span>
+              </div>
+
+              <div className="space-y-2 text-xs font-mono">
+                {displayLegs.map((leg, lIdx) => {
+                  const price = leg.buyingPrice || Math.round(effectiveOperatorFlightCost / (displayLegs.length || 1));
+                  return (
+                    <div key={`int-leg-${lIdx}`} className="flex justify-between">
+                      <span className="text-[var(--muted)]">Leg {lIdx + 1} buying price</span>
+                      <span className="font-medium text-[var(--ink)]">
+                        {currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF "} {price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  );
+                })}
+
+                <div className="flex justify-between">
+                  <span className="text-[var(--muted)]">Passenger fees at cost</span>
+                  <span className="font-medium text-[var(--ink)]">
+                    {currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF "} {passengerFeesLineAtCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+
+                <div className="flex justify-between">
+                  <span className="text-[var(--muted)]">
+                    {companyMarginOverride ? "Company margin (Override)" : `Company margin ${companyMarginTierPct} %`}
+                  </span>
+                  <span className="font-medium text-[var(--ink)]">
+                    {currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF "} {companyMarginAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+
+                <div className="flex justify-between">
+                  <span className="text-[var(--muted)]">
+                    {agentMarginOverride ? "Curator mark-up (Override)" : `Curator mark-up ${agentMarginTierPct} %`}
+                  </span>
+                  <span className="font-medium text-[var(--ink)]">
+                    {currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF "} {agentMarginAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+
+                <div className="flex justify-between">
+                  <span className="text-[var(--muted)]">Services</span>
+                  <span className="font-medium text-[var(--ink)]">
+                    {currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF "} {servicesTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+
+                <div className="pt-2 border-t border-[var(--line)] flex justify-between font-bold text-sm text-[var(--ink)]">
+                  <span>Client total</span>
+                  <span>
+                    {currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF "} {clientTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Card 2: What the documents show */}
+            <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-3.5 shadow-sm">
+              <div className="border-b border-[var(--line)] pb-2.5">
+                <h4 className="text-sm font-bold font-display text-[var(--ink)] m-0">
+                  What the documents show
+                </h4>
+              </div>
+
+              <div className="space-y-2 text-xs font-mono">
+                {legPricingBreakdown.map((lb) => (
+                  <div key={`doc-leg-${lb.legNumber}`} className="flex justify-between">
+                    <span className="text-[var(--muted)]">Charter price · leg {lb.legNumber}</span>
+                    <span className="font-medium text-[var(--ink)]">
+                      {currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF "} {lb.charterPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                ))}
+
+                {passengerFeesItemised && passengerFeesLineAtCost > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-[var(--muted)]">
+                      Passenger fees · {passengerFeesAppliesTo === "both" ? "both legs" : passengerFeesAppliesTo === "leg-1" ? "leg 1" : "leg 2"} · {passengerFeesCharged === "pax" ? `${passengerFeesPax} × € ${passengerFeesAmount.toFixed(2)}` : "flat"}
+                    </span>
+                    <span className="font-medium text-[var(--ink)]">
+                      {currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF "} {passengerFeesLineAtCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                )}
+
+                {(hasGroundTransport || serviceOptions.limousine) && (
+                  <div className="flex justify-between">
+                    <span className="text-[var(--muted)]">VIP limousine · leg 1</span>
+                    <span className="font-medium text-[var(--ink)]">
+                      {currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF "} {(hasGroundTransport ? groundServicesTotal : limousinePrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                )}
+
+                {hasHeliTransfer && heliServicesTotal > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-[var(--muted)]">Helicopter transfer</span>
+                    <span className="font-medium text-[var(--ink)]">
+                      {currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF "} {heliServicesTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                )}
+
+                <div className="flex justify-between">
+                  <span className="text-[var(--muted)]">VAT (per tax advice)</span>
+                  <span className="font-medium text-[var(--ink)]">
+                    {currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF "} 0.00
+                  </span>
+                </div>
+
+                <div className="pt-2 border-t border-[var(--line)] flex justify-between font-bold text-sm text-[var(--ink)]">
+                  <span>Total</span>
+                  <span>
+                    {currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF "} {clientTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+
+                {/* Lines Add Up Banner */}
+                <div className="pt-2">
+                  <div className={`p-2.5 rounded-lg border text-[11px] font-sans ${documentsAddUp ? "bg-emerald-50/70 border-emerald-200 text-emerald-900" : "bg-amber-50 border-amber-200 text-amber-900"}`}>
+                    <div className="font-semibold flex items-center gap-1.5">
+                      <span>✓ Lines add up to the total. Card +3.5 %: {currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF "} {cardAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="text-[10px] text-gray-500 mt-1 leading-normal">
+                      Same lines on the quote and the agreement. If they do not add up, &quot;Complete&quot; is blocked.
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="space-y-2 pt-2 border-t border-[var(--line)]">
+                <button
+                  type="button"
+                  onClick={handleCompleteQuotation}
+                  disabled={!documentsAddUp}
+                  className="w-full btn-primary text-xs justify-center py-2.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  <span>
+                    {isBookingRevision
+                      ? `Complete Booking Revision (${versionLabel})`
+                      : sourceRequest
+                      ? `Complete and send to Curator (${versionLabel})`
+                      : `Complete Quotation (${versionLabel})`}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    router.push(
+                      isBookingRevision
+                        ? `/trips/${rootId}/revisions`
+                        : "/quotes"
+                    )
+                  }
+                  className="w-full btn-secondary text-xs justify-center"
+                >
+                  <span>Save draft (No Version)</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Card 3: STATUS (Matching Image 1) */}
+            <div className="p-3.5 bg-gray-50/70 rounded-xl border border-[var(--line)] space-y-1 font-mono text-[10px] text-gray-500">
+              <span className="font-bold text-gray-600 uppercase tracking-wider block mb-1">
+                STATUS
               </span>
-              <h3 className="font-display font-black text-2xl text-[var(--ink)] m-0">
-                {formatCurrency(clientTotal, currency)}
-              </h3>
-              <p className="text-[11px] font-mono text-[var(--muted)] mt-0.5">
-                Client wire settlement total
-              </p>
-            </div>
-
-            {/* Itemized Calculation */}
-            <div className="space-y-2 text-xs font-mono divide-y divide-[var(--line)]">
-              <div className="flex justify-between pt-1">
-                <span className="text-[var(--muted)]">Direct Flight Cost:</span>
-                <span className="font-bold">{currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF "}{effectiveOperatorFlightCost.toLocaleString()}.00</span>
-              </div>
-
-              <div className="flex justify-between pt-1">
-                <span className="text-[var(--muted)]">Company Margin ({companyMarginPercent}%):</span>
-                <span className="font-bold text-[var(--accent)]">+ {currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF "}{companyMarginAmount.toLocaleString()}.00</span>
-              </div>
-
-              <div className="flex justify-between pt-1">
-                <span className="text-[var(--muted)]">Agent Commission ({agentCommissionPercent}%):</span>
-                <span className="font-bold text-[var(--accent)]">+ {currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF "}{agentMarginAmount.toLocaleString()}.00</span>
-              </div>
-
-              {servicesTotal > 0 && (
-                <div className="flex justify-between pt-1">
-                  <span className="text-[var(--muted)]">Services Total:</span>
-                  <span className="font-bold text-[var(--accent)]">+ {currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF "}{servicesTotal.toLocaleString()}.00</span>
-                </div>
-              )}
-
-              <div className="flex justify-between pt-2 font-bold text-sm text-[var(--ink)]">
-                <span>Client Total (Wire):</span>
-                <span>{formatCurrency(clientTotal, currency)}</span>
-              </div>
-
-              <div className="flex justify-between pt-1 text-[11px] bg-[var(--paper)] p-2 rounded">
-                <span className="text-[var(--muted)]">Credit Card (+3.5%):</span>
-                <span className="font-bold text-[var(--ink)]">{formatCurrency(cardAmount, currency)}</span>
-              </div>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="space-y-2 pt-3 border-t border-[var(--line)]">
-              <button
-                type="button"
-                onClick={handleCompleteQuotation}
-                className="w-full btn-primary text-xs justify-center py-2.5"
-              >
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                <span>
-                  {isBookingRevision
-                    ? `Complete Booking Revision (${versionLabel})`
-                    : sourceRequest
-                    ? `Complete Quotation and Send to Agent (${versionLabel})`
-                    : `Complete Quotation (${versionLabel})`}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() =>
-                  router.push(
-                    isBookingRevision
-                      ? `/trips/${rootId}/revisions`
-                      : "/quotes"
-                  )
-                }
-                className="w-full btn-secondary text-xs justify-center"
-              >
-                                <span>Save Draft (No Version)</span>
-              </button>
-            </div>
-
-            {/* Reference Context Notes (Matching Images 6, 7, 8, 10) */}
-            <div className="space-y-3 pt-3 text-[11px] font-sans border-t border-[var(--line)]">
-              {/* Image 8 notes: PER LEG */}
-              <div className="p-3 bg-gray-50/70 rounded-lg border border-[var(--line)] space-y-1.5">
-                <span className="font-mono text-[10px] uppercase font-bold text-gray-500 block">
-                  PER LEG
-                </span>
-                <p className="text-gray-600 m-0 leading-relaxed text-[11px]">
-                  Operator (internal label only)<br />
-                  Buying price, all-inclusive<br />
-                  Aircraft type and category<br />
-                  Year of make, year of refurbishment, seats<br />
-                  Smoking cabin yes/no; lavatory yes/no<br />
-                  Photos
-                </p>
-                <div className="pt-1.5 border-t border-gray-200 text-[10px] text-gray-500 space-y-1">
-                  <div><strong className="text-gray-700">REGISTRATION & FLIGHT NUMBER:</strong> Added after booking on the trip&apos;s Itinerary tab, per leg; printed on the flight brief.</div>
-                  <div><strong className="text-gray-700">STATUS:</strong> MOD-05, MOD-08, NF-08, NF-22</div>
-                </div>
-              </div>
-
-              {/* Image 6 & 7 notes: SERVICES */}
-              <div className="p-3 bg-gray-50/70 rounded-lg border border-[var(--line)] space-y-1.5">
-                <span className="font-mono text-[10px] uppercase font-bold text-gray-500 block">
-                  SERVICES SUMMARY
-                </span>
-                <p className="text-gray-600 m-0 leading-relaxed text-[11px]">
-                  Each ground and helicopter line has its own client price. Supplier cost is entered on the Services tab after sourcing.
-                </p>
-                <div className="pt-1.5 border-t border-gray-200 text-[10px] text-gray-500 space-y-1">
-                  <div><strong className="text-gray-700">STATUS:</strong> NF-07, NF-09, NF-10, NF-11</div>
-                </div>
-              </div>
+              <div>MOD-05 margin override</div>
+              <div>MOD-09 documents add up</div>
+              <div>NF-21 passenger fees</div>
+              <div>NF-22 price per leg</div>
             </div>
           </div>
         </div>
