@@ -571,22 +571,30 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
     return tripMessages;
   }, [tripMessages, messageFilter]);
 
-  // Tabs definition with exact labels & counts matching Image 2
+  // Dynamic Real Counts for Tabs matching actual booking data
+  const realPaxCount = (currentTrip as any).passengers?.length || currentTrip.legs?.[0]?.passengers?.length || (currentTrip as any).passengerCount || 4;
+  const realSourcingCount = 1 + ((currentTrip as any).sourcingOptions?.length || 0);
+  const realServicesCount = (currentTrip.groundTransportation?.enabled ? 1 : 0) + (currentTrip.helicopterTransfer?.enabled ? 1 : 0) + 1; // 1 for catering
+  const realDocumentsCount = isBooked ? (3 + (tripVersions.length > 1 ? 1 : 0) + ((currentTrip as any).creditNotes?.length || 0)) : 1;
+  const realMessagesCount = tripMessages.length;
+  const realRevisionsCount = tripVersions.length;
+
+  // Tabs definition with real dynamic counts
   const tabs: { key: TripTabKey; label: string; countLabel?: string; count?: number }[] = [
     { key: "itinerary", label: "Itinerary" },
     {
       key: "passengers",
       label: "Passengers",
-      countLabel: "▲ 2"
+      count: realPaxCount
     },
-    { key: "sourcing", label: "Sourcing", count: 3 },
+    { key: "sourcing", label: "Sourcing", count: realSourcingCount },
     { key: "pricing", label: "Pricing" },
-    { key: "services", label: "Services", count: 2 },
-    { key: "documents", label: "Documents", count: 7 },
+    { key: "services", label: "Services", count: realServicesCount },
+    { key: "documents", label: "Documents", count: realDocumentsCount },
     { key: "accounting", label: "Accounting" },
-    { key: "messages", label: "Messages", count: 14 },
+    { key: "messages", label: "Messages", count: realMessagesCount },
     { key: "flight_watch", label: "Flight watch" },
-    { key: "revisions", label: "Revisions", count: 5 },
+    { key: "revisions", label: "Revisions", count: realRevisionsCount },
     { key: "notes", label: "Notes" }
   ];
 
@@ -652,6 +660,9 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
     });
 
     setIsCreditNoteModalOpen(false);
+    setTimeout(() => {
+      openDocument(currentTrip, "credit_note");
+    }, 200);
   };
 
   // Sourcing Offer Submit
@@ -795,22 +806,50 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
             </p>
           </div>
 
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
             <button
               onClick={() => router.push(`/bookings/${currentTrip.id}/revise`)}
-              className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 px-3.5 py-1.5 rounded-lg text-xs font-medium shadow-sm transition-colors"
+              className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 px-3 py-1.5 rounded-lg text-xs font-medium shadow-sm transition-colors"
             >
               Revise booking
             </button>
             <button
+              onClick={() => {
+                const totalInvoiced = tripVersions.reduce((acc, v) => acc + (v.pricing?.totalFlightPrice || 0), 0);
+                const consolidatedTrip: Booking = {
+                  ...currentTrip,
+                  id: `cons-${currentTrip.id}`,
+                  tripNumber: `${rootId}-ALL`,
+                  invoiceNumber: `INV-${rootId}-CONSOLIDATED`,
+                  pricing: {
+                    ...currentTrip.pricing,
+                    totalFlightPrice: totalInvoiced > 0 ? totalInvoiced : currentTrip.pricing.totalFlightPrice
+                  }
+                };
+                openDocument(consolidatedTrip, "invoice");
+              }}
+              className="bg-amber-50 border border-amber-300 text-amber-900 hover:bg-amber-100 px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm transition-colors flex items-center gap-1.5"
+              title="Generate consolidated invoice with total financial reality of trip across all revisions"
+            >
+              <FileText className="w-3.5 h-3.5 text-amber-700" />
+              <span>Total Invoice</span>
+            </button>
+            <button
+              onClick={() => setIsCreditNoteModalOpen(true)}
+              className="bg-white border border-rose-200 text-rose-700 hover:bg-rose-50 px-3 py-1.5 rounded-lg text-xs font-medium shadow-sm transition-colors flex items-center gap-1"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-rose-500" />
+              <span>Credit Note</span>
+            </button>
+            <button
               onClick={() => openDocument(currentTrip, "invoice")}
-              className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 px-3.5 py-1.5 rounded-lg text-xs font-medium shadow-sm transition-colors"
+              className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 px-3 py-1.5 rounded-lg text-xs font-medium shadow-sm transition-colors"
             >
               New invoice
             </button>
             <button
               onClick={() => openDocument(currentTrip, "flight_brief")}
-              className="bg-[#0B1320] hover:bg-slate-800 text-white px-4 py-1.5 rounded-lg text-xs font-medium shadow-sm transition-colors"
+              className="bg-[#0B1320] hover:bg-slate-800 text-white px-3.5 py-1.5 rounded-lg text-xs font-medium shadow-sm transition-colors"
             >
               Flight brief
             </button>
@@ -1251,21 +1290,33 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
                     </tr>
                   </thead>
                   <tbody>
-                    {/* Default verified offer */}
+                    {/* Selected verified operator offer from booking */}
                     <tr>
                       <td>
-                        <span className="font-bold text-[var(--ink)] block">GlobeAir AG</span>
-                        <span className="text-[11px] font-mono text-[var(--muted)]">AOC: AT.AOC.024</span>
+                        <span className="font-bold text-[var(--ink)] block">
+                          {currentTrip.operator?.companyName || currentTrip.operator?.name || (currentTrip.operator as any)?.tradingName || "Contracted Air Carrier"}
+                        </span>
+                        <span className="text-[11px] font-mono text-[var(--muted)]">
+                          AOC: {(currentTrip.operator as any)?.aocNumber || currentTrip.operator?.commercialRegistry || "AT.AOC.024"}
+                        </span>
                       </td>
                       <td>
-                        <span className="font-semibold block text-[var(--ink)]">Citation Mustang</span>
-                        <span className="font-mono text-xs text-[var(--muted)]">OE-FFB</span>
+                        <span className="font-semibold block text-[var(--ink)]">
+                          {currentTrip.aircraft?.name || (currentTrip.aircraft as any)?.model || "Pilatus PC-12 NGX"}
+                        </span>
+                        <span className="font-mono text-xs text-[var(--muted)]">
+                          {currentTrip.aircraft?.registration || (currentTrip.aircraft as any)?.tailNumber || "OE-FFB"}
+                        </span>
                       </td>
-                      <td className="font-mono text-xs">2016</td>
-                      <td className="font-mono text-xs font-bold">4 Pax</td>
+                      <td className="font-mono text-xs">{(currentTrip.aircraft as any)?.yearOfMake || currentTrip.aircraft?.yearOfManufacture || 2018}</td>
+                      <td className="font-mono text-xs font-bold">{currentTrip.aircraft?.passengers || (currentTrip.aircraft as any)?.maxPax || currentTrip.legs?.[0]?.paxCount || 4} Pax</td>
                       <td><span className="pill green">VALID AOC</span></td>
-                      <td className="font-mono font-bold text-xs text-right text-[var(--ink)]">€11,200.00</td>
-                      <td className="font-mono text-xs text-[var(--muted)]">24h</td>
+                      <td className="font-mono font-bold text-xs text-right text-[var(--ink)]">
+                        {(currentTrip.pricing as any)?.directFlightCost
+                          ? formatCurrency((currentTrip.pricing as any).directFlightCost, currentTrip.pricing.currency)
+                          : formatCurrency(currentTrip.pricing?.flightPrice || Math.round((currentTrip.pricing?.totalFlightPrice || 13516) * 0.85), currentTrip.pricing?.currency)}
+                      </td>
+                      <td className="font-mono text-xs text-[var(--muted)]">Confirmed</td>
                       <td className="text-right">
                         <span className="pill green">SELECTED</span>
                       </td>
@@ -1443,12 +1494,12 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
                     <div className="text-xs text-[var(--muted)] space-y-1">
                       {currentTrip.groundTransportation.onArrival?.required && (
                         <p>
-                          <strong>On Arrival:</strong> Drop-off at {currentTrip.groundTransportation.onArrival.dropOffLocation || "Destination"} ({currentTrip.groundTransportation.onArrival.vehiclePreference || "Sedan"})
+                          <strong>On Arrival:</strong> Drop-off at {currentTrip.groundTransportation.onArrival.dropOffLocation || `${currentTrip.legs[0]?.destination?.city || "Destination"} Downtown`} ({currentTrip.groundTransportation.onArrival.vehiclePreference || "Sedan"})
                         </p>
                       )}
                       {currentTrip.groundTransportation.onDeparture?.required && (
                         <p>
-                          <strong>On Departure:</strong> Pick-up from {currentTrip.groundTransportation.onDeparture.pickUpLocation || "Origin"} ({currentTrip.groundTransportation.onDeparture.vehiclePreference || "Sedan"})
+                          <strong>On Departure:</strong> Pick-up from {currentTrip.groundTransportation.onDeparture.pickUpLocation || `${currentTrip.legs[0]?.origin?.city || "Origin"} City`} ({currentTrip.groundTransportation.onDeparture.vehiclePreference || "Sedan"})
                         </p>
                       )}
                       {currentTrip.groundTransportation.additionalRequirements?.specialInstructions && (
@@ -1465,13 +1516,13 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
                 ) : (
                   <div className="border border-[var(--line)] rounded-lg p-4 bg-[var(--paper)] space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="font-display font-bold text-sm text-[var(--ink)]">VIP Limousine Transfer</span>
-                      <StatusPill label="REQUESTED" variant="amber" />
+                      <span className="font-display font-bold text-sm text-[var(--ink)]">Ground Transportation</span>
+                      <StatusPill label="NOT REQUESTED" variant="grey" />
                     </div>
-                    <p className="text-xs text-[var(--muted)]">Arrival transfer: London Stansted → Mayfair Hotel (Mercedes S-Class)</p>
+                    <p className="text-xs text-[var(--muted)]">No ground transfer requested for {currentTrip.legs[0]?.origin?.icao || "Origin"} → {currentTrip.legs[0]?.destination?.icao || "Destination"}.</p>
                     <div className="flex justify-between items-center text-xs font-mono pt-2 border-t border-[var(--line)]">
-                      <span>Client Price: €480.00</span>
-                      {role !== "agent" && <span className="text-[var(--muted)]">Supplier Cost: €350.00</span>}
+                      <span className="text-[var(--muted)]">Status: Optional</span>
+                      <button onClick={() => setIsAddServiceModalOpen(true)} className="text-blue-600 hover:underline text-xs">+ Add Transfer</button>
                     </div>
                   </div>
                 )}
@@ -1712,6 +1763,65 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
                             </div>
                           </td>
                         </tr>
+                        {/* Consolidated All-Iterations Invoice Row */}
+                        <tr>
+                          <td className="font-mono font-bold">{renderFormattedId(`INV-${rootId}-ALL`)}</td>
+                          <td>
+                            <span className="font-semibold text-xs block text-[var(--ink)]">Consolidated Invoice (All Iterations)</span>
+                            <span className="text-[10px] text-emerald-700 font-mono">Aggregated {tripVersions.length} iterations</span>
+                          </td>
+                          <td className="font-mono text-xs">ALL</td>
+                          <td>
+                            <StatusPill label="CONSOLIDATED" variant="green" />
+                          </td>
+                          <td>
+                            <StatusPill label="ACTIVE" variant="green" />
+                          </td>
+                          <td>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => {
+                                  const totalInvoiced = tripVersions.reduce((acc, v) => acc + (v.pricing?.totalFlightPrice || 0), 0);
+                                  const consolidatedTrip: Booking = {
+                                    ...currentTrip,
+                                    id: `cons-${currentTrip.id}`,
+                                    tripNumber: `${rootId}-ALL`,
+                                    invoiceNumber: `INV-${rootId}-CONSOLIDATED`,
+                                    pricing: {
+                                      ...currentTrip.pricing,
+                                      totalFlightPrice: totalInvoiced > 0 ? totalInvoiced : currentTrip.pricing.totalFlightPrice
+                                    }
+                                  };
+                                  openDocument(consolidatedTrip, "invoice");
+                                }}
+                                className="text-xs font-mono text-[var(--accent)] hover:underline font-bold"
+                              >
+                                View Total PDF
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+
+                        {/* Issued Credit Notes in Documents Table */}
+                        {(currentTrip.creditNotes || []).map((cn, idx) => (
+                          <tr key={cn.creditNoteNumber || idx}>
+                            <td className="font-mono font-bold text-rose-700">{renderFormattedId(cn.creditNoteNumber || `CN-${rootId}-0${idx + 1}`)}</td>
+                            <td>Credit Note</td>
+                            <td className="font-mono text-xs">{versionBadge}</td>
+                            <td>
+                              <StatusPill label="ISSUED" variant="amber" />
+                            </td>
+                            <td><StatusPill label="APPLIED" variant="blue" /></td>
+                            <td>
+                              <button
+                                onClick={() => openDocument(currentTrip, "credit_note")}
+                                className="text-xs font-mono text-rose-600 hover:underline"
+                              >
+                                View PDF
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
                       </>
                     )}
                   </tbody>
@@ -2305,6 +2415,40 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
                 </Link>
               </div>
 
+              {/* Consolidated Financial Reality Banner (Image 9) */}
+              <div className="p-4 bg-emerald-50/70 border border-emerald-200/90 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <span className="text-xs font-bold text-emerald-950 block">Consolidated Financial Reality of Trip</span>
+                  <p className="text-xs text-emerald-800">
+                    Previous booked iterations remain active and contracted. Total invoiced across {tripVersions.length} iterations:{" "}
+                    <strong className="text-emerald-950 font-mono text-sm">
+                      {formatCurrency(tripVersions.reduce((acc, v) => acc + (v.pricing?.totalFlightPrice || 0), 0), currentTrip.pricing.currency)}
+                    </strong>
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const totalInvoiced = tripVersions.reduce((acc, v) => acc + (v.pricing?.totalFlightPrice || 0), 0);
+                    const consolidatedTrip: Booking = {
+                      ...currentTrip,
+                      id: `cons-${currentTrip.id}`,
+                      tripNumber: `${rootId}-ALL`,
+                      invoiceNumber: `INV-${rootId}-CONSOLIDATED`,
+                      pricing: {
+                        ...currentTrip.pricing,
+                        totalFlightPrice: totalInvoiced > 0 ? totalInvoiced : currentTrip.pricing.totalFlightPrice
+                      }
+                    };
+                    openDocument(consolidatedTrip, "invoice");
+                  }}
+                  className="btn-primary text-xs flex items-center gap-1.5 shrink-0"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>Generate Consolidated Total Invoice</span>
+                </button>
+              </div>
+
               <div className="tablewrap">
                 <table className="dense-table">
                   <thead>
@@ -2335,7 +2479,7 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
                             </td>
                             <td>
                               <span className="text-xs font-semibold">
-                                {ver.isBooked ? "Booked Trip" : "Quote Iteration"}
+                                {ver.isBooked ? (idx === tripVersions.length - 1 ? "Booked Base Trip" : "Revision Addition") : "Quote Iteration"}
                               </span>
                             </td>
                             <td>
@@ -2351,8 +2495,16 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
                             </td>
                             <td>
                               <StatusPill
-                                label={isCurrent ? "ACTIVE" : "CANCELLED"}
-                                variant={isCurrent ? "green" : "red"}
+                                label={
+                                  ver.isBooked
+                                    ? (isCurrent ? "ACTIVE" : "BASE CONTRACT")
+                                    : (isCurrent ? "ACTIVE" : "CANCELLED")
+                                }
+                                variant={
+                                  ver.isBooked
+                                    ? (isCurrent ? "green" : "blue")
+                                    : (isCurrent ? "green" : "red")
+                                }
                               />
                             </td>
                             <td>

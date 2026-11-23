@@ -126,12 +126,16 @@ export default function InvoiceDoc({ booking }: InvoiceDocProps) {
               <tbody className="divide-y divide-slate-100 text-xs">
                 <tr className="align-top">
                   <td className="py-3 pr-4">
-                    <p className="font-bold text-slate-900">Private charter flight</p>
+                    <p className="font-bold text-slate-900">
+                      {booking.invoiceNumber?.includes("CONSOLIDATED")
+                        ? "Consolidated Private Charter Flight & Revision Additions"
+                        : "Private charter flight"}
+                    </p>
                     <p className="text-slate-700 mt-0.5">
                       Leg 1 · {legOriginIcao} → {legDestIcao} ({legOriginCity} – {legDestCity}) · {categoryLabel} · {paxCount} passengers
                     </p>
                     <p className="text-slate-500 mt-0.5 font-mono text-[11px]">
-                      Per charter agreement {agreementRef}
+                      {(booking as any).internalNotes || (booking as any).notes || `Per charter agreement ${agreementRef}`}
                     </p>
                   </td>
                   <td className="py-3 px-4 text-slate-800 whitespace-nowrap font-mono">

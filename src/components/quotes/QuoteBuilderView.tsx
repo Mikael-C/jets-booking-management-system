@@ -42,6 +42,27 @@ export interface MultiLegItem {
   flightDate: string;
   departureTime: string;
   aircraft: Aircraft;
+  operatorId?: string;
+  buyingPrice?: number;
+  exteriorPhoto?: string;
+  cabinPhoto?: string;
+  cabinPhoto2?: string;
+  yearOfMake?: number | string;
+  yearOfRefurbishment?: number | string;
+  seats?: number;
+  smokingCabin?: boolean;
+  lavatoryOnBoard?: boolean;
+  lavatoryType?: "Enclosed" | "Semi-private";
+}
+
+export interface PetItem {
+  id: string;
+  species: string;
+  breed: string;
+  weightKg: number;
+  travels: string;
+  documents: string;
+  notes: string;
 }
 
 const parseDateToIso = (dateStr?: string, fallback = "2026-11-24"): string => {
@@ -247,7 +268,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
     return sourceTrip?.paPhone || sourceTrip?.client?.paPhone || "";
   });
 
-  // Click outside to close account dropdown
+    // Click outside to close account dropdown
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (accountDropdownRef.current && !accountDropdownRef.current.contains(e.target as Node)) {
@@ -356,6 +377,10 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
     ];
   });
 
+  // 1. Client, Authorised Owner & Assistant controls (Image 10)
+  const [sendDocsTo, setSendDocsTo] = useState<"owner" | "assistant" | "both">("both");
+  const [signsAgreement, setSignsAgreement] = useState<"owner" | "assistant">("owner");
+
   // 3. Passengers & Cargo
   const [paxCount, setPaxCount] = useState<number>(() => {
     return sourceTrip?.legs[0]?.paxCount || sourceRequest?.paxCount || 4;
@@ -368,10 +393,116 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
     }
     return 6;
   });
+  const [oversizeItems, setOversizeItems] = useState<string>("Golf bag ×1");
   const [hasPets, setHasPets] = useState<boolean>(() => {
     if (sourceRequest?.hasPets !== undefined) return sourceRequest.hasPets;
     if (sourceRequest?.petDetailsText && !sourceRequest.petDetailsText.toLowerCase().includes("none")) return true;
-    return false;
+    return true;
+  });
+  const [pets, setPets] = useState<PetItem[]>([
+    {
+      id: "pet-1",
+      species: "Dog",
+      breed: "French Bulldog",
+      weightKg: 11,
+      travels: "In cabin, in carrier",
+      documents: "EU pet passport",
+      notes: "Snub-nose"
+    },
+    {
+      id: "pet-2",
+      species: "Cat",
+      breed: "British Shorthair",
+      weightKg: 5,
+      travels: "In cabin, in carrier",
+      documents: "Health cert & rabies",
+      notes: "Quiet"
+    }
+  ]);
+
+  // Active Leg Photo Index for Multi-Leg Photo Picker
+  const [activeLegForPhotoIndex, setActiveLegForPhotoIndex] = useState<number | null>(null);
+
+  // 5. Services: Helicopter & Ground Transportation full state (Images 6 & 7)
+  const [heliTransferType, setHeliTransferType] = useState<"arrival" | "departure" | "both">("arrival");
+  const [heliPrefType, setHeliPrefType] = useState<string>("Twin Engine VIP (e.g. Agusta 109)");
+  const [heliDepLocation, setHeliDepLocation] = useState<string>("Monaco Heliport (LNMC)");
+  const [heliArrLocation, setHeliArrLocation] = useState<string>("Nice Côte d'Azur (LFMN)");
+  const [heliLuggageNotes, setHeliLuggageNotes] = useState<string>("3 pax, 3 soft bags");
+
+  // Dynamic Ground Transportation State (Image 7)
+  const [hasGroundTransport, setHasGroundTransport] = useState<boolean>(true);
+  const [groundLegsEnabled, setGroundLegsEnabled] = useState<Record<string, boolean>>({
+    "leg-1": true,
+    "leg-2": true,
+    "leg-3": false,
+  });
+  const [groundCollapsed, setGroundCollapsed] = useState<Record<string, boolean>>({});
+  const [groundTransfers, setGroundTransfers] = useState<Record<string, {
+    arrivalRequired: boolean;
+    arrivalDropoff: string;
+    arrivalVehicle: "Sedan" | "SUV" | "Van" | "Luxury";
+    arrivalPrice: number;
+    departureRequired: boolean;
+    departurePickup: string;
+    departureVehicle: "Sedan" | "SUV" | "Van" | "Luxury";
+    departurePrice: number;
+    passengers: number;
+    specialRequests: string;
+  }>>({
+    "leg-1": {
+      arrivalRequired: true,
+      arrivalDropoff: "The Savoy, Strand, London",
+      arrivalVehicle: "Luxury",
+      arrivalPrice: 650,
+      departureRequired: true,
+      departurePickup: "14 Bourdillon Road, Ikoyi, Lagos",
+      departureVehicle: "SUV",
+      departurePrice: 180,
+      passengers: 5,
+      specialRequests: "Meet at aircraft steps; child seat ×1"
+    },
+    "leg-2": {
+      arrivalRequired: true,
+      arrivalDropoff: "14 Bourdillon Road, Ikoyi, Lagos",
+      arrivalVehicle: "SUV",
+      arrivalPrice: 180,
+      departureRequired: true,
+      departurePickup: "The Savoy, Strand, London",
+      departureVehicle: "Luxury",
+      departurePrice: 650,
+      passengers: 5,
+      specialRequests: "Meet at aircraft steps; child seat ×1"
+    }
+  });
+
+  // Dynamic Helicopter Transfer State (Image 6)
+  const [hasHeliTransfer, setHasHeliTransfer] = useState<boolean>(false);
+  const [heliLegsEnabled, setHeliLegsEnabled] = useState<Record<string, boolean>>({
+    "leg-1": true,
+    "leg-2": false,
+    "leg-3": false,
+  });
+  const [heliTransfers, setHeliTransfers] = useState<Record<string, {
+    transferType: "arrival" | "departure" | "both";
+    passengers: number;
+    prefType: string;
+    depArrLocation: string;
+    destination: string;
+    clientPrice: number;
+    luggageDetails: string;
+    specialRequests: string;
+  }>>({
+    "leg-1": {
+      transferType: "arrival",
+      passengers: 4,
+      prefType: "Twin-engine, e.g. AW109 or similar",
+      depArrLocation: "EGLF Farnborough Airport",
+      destination: "Battersea Heliport, London",
+      clientPrice: 2400,
+      luggageDetails: "4 cabin bags, 2 suitcases (soft)",
+      specialRequests: "Landing permission at the hotel helipad to be confirmed"
+    }
   });
 
   // 4. Operator Offer
@@ -637,19 +768,87 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
     return match ? parseFloat(match[1]) : 10;
   }, [agentMarginText]);
 
+  // Helper for per-leg photo picker
+  const openPhotoPickerForLeg = (legIndex: number) => {
+    setActiveLegForPhotoIndex(legIndex);
+    const leg = multiLegs[legIndex];
+    if (leg) {
+      if (leg.exteriorPhoto) setCustomExteriorPhoto(leg.exteriorPhoto);
+      else if (leg.aircraft?.imageExterior) setCustomExteriorPhoto(leg.aircraft.imageExterior);
+      if (leg.cabinPhoto) setCustomCabinPhoto(leg.cabinPhoto);
+      else if (leg.aircraft?.imageInterior) setCustomCabinPhoto(leg.aircraft.imageInterior);
+    }
+    setIsPhotoPickerOpen(true);
+  };
+
+  const updateLegField = (index: number, field: string, value: any) => {
+    setMultiLegs((prev) => {
+      const next = [...prev];
+      while (next.length <= index) {
+        next.push({
+          id: `leg-${next.length + 1}`,
+          origin: destAirport,
+          destination: originAirport,
+          flightDate: returnFlightDate,
+          departureTime: returnDepartureTime,
+          aircraft: selectedAircraft,
+          operatorId: selectedOperatorId,
+          buyingPrice: Math.round(operatorFlightCost / 2),
+        });
+      }
+      next[index] = { ...next[index], [field]: value };
+      return next;
+    });
+  };
+
+  // Effective operator cost across legs
+  const effectiveOperatorFlightCost = useMemo(() => {
+    if (tripType === "multi_leg" && !sameAircraftOnAllLegs) {
+      const sum = multiLegs.reduce((acc, leg) => acc + (leg.buyingPrice || 0), 0);
+      return sum > 0 ? sum : operatorFlightCost;
+    }
+    return operatorFlightCost;
+  }, [tripType, sameAircraftOnAllLegs, multiLegs, operatorFlightCost]);
+
+  // Dynamic Ground Transportation Total (Image 7)
+  const groundServicesTotal = useMemo(() => {
+    if (!hasGroundTransport) return 0;
+    let sum = 0;
+    Object.entries(groundLegsEnabled).forEach(([legKey, enabled]) => {
+      if (enabled && groundTransfers[legKey]) {
+        const item = groundTransfers[legKey];
+        if (item.arrivalRequired) sum += item.arrivalPrice || 0;
+        if (item.departureRequired) sum += item.departurePrice || 0;
+      }
+    });
+    return sum;
+  }, [hasGroundTransport, groundLegsEnabled, groundTransfers]);
+
+  // Dynamic Helicopter Transfer Total (Image 6)
+  const heliServicesTotal = useMemo(() => {
+    if (!hasHeliTransfer) return 0;
+    let sum = 0;
+    Object.entries(heliLegsEnabled).forEach(([legKey, enabled]) => {
+      if (enabled && heliTransfers[legKey]) {
+        sum += heliTransfers[legKey].clientPrice || 0;
+      }
+    });
+    return sum;
+  }, [hasHeliTransfer, heliLegsEnabled, heliTransfers]);
+
   // Financial Calculations
   const customServicesTotal = customServices.reduce((sum, item) => sum + item.price, 0);
   const servicesTotal =
-    (serviceOptions.limousine ? limousinePrice : 0) +
-    (serviceOptions.helicopter ? helicopterPrice : 0) +
+    (hasGroundTransport ? groundServicesTotal : (serviceOptions.limousine ? limousinePrice : 0)) +
+    (hasHeliTransfer ? heliServicesTotal : (serviceOptions.helicopter ? helicopterPrice : 0)) +
     (serviceOptions.catering ? cateringPrice : 0) +
     (serviceOptions.deicing ? deicingPrice : 0) +
     (serviceOptions.carbonOffset ? carbonOffsetPrice : 0) +
     customServicesTotal;
 
-  const companyMarginAmount = Math.round((operatorFlightCost * companyMarginPercent) / 100);
-  const agentMarginAmount = Math.round((operatorFlightCost * agentCommissionPercent) / 100);
-  const clientSubtotal = operatorFlightCost + companyMarginAmount + agentMarginAmount + servicesTotal;
+  const companyMarginAmount = Math.round((effectiveOperatorFlightCost * companyMarginPercent) / 100);
+  const agentMarginAmount = Math.round((effectiveOperatorFlightCost * agentCommissionPercent) / 100);
+  const clientSubtotal = effectiveOperatorFlightCost + companyMarginAmount + agentMarginAmount + servicesTotal;
   const clientTotal = clientSubtotal; // Zero rated VAT for international charter
   const cardAmount = Math.round(clientTotal * 1.035 * 100) / 100;
 
@@ -673,6 +872,72 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
     }
     return accounts[0];
   }, [accounts, selectedAccountId, sourceRequest]);
+
+  const displayLegs = useMemo(() => {
+    if (tripType === "multi_leg") {
+      return multiLegs;
+    } else if (tripType === "round_trip") {
+      return [
+        {
+          id: "leg-1",
+          origin: originAirport,
+          destination: destAirport,
+          flightDate: flightDate,
+          departureTime: departureTime,
+          aircraft: multiLegs[0]?.aircraft || selectedAircraft,
+          operatorId: multiLegs[0]?.operatorId || selectedOperatorId,
+          buyingPrice: multiLegs[0]?.buyingPrice || Math.round(operatorFlightCost / 2),
+          exteriorPhoto: multiLegs[0]?.exteriorPhoto || customExteriorPhoto,
+          cabinPhoto: multiLegs[0]?.cabinPhoto || customCabinPhoto,
+          yearOfMake: multiLegs[0]?.yearOfMake || 2018,
+          yearOfRefurbishment: multiLegs[0]?.yearOfRefurbishment || "2023",
+          seats: multiLegs[0]?.seats || selectedAircraft.passengers || 9,
+          smokingCabin: multiLegs[0]?.smokingCabin || false,
+          lavatoryOnBoard: multiLegs[0]?.lavatoryOnBoard ?? true,
+          lavatoryType: multiLegs[0]?.lavatoryType || "Enclosed"
+        },
+        {
+          id: "leg-2",
+          origin: destAirport,
+          destination: originAirport,
+          flightDate: returnFlightDate,
+          departureTime: returnDepartureTime,
+          aircraft: multiLegs[1]?.aircraft || selectedAircraft,
+          operatorId: multiLegs[1]?.operatorId || selectedOperatorId,
+          buyingPrice: multiLegs[1]?.buyingPrice || Math.round(operatorFlightCost / 2),
+          exteriorPhoto: multiLegs[1]?.exteriorPhoto || customExteriorPhoto,
+          cabinPhoto: multiLegs[1]?.cabinPhoto || customCabinPhoto,
+          yearOfMake: multiLegs[1]?.yearOfMake || 2019,
+          yearOfRefurbishment: multiLegs[1]?.yearOfRefurbishment || "—",
+          seats: multiLegs[1]?.seats || selectedAircraft.passengers || 9,
+          smokingCabin: multiLegs[1]?.smokingCabin || false,
+          lavatoryOnBoard: multiLegs[1]?.lavatoryOnBoard ?? true,
+          lavatoryType: multiLegs[1]?.lavatoryType || "Semi-private"
+        }
+      ];
+    } else {
+      return [
+        {
+          id: "leg-1",
+          origin: originAirport,
+          destination: destAirport,
+          flightDate: flightDate,
+          departureTime: departureTime,
+          aircraft: selectedAircraft,
+          operatorId: selectedOperatorId,
+          buyingPrice: operatorFlightCost,
+          exteriorPhoto: customExteriorPhoto,
+          cabinPhoto: customCabinPhoto,
+          yearOfMake: 2018,
+          yearOfRefurbishment: "2023",
+          seats: selectedAircraft.passengers || 8,
+          smokingCabin: false,
+          lavatoryOnBoard: true,
+          lavatoryType: "Enclosed"
+        }
+      ];
+    }
+  }, [tripType, multiLegs, originAirport, destAirport, flightDate, departureTime, returnFlightDate, returnDepartureTime, selectedAircraft, selectedOperatorId, operatorFlightCost, customExteriorPhoto, customCabinPhoto]);
 
   // Submission handler
   const handleCompleteQuotation = async () => {
@@ -792,14 +1057,56 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
       }
     }
 
-    // Build itemized active services list
+        // Build itemized active services list
     const activeServicesList: Array<{ id: string; name: string; details?: string; price: number }> = [];
-    if (serviceOptions.limousine) {
+
+    if (hasGroundTransport) {
+      displayLegs.forEach((leg, lIdx) => {
+        const legKey = `leg-${lIdx + 1}`;
+        if (groundLegsEnabled[legKey] && groundTransfers[legKey]) {
+          const g = groundTransfers[legKey];
+          const origCode = leg.origin?.icao || "LSGG";
+          const destCode = leg.destination?.icao || "LFMN";
+          if (g.arrivalRequired) {
+            activeServicesList.push({
+              id: `ground-arr-${legKey}`,
+              name: `Ground Transport (Arrival) · Leg ${lIdx + 1}`,
+              details: `${destCode} → ${g.arrivalDropoff} (${g.arrivalVehicle}, ${g.passengers} pax)`,
+              price: g.arrivalPrice || 0
+            });
+          }
+          if (g.departureRequired) {
+            activeServicesList.push({
+              id: `ground-dep-${legKey}`,
+              name: `Ground Transport (Departure) · Leg ${lIdx + 1}`,
+              details: `${g.departurePickup} → ${origCode} (${g.departureVehicle}, ${g.passengers} pax)`,
+              price: g.departurePrice || 0
+            });
+          }
+        }
+      });
+    } else if (serviceOptions.limousine) {
       activeServicesList.push({
         id: "limo",
         name: "VIP limousine",
         details: `arrival ${destAirport.city || destAirport.name || destAirport.icao || "destination"} (SUV, ${paxCount} pax)`,
         price: limousinePrice
+      });
+    }
+
+    if (hasHeliTransfer) {
+      displayLegs.forEach((leg, lIdx) => {
+        const legKey = `leg-${lIdx + 1}`;
+        if (heliLegsEnabled[legKey] && heliTransfers[legKey]) {
+          const h = heliTransfers[legKey];
+          const origCode = leg.origin?.icao || "LSGG";
+          activeServicesList.push({
+            id: `heli-${legKey}`,
+            name: `Helicopter Transfer (${h.transferType}) · Leg ${lIdx + 1}`,
+            details: `${origCode} → ${h.destination} (${h.prefType}, ${h.passengers} pax)`,
+            price: h.clientPrice || 0
+          });
+        }
       });
     }
     if (serviceOptions.catering) {
@@ -1041,17 +1348,25 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
             <button
               type="button"
               onClick={() => {
-                if (customExteriorPhoto) {
-                  setSelectedAircraft((prev) => ({ ...prev, imageExterior: customExteriorPhoto }));
-                }
-                if (customCabinPhoto) {
-                  setSelectedAircraft((prev) => ({ ...prev, imageInterior: customCabinPhoto }));
+                if (activeLegForPhotoIndex !== null && multiLegs[activeLegForPhotoIndex]) {
+                  const updated = [...multiLegs];
+                  if (customExteriorPhoto) updated[activeLegForPhotoIndex].exteriorPhoto = customExteriorPhoto;
+                  if (customCabinPhoto) updated[activeLegForPhotoIndex].cabinPhoto = customCabinPhoto;
+                  setMultiLegs(updated);
+                } else {
+                  if (customExteriorPhoto) {
+                    setSelectedAircraft((prev) => ({ ...prev, imageExterior: customExteriorPhoto }));
+                  }
+                  if (customCabinPhoto) {
+                    setSelectedAircraft((prev) => ({ ...prev, imageInterior: customCabinPhoto }));
+                  }
                 }
                 const chosen: string[] = [];
                 if (customExteriorPhoto) chosen.push("Exterior · operator");
                 if (customCabinPhoto) chosen.push("Cabin · operator");
                 setSelectedPhotos(chosen.length > 0 ? chosen : ["Exterior · operator", "Cabin · operator"]);
                 setIsPhotoPickerOpen(false);
+                setActiveLegForPhotoIndex(null);
               }}
               className="bg-[#111827] text-white hover:bg-gray-800 text-xs font-semibold px-4 py-1.5 rounded-lg shadow-sm transition-all flex items-center gap-1.5"
             >
@@ -1582,14 +1897,14 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Form: Sections 1-6 in Order (R-014) */}
         <div className="lg:col-span-2 space-y-6">
-          {/* SECTION 1: CLIENT */}
+          {/* SECTION 1: CLIENT (Image 10) */}
           <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-4">
             <div className="flex items-center gap-2 border-b border-[var(--line)] pb-2.5">
               <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-[var(--wf)] text-[var(--ink)]">
                 01
               </span>
               <h3 className="text-base font-bold font-display text-[var(--ink)] m-0">
-                Client & Account Selection
+                Client, Authorised Owner and assistant
               </h3>
             </div>
 
@@ -1752,6 +2067,53 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                     </div>
                   </div>
                 )}
+              </div>
+
+              {/* Image 10 Routing of Documents & Signatory Controls */}
+              <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-[var(--line)]">
+                <div>
+                  <label className="block text-xs font-mono font-bold text-[var(--muted)] mb-1.5">
+                    Send quotes, contracts and invoices to:
+                  </label>
+                  <div className="flex items-center gap-2">
+                    {(["owner", "assistant", "both"] as const).map((opt) => (
+                      <button
+                        key={opt}
+                        type="button"
+                        onClick={() => setSendDocsTo(opt)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize border transition-all ${
+                          sendDocsTo === opt
+                            ? "bg-[#0F1420] text-white border-[#0F1420] shadow-sm"
+                            : "bg-white text-gray-700 border-gray-200 hover:border-gray-400"
+                        }`}
+                      >
+                        {opt === "both" ? "Both" : opt === "owner" ? "Owner" : "Assistant"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-mono font-bold text-[var(--muted)] mb-1.5">
+                    Signs the charter agreement:
+                  </label>
+                  <div className="flex items-center gap-2">
+                    {(["owner", "assistant"] as const).map((opt) => (
+                      <button
+                        key={opt}
+                        type="button"
+                        onClick={() => setSignsAgreement(opt)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize border transition-all ${
+                          signsAgreement === opt
+                            ? "bg-[#0F1420] text-white border-[#0F1420] shadow-sm"
+                            : "bg-white text-gray-700 border-gray-200 hover:border-gray-400"
+                        }`}
+                      >
+                        {opt === "owner" ? "Owner" : "Assistant"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
 
               <div className="sm:col-span-2 bg-[var(--paper)] p-3 rounded-lg border border-[var(--line)] font-mono text-xs space-y-0.5 text-[var(--muted)]">
@@ -2096,20 +2458,22 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
             )}
           </div>
 
-          {/* SECTION 3: PASSENGERS, LUGGAGE & PETS */}
+          {/* SECTION 3: PASSENGERS, LUGGAGE & PETS (Image 5 & 10) */}
           <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-4">
             <div className="flex items-center gap-2 border-b border-[var(--line)] pb-2.5">
               <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-[var(--wf)] text-[var(--ink)]">
                 03
               </span>
               <h3 className="text-base font-bold font-display text-[var(--ink)] m-0">
-                Passengers, Luggage & Pets
+                Passengers, luggage and pets
               </h3>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs font-sans">
               <div>
-                <label className="block text-xs font-mono font-bold text-[var(--muted)] mb-1">Passenger Count</label>
+                <label className="block text-xs font-mono font-bold text-[var(--muted)] mb-1 uppercase tracking-wide">
+                  PASSENGERS
+                </label>
                 <input
                   type="number"
                   min={1}
@@ -2121,7 +2485,9 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
               </div>
 
               <div>
-                <label className="block text-xs font-mono font-bold text-[var(--muted)] mb-1">Standard Luggage (Pieces)</label>
+                <label className="block text-xs font-mono font-bold text-[var(--muted)] mb-1 uppercase tracking-wide">
+                  STANDARD LUGGAGE (PIECES)
+                </label>
                 <input
                   type="number"
                   min={0}
@@ -2132,23 +2498,194 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
               </div>
 
               <div>
-                <label className="block text-xs font-mono font-bold text-[var(--muted)] mb-1">Pets in Cabin</label>
-                <button
-                  type="button"
-                  onClick={() => setHasPets(!hasPets)}
-                  className={`w-full py-2 px-3 rounded-lg border text-xs font-mono font-bold transition-all ${
-                    hasPets
-                      ? "bg-[var(--amber-soft)] text-[var(--amber)] border-[var(--amber)]"
-                      : "bg-[var(--paper)] text-[var(--muted)] border-[var(--line)]"
-                  }`}
-                >
-                  {hasPets ? "✓ Pets Accompanied" : "No Pets"}
-                </button>
+                <label className="block text-xs font-mono font-bold text-[var(--muted)] mb-1 uppercase tracking-wide">
+                  OVERSIZE ITEMS
+                </label>
+                <input
+                  type="text"
+                  value={oversizeItems}
+                  onChange={(e) => setOversizeItems(e.target.value)}
+                  placeholder="e.g. Golf bag ×1, Ski gear"
+                  className="w-full bg-[var(--paper)] border border-[var(--line)] rounded-lg px-3 py-2 text-xs font-mono text-[var(--ink)]"
+                />
               </div>
+            </div>
+
+            {/* Travelling with pets toggle */}
+            <div className="pt-2">
+              <label className="inline-flex items-center gap-2 text-xs font-medium text-[var(--ink)] cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={hasPets}
+                  onChange={(e) => setHasPets(e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
+                />
+                <span className="font-semibold text-gray-900">Travelling with pets</span>
+              </label>
+
+              {hasPets && (
+                <div className="mt-3 p-4 bg-[var(--paper)] border border-[var(--line)] rounded-xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-mono font-bold text-gray-800 uppercase tracking-wide">
+                      PETS · {pets.length}
+                    </span>
+                    <span className="text-[10px] font-mono text-gray-500">
+                      Operator crate rules and destination permits required
+                    </span>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="border-b border-gray-200 text-[10px] font-mono font-bold text-gray-500 uppercase">
+                          <th className="pb-1.5 pr-2 w-6">#</th>
+                          <th className="pb-1.5 px-2">SPECIES</th>
+                          <th className="pb-1.5 px-2">BREED</th>
+                          <th className="pb-1.5 px-2 w-24">WEIGHT (KG)</th>
+                          <th className="pb-1.5 px-2">TRAVELS</th>
+                          <th className="pb-1.5 px-2">DOCUMENTS</th>
+                          <th className="pb-1.5 px-2">NOTES</th>
+                          <th className="pb-1.5 pl-2 text-right">ACTION</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {pets.map((pet, idx) => (
+                          <tr key={pet.id} className="align-middle">
+                            <td className="py-2 pr-2 font-mono font-bold text-gray-600">{idx + 1}</td>
+                            <td className="py-2 px-2">
+                              <select
+                                value={pet.species}
+                                onChange={(e) => {
+                                  const updated = [...pets];
+                                  updated[idx].species = e.target.value;
+                                  setPets(updated);
+                                }}
+                                className="bg-white border border-gray-200 rounded px-2 py-1 text-xs"
+                              >
+                                <option value="Dog">Dog</option>
+                                <option value="Cat">Cat</option>
+                                <option value="Bird">Bird</option>
+                                <option value="Falcon">Falcon</option>
+                                <option value="Other">Other</option>
+                              </select>
+                            </td>
+                            <td className="py-2 px-2">
+                              <input
+                                type="text"
+                                value={pet.breed}
+                                onChange={(e) => {
+                                  const updated = [...pets];
+                                  updated[idx].breed = e.target.value;
+                                  setPets(updated);
+                                }}
+                                placeholder="Breed..."
+                                className="bg-white border border-gray-200 rounded px-2 py-1 text-xs w-28"
+                              />
+                            </td>
+                            <td className="py-2 px-2">
+                              <input
+                                type="number"
+                                min={1}
+                                value={pet.weightKg}
+                                onChange={(e) => {
+                                  const updated = [...pets];
+                                  updated[idx].weightKg = parseFloat(e.target.value) || 1;
+                                  setPets(updated);
+                                }}
+                                className="bg-white border border-gray-200 rounded px-2 py-1 text-xs w-16 font-mono"
+                              />
+                            </td>
+                            <td className="py-2 px-2">
+                              <select
+                                value={pet.travels}
+                                onChange={(e) => {
+                                  const updated = [...pets];
+                                  updated[idx].travels = e.target.value;
+                                  setPets(updated);
+                                }}
+                                className="bg-white border border-gray-200 rounded px-2 py-1 text-xs"
+                              >
+                                <option value="In cabin, in carrier">In cabin, in carrier</option>
+                                <option value="In cabin, on leash">In cabin, on leash</option>
+                                <option value="In hold">In hold (pressurized)</option>
+                              </select>
+                            </td>
+                            <td className="py-2 px-2">
+                              <select
+                                value={pet.documents}
+                                onChange={(e) => {
+                                  const updated = [...pets];
+                                  updated[idx].documents = e.target.value;
+                                  setPets(updated);
+                                }}
+                                className="bg-white border border-gray-200 rounded px-2 py-1 text-xs"
+                              >
+                                <option value="EU pet passport">EU pet passport</option>
+                                <option value="Health cert & rabies">Health cert & rabies</option>
+                                <option value="Rabies titre test">Rabies titre test</option>
+                                <option value="Import permit">Import permit</option>
+                              </select>
+                            </td>
+                            <td className="py-2 px-2">
+                              <input
+                                type="text"
+                                value={pet.notes}
+                                onChange={(e) => {
+                                  const updated = [...pets];
+                                  updated[idx].notes = e.target.value;
+                                  setPets(updated);
+                                }}
+                                placeholder="e.g. Snub-nose"
+                                className="bg-white border border-gray-200 rounded px-2 py-1 text-xs w-24"
+                              />
+                            </td>
+                            <td className="py-2 pl-2 text-right">
+                              <button
+                                type="button"
+                                onClick={() => setPets(pets.filter((p) => p.id !== pet.id))}
+                                className="text-rose-600 hover:text-rose-800 text-xs font-semibold"
+                              >
+                                Remove
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="pt-2 flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPets([
+                          ...pets,
+                          {
+                            id: `pet-${Date.now()}`,
+                            species: "Dog",
+                            breed: "",
+                            weightKg: 8,
+                            travels: "In cabin, in carrier",
+                            documents: "EU pet passport",
+                            notes: ""
+                          }
+                        ])
+                      }
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-gray-300 text-xs font-semibold text-gray-700 bg-white hover:bg-gray-50"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>+ Add pet</span>
+                    </button>
+                    <p className="text-[11px] text-gray-500 font-sans italic">
+                      Pets are sent to operator with sourcing request; entry rules checked in Passengers tab.
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* SECTION 4: OPERATOR OFFER */}
+          {/* SECTION 4: LEGS, OPERATORS AND AIRCRAFT (Matching Image 8) */}
           <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-4">
             <div className="flex items-center justify-between border-b border-[var(--line)] pb-2.5">
               <div className="flex items-center gap-2">
@@ -2156,7 +2693,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                   04
                 </span>
                 <h3 className="text-base font-bold font-display text-[var(--ink)] m-0">
-                  Operator Sourcing & Flight Rate
+                  Legs, operators and aircraft
                 </h3>
               </div>
               <button
@@ -2182,30 +2719,33 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Building2 className="w-4 h-4 text-amber-800" />
-                    <span className="text-xs font-bold font-mono uppercase text-amber-950">
-                      Add New Operator (Auto-saves to Database)
-                    </span>
+                    <h4 className="text-xs font-bold font-display text-amber-950 uppercase tracking-wider">
+                      Quick Add Operator (Direct to Database)
+                    </h4>
                   </div>
                   <button
                     type="button"
                     onClick={() => setIsAddOperatorOpen(false)}
-                    className="p-1 text-gray-500 hover:text-gray-800 rounded"
+                    className="text-amber-800 hover:text-amber-950 p-1"
                   >
                     <X className="w-4 h-4" />
                   </button>
                 </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <p className="text-[11px] text-amber-800">
+                  Operator not in our database? Add their details below. They will be saved to the database immediately with status &ldquo;Documents Pending&rdquo;.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 pt-1">
                   <div>
                     <label className="block text-[10px] font-mono font-bold text-amber-900 mb-1">
                       Operator Legal Name *
                     </label>
                     <input
                       type="text"
-                      placeholder="e.g. VistaJet Limited"
+                      placeholder="e.g. Sahel Jet Services Ltd"
                       value={newOpLegalName}
                       onChange={(e) => setNewOpLegalName(e.target.value)}
                       className="w-full bg-white border border-[#E0DAD0] rounded-lg px-3 py-1.5 text-xs text-[#0F1420] focus:outline-none focus:border-[var(--accent)]"
+                      required
                     />
                   </div>
                   <div>
@@ -2214,7 +2754,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                     </label>
                     <input
                       type="text"
-                      placeholder="e.g. VistaJet"
+                      placeholder="e.g. Sahel Executive"
                       value={newOpTradingName}
                       onChange={(e) => setNewOpTradingName(e.target.value)}
                       className="w-full bg-white border border-[#E0DAD0] rounded-lg px-3 py-1.5 text-xs text-[#0F1420] focus:outline-none focus:border-[var(--accent)]"
@@ -2226,10 +2766,11 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                     </label>
                     <input
                       type="text"
-                      placeholder="e.g. MT-03 / AOC-8921"
+                      placeholder="e.g. NCAA AOC 0377"
                       value={newOpAoc}
                       onChange={(e) => setNewOpAoc(e.target.value)}
-                      className="w-full bg-white border border-[#E0DAD0] rounded-lg px-3 py-1.5 text-xs text-[#0F1420] focus:outline-none focus:border-[var(--accent)]"
+                      className="w-full bg-white border border-[#E0DAD0] rounded-lg px-3 py-1.5 text-xs text-[#0F1420] uppercase focus:outline-none focus:border-[var(--accent)]"
+                      required
                     />
                   </div>
                   <div>
@@ -2238,7 +2779,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                     </label>
                     <input
                       type="text"
-                      placeholder="e.g. Malta / TM-CAD"
+                      placeholder="e.g. Nigeria / NCAA"
                       value={newOpCountry}
                       onChange={(e) => setNewOpCountry(e.target.value)}
                       className="w-full bg-white border border-[#E0DAD0] rounded-lg px-3 py-1.5 text-xs text-[#0F1420] focus:outline-none focus:border-[var(--accent)]"
@@ -2250,7 +2791,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                     </label>
                     <input
                       type="text"
-                      placeholder="e.g. LMML"
+                      placeholder="e.g. DNAA"
                       value={newOpBaseIcao}
                       onChange={(e) => setNewOpBaseIcao(e.target.value.toUpperCase())}
                       className="w-full bg-white border border-[#E0DAD0] rounded-lg px-3 py-1.5 text-xs text-[#0F1420] uppercase focus:outline-none focus:border-[var(--accent)]"
@@ -2262,243 +2803,1003 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                     </label>
                     <input
                       type="email"
-                      placeholder="ops@vistajet.com"
+                      placeholder="ops@saheljets.com"
                       value={newOpEmail}
                       onChange={(e) => setNewOpEmail(e.target.value)}
                       className="w-full bg-white border border-[#E0DAD0] rounded-lg px-3 py-1.5 text-xs text-[#0F1420] focus:outline-none focus:border-[var(--accent)]"
                     />
                   </div>
                 </div>
-
-                <div className="flex items-center justify-end gap-2 pt-2 border-t border-amber-200/70">
+                <div className="flex justify-end gap-2 pt-2 border-t border-amber-200">
                   <button
                     type="button"
                     onClick={() => setIsAddOperatorOpen(false)}
-                    className="px-3 py-1 text-xs text-gray-600 hover:text-black"
+                    className="btn-secondary text-xs py-1 px-3"
                   >
                     Cancel
                   </button>
                   <button
                     type="button"
                     onClick={() => handleSaveNewOperator()}
-                    disabled={!newOpLegalName.trim()}
-                    className="btn-primary text-xs flex items-center gap-1.5 py-1.5 px-3 disabled:opacity-50"
+                    className="btn-primary text-xs py-1 px-3 bg-amber-700 hover:bg-amber-800 text-white flex items-center gap-1.5"
                   >
                     <Save className="w-3.5 h-3.5" />
-                    <span>Save &amp; Select Operator</span>
+                    <span>Save & Select Operator</span>
                   </button>
                 </div>
               </div>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-sans">
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-xs font-mono font-bold text-[var(--muted)]">Air Carrier / Operator</label>
-                  <button
-                    type="button"
-                    onClick={() => setIsAddOperatorOpen(true)}
-                    className="text-[11px] font-mono text-[var(--accent)] hover:underline flex items-center gap-0.5"
-                  >
-                    + Add New
-                  </button>
-                </div>
-                <select
-                  value={selectedOperatorId}
+            {/* Toggle: Same aircraft and operator on all legs (Exact matching Image 8) */}
+            <div className="flex items-center gap-3 p-3 bg-gray-50/80 rounded-lg border border-[var(--line)]">
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={sameAircraftOnAllLegs}
                   onChange={(e) => {
-                    if (e.target.value === "__add_new__") {
-                      setIsAddOperatorOpen(true);
-                    } else {
-                      setSelectedOperatorId(e.target.value);
+                    const val = e.target.checked;
+                    setSameAircraftOnAllLegs(val);
+                    if (val) {
+                      setMultiLegs((prev) =>
+                        prev.map((l) => ({
+                          ...l,
+                          aircraft: selectedAircraft,
+                          operatorId: selectedOperatorId,
+                          buyingPrice: Math.round(operatorFlightCost / (prev.length || 1))
+                        }))
+                      );
                     }
                   }}
-                  className="w-full bg-[var(--paper)] border border-[var(--line)] rounded-lg px-3 py-2 text-xs text-[var(--ink)]"
-                >
-                  {operators.map((op) => (
-                    <option key={op.id} value={op.id}>
-                      {op.tradingName || op.legalName} ({op.aocNumber})
-                    </option>
-                  ))}
-                  <option value="__add_new__">+ Add New Operator...</option>
-                </select>
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-xs font-mono font-bold text-[var(--muted)]">
-                    Aircraft Model {tripType === "multi_leg" && sameAircraftOnAllLegs && "(All Legs)"}
-                  </label>
-                  {tripType === "multi_leg" && (
-                    <span className="text-[10px] font-mono text-gray-500">
-                      {sameAircraftOnAllLegs ? "Same on all legs" : "Per leg assigned"}
-                    </span>
-                  )}
-                </div>
-                <AircraftSearchSelect
-                  value={selectedAircraft.id}
-                  onChange={(ac) => {
-                    setSelectedAircraft(ac);
-                    if (tripType === "multi_leg" && sameAircraftOnAllLegs) {
-                      setMultiLegs((prev) => prev.map((l) => ({ ...l, aircraft: ac })));
-                    }
-                  }}
+                  className="sr-only peer"
                 />
-              </div>
-
-              {tripType === "multi_leg" && !sameAircraftOnAllLegs && (
-                <div className="sm:col-span-2 space-y-2 p-3 bg-[var(--paper)] rounded-lg border border-[var(--line)]">
-                  <span className="text-xs font-mono font-bold text-gray-800 block">
-                    Per-Leg Aircraft Assignment ({multiLegs.length} legs):
-                  </span>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    {multiLegs.map((mLeg, idx) => (
-                      <div
-                        key={mLeg.id}
-                        className="p-2.5 bg-white rounded border border-gray-200 space-y-1"
-                      >
-                        <span className="text-[11px] font-mono font-bold text-gray-800 block">
-                          Leg {idx + 1}: {mLeg.origin?.icao || "LSGG"} → {mLeg.destination?.icao || "EGSS"}
-                        </span>
-                        <AircraftSearchSelect
-                          value={mLeg.aircraft?.id || selectedAircraft.id}
-                          onChange={(ac) => {
-                            const updated = [...multiLegs];
-                            updated[idx].aircraft = ac;
-                            setMultiLegs(updated);
-                          }}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="sm:col-span-2">
-                <label className="block text-xs font-mono font-bold text-[var(--muted)] mb-1">
-                  {isBookingRevision
-                    ? "Additional Flight Cost from Operator (EUR Net) — enter €0 if flight schedule is unchanged"
-                    : "Direct Flight Cost from Operator (EUR Net)"}
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 font-mono font-bold text-sm text-[var(--muted)]">€</span>
-                  <input
-                    type="number"
-                    value={operatorFlightCost}
-                    onChange={(e) => setOperatorFlightCost(parseFloat(e.target.value) || 0)}
-                    className="w-full bg-[var(--paper)] border border-[var(--line)] rounded-lg pl-8 pr-3 py-2 text-sm font-mono font-black text-[var(--ink)]"
-                  />
-                </div>
-                {isBookingRevision && (
-                  <p className="mt-1 text-[11px] text-gray-500 font-mono">
-                    * Booking revision: previous booked amount is already contracted. Enter additional flight fees if applicable.
-                  </p>
-                )}
-              </div>
-
-              {/* Step 04 Photos Row */}
-              <div className="sm:col-span-2 pt-3 border-t border-[var(--line)] flex flex-wrap items-center gap-3">
-                <div className="flex items-center gap-2">
-                  {customExteriorPhoto && (
-                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                      Exterior · custom photo
-                    </span>
-                  )}
-                  {customCabinPhoto && (
-                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
-                      <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-                      Cabin · custom photo
-                    </span>
-                  )}
-                  {!customExteriorPhoto && !customCabinPhoto && (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-50 text-gray-700 border border-gray-200">
-                      Operator defaults
-                    </span>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsPhotoPickerOpen(true)}
-                  className="bg-white border border-gray-300 hover:bg-gray-50 text-xs font-semibold px-3 py-1.5 rounded-md shadow-2xs transition-all text-gray-800 flex items-center gap-1.5"
-                >
-                  <ImageIcon className="w-3.5 h-3.5 text-gray-600" />
-                  <span>Choose photos</span>
-                </button>
-                <span className="text-xs text-gray-500 font-sans">
-                  Upload custom exterior/cabin or use operator defaults
+                <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[var(--accent)]"></div>
+              </label>
+              <div>
+                <span className="text-xs font-bold text-gray-900 block">
+                  Same aircraft and operator on all legs
+                </span>
+                <span className="text-[11px] text-gray-500 font-sans">
+                  {sameAircraftOnAllLegs
+                    ? "On: leg 1 is copied to every leg."
+                    : "Off: each leg has its own operator, aircraft and buying price. On: leg 1 is copied to every leg."}
                 </span>
               </div>
             </div>
+
+            {/* Render Legs Cards */}
+            <div className="space-y-4">
+              {displayLegs.map((legItem, idx) => {
+                const legNum = idx + 1;
+                const legOriginCode = legItem.origin?.icao || (typeof legItem.origin === "string" ? legItem.origin : "LSGG");
+                const legOriginCity = legItem.origin?.city || legItem.origin?.name || "";
+                const legDestCode = legItem.destination?.icao || (typeof legItem.destination === "string" ? legItem.destination : "LFMN");
+                const legDestCity = legItem.destination?.city || legItem.destination?.name || "";
+
+                const currentLegOp = operators.find((o) => o.id === legItem.operatorId) || selectedOperator || operators[0];
+                const isQualified = currentLegOp?.status === "approved";
+                const legAircraft = legItem.aircraft || selectedAircraft;
+                const legBuyingPrice = legItem.buyingPrice ?? Math.round(operatorFlightCost / (displayLegs.length || 1));
+
+                const legExterior = legItem.exteriorPhoto || (idx === 0 ? customExteriorPhoto : legAircraft.imageExterior);
+                const legCabin = legItem.cabinPhoto || (idx === 0 ? customCabinPhoto : legAircraft.imageInterior);
+
+                return (
+                  <div key={legItem.id || `leg-${idx}`} className="bg-white border border-gray-200 rounded-xl p-4 space-y-3.5 shadow-2xs">
+                    {/* Leg Header */}
+                    <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-xs text-gray-900 font-display">
+                          Leg {legNum} · {legOriginCode} {legOriginCity} → {legDestCode} {legDestCity}
+                        </span>
+                      </div>
+                      <span className="text-xs font-mono text-gray-500">
+                        {legItem.flightDate} · {legItem.departureTime} LT
+                      </span>
+                    </div>
+
+                    {/* Row 1: Operator & Buying Price */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div className="md:col-span-2">
+                        <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                          OPERATOR · INTERNAL, NEVER ON DOCUMENTS
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <div className="relative flex-1">
+                            <select
+                              value={legItem.operatorId || selectedOperatorId}
+                              onChange={(e) => {
+                                const newOpId = e.target.value;
+                                if (sameAircraftOnAllLegs) {
+                                  setSelectedOperatorId(newOpId);
+                                  setMultiLegs((prev) => prev.map((l) => ({ ...l, operatorId: newOpId })));
+                                } else {
+                                  updateLegField(idx, "operatorId", newOpId);
+                                }
+                              }}
+                              className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs font-semibold text-gray-800 shadow-2xs appearance-none pr-8 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+                            >
+                              {operators.map((op) => (
+                                <option key={op.id} value={op.id}>
+                                  {op.tradingName || op.legalName} · AOC {op.aocNumber}
+                                </option>
+                              ))}
+                            </select>
+                            <ChevronDown className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          </div>
+                          {isQualified ? (
+                            <span className="inline-flex items-center px-2 py-1 rounded text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              Qualified
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-1 rounded text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                              Documents pending
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                          BUYING PRICE · ALL-INCLUSIVE (EUR)
+                        </label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono font-bold text-gray-400">€</span>
+                          <input
+                            type="number"
+                            min={0}
+                            value={legBuyingPrice}
+                            onChange={(e) => {
+                              const price = parseFloat(e.target.value) || 0;
+                              if (sameAircraftOnAllLegs) {
+                                setOperatorFlightCost(price * displayLegs.length);
+                                setMultiLegs((prev) => prev.map((l) => ({ ...l, buyingPrice: price })));
+                              } else {
+                                updateLegField(idx, "buyingPrice", price);
+                              }
+                            }}
+                            className="w-full bg-white border border-gray-300 rounded-md pl-7 pr-3 py-1.5 text-xs font-mono font-bold text-gray-900 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Row 2: Aircraft Specs */}
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                      <div className="sm:col-span-2">
+                        <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                          AIRCRAFT TYPE
+                        </label>
+                        <AircraftSearchSelect
+                          value={legAircraft.id}
+                          onChange={(ac) => {
+                            if (sameAircraftOnAllLegs) {
+                              setSelectedAircraft(ac);
+                              setMultiLegs((prev) => prev.map((l) => ({ ...l, aircraft: ac })));
+                            } else {
+                              updateLegField(idx, "aircraft", ac);
+                            }
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                          CATEGORY
+                        </label>
+                        <input
+                          type="text"
+                          readOnly
+                          value={legAircraft.category || "Super midsize"}
+                          className="w-full bg-gray-50 border border-gray-200 rounded-md px-3 py-1.5 text-xs text-gray-700 shadow-2xs focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                          YEAR OF MAKE
+                        </label>
+                        <input
+                          type="text"
+                          value={legItem.yearOfMake || 2018}
+                          onChange={(e) => updateLegField(idx, "yearOfMake", e.target.value)}
+                          className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs font-mono text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                          REFURBISHMENT
+                        </label>
+                        <input
+                          type="text"
+                          value={legItem.yearOfRefurbishment || "2023"}
+                          onChange={(e) => updateLegField(idx, "yearOfRefurbishment", e.target.value)}
+                          className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs font-mono text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Row 3: Seats, Smoking, Lavatory */}
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-center">
+                      <div>
+                        <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                          SEATS
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          value={legItem.seats || legAircraft.passengers || 9}
+                          onChange={(e) => updateLegField(idx, "seats", parseInt(e.target.value, 10) || 9)}
+                          className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs font-mono font-bold text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                          SMOKING CABIN
+                        </label>
+                        <div className="inline-flex rounded-md shadow-2xs border border-gray-300 p-0.5 bg-gray-50">
+                          <button
+                            type="button"
+                            onClick={() => updateLegField(idx, "smokingCabin", true)}
+                            className={`px-3 py-1 text-xs font-semibold rounded ${legItem.smokingCabin ? "bg-gray-900 text-white" : "text-gray-700 hover:text-gray-900"}`}
+                          >
+                            Yes
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => updateLegField(idx, "smokingCabin", false)}
+                            className={`px-3 py-1 text-xs font-semibold rounded ${!legItem.smokingCabin ? "bg-gray-900 text-white" : "text-gray-700 hover:text-gray-900"}`}
+                          >
+                            No
+                          </button>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                          LAVATORY ON BOARD
+                        </label>
+                        <div className="inline-flex rounded-md shadow-2xs border border-gray-300 p-0.5 bg-gray-50">
+                          <button
+                            type="button"
+                            onClick={() => updateLegField(idx, "lavatoryOnBoard", true)}
+                            className={`px-3 py-1 text-xs font-semibold rounded ${legItem.lavatoryOnBoard !== false ? "bg-gray-900 text-white" : "text-gray-700 hover:text-gray-900"}`}
+                          >
+                            Yes
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => updateLegField(idx, "lavatoryOnBoard", false)}
+                            className={`px-3 py-1 text-xs font-semibold rounded ${legItem.lavatoryOnBoard === false ? "bg-gray-900 text-white" : "text-gray-700 hover:text-gray-900"}`}
+                          >
+                            No
+                          </button>
+                        </div>
+                      </div>
+
+                      {legItem.lavatoryOnBoard !== false && (
+                        <div>
+                          <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                            IF YES
+                          </label>
+                          <div className="inline-flex rounded-md shadow-2xs border border-gray-300 p-0.5 bg-gray-50">
+                            <button
+                              type="button"
+                              onClick={() => updateLegField(idx, "lavatoryType", "Enclosed")}
+                              className={`px-3 py-1 text-xs font-semibold rounded ${(legItem.lavatoryType || "Enclosed") === "Enclosed" ? "bg-gray-900 text-white" : "text-gray-700 hover:text-gray-900"}`}
+                            >
+                              Enclosed
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => updateLegField(idx, "lavatoryType", "Semi-private")}
+                              className={`px-3 py-1 text-xs font-semibold rounded ${legItem.lavatoryType === "Semi-private" ? "bg-gray-900 text-white" : "text-gray-700 hover:text-gray-900"}`}
+                            >
+                              Semi-private
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Row 4: Photos for this leg (Image 8 design) */}
+                    <div className="pt-1">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider">
+                          PHOTOS FOR THIS LEG (ON THE QUOTE PDF)
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => openPhotoPickerForLeg(idx)}
+                          className="text-xs text-blue-600 font-semibold hover:underline flex items-center gap-1"
+                        >
+                          <ImageIcon className="w-3.5 h-3.5" />
+                          <span>Change photos for Leg {legNum}</span>
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                        {/* Exterior */}
+                        <div
+                          onClick={() => openPhotoPickerForLeg(idx)}
+                          className="group relative cursor-pointer border border-dashed border-gray-300 hover:border-gray-900 rounded-lg p-2 flex flex-col items-center justify-center text-center bg-gray-50/50 hover:bg-gray-50 transition-all min-h-[84px] overflow-hidden"
+                        >
+                          {legExterior ? (
+                            <div className="w-full h-full relative">
+                              <img src={legExterior} alt="Exterior" className="w-full h-16 object-cover rounded" />
+                              <span className="absolute bottom-1 left-1 bg-black/70 text-white text-[9px] px-1 py-0.5 rounded font-mono">Exterior</span>
+                            </div>
+                          ) : (
+                            <>
+                              <ImageIcon className="w-4 h-4 text-gray-400 group-hover:text-gray-700 mb-1" />
+                              <span className="text-xs font-medium text-gray-700">Exterior</span>
+                            </>
+                          )}
+                        </div>
+
+                        {/* Cabin */}
+                        <div
+                          onClick={() => openPhotoPickerForLeg(idx)}
+                          className="group relative cursor-pointer border border-dashed border-gray-300 hover:border-gray-900 rounded-lg p-2 flex flex-col items-center justify-center text-center bg-gray-50/50 hover:bg-gray-50 transition-all min-h-[84px] overflow-hidden"
+                        >
+                          {legCabin ? (
+                            <div className="w-full h-full relative">
+                              <img src={legCabin} alt="Cabin" className="w-full h-16 object-cover rounded" />
+                              <span className="absolute bottom-1 left-1 bg-black/70 text-white text-[9px] px-1 py-0.5 rounded font-mono">Cabin</span>
+                            </div>
+                          ) : (
+                            <>
+                              <ImageIcon className="w-4 h-4 text-gray-400 group-hover:text-gray-700 mb-1" />
+                              <span className="text-xs font-medium text-gray-700">Cabin</span>
+                            </>
+                          )}
+                        </div>
+
+                        {/* Cabin 2 */}
+                        <div
+                          onClick={() => openPhotoPickerForLeg(idx)}
+                          className="group relative cursor-pointer border border-dashed border-gray-300 hover:border-gray-900 rounded-lg p-2 flex flex-col items-center justify-center text-center bg-gray-50/50 hover:bg-gray-50 transition-all min-h-[84px]"
+                        >
+                          <ImageIcon className="w-4 h-4 text-gray-400 group-hover:text-gray-700 mb-1" />
+                          <span className="text-xs font-medium text-gray-700">Cabin 2</span>
+                        </div>
+
+                        {/* + Add */}
+                        <div
+                          onClick={() => openPhotoPickerForLeg(idx)}
+                          className="group relative cursor-pointer border border-dashed border-gray-300 hover:border-gray-900 rounded-lg p-2 flex flex-col items-center justify-center text-center bg-gray-50/50 hover:bg-gray-50 transition-all min-h-[84px]"
+                        >
+                          <Plus className="w-4 h-4 text-gray-400 group-hover:text-gray-700 mb-1" />
+                          <span className="text-xs font-medium text-gray-700">+ Add</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between text-[11px] text-gray-500 font-sans pt-1">
+                        <span>Kept in the operator&apos;s file for reuse</span>
+                        <div className="flex items-center gap-3">
+                          <button type="button" onClick={() => openPhotoPickerForLeg(idx)} className="text-blue-600 hover:underline">
+                            Pick from operator file
+                          </button>
+                          <span>·</span>
+                          <button type="button" onClick={() => openPhotoPickerForLeg(idx)} className="text-blue-600 hover:underline">
+                            Generic type photos
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {!isQualified && (
+                      <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-xl text-xs space-y-0.5">
+                        <div className="font-bold text-amber-900">
+                          Operator not in database · saved as new with &ldquo;Documents pending&rdquo;
+                        </div>
+                        <div className="text-amber-800 text-[11px] leading-relaxed">
+                          AOC, authority, base and ops contact are filled in on the new-operator panel (step 04a). The nine-point check shows on the quote, the trip and the Operators list until done.
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="text-[11px] text-gray-500 italic pt-1">
+              Passenger fees for this leg are added on the Price step (06).
+            </div>
           </div>
 
-          {/* SECTION 5: SERVICES */}
+          {/* SECTION 5: SERVICES · HELICOPTER TRANSFER (Image 6) */}
+          <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-4">
+            <div className="flex items-center justify-between border-b border-[var(--line)] pb-2.5">
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-[var(--wf)] text-[var(--ink)]">
+                  05
+                </span>
+                <h3 className="text-base font-bold font-display text-[var(--ink)] m-0">
+                  Services · Helicopter transfer
+                </h3>
+              </div>
+            </div>
+
+            {/* Radio / Pill: Add a helicopter transfer? */}
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-mono font-bold text-gray-600 uppercase tracking-wider">
+                ADD A HELICOPTER TRANSFER?
+              </span>
+              <div className="inline-flex rounded-md shadow-2xs border border-gray-300 p-0.5 bg-gray-50">
+                <button
+                  type="button"
+                  onClick={() => setHasHeliTransfer(true)}
+                  className={`px-3 py-1 text-xs font-semibold rounded ${hasHeliTransfer ? "bg-gray-900 text-white" : "text-gray-700 hover:text-gray-900"}`}
+                >
+                  Yes
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHasHeliTransfer(false)}
+                  className={`px-3 py-1 text-xs font-semibold rounded ${!hasHeliTransfer ? "bg-gray-900 text-white" : "text-gray-700 hover:text-gray-900"}`}
+                >
+                  No
+                </button>
+              </div>
+            </div>
+
+            {hasHeliTransfer && (
+              <div className="space-y-4 pt-1">
+                {/* Flight legs checkboxes */}
+                <div className="space-y-1.5">
+                  <span className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider block">
+                    FLIGHT LEGS
+                  </span>
+                  <div className="flex flex-wrap items-center gap-4 text-xs">
+                    {displayLegs.map((leg, lIdx) => {
+                      const legKey = `leg-${lIdx + 1}`;
+                      const origCode = leg.origin?.icao || (typeof leg.origin === "string" ? leg.origin : "LSGG");
+                      const destCode = leg.destination?.icao || (typeof leg.destination === "string" ? leg.destination : "LFMN");
+                      return (
+                        <label key={legKey} className="inline-flex items-center gap-2 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(heliLegsEnabled[legKey])}
+                            onChange={(e) =>
+                              setHeliLegsEnabled((prev) => ({ ...prev, [legKey]: e.target.checked }))
+                            }
+                            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
+                          />
+                          <span className="font-semibold text-gray-800">
+                            Leg {lIdx + 1} · {origCode} → {destCode}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Leg Helicopter Transfer Cards */}
+                {displayLegs.map((leg, lIdx) => {
+                  const legKey = `leg-${lIdx + 1}`;
+                  if (!heliLegsEnabled[legKey]) return null;
+
+                  const origCode = leg.origin?.icao || (typeof leg.origin === "string" ? leg.origin : "LSGG");
+                  const destCode = leg.destination?.icao || (typeof leg.destination === "string" ? leg.destination : "LFMN");
+                  const curHeli = heliTransfers[legKey] || {
+                    transferType: "arrival",
+                    passengers: paxCount || 4,
+                    prefType: "Twin-engine, e.g. AW109 or similar",
+                    depArrLocation: `${destCode} Airport`,
+                    destination: "Battersea Heliport, London",
+                    clientPrice: 2400,
+                    luggageDetails: "4 cabin bags, 2 suitcases (soft)",
+                    specialRequests: "Landing permission at the hotel helipad to be confirmed"
+                  };
+
+                  const updateHeliField = (f: string, v: any) => {
+                    setHeliTransfers((prev) => ({
+                      ...prev,
+                      [legKey]: { ...curHeli, [f]: v }
+                    }));
+                  };
+
+                  return (
+                    <div key={legKey} className="border border-gray-200 rounded-xl p-4 bg-white space-y-4 shadow-2xs">
+                      <div className="font-bold text-xs text-gray-900 border-b border-gray-100 pb-2">
+                        Leg {lIdx + 1} · {origCode} → {destCode}
+                      </div>
+
+                      {/* 1 · Transfer type */}
+                      <div className="space-y-1.5">
+                        <span className="text-[11px] font-bold text-gray-700 block">
+                          1 · Transfer type
+                        </span>
+                        <div className="flex flex-wrap gap-2">
+                          {[
+                            { id: "arrival", label: "On arrival (airport → helicopter destination)" },
+                            { id: "departure", label: "On departure (helicopter destination → airport)" },
+                            { id: "both", label: "Both" }
+                          ].map((t) => (
+                            <button
+                              key={t.id}
+                              type="button"
+                              onClick={() => updateHeliField("transferType", t.id)}
+                              className={`px-3 py-1.5 text-xs font-semibold rounded-md border transition-all ${curHeli.transferType === t.id ? "bg-gray-900 text-white border-gray-900 shadow-2xs" : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"}`}
+                            >
+                              {t.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* 2 · Helicopter details */}
+                      <div className="space-y-2">
+                        <span className="text-[11px] font-bold text-gray-700 block">
+                          2 · Helicopter details
+                        </span>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div>
+                            <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                              PASSENGERS
+                            </label>
+                            <input
+                              type="number"
+                              min={1}
+                              value={curHeli.passengers}
+                              onChange={(e) => updateHeliField("passengers", parseInt(e.target.value, 10) || 1)}
+                              className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs font-mono font-bold text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                              PREFERRED HELICOPTER TYPE
+                            </label>
+                            <select
+                              value={curHeli.prefType}
+                              onChange={(e) => updateHeliField("prefType", e.target.value)}
+                              className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs font-semibold text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+                            >
+                              <option value="Twin-engine, e.g. AW109 or similar">Twin-engine, e.g. AW109 or similar</option>
+                              <option value="Single-engine, e.g. Bell 407">Single-engine, e.g. Bell 407</option>
+                              <option value="Heavy twin, e.g. Sikorsky S-76">Heavy twin, e.g. Sikorsky S-76</option>
+                              <option value="Airbus H145 / EC145">Airbus H145 / EC145</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                              DEPARTURE / ARRIVAL LOCATION
+                            </label>
+                            <input
+                              type="text"
+                              value={curHeli.depArrLocation}
+                              onChange={(e) => updateHeliField("depArrLocation", e.target.value)}
+                              className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                          <div>
+                            <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                              TRANSFER DESTINATION
+                            </label>
+                            <input
+                              type="text"
+                              value={curHeli.destination}
+                              onChange={(e) => updateHeliField("destination", e.target.value)}
+                              className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                              CLIENT PRICE
+                            </label>
+                            <div className="relative">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono font-bold text-gray-400">€</span>
+                              <input
+                                type="number"
+                                min={0}
+                                value={curHeli.clientPrice}
+                                onChange={(e) => updateHeliField("clientPrice", parseFloat(e.target.value) || 0)}
+                                className="w-full bg-white border border-gray-300 rounded-md pl-7 pr-3 py-1.5 text-xs font-mono font-bold text-gray-900 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 3 · Additional requirements */}
+                      <div className="space-y-2">
+                        <span className="text-[11px] font-bold text-gray-700 block">
+                          3 · Additional requirements
+                        </span>
+                        <div>
+                          <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                            LUGGAGE DETAILS
+                          </label>
+                          <input
+                            type="text"
+                            value={curHeli.luggageDetails}
+                            onChange={(e) => updateHeliField("luggageDetails", e.target.value)}
+                            className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                            SPECIAL REQUESTS / INSTRUCTIONS
+                          </label>
+                          <input
+                            type="text"
+                            value={curHeli.specialRequests}
+                            onChange={(e) => updateHeliField("specialRequests", e.target.value)}
+                            className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* Write-up on the quote preview card (Image 6) */}
+                <div className="p-3.5 bg-gray-50 border border-gray-200 rounded-xl space-y-1">
+                  <span className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider block">
+                    WRITE-UP ON THE QUOTE
+                  </span>
+                  <div className="text-xs font-mono text-gray-800">
+                    {displayLegs.map((leg, lIdx) => {
+                      const legKey = `leg-${lIdx + 1}`;
+                      if (!heliLegsEnabled[legKey]) return null;
+                      const origCode = leg.origin?.icao || "LSGG";
+                      const destCode = leg.destination?.icao || "LFMN";
+                      const h = heliTransfers[legKey] || {
+                        transferType: "arrival",
+                        destination: "Battersea Heliport",
+                        prefType: "twin-engine (AW109 or similar)",
+                        passengers: 4,
+                        clientPrice: 2400
+                      };
+                      return (
+                        <div key={legKey}>
+                          Leg {lIdx + 1} · helicopter on {h.transferType} · {origCode} → {h.destination || destCode} · {h.prefType} · {h.passengers} pax · € {h.clientPrice.toLocaleString()}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* SECTION 5: SERVICES · GROUND TRANSPORTATION (Image 7) */}
+          <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-4">
+            <div className="flex items-center justify-between border-b border-[var(--line)] pb-2.5">
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-[var(--wf)] text-[var(--ink)]">
+                  05
+                </span>
+                <h3 className="text-base font-bold font-display text-[var(--ink)] m-0">
+                  Services · Ground transportation
+                </h3>
+              </div>
+            </div>
+
+            {/* Radio / Pill: Add ground transportation? */}
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-mono font-bold text-gray-600 uppercase tracking-wider">
+                ADD GROUND TRANSPORTATION?
+              </span>
+              <div className="inline-flex rounded-md shadow-2xs border border-gray-300 p-0.5 bg-gray-50">
+                <button
+                  type="button"
+                  onClick={() => setHasGroundTransport(true)}
+                  className={`px-3 py-1 text-xs font-semibold rounded ${hasGroundTransport ? "bg-gray-900 text-white" : "text-gray-700 hover:text-gray-900"}`}
+                >
+                  Yes
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHasGroundTransport(false)}
+                  className={`px-3 py-1 text-xs font-semibold rounded ${!hasGroundTransport ? "bg-gray-900 text-white" : "text-gray-700 hover:text-gray-900"}`}
+                >
+                  No
+                </button>
+              </div>
+            </div>
+
+            {hasGroundTransport && (
+              <div className="space-y-4 pt-1">
+                {/* Flight legs checkboxes */}
+                <div className="space-y-1.5">
+                  <span className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider block">
+                    FLIGHT LEGS
+                  </span>
+                  <div className="flex flex-wrap items-center gap-4 text-xs">
+                    {displayLegs.map((leg, lIdx) => {
+                      const legKey = `leg-${lIdx + 1}`;
+                      const origCode = leg.origin?.icao || (typeof leg.origin === "string" ? leg.origin : "LSGG");
+                      const destCode = leg.destination?.icao || (typeof leg.destination === "string" ? leg.destination : "LFMN");
+                      return (
+                        <label key={legKey} className="inline-flex items-center gap-2 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(groundLegsEnabled[legKey])}
+                            onChange={(e) =>
+                              setGroundLegsEnabled((prev) => ({ ...prev, [legKey]: e.target.checked }))
+                            }
+                            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
+                          />
+                          <span className="font-semibold text-gray-800">
+                            Leg {lIdx + 1} · {origCode} → {destCode}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Ground Transfer Leg Cards */}
+                {displayLegs.map((leg, lIdx) => {
+                  const legKey = `leg-${lIdx + 1}`;
+                  if (!groundLegsEnabled[legKey]) return null;
+
+                  const origCode = leg.origin?.icao || (typeof leg.origin === "string" ? leg.origin : "LSGG");
+                  const origCity = leg.origin?.city || leg.origin?.name || "";
+                  const destCode = leg.destination?.icao || (typeof leg.destination === "string" ? leg.destination : "LFMN");
+                  const destCity = leg.destination?.city || leg.destination?.name || "";
+
+                  const curTransfer = groundTransfers[legKey] || {
+                    arrivalRequired: true,
+                    arrivalDropoff: lIdx === 0 ? "The Savoy, Strand, London" : "14 Bourdillon Road, Ikoyi, Lagos",
+                    arrivalVehicle: lIdx === 0 ? "Luxury" : "SUV",
+                    arrivalPrice: lIdx === 0 ? 650 : 180,
+                    departureRequired: true,
+                    departurePickup: lIdx === 0 ? "14 Bourdillon Road, Ikoyi, Lagos" : "The Savoy, Strand, London",
+                    departureVehicle: lIdx === 0 ? "SUV" : "Luxury",
+                    departurePrice: lIdx === 0 ? 180 : 650,
+                    passengers: paxCount || 5,
+                    specialRequests: "Meet at aircraft steps; child seat ×1"
+                  };
+
+                  const isCollapsed = Boolean(groundCollapsed[legKey]);
+                  const toggleCollapse = () =>
+                    setGroundCollapsed((prev) => ({ ...prev, [legKey]: !prev[legKey] }));
+
+                  const updateGroundField = (f: string, v: any) => {
+                    setGroundTransfers((prev) => ({
+                      ...prev,
+                      [legKey]: { ...curTransfer, [f]: v }
+                    }));
+                  };
+
+                  return (
+                    <div key={legKey} className="border border-gray-200 rounded-xl p-4 bg-white space-y-4 shadow-2xs">
+                      <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                        <span className="font-bold text-xs text-gray-900 font-display">
+                          Leg {lIdx + 1} · {origCode} {origCity} → {destCode} {destCity}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={toggleCollapse}
+                          className="text-xs font-semibold text-blue-600 hover:underline"
+                        >
+                          {isCollapsed ? "Expand" : "Collapse"}
+                        </button>
+                      </div>
+
+                      {!isCollapsed && (
+                        <div className="space-y-4">
+                          {/* 1 · On arrival */}
+                          <div className="space-y-2 border-b border-gray-100 pb-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] font-bold text-gray-800">
+                                1 · On arrival at {destCode}
+                              </span>
+                              <label className="inline-flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={curTransfer.arrivalRequired}
+                                  onChange={(e) => updateGroundField("arrivalRequired", e.target.checked)}
+                                  className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 accent-blue-600"
+                                />
+                                <span>Required</span>
+                              </label>
+                            </div>
+                            {curTransfer.arrivalRequired && (
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                <div>
+                                  <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                                    DROP-OFF LOCATION
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={curTransfer.arrivalDropoff}
+                                    onChange={(e) => updateGroundField("arrivalDropoff", e.target.value)}
+                                    className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                                    VEHICLE
+                                  </label>
+                                  <div className="inline-flex rounded-md shadow-2xs border border-gray-300 p-0.5 bg-gray-50">
+                                    {(["Sedan", "SUV", "Van", "Luxury"] as const).map((v) => (
+                                      <button
+                                        key={v}
+                                        type="button"
+                                        onClick={() => updateGroundField("arrivalVehicle", v)}
+                                        className={`px-2.5 py-1 text-xs font-semibold rounded ${curTransfer.arrivalVehicle === v ? "bg-gray-900 text-white" : "text-gray-700 hover:text-gray-900"}`}
+                                      >
+                                        {v}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                                    CLIENT PRICE
+                                  </label>
+                                  <div className="relative">
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono font-bold text-gray-400">€</span>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      value={curTransfer.arrivalPrice}
+                                      onChange={(e) => updateGroundField("arrivalPrice", parseFloat(e.target.value) || 0)}
+                                      className="w-full bg-white border border-gray-300 rounded-md pl-7 pr-3 py-1.5 text-xs font-mono font-bold text-gray-900 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* 2 · On departure */}
+                          <div className="space-y-2 border-b border-gray-100 pb-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] font-bold text-gray-800">
+                                2 · On departure from {origCode}
+                              </span>
+                              <label className="inline-flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={curTransfer.departureRequired}
+                                  onChange={(e) => updateGroundField("departureRequired", e.target.checked)}
+                                  className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 accent-blue-600"
+                                />
+                                <span>Required</span>
+                              </label>
+                            </div>
+                            {curTransfer.departureRequired && (
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                <div>
+                                  <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                                    PICK-UP LOCATION
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={curTransfer.departurePickup}
+                                    onChange={(e) => updateGroundField("departurePickup", e.target.value)}
+                                    className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                                    VEHICLE
+                                  </label>
+                                  <div className="inline-flex rounded-md shadow-2xs border border-gray-300 p-0.5 bg-gray-50">
+                                    {(["Sedan", "SUV", "Van", "Luxury"] as const).map((v) => (
+                                      <button
+                                        key={v}
+                                        type="button"
+                                        onClick={() => updateGroundField("departureVehicle", v)}
+                                        className={`px-2.5 py-1 text-xs font-semibold rounded ${curTransfer.departureVehicle === v ? "bg-gray-900 text-white" : "text-gray-700 hover:text-gray-900"}`}
+                                      >
+                                        {v}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                                    CLIENT PRICE
+                                  </label>
+                                  <div className="relative">
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono font-bold text-gray-400">€</span>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      value={curTransfer.departurePrice}
+                                      onChange={(e) => updateGroundField("departurePrice", parseFloat(e.target.value) || 0)}
+                                      className="w-full bg-white border border-gray-300 rounded-md pl-7 pr-3 py-1.5 text-xs font-mono font-bold text-gray-900 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* 3 · Additional requirements */}
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <div>
+                              <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                                PASSENGERS
+                              </label>
+                              <input
+                                type="number"
+                                min={1}
+                                value={curTransfer.passengers}
+                                onChange={(e) => updateGroundField("passengers", parseInt(e.target.value, 10) || 1)}
+                                className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs font-mono font-bold text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              />
+                            </div>
+                            <div className="sm:col-span-2">
+                              <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
+                                SPECIAL REQUESTS / INSTRUCTIONS
+                              </label>
+                              <input
+                                type="text"
+                                value={curTransfer.specialRequests}
+                                onChange={(e) => updateGroundField("specialRequests", e.target.value)}
+                                className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* Write-up on the quote preview card (Image 7) */}
+                <div className="p-3.5 bg-gray-50 border border-gray-200 rounded-xl space-y-1">
+                  <span className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider block">
+                    WRITE-UP ON THE QUOTE (GENERATED FROM THE FORM)
+                  </span>
+                  <div className="text-xs font-mono text-gray-800 space-y-0.5">
+                    {displayLegs.map((leg, lIdx) => {
+                      const legKey = `leg-${lIdx + 1}`;
+                      if (!groundLegsEnabled[legKey]) return null;
+                      const origCode = leg.origin?.icao || "LSGG";
+                      const destCode = leg.destination?.icao || "LFMN";
+                      const g = groundTransfers[legKey] || {
+                        arrivalRequired: true,
+                        arrivalDropoff: "The Savoy, London",
+                        arrivalVehicle: "Luxury",
+                        arrivalPrice: 650,
+                        departureRequired: true,
+                        departurePickup: "14 Bourdillon Road",
+                        departureVehicle: "SUV",
+                        departurePrice: 180,
+                        passengers: 5
+                      };
+                      return (
+                        <React.Fragment key={legKey}>
+                          {g.arrivalRequired && (
+                            <div>
+                              Leg {lIdx + 1} · on arrival · {destCode} → {g.arrivalDropoff} · {g.arrivalVehicle} · {g.passengers} pax · € {g.arrivalPrice.toLocaleString()}
+                            </div>
+                          )}
+                          {g.departureRequired && (
+                            <div>
+                              Leg {lIdx + 1} · on departure · {g.departurePickup} → {origCode} · {g.departureVehicle} · {g.passengers} pax · € {g.departurePrice.toLocaleString()}
+                            </div>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ADDITIONAL SERVICES & EXTRAS */}
           <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-3.5">
             <div className="flex items-center gap-2 border-b border-[var(--line)] pb-2.5">
               <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-[var(--wf)] text-[var(--ink)]">
-                05
+                +
               </span>
               <h3 className="text-base font-bold font-display text-[var(--ink)] m-0">
-                Services
+                Additional Services · Catering, De-icing & Extras
               </h3>
             </div>
 
-            {/* Checkboxes Row with Editable Prices */}
             <div className="flex flex-wrap items-center gap-x-4 gap-y-3 pt-1">
-              {/* VIP Limousine */}
-              <div className={`flex items-center gap-2 p-1.5 px-2 rounded-lg border transition-all ${serviceOptions.limousine ? "bg-blue-50/60 border-blue-200 shadow-2xs" : "bg-transparent border-transparent"}`}>
-                <label className="inline-flex items-center gap-2 text-xs font-medium text-gray-800 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={serviceOptions.limousine}
-                    onChange={(e) =>
-                      setServiceOptions({ ...serviceOptions, limousine: e.target.checked })
-                    }
-                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
-                  />
-                  <span className={serviceOptions.limousine ? "font-bold text-blue-950" : ""}>VIP limousine</span>
-                </label>
-                {serviceOptions.limousine && (
-                  <div className="flex items-center gap-1 bg-white border border-blue-200 rounded px-1.5 py-0.5 ml-1 shadow-2xs">
-                    <span className="text-[11px] font-mono font-bold text-gray-500">€</span>
-                    <input
-                      type="number"
-                      min={0}
-                      value={limousinePrice}
-                      onChange={(e) => setLimousinePrice(Math.max(0, parseFloat(e.target.value) || 0))}
-                      className="w-16 text-xs font-mono font-bold text-gray-900 bg-transparent focus:outline-none"
-                    />
-                  </div>
-                )}
-              </div>
-
-              {/* Helicopter */}
-              <div className={`flex items-center gap-2 p-1.5 px-2 rounded-lg border transition-all ${serviceOptions.helicopter ? "bg-blue-50/60 border-blue-200 shadow-2xs" : "bg-transparent border-transparent"}`}>
-                <label className="inline-flex items-center gap-2 text-xs font-medium text-gray-800 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={serviceOptions.helicopter}
-                    onChange={(e) =>
-                      setServiceOptions({ ...serviceOptions, helicopter: e.target.checked })
-                    }
-                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
-                  />
-                  <span className={serviceOptions.helicopter ? "font-bold text-blue-950" : ""}>Helicopter</span>
-                </label>
-                {serviceOptions.helicopter && (
-                  <div className="flex items-center gap-1 bg-white border border-blue-200 rounded px-1.5 py-0.5 ml-1 shadow-2xs">
-                    <span className="text-[11px] font-mono font-bold text-gray-500">€</span>
-                    <input
-                      type="number"
-                      min={0}
-                      value={helicopterPrice}
-                      onChange={(e) => setHelicopterPrice(Math.max(0, parseFloat(e.target.value) || 0))}
-                      className="w-16 text-xs font-mono font-bold text-gray-900 bg-transparent focus:outline-none"
-                    />
-                  </div>
-                )}
-              </div>
-
-              {/* Catering */}
+              {/* VIP Catering */}
               <div className={`flex items-center gap-2 p-1.5 px-2 rounded-lg border transition-all ${serviceOptions.catering ? "bg-blue-50/60 border-blue-200 shadow-2xs" : "bg-transparent border-transparent"}`}>
                 <label className="inline-flex items-center gap-2 text-xs font-medium text-gray-800 cursor-pointer select-none">
                   <input
@@ -2509,7 +3810,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                     }
                     className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
                   />
-                  <span className={serviceOptions.catering ? "font-bold text-blue-950" : ""}>Catering</span>
+                  <span className={serviceOptions.catering ? "font-bold text-blue-950" : ""}>VIP catering</span>
                 </label>
                 {serviceOptions.catering && (
                   <div className="flex items-center gap-1 bg-white border border-blue-200 rounded px-1.5 py-0.5 ml-1 shadow-2xs">
@@ -2520,16 +3821,12 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                       value={cateringPrice}
                       onChange={(e) => setCateringPrice(Math.max(0, parseFloat(e.target.value) || 0))}
                       className="w-16 text-xs font-mono font-bold text-gray-900 bg-transparent focus:outline-none"
-                      title="€0 = Included / Complimentary"
                     />
-                    <span className="text-[10px] text-gray-400 font-mono">
-                      {cateringPrice === 0 ? "(incl.)" : ""}
-                    </span>
                   </div>
                 )}
               </div>
 
-              {/* De-icing protection */}
+              {/* De-icing */}
               <div className={`flex items-center gap-2 p-1.5 px-2 rounded-lg border transition-all ${serviceOptions.deicing ? "bg-blue-50/60 border-blue-200 shadow-2xs" : "bg-transparent border-transparent"}`}>
                 <label className="inline-flex items-center gap-2 text-xs font-medium text-gray-800 cursor-pointer select-none">
                   <input
@@ -2556,7 +3853,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                 )}
               </div>
 
-              {/* Carbon offset */}
+              {/* Carbon Offset */}
               <div className={`flex items-center gap-2 p-1.5 px-2 rounded-lg border transition-all ${serviceOptions.carbonOffset ? "bg-blue-50/60 border-blue-200 shadow-2xs" : "bg-transparent border-transparent"}`}>
                 <label className="inline-flex items-center gap-2 text-xs font-medium text-gray-800 cursor-pointer select-none">
                   <input
@@ -2582,151 +3879,6 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                   </div>
                 )}
               </div>
-
-              {/* Custom services */}
-              {customServices.map((cs) => (
-                <div
-                  key={cs.id}
-                  className="flex items-center gap-2 p-1.5 px-2 rounded-lg border bg-blue-50/70 border-blue-200 shadow-2xs"
-                >
-                  <label className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-800 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={true}
-                      onChange={() => setCustomServices(customServices.filter((s) => s.id !== cs.id))}
-                      className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 cursor-pointer accent-blue-600"
-                    />
-                    <span className="font-bold text-blue-950">{cs.name}</span>
-                  </label>
-                  <div className="flex items-center gap-1 bg-white border border-blue-200 rounded px-1.5 py-0.5 shadow-2xs">
-                    <span className="text-[11px] font-mono font-bold text-gray-500">€</span>
-                    <input
-                      type="number"
-                      min={0}
-                      value={cs.price}
-                      onChange={(e) => {
-                        const val = Math.max(0, parseFloat(e.target.value) || 0);
-                        setCustomServices(customServices.map((s) => s.id === cs.id ? { ...s, price: val } : s));
-                      }}
-                      className="w-16 text-xs font-mono font-bold text-gray-900 bg-transparent focus:outline-none"
-                    />
-                  </div>
-                </div>
-              ))}
-
-              <button
-                type="button"
-                onClick={() => setIsCustomDialogOpen(true)}
-                className="inline-flex items-center gap-1 text-xs font-medium text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 px-2.5 py-1 rounded-lg shadow-2xs transition-all"
-              >
-                <span>+ Custom</span>
-              </button>
-            </div>
-
-            {/* Custom service modal / inline panel */}
-            {isCustomDialogOpen && (
-              <div className="p-3 bg-white border border-blue-200 rounded-lg shadow-sm space-y-2.5 mt-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-gray-800">Add Custom Concierge / Service</span>
-                  <button
-                    type="button"
-                    onClick={() => setIsCustomDialogOpen(false)}
-                    className="text-xs text-gray-400 hover:text-gray-600"
-                  >
-                    ✕
-                  </button>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  <input
-                    type="text"
-                    placeholder="Service Name (e.g. Tarmac Escort)"
-                    value={customServiceName}
-                    onChange={(e) => setCustomServiceName(e.target.value)}
-                    className="bg-white border border-gray-300 rounded px-2 py-1 text-xs text-gray-800"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Details (e.g. VIP ramp access · 4 pax)"
-                    value={customServiceDetails}
-                    onChange={(e) => setCustomServiceDetails(e.target.value)}
-                    className="bg-white border border-gray-300 rounded px-2 py-1 text-xs text-gray-800"
-                  />
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      placeholder="Price (€)"
-                      value={customServicePrice}
-                      onChange={(e) => setCustomServicePrice(parseFloat(e.target.value) || 0)}
-                      className="w-24 bg-white border border-gray-300 rounded px-2 py-1 text-xs text-gray-800"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (customServiceName.trim()) {
-                          setCustomServices([
-                            ...customServices,
-                            {
-                              id: `cs-${Date.now()}`,
-                              name: customServiceName.trim(),
-                              details: customServiceDetails.trim() || "Custom service",
-                              price: customServicePrice,
-                            },
-                          ]);
-                          setCustomServiceName("");
-                          setCustomServiceDetails("");
-                          setCustomServicePrice(150);
-                          setIsCustomDialogOpen(false);
-                        }
-                      }}
-                      className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1 rounded"
-                    >
-                      Add
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Selected Services Summary Box (Exact styling of Image 2) */}
-            <div className="bg-[#f8f9fa] border border-[#e5e7eb] rounded-lg p-3 text-xs text-gray-700 space-y-1 font-sans">
-              {serviceOptions.limousine && (
-                <div>
-                  Limousine · leg 1 on arrival DNAA - Maitama, Abuja · SUV · 5 pax · client price € {limousinePrice.toFixed(2)}
-                </div>
-              )}
-              {serviceOptions.catering && (
-                <div>
-                  Catering · VIP menu 1 · both legs · {cateringPrice === 0 ? "included" : `client price € ${cateringPrice.toFixed(2)}`}
-                </div>
-              )}
-              {serviceOptions.helicopter && (
-                <div>
-                  Helicopter · VIP charter connector · 5 pax · client price € {helicopterPrice.toFixed(2)}
-                </div>
-              )}
-              {serviceOptions.deicing && (
-                <div>
-                  De-icing protection · holdover protection package · client price € {deicingPrice.toFixed(2)}
-                </div>
-              )}
-              {serviceOptions.carbonOffset && (
-                <div>
-                  Carbon offset · Gold Standard certified climate credit · client price € {carbonOffsetPrice.toFixed(2)}
-                </div>
-              )}
-              {customServices.map((cs) => (
-                <div key={cs.id}>
-                  {cs.name} · {cs.details} · client price € {cs.price.toFixed(2)}
-                </div>
-              ))}
-              {!serviceOptions.limousine &&
-                !serviceOptions.catering &&
-                !serviceOptions.helicopter &&
-                !serviceOptions.deicing &&
-                !serviceOptions.carbonOffset &&
-                customServices.length === 0 && (
-                  <div className="text-gray-400 italic">No additional services selected</div>
-                )}
             </div>
           </div>
 
@@ -2822,7 +3974,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
             <div className="space-y-2 text-xs font-mono divide-y divide-[var(--line)]">
               <div className="flex justify-between pt-1">
                 <span className="text-[var(--muted)]">Direct Flight Cost:</span>
-                <span className="font-bold">{currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF "}{operatorFlightCost.toLocaleString()}.00</span>
+                <span className="font-bold">{currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF "}{effectiveOperatorFlightCost.toLocaleString()}.00</span>
               </div>
 
               <div className="flex justify-between pt-1">
@@ -2881,8 +4033,43 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                 }
                 className="w-full btn-secondary text-xs justify-center"
               >
-                <span>Save Draft (No Version)</span>
+                                <span>Save Draft (No Version)</span>
               </button>
+            </div>
+
+            {/* Reference Context Notes (Matching Images 6, 7, 8, 10) */}
+            <div className="space-y-3 pt-3 text-[11px] font-sans border-t border-[var(--line)]">
+              {/* Image 8 notes: PER LEG */}
+              <div className="p-3 bg-gray-50/70 rounded-lg border border-[var(--line)] space-y-1.5">
+                <span className="font-mono text-[10px] uppercase font-bold text-gray-500 block">
+                  PER LEG
+                </span>
+                <p className="text-gray-600 m-0 leading-relaxed text-[11px]">
+                  Operator (internal label only)<br />
+                  Buying price, all-inclusive<br />
+                  Aircraft type and category<br />
+                  Year of make, year of refurbishment, seats<br />
+                  Smoking cabin yes/no; lavatory yes/no<br />
+                  Photos
+                </p>
+                <div className="pt-1.5 border-t border-gray-200 text-[10px] text-gray-500 space-y-1">
+                  <div><strong className="text-gray-700">REGISTRATION & FLIGHT NUMBER:</strong> Added after booking on the trip&apos;s Itinerary tab, per leg; printed on the flight brief.</div>
+                  <div><strong className="text-gray-700">STATUS:</strong> MOD-05, MOD-08, NF-08, NF-22</div>
+                </div>
+              </div>
+
+              {/* Image 6 & 7 notes: SERVICES */}
+              <div className="p-3 bg-gray-50/70 rounded-lg border border-[var(--line)] space-y-1.5">
+                <span className="font-mono text-[10px] uppercase font-bold text-gray-500 block">
+                  SERVICES SUMMARY
+                </span>
+                <p className="text-gray-600 m-0 leading-relaxed text-[11px]">
+                  Each ground and helicopter line has its own client price. Supplier cost is entered on the Services tab after sourcing.
+                </p>
+                <div className="pt-1.5 border-t border-gray-200 text-[10px] text-gray-500 space-y-1">
+                  <div><strong className="text-gray-700">STATUS:</strong> NF-07, NF-09, NF-10, NF-11</div>
+                </div>
+              </div>
             </div>
           </div>
         </div>

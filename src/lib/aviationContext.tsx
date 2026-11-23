@@ -1742,6 +1742,18 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
           .map((booking) => {
             const bToken = extractFeToken(booking.tripId || booking.tripNumber || booking.quoteId || booking.quoteReference || booking.id);
             if (familyToken && bToken && bToken === familyToken && booking.id !== persisted.id) {
+              // R-023 / NF-09: For booked trips, older iterations are NOT cancelled!
+              // They remain active base contracted iterations because revisions add to them.
+              if (booking.isBooked || persisted.isBooked) {
+                return {
+                  ...booking,
+                  isBooked: true,
+                  isCancelled: false,
+                  status: booking.status === "cancelled" ? "confirmed" : booking.status,
+                  updatedAt: new Date().toISOString()
+                };
+              }
+              // For quotes (unbooked), previous draft quote is superseded/expired
               return {
                 ...booking,
                 isCancelled: true,
@@ -1769,6 +1781,15 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
             .map((b) => {
               const bToken = extractFeToken(b.tripId || b.tripNumber || b.quoteId || b.quoteReference || b.id);
               if (familyToken && bToken && bToken === familyToken && b.id !== persisted.id) {
+                if (b.isBooked || persisted.isBooked) {
+                  return {
+                    ...b,
+                    isBooked: true,
+                    isCancelled: false,
+                    status: b.status === "cancelled" ? "confirmed" : b.status,
+                    updatedAt: new Date().toISOString()
+                  };
+                }
                 return {
                   ...b,
                   isCancelled: true,
@@ -2002,6 +2023,14 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     setBookings((prev) => prev.map((booking) => {
       if (booking.id === persisted.id) return persisted;
       if (getQuoteIterationGroupKey(booking) !== familyKey) return booking;
+      // If this iteration was already booked, keep it booked and active (revisions add to base contract)
+      if (booking.isBooked) {
+        return {
+          ...booking,
+          quoteGroupId: persisted.quoteGroupId,
+          tripId: persisted.tripId,
+        };
+      }
       return {
         ...booking,
         quoteGroupId: persisted.quoteGroupId,
@@ -2696,7 +2725,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       revised,
       ...prev.map((booking) => {
         if (getQuoteIterationGroupKey(booking) === quoteFamilyKey && booking.id !== revised.id) {
-          if (!booking.isCancelled && (!booking.isBooked || isBooked)) {
+          if (!booking.isCancelled && !booking.isBooked && !isBooked) {
             return {
               ...booking,
               quoteGroupId: revised.quoteGroupId,
@@ -2705,13 +2734,15 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
               isCancelled: true,
               status: "cancelled" as const,
               quoteStatus: "expired" as const,
-              cancellationReason: `Superseded by booked revision ${revised.quoteId}`,
+              cancellationReason: `Superseded by revision ${revised.quoteId}`,
               supersededBy: revised.id,
               updatedAt: now
             };
           }
           return {
             ...booking,
+            isBooked: true,
+            isCancelled: false,
             quoteGroupId: revised.quoteGroupId,
             tripId: revised.tripId,
           };

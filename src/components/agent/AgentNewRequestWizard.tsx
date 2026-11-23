@@ -939,9 +939,9 @@ export default function AgentNewRequestWizard() {
                           <label className="text-xs text-gray-400 font-semibold uppercase tracking-wide block mb-2">
                             Transfer Requirements · Flight Leg
                           </label>
-                          <div className="flex flex-wrap items-center gap-4 text-sm text-gray-200">
+                          <div className="flex flex-wrap items-center gap-3 text-sm text-gray-200">
                             {["Leg 1", "Leg 2", "Leg 3"].map((legOption) => (
-                              <label key={legOption} className="flex items-center gap-2 cursor-pointer">
+                              <label key={legOption} className="flex items-center gap-2 cursor-pointer bg-white/5 px-2.5 py-1 rounded border border-white/10 hover:border-[#C9A052]/50 transition-colors">
                                 <input
                                   type="checkbox"
                                   checked={groundLegs.includes(legOption)}
@@ -951,15 +951,65 @@ export default function AgentNewRequestWizard() {
                                   }}
                                   className="accent-[#C9A052] rounded"
                                 />
-                                <span>{legOption}</span>
+                                <span className="text-xs">{legOption}</span>
                               </label>
                             ))}
+
+                            {/* Additional legs dynamically added */}
+                            {groundLegs
+                              .filter((l) => !["Leg 1", "Leg 2", "Leg 3"].includes(l))
+                              .map((customLeg) => (
+                                <span
+                                  key={customLeg}
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#C9A052]/20 border border-[#C9A052]/40 text-xs text-[#C9A052]"
+                                >
+                                  <span>{customLeg}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setGroundLegs(groundLegs.filter((l) => l !== customLeg))}
+                                    className="hover:text-white"
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              ))}
+
+                            {/* Dropdown Menu for Additional Leg */}
+                            <div className="flex items-center gap-1.5">
+                              <select
+                                value=""
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  if (val && !groundLegs.includes(val)) {
+                                    setGroundLegs([...groundLegs, val]);
+                                  }
+                                }}
+                                className="bg-[#0F1420] border border-white/20 rounded px-2.5 py-1 text-xs text-[#C9A052] focus:outline-none focus:border-[#C9A052] cursor-pointer"
+                              >
+                                <option value="" disabled>+ Add Additional Leg (Dropdown)...</option>
+                                <option value="Leg 2">Leg 2 (Return / Waypoint)</option>
+                                <option value="Leg 3">Leg 3 (Additional Leg)</option>
+                                <option value="Leg 4">Leg 4 (Subsequent Leg)</option>
+                                <option value="Leg 5">Leg 5 (Subsequent Leg)</option>
+                                <option value="All Legs">All Flight Legs</option>
+                              </select>
+                            </div>
+
                             <div className="flex items-center gap-2">
                               <span className="text-xs text-gray-400">Other:</span>
                               <input
                                 type="text"
                                 value={groundLegOther}
                                 onChange={(e) => setGroundLegOther(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" && groundLegOther.trim()) {
+                                    e.preventDefault();
+                                    if (!groundLegs.includes(groundLegOther.trim())) {
+                                      setGroundLegs([...groundLegs, groundLegOther.trim()]);
+                                      setGroundLegOther("");
+                                    }
+                                  }
+                                }}
                                 placeholder="Custom leg..."
                                 className="bg-[#0F1420] border border-white/20 rounded px-2.5 py-1 text-xs text-white focus:outline-none focus:border-[#C9A052] w-28"
                               />
@@ -1176,9 +1226,9 @@ export default function AgentNewRequestWizard() {
                           <label className="text-xs text-gray-400 font-semibold uppercase tracking-wide block mb-2">
                             Transfer Requirements · Flight Leg
                           </label>
-                          <div className="flex flex-wrap items-center gap-4 text-sm text-gray-200">
+                          <div className="flex flex-wrap items-center gap-3 text-sm text-gray-200">
                             {["Leg 1", "Leg 2", "Leg 3"].map((legOption) => (
-                              <label key={legOption} className="flex items-center gap-2 cursor-pointer">
+                              <label key={legOption} className="flex items-center gap-2 cursor-pointer bg-white/5 px-2.5 py-1 rounded border border-white/10 hover:border-[#C9A052]/50 transition-colors">
                                 <input
                                   type="checkbox"
                                   checked={heliLegs.includes(legOption)}
@@ -1188,15 +1238,65 @@ export default function AgentNewRequestWizard() {
                                   }}
                                   className="accent-[#C9A052] rounded"
                                 />
-                                <span>{legOption}</span>
+                                <span className="text-xs">{legOption}</span>
                               </label>
                             ))}
+
+                            {/* Additional legs dynamically added */}
+                            {heliLegs
+                              .filter((l) => !["Leg 1", "Leg 2", "Leg 3"].includes(l))
+                              .map((customLeg) => (
+                                <span
+                                  key={customLeg}
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#C9A052]/20 border border-[#C9A052]/40 text-xs text-[#C9A052]"
+                                >
+                                  <span>{customLeg}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setHeliLegs(heliLegs.filter((l) => l !== customLeg))}
+                                    className="hover:text-white"
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              ))}
+
+                            {/* Dropdown Menu for Additional Leg */}
+                            <div className="flex items-center gap-1.5">
+                              <select
+                                value=""
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  if (val && !heliLegs.includes(val)) {
+                                    setHeliLegs([...heliLegs, val]);
+                                  }
+                                }}
+                                className="bg-[#0F1420] border border-white/20 rounded px-2.5 py-1 text-xs text-[#C9A052] focus:outline-none focus:border-[#C9A052] cursor-pointer"
+                              >
+                                <option value="" disabled>+ Add Additional Leg (Dropdown)...</option>
+                                <option value="Leg 2">Leg 2 (Return / Waypoint)</option>
+                                <option value="Leg 3">Leg 3 (Additional Leg)</option>
+                                <option value="Leg 4">Leg 4 (Subsequent Leg)</option>
+                                <option value="Leg 5">Leg 5 (Subsequent Leg)</option>
+                                <option value="All Legs">All Flight Legs</option>
+                              </select>
+                            </div>
+
                             <div className="flex items-center gap-2">
                               <span className="text-xs text-gray-400">Other:</span>
                               <input
                                 type="text"
                                 value={heliLegOther}
                                 onChange={(e) => setHeliLegOther(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" && heliLegOther.trim()) {
+                                    e.preventDefault();
+                                    if (!heliLegs.includes(heliLegOther.trim())) {
+                                      setHeliLegs([...heliLegs, heliLegOther.trim()]);
+                                      setHeliLegOther("");
+                                    }
+                                  }
+                                }}
                                 placeholder="Custom leg..."
                                 className="bg-[#0F1420] border border-white/20 rounded px-2.5 py-1 text-xs text-white focus:outline-none focus:border-[#C9A052] w-28"
                               />

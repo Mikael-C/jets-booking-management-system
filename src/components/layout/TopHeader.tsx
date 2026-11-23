@@ -303,15 +303,7 @@ export default function TopHeader() {
         </button>
 
         {/* Primary Gold Action CTA */}
-        {role !== "agent" ? (
-          <button
-            onClick={() => setActiveNav("generate_quote")}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] text-xs font-extrabold transition-all shadow-md shadow-[#C9A052]/20 cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span className="hidden sm:inline">Generate Quote</span>
-          </button>
-        ) : (
+        {role === "agent" && (
           <button
             onClick={() => setActiveNav("request_quote")}
             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] text-xs font-extrabold transition-all shadow-md shadow-[#C9A052]/20 cursor-pointer"
