@@ -19,6 +19,7 @@ import {
   CheckCircle2,
   ExternalLink,
   ChevronRight,
+  ChevronDown,
   Filter,
   ArrowRight,
   User,
@@ -34,12 +35,14 @@ export default function QuotesView() {
     bookings,
     openDocument,
     convertQuoteToBooked,
+    setSelectedBookingForDetail,
     role
   } = useAviation();
 
   const [activeFilter, setActiveFilter] = useState<QuoteFilter>("open");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(null);
+  const [expandedRoots, setExpandedRoots] = useState<Record<string, boolean>>({});
 
   // Read any quote selected from creation flow
   React.useEffect(() => {
@@ -86,13 +89,14 @@ export default function QuotesView() {
     });
 
     // Return the latest version of each group, newest first (MOD-16)
-    const latestList: { booking: Booking; versionsCount: number; rootId: string }[] = [];
+    const latestList: { booking: Booking; versionsCount: number; versions: Booking[]; rootId: string }[] = [];
     rootMap.forEach((versions, rootId) => {
       const sorted = [...versions].sort((a, b) => (a.quoteVersion || 1) - (b.quoteVersion || 1));
       const latest = sorted[sorted.length - 1];
       latestList.push({
         booking: latest,
         versionsCount: versions.length,
+        versions: sorted,
         rootId
       });
     });
@@ -267,88 +271,171 @@ export default function QuotesView() {
                     </td>
                   </tr>
                 ) : (
-                  filteredRows.map(({ booking, versionsCount, rootId }) => {
+                  filteredRows.map(({ booking, versionsCount, versions, rootId }) => {
                     const isSelected = selectedItem?.booking.id === booking.id;
                     const quoteIdentifier = booking.quoteId || formatDocumentId("Q", rootId, booking.quoteVersion || 1);
                     const leg = booking.legs[0];
+                    const isExpanded = Boolean(expandedRoots[rootId]);
 
                     return (
-                      <tr
-                        key={booking.id}
-                        onClick={() => setSelectedQuoteId(booking.id)}
-                        onDoubleClick={() => handleOpenQuote(quoteIdentifier)}
-                        className={`clickable-row ${isSelected ? "bg-[var(--accent-soft)]" : ""}`}
-                      >
-                        <td>
-                          <Link
-                            href={`/quotes/${encodeURIComponent(quoteIdentifier)}`}
-                            className="font-mono font-bold text-xs block text-[var(--ink)] hover:text-[var(--accent)] hover:underline"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {renderFormattedId(quoteIdentifier)}
-                          </Link>
-                          <span className="font-mono text-[10px] text-[var(--muted)]">
-                            {versionsCount} {versionsCount === 1 ? "version" : "versions"}
-                          </span>
-                        </td>
-                        <td>
-                          <span className="font-mono text-xs font-semibold block whitespace-nowrap">
-                            {leg?.flightDate || "—"}
-                          </span>
-                          <span className="font-mono text-[11px] text-[var(--muted)]">
-                            {leg?.departureTimeLocal || "10:00"}
-                          </span>
-                        </td>
-                        <td>
-                          <span className="font-display font-bold text-sm block whitespace-nowrap">
-                            {leg?.origin?.icao || "LSGG"} ⇄ {leg?.destination?.icao || "EGSS"}
-                          </span>
-                          <span className="font-mono text-[10px] uppercase text-[var(--muted)]">
-                            {booking.tripType.replace("_", " ")}
-                          </span>
-                        </td>
-                        <td>
-                          <span className="font-sans font-semibold text-xs block text-[var(--ink)]">
-                            {booking.client?.fullName || "Private Client"}
-                          </span>
-                          <span className="font-mono text-[10px] text-[var(--muted)]">
-                            {booking.agentName ? `Curator: ${booking.agentName}` : booking.accountNumber}
-                          </span>
-                        </td>
-                        <td>
-                          <span className="font-sans text-xs font-medium block">
-                            {booking.aircraft?.name || "Mustang"}
-                          </span>
-                          <span className="font-mono text-[10px] text-[var(--muted)]">
-                            {booking.aircraft?.categoryLabel || "Entry-level"}
-                          </span>
-                        </td>
-                        <td className="font-mono font-bold text-xs">
-                          {leg?.paxCount || 4}
-                        </td>
-                        <td>
-                          <span className="font-mono font-bold text-xs text-[var(--ink)] whitespace-nowrap">
-                            {formatCurrency(booking.pricing.totalFlightPrice, booking.pricing.currency)}
-                          </span>
-                        </td>
-                        <td>
-                          <span className="font-mono text-[11px] text-[var(--amber)] font-medium">
-                            {booking.quoteExpirationDate ? "in 18h" : "48h"}
-                          </span>
-                        </td>
-                        <td>
-                          <StatusPill
-                            label={(booking.quoteStatus || booking.status || "open").toUpperCase()}
-                            variant={
-                              booking.quoteStatus === "accepted"
-                                ? "green"
-                                : booking.quoteStatus === "expired"
-                                ? "red"
-                                : "blue"
-                            }
-                          />
-                        </td>
-                      </tr>
+                      <React.Fragment key={booking.id}>
+                        <tr
+                          onClick={() => setSelectedQuoteId(booking.id)}
+                          onDoubleClick={() => handleOpenQuote(quoteIdentifier)}
+                          className={`clickable-row ${isSelected ? "bg-[var(--accent-soft)]" : ""}`}
+                        >
+                          <td>
+                            <Link
+                              href={`/quotes/${encodeURIComponent(quoteIdentifier)}`}
+                              className="font-mono font-bold text-xs block text-[var(--ink)] hover:text-[var(--accent)] hover:underline"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {renderFormattedId(quoteIdentifier)}
+                            </Link>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <span className="font-mono text-[10px] text-[var(--muted)]">
+                                {versionsCount} {versionsCount === 1 ? "version" : "versions"}
+                              </span>
+                              {versionsCount > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setExpandedRoots((prev) => ({ ...prev, [rootId]: !prev[rootId] }));
+                                  }}
+                                  className="text-[10px] font-mono text-[var(--accent)] hover:underline flex items-center gap-0.5 ml-1"
+                                >
+                                  <span>{isExpanded ? "Hide" : "Show"}</span>
+                                  <ChevronDown className={`w-3 h-3 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                          <td>
+                            <span className="font-mono text-xs font-semibold block whitespace-nowrap">
+                              {leg?.flightDate || "—"}
+                            </span>
+                            <span className="font-mono text-[11px] text-[var(--muted)]">
+                              {leg?.departureTimeLocal || "10:00"}
+                            </span>
+                          </td>
+                          <td>
+                            <span className="font-display font-bold text-sm block whitespace-nowrap">
+                              {leg?.origin?.icao || "LSGG"} ⇄ {leg?.destination?.icao || "EGSS"}
+                            </span>
+                            <span className="font-mono text-[10px] uppercase text-[var(--muted)]">
+                              {booking.tripType.replace("_", " ")}
+                            </span>
+                          </td>
+                          <td>
+                            <span className="font-sans font-semibold text-xs block text-[var(--ink)]">
+                              {booking.client?.fullName || "Private Client"}
+                            </span>
+                            <span className="font-mono text-[10px] text-[var(--muted)]">
+                              {booking.agentName ? `Curator: ${booking.agentName}` : booking.accountNumber}
+                            </span>
+                          </td>
+                          <td>
+                            <span className="font-sans text-xs font-medium block">
+                              {booking.aircraft?.name || "Mustang"}
+                            </span>
+                            <span className="font-mono text-[10px] text-[var(--muted)]">
+                              {booking.aircraft?.categoryLabel || "Entry-level"}
+                            </span>
+                          </td>
+                          <td className="font-mono font-bold text-xs">
+                            {leg?.paxCount || 4}
+                          </td>
+                          <td>
+                            <span className="font-mono font-bold text-xs text-[var(--ink)] whitespace-nowrap">
+                              {formatCurrency(booking.pricing.totalFlightPrice, booking.pricing.currency)}
+                            </span>
+                          </td>
+                          <td>
+                            <span className="font-mono text-[11px] text-[var(--amber)] font-medium">
+                              {booking.quoteExpirationDate ? "in 18h" : "48h"}
+                            </span>
+                          </td>
+                          <td>
+                            <StatusPill
+                              label={(booking.quoteStatus || booking.status || "open").toUpperCase()}
+                              variant={
+                                booking.quoteStatus === "accepted"
+                                  ? "green"
+                                  : booking.quoteStatus === "expired"
+                                  ? "red"
+                                  : "blue"
+                              }
+                            />
+                          </td>
+                        </tr>
+
+                        {/* Nested Revisions Sub-row */}
+                        {isExpanded && versionsCount > 1 && (
+                          <tr className="bg-amber-50/25 border-b border-[var(--line)]">
+                            <td colSpan={9} className="p-3 pl-8">
+                              <div className="space-y-1.5 pl-3 border-l-2 border-[var(--accent)]">
+                                <span className="text-[10px] font-mono font-bold uppercase text-[var(--muted)] block">
+                                  All Revisions for {renderFormattedId(quoteIdentifier)}:
+                                </span>
+                                <div className="space-y-1">
+                                  {versions.slice().reverse().map((ver, vIdx) => {
+                                    const isCurrent = (ver.quoteVersion || 1) === (booking.quoteVersion || 1);
+                                    const vId = ver.quoteId || formatDocumentId("Q", rootId, ver.quoteVersion || 1);
+                                    return (
+                                      <div
+                                        key={ver.id || vIdx}
+                                        className="flex items-center justify-between py-1.5 px-3 rounded bg-white border border-[var(--line)] text-xs"
+                                      >
+                                        <div className="flex items-center gap-3">
+                                          <span className="font-mono font-bold text-xs">
+                                            {renderFormattedId(vId)}
+                                          </span>
+                                          <span
+                                            className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                                              isCurrent
+                                                ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                                                : "bg-red-100 text-red-800 border border-red-300"
+                                            }`}
+                                          >
+                                            {isCurrent ? "ACTIVE" : "CANCELLED"}
+                                          </span>
+                                          <span className="text-[11px] text-[var(--muted)]">
+                                            {ver.legs[0]?.flightDate || "—"} • {ver.aircraft?.name || "Aircraft"}
+                                          </span>
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                          <span className="font-mono font-bold">
+                                            {formatCurrency(ver.pricing?.totalFlightPrice || 0, ver.pricing?.currency)}
+                                          </span>
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              openDocument(ver, "quotation");
+                                            }}
+                                            className="text-[11px] font-mono text-[var(--accent)] hover:underline flex items-center gap-1"
+                                          >
+                                            <FileText className="w-3 h-3" />
+                                            <span>Generate PDF</span>
+                                          </button>
+                                          <Link
+                                            href={`/quotes/${encodeURIComponent(vId)}`}
+                                            onClick={(e) => e.stopPropagation()}
+                                            className="text-[11px] font-mono text-[var(--muted)] hover:text-[var(--ink)] underline ml-1"
+                                          >
+                                            View
+                                          </Link>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
                     );
                   })
                 )}
@@ -439,6 +526,44 @@ export default function QuotesView() {
               </div>
             </div>
 
+            {/* Revisions in Preview Panel */}
+            {selectedItem.versions && selectedItem.versions.length > 1 && (
+              <div className="space-y-2 pt-2 border-t border-[var(--line)]">
+                <span className="text-[11px] font-mono font-bold text-[var(--muted)] uppercase block">
+                  Quote Revisions ({selectedItem.versions.length})
+                </span>
+                <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                  {selectedItem.versions.slice().reverse().map((ver, idx) => {
+                    const isLatest = (ver.quoteVersion || 1) === (selectedItem.booking.quoteVersion || 1);
+                    const vId = ver.quoteId || formatDocumentId("Q", selectedItem.rootId, ver.quoteVersion || 1);
+                    return (
+                      <div key={ver.id || idx} className="flex items-center justify-between p-2 rounded bg-[var(--paper)] text-xs font-mono">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-[11px]">{renderFormattedId(vId)}</span>
+                          <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                            isLatest ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"
+                          }`}>
+                            {isLatest ? "ACTIVE" : "CANCELLED"}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px]">{formatCurrency(ver.pricing?.totalFlightPrice || 0, ver.pricing?.currency)}</span>
+                          <button
+                            type="button"
+                            onClick={() => openDocument(ver, "quotation")}
+                            className="text-[10px] text-[var(--accent)] hover:underline"
+                            title="Generate PDF"
+                          >
+                            PDF
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Actions: Quote PDF, Revise, Book */}
             <div className="space-y-2 pt-2 border-t border-[var(--line)]">
               <div className="grid grid-cols-2 gap-2">
@@ -461,7 +586,14 @@ export default function QuotesView() {
 
               <button
                 onClick={async () => {
-                  await convertQuoteToBooked(selectedItem.booking.id, selectedItem.booking);
+                  setSelectedBookingForDetail(null);
+                  try {
+                    await convertQuoteToBooked(selectedItem.booking.id, selectedItem.booking);
+                  } catch (e) {
+                    console.error("Booking conversion notice:", e);
+                  }
+                  setSelectedBookingForDetail(null);
+                  router.push("/bookings");
                 }}
                 className="w-full btn-primary text-xs justify-center"
               >

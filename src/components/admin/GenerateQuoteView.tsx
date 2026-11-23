@@ -166,7 +166,7 @@ function updateQuoteLegArrival(leg: QuoteLegInput): QuoteLegInput {
 }
 
 export default function GenerateQuoteView() {
-  const { clients, addBooking, openDocument, prefillClientForQuote, setPrefillClientForQuote, currentUser, addAuditEntry, operators, setActiveNav } = useAviation();
+  const { clients, addBooking, openDocument, prefillClientForQuote, setPrefillClientForQuote, currentUser, addAuditEntry, operators, addOperator, setActiveNav } = useAviation();
 
   // Operator selection (NF-08: Add unlisted operator with "documents pending" flag)
   const [selectedOperatorId, setSelectedOperatorId] = useState<string>("op-1");
@@ -243,18 +243,37 @@ export default function GenerateQuoteView() {
     return list;
   }, [operators, customOperators]);
 
-  // Handler for adding unlisted operator (NF-08)
+  // Handler for adding unlisted operator (NF-08 / Auto-save to database)
   const handleAddCustomOperator = (e: React.FormEvent) => {
     e.preventDefault();
     if (!unlistedOperatorName.trim()) return;
-    const newId = `custom-op-${Date.now()}`;
-    const newOp = {
+    const newId = `op-${Date.now()}`;
+    const opName = unlistedOperatorName.trim();
+    const aoc = unlistedOperatorAoc.trim() || `AOC-${Math.floor(1000 + Math.random() * 9000)}`;
+    const country = unlistedOperatorCountry.trim() || "Malta";
+    const newOp: any = {
       id: newId,
-      name: unlistedOperatorName.trim(),
-      country: unlistedOperatorCountry.trim() || "Malta",
-      aocNumber: unlistedOperatorAoc.trim() || `AOC-${Math.floor(1000 + Math.random() * 9000)}`,
-      documentsPending: true
+      name: opName,
+      legalName: opName,
+      tradingName: opName,
+      country: country,
+      aocNumber: aoc,
+      aocAuthority: country,
+      aocExpiry: "2028-12-31",
+      baseIcao: "LSGG",
+      salesContact: "Charter Desk",
+      salesEmail: `ops@${opName.toLowerCase().replace(/[^a-z0-9]/g, "")}.com`,
+      opsPhone: "+41 22 700 0000",
+      opsEmail: `ops@${opName.toLowerCase().replace(/[^a-z0-9]/g, "")}.com`,
+      status: "approved",
+      documentsPending: true,
+      notes: "Unlisted operator - Documents pending",
+      qualificationChecklist: [
+        { id: "doc-1", docType: "Air Operator Certificate (AOC)", status: "pending", expiryDate: "2028-12-31" }
+      ],
+      createdAt: new Date().toISOString()
     };
+    addOperator(newOp);
     setCustomOperators((prev) => [...prev, newOp]);
     setSelectedOperatorId(newId);
     setUnlistedOperatorName("");

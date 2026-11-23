@@ -4,8 +4,8 @@ import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAviation } from "@/lib/aviationContext";
-import { Booking, FlightLeg, TripType, Aircraft } from "@/types/aviation";
-import { generateTripRootId, formatTripVersion } from "@/lib/idGenerator";
+import { Booking, FlightLeg, TripType, Aircraft, OperatorRecord } from "@/types/aviation";
+import { generateTripRootId, formatTripVersion, extractFeToken, pad3, getLinkedIds } from "@/lib/idGenerator";
 import { formatCurrency } from "@/lib/pricingCalculator";
 import { fleetData } from "@/data/fleet";
 import { airportsData, findAirportByCode } from "@/data/airports";
@@ -83,6 +83,19 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
   const searchParams = useSearchParams();
   const reqId = fromRequestId || searchParams.get("fromRequest") || searchParams.get("requestId");
 
+  const effectiveReviseId =
+    reviseTripId ||
+    searchParams.get("reviseQuote") ||
+    searchParams.get("reviseTrip") ||
+    searchParams.get("reviseTripId") ||
+    searchParams.get("revise") ||
+    searchParams.get("tripId") ||
+    undefined;
+
+  const effectiveMode =
+    mode ||
+    (searchParams.get("mode") === "booking" || searchParams.get("reviseTrip") ? "booking" : undefined);
+
   const {
     bookings,
     accounts,
@@ -92,32 +105,56 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
     settings,
     addBooking,
     updateAgentRequestStatus,
-    sendMessage
+    sendMessage,
+    addOperator
   } = useAviation();
 
   // Find source if revising or creating from request
   const sourceTrip = useMemo(() => {
-    if (!reviseTripId) return undefined;
-    const clean = reviseTripId.toLowerCase();
-    return bookings.find(
-      (b) =>
-        b.id.toLowerCase() === clean ||
-        b.tripNumber?.toLowerCase() === clean ||
-        b.tripId?.toLowerCase() === clean ||
-        b.id.toLowerCase().replace("booking-", "") === clean.replace("booking-", "") ||
-        b.tripId?.toLowerCase() === clean.replace("booking-", "").split("-")[0]
-    );
-  }, [bookings, reviseTripId]);
+    if (!effectiveReviseId) return undefined;
+    const clean = effectiveReviseId.trim().toLowerCase();
+    const token = extractFeToken(effectiveReviseId);
+    return bookings.find((b) => {
+      const bId = (b.id || "").toLowerCase();
+      const bTripNum = (b.tripNumber || "").toLowerCase();
+      const bTripId = (b.tripId || "").toLowerCase();
+      const bQuoteId = (b.quoteId || "").toLowerCase();
+      const bQuoteRef = (b.quoteReference || "").toLowerCase();
+
+      if (
+        bId === clean ||
+        bTripNum === clean ||
+        bTripId === clean ||
+        bQuoteId === clean ||
+        bQuoteRef === clean
+      ) {
+        return true;
+      }
+      if (
+        bId.replace(/^booking-/i, "").replace(/^trip-/i, "") ===
+        clean.replace(/^booking-/i, "").replace(/^trip-/i, "")
+      ) {
+        return true;
+      }
+      if (token) {
+        const bToken = extractFeToken(b.tripId || b.tripNumber || b.quoteId || b.quoteReference || b.id);
+        if (bToken && bToken.toUpperCase() === token.toUpperCase()) {
+          return true;
+        }
+      }
+      return false;
+    });
+  }, [bookings, effectiveReviseId]);
 
   const isBookingRevision = useMemo(() => {
-    if (mode === "booking") return true;
+    if (effectiveMode === "booking") return true;
     if (!sourceTrip) return false;
     return Boolean(
       sourceTrip.isBooked ||
       ["booked", "confirmed", "paid", "flown", "dispatched"].includes(sourceTrip.status) ||
       sourceTrip.id.toLowerCase().startsWith("booking-")
     );
-  }, [mode, sourceTrip]);
+  }, [effectiveMode, sourceTrip]);
 
   const sourceRequest = useMemo(() => {
     if (!reqId) return undefined;
@@ -133,11 +170,15 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
   // Root ID and next version
   const [rootId] = useState<string>(() => {
     if (sourceTrip) {
+      const token = extractFeToken(sourceTrip.tripId || sourceTrip.tripNumber || sourceTrip.quoteId || sourceTrip.quoteReference || sourceTrip.id);
+      if (token) return token;
       const raw = sourceTrip.tripId || sourceTrip.tripNumber || sourceTrip.id;
-      return raw.replace(/^booking-/i, "").replace(/^trip-/i, "").split("-")[0].toUpperCase();
+      return raw.replace(/^booking-/i, "").replace(/^trip-/i, "").replace(/^quo-/i, "").split("-")[0].toUpperCase();
     }
     if (sourceRequest?.createdTripId) {
-      return sourceRequest.createdTripId.replace(/^booking-/i, "").replace(/^trip-/i, "").split("-")[0].toUpperCase();
+      const token = extractFeToken(sourceRequest.createdTripId);
+      if (token) return token;
+      return sourceRequest.createdTripId.replace(/^booking-/i, "").replace(/^trip-/i, "").replace(/^quo-/i, "").split("-")[0].toUpperCase();
     }
     return generateTripRootId();
   });
@@ -145,12 +186,15 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
   const nextVersionNum = useMemo(() => {
     if (!sourceTrip) return 1;
     const existing = bookings.filter((b) => {
+      const bToken = extractFeToken(b.tripId || b.tripNumber || b.quoteId || b.quoteReference || b.id);
+      if (bToken && bToken.toUpperCase() === rootId.toUpperCase()) return true;
       const bRoot = (b.tripId || b.tripNumber || b.id)
         .replace(/^booking-/i, "")
         .replace(/^trip-/i, "")
+        .replace(/^quo-/i, "")
         .split("-")[0]
         .toUpperCase();
-      return bRoot === rootId;
+      return bRoot === rootId.toUpperCase();
     });
     const maxVer = existing.reduce(
       (max, b) => Math.max(max, b.quoteVersion || 1),
@@ -159,7 +203,9 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
     return maxVer + 1;
   }, [bookings, rootId, sourceTrip]);
 
-  const versionLabel = formatTripVersion(rootId, nextVersionNum);
+  const versionLabel = isBookingRevision
+    ? formatTripVersion(rootId, nextVersionNum)
+    : `QUO-${rootId}-${pad3(nextVersionNum)}`;
 
   // Form State
   // 1. Client
@@ -351,8 +397,68 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
     return fleetData[0];
   });
   const [operatorFlightCost, setOperatorFlightCost] = useState<number>(() => {
+    if (isBookingRevision) return 0;
     return sourceTrip?.pricing ? Math.round(sourceTrip.pricing.totalFlightPrice * 0.85) : 11200;
   });
+
+  // Add Operator Modal / Inline flow state (NF-08 / Auto-save to database)
+  const [isAddOperatorOpen, setIsAddOperatorOpen] = useState(false);
+  const [newOpLegalName, setNewOpLegalName] = useState("");
+  const [newOpTradingName, setNewOpTradingName] = useState("");
+  const [newOpAoc, setNewOpAoc] = useState("");
+  const [newOpCountry, setNewOpCountry] = useState("");
+  const [newOpBaseIcao, setNewOpBaseIcao] = useState("");
+  const [newOpEmail, setNewOpEmail] = useState("");
+  const [newOpPhone, setNewOpPhone] = useState("");
+  const [operatorFeedback, setOperatorFeedback] = useState<string | null>(null);
+
+  const handleSaveNewOperator = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!newOpLegalName.trim()) return;
+
+    const opName = newOpLegalName.trim();
+    const tradeName = newOpTradingName.trim() || opName;
+    const aoc = newOpAoc.trim() || `AOC-${Math.floor(1000 + Math.random() * 9000)}`;
+    const country = newOpCountry.trim() || "Austria";
+    const baseIcao = newOpBaseIcao.trim().toUpperCase() || "LSGG";
+    const email = newOpEmail.trim() || `ops@${opName.toLowerCase().replace(/[^a-z0-9]/g, "") || "carrier"}.com`;
+    const phone = newOpPhone.trim() || "+43 1 234 5678";
+
+    const newOp: OperatorRecord = {
+      id: `op-${Date.now()}`,
+      legalName: opName,
+      tradingName: tradeName,
+      aocNumber: aoc,
+      aocAuthority: country,
+      aocExpiry: "2028-12-31",
+      baseIcao: baseIcao,
+      salesContact: "Charter Desk",
+      salesEmail: email,
+      opsPhone: phone,
+      opsEmail: email,
+      status: "approved",
+      qualificationChecklist: [
+        { id: "doc-1", docType: "Air Operator Certificate (AOC)", status: "pass", expiryDate: "2028-12-31" },
+        { id: "doc-2", docType: "Operating License (OL)", status: "pass", expiryDate: "2028-12-31" },
+        { id: "doc-3", docType: "Fleet Insurance Policy", status: "pass", expiryDate: "2028-12-31" },
+        { id: "doc-4", docType: "Air Operator Security Program (AOSP)", status: "pass", expiryDate: "2028-12-31" }
+      ],
+      createdAt: new Date().toISOString()
+    };
+
+    addOperator(newOp);
+    setSelectedOperatorId(newOp.id);
+    setIsAddOperatorOpen(false);
+    setNewOpLegalName("");
+    setNewOpTradingName("");
+    setNewOpAoc("");
+    setNewOpCountry("");
+    setNewOpBaseIcao("");
+    setNewOpEmail("");
+    setNewOpPhone("");
+    setOperatorFeedback(`Operator "${tradeName}" successfully saved to database and selected.`);
+    setTimeout(() => setOperatorFeedback(null), 5000);
+  };
 
   // Aircraft photos picker state (Step 04 Photos)
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -737,14 +843,17 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
       });
     });
 
+    const linked = getLinkedIds(rootId, nextVersionNum);
     const newBooking: Booking = {
       id: isBookingRevision
         ? `booking-${rootId.toLowerCase()}-v${nextVersionNum}`
         : `trip-${rootId.toLowerCase()}-v${nextVersionNum}`,
-      tripId: rootId,
-      tripNumber: versionLabel,
-      quoteReference: versionLabel,
-      invoiceNumber: sourceTrip?.invoiceNumber || `INV-${rootId}-01`,
+      tripId: `TRI-${rootId}`,
+      tripNumber: formatTripVersion(rootId, nextVersionNum),
+      quoteId: isBookingRevision ? (sourceTrip?.quoteId || linked.quoteId) : linked.quoteId,
+      quoteReference: linked.quoteId,
+      quoteGroupId: `quote-group-${rootId.toLowerCase()}`,
+      invoiceNumber: sourceTrip?.invoiceNumber || linked.invoiceNumber,
       accountNumber: activeAccount?.accountNumber || "ACC-21737",
       contractDate: sourceTrip?.contractDate || new Date().toLocaleDateString("de-DE"),
       quoteExpirationDate: validUntil || "48 hours from issuance",
@@ -755,7 +864,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
       paymentStatus: isBookingRevision
         ? sourceTrip?.paymentStatus || "fully_paid"
         : "unpaid",
-      bookingRevisionId: isBookingRevision ? versionLabel : undefined,
+      bookingRevisionId: isBookingRevision ? formatTripVersion(rootId, nextVersionNum) : undefined,
       tripType,
       aircraft: {
         ...selectedAircraft,
@@ -867,7 +976,11 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
       sessionStorage.setItem("orbelo_selected_quote_id", newBooking.id);
     }
 
-    router.push("/quotes");
+    if (isBookingRevision) {
+      router.push(`/trips/${rootId}/revisions`);
+    } else {
+      router.push("/quotes");
+    }
   };
 
   const selectedOperator = operators.find((op) => op.id === selectedOperatorId) || operators[0];
@@ -1430,7 +1543,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
             </span>
           </div>
           <h1 className="text-2xl font-bold font-display text-[var(--ink)] m-0">
-            {reviseTripId
+            {effectiveReviseId
               ? isBookingRevision
                 ? `Revise Booking (${versionLabel})`
                 : `Revise Quotation (${versionLabel})`
@@ -1442,9 +1555,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
           <Link
             href={
               isBookingRevision
-                ? reviseTripId
-                  ? `/trips/${rootId}/itinerary`
-                  : "/bookings"
+                ? `/trips/${rootId}/revisions`
                 : "/quotes"
             }
             className="btn-secondary text-xs"
@@ -2039,28 +2150,176 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
 
           {/* SECTION 4: OPERATOR OFFER */}
           <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-4">
-            <div className="flex items-center gap-2 border-b border-[var(--line)] pb-2.5">
-              <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-[var(--wf)] text-[var(--ink)]">
-                04
-              </span>
-              <h3 className="text-base font-bold font-display text-[var(--ink)] m-0">
-                Operator Sourcing & Flight Rate
-              </h3>
+            <div className="flex items-center justify-between border-b border-[var(--line)] pb-2.5">
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-[var(--wf)] text-[var(--ink)]">
+                  04
+                </span>
+                <h3 className="text-base font-bold font-display text-[var(--ink)] m-0">
+                  Operator Sourcing & Flight Rate
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAddOperatorOpen((prev) => !prev)}
+                className="btn-secondary text-xs flex items-center gap-1.5 py-1 px-2.5"
+              >
+                <Plus className="w-3.5 h-3.5 text-[var(--accent)]" />
+                <span>Add Operator</span>
+              </button>
             </div>
+
+            {operatorFeedback && (
+              <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg text-xs flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                <span>{operatorFeedback}</span>
+              </div>
+            )}
+
+            {/* Inline Add Operator Form (Saves automatically to database) */}
+            {isAddOperatorOpen && (
+              <div className="p-4 bg-amber-50/60 border border-amber-200 rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Building2 className="w-4 h-4 text-amber-800" />
+                    <span className="text-xs font-bold font-mono uppercase text-amber-950">
+                      Add New Operator (Auto-saves to Database)
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsAddOperatorOpen(false)}
+                    className="p-1 text-gray-500 hover:text-gray-800 rounded"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-mono font-bold text-amber-900 mb-1">
+                      Operator Legal Name *
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. VistaJet Limited"
+                      value={newOpLegalName}
+                      onChange={(e) => setNewOpLegalName(e.target.value)}
+                      className="w-full bg-white border border-[#E0DAD0] rounded-lg px-3 py-1.5 text-xs text-[#0F1420] focus:outline-none focus:border-[var(--accent)]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-mono font-bold text-amber-900 mb-1">
+                      Trading / Brand Name
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. VistaJet"
+                      value={newOpTradingName}
+                      onChange={(e) => setNewOpTradingName(e.target.value)}
+                      className="w-full bg-white border border-[#E0DAD0] rounded-lg px-3 py-1.5 text-xs text-[#0F1420] focus:outline-none focus:border-[var(--accent)]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-mono font-bold text-amber-900 mb-1">
+                      AOC Number *
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. MT-03 / AOC-8921"
+                      value={newOpAoc}
+                      onChange={(e) => setNewOpAoc(e.target.value)}
+                      className="w-full bg-white border border-[#E0DAD0] rounded-lg px-3 py-1.5 text-xs text-[#0F1420] focus:outline-none focus:border-[var(--accent)]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-mono font-bold text-amber-900 mb-1">
+                      Country / Jurisdiction
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Malta / TM-CAD"
+                      value={newOpCountry}
+                      onChange={(e) => setNewOpCountry(e.target.value)}
+                      className="w-full bg-white border border-[#E0DAD0] rounded-lg px-3 py-1.5 text-xs text-[#0F1420] focus:outline-none focus:border-[var(--accent)]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-mono font-bold text-amber-900 mb-1">
+                      Base Airport (ICAO)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. LMML"
+                      value={newOpBaseIcao}
+                      onChange={(e) => setNewOpBaseIcao(e.target.value.toUpperCase())}
+                      className="w-full bg-white border border-[#E0DAD0] rounded-lg px-3 py-1.5 text-xs text-[#0F1420] uppercase focus:outline-none focus:border-[var(--accent)]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-mono font-bold text-amber-900 mb-1">
+                      Ops Contact Email
+                    </label>
+                    <input
+                      type="email"
+                      placeholder="ops@vistajet.com"
+                      value={newOpEmail}
+                      onChange={(e) => setNewOpEmail(e.target.value)}
+                      className="w-full bg-white border border-[#E0DAD0] rounded-lg px-3 py-1.5 text-xs text-[#0F1420] focus:outline-none focus:border-[var(--accent)]"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-amber-200/70">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddOperatorOpen(false)}
+                    className="px-3 py-1 text-xs text-gray-600 hover:text-black"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSaveNewOperator()}
+                    disabled={!newOpLegalName.trim()}
+                    className="btn-primary text-xs flex items-center gap-1.5 py-1.5 px-3 disabled:opacity-50"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    <span>Save &amp; Select Operator</span>
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-sans">
               <div>
-                <label className="block text-xs font-mono font-bold text-[var(--muted)] mb-1">Air Carrier / Operator</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-mono font-bold text-[var(--muted)]">Air Carrier / Operator</label>
+                  <button
+                    type="button"
+                    onClick={() => setIsAddOperatorOpen(true)}
+                    className="text-[11px] font-mono text-[var(--accent)] hover:underline flex items-center gap-0.5"
+                  >
+                    + Add New
+                  </button>
+                </div>
                 <select
                   value={selectedOperatorId}
-                  onChange={(e) => setSelectedOperatorId(e.target.value)}
+                  onChange={(e) => {
+                    if (e.target.value === "__add_new__") {
+                      setIsAddOperatorOpen(true);
+                    } else {
+                      setSelectedOperatorId(e.target.value);
+                    }
+                  }}
                   className="w-full bg-[var(--paper)] border border-[var(--line)] rounded-lg px-3 py-2 text-xs text-[var(--ink)]"
                 >
                   {operators.map((op) => (
                     <option key={op.id} value={op.id}>
-                      {op.tradingName} ({op.aocNumber})
+                      {op.tradingName || op.legalName} ({op.aocNumber})
                     </option>
                   ))}
+                  <option value="__add_new__">+ Add New Operator...</option>
                 </select>
               </div>
 
@@ -2116,7 +2375,9 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
 
               <div className="sm:col-span-2">
                 <label className="block text-xs font-mono font-bold text-[var(--muted)] mb-1">
-                  Direct Flight Cost from Operator (EUR Net)
+                  {isBookingRevision
+                    ? "Additional Flight Cost from Operator (EUR Net) — enter €0 if flight schedule is unchanged"
+                    : "Direct Flight Cost from Operator (EUR Net)"}
                 </label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 font-mono font-bold text-sm text-[var(--muted)]">€</span>
@@ -2127,6 +2388,11 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                     className="w-full bg-[var(--paper)] border border-[var(--line)] rounded-lg pl-8 pr-3 py-2 text-sm font-mono font-black text-[var(--ink)]"
                   />
                 </div>
+                {isBookingRevision && (
+                  <p className="mt-1 text-[11px] text-gray-500 font-mono">
+                    * Booking revision: previous booked amount is already contracted. Enter additional flight fees if applicable.
+                  </p>
+                )}
               </div>
 
               {/* Step 04 Photos Row */}
@@ -2609,9 +2875,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                 onClick={() =>
                   router.push(
                     isBookingRevision
-                      ? reviseTripId
-                        ? `/trips/${rootId}/itinerary`
-                        : "/bookings"
+                      ? `/trips/${rootId}/revisions`
                       : "/quotes"
                   )
                 }

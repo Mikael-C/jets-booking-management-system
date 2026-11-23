@@ -2,12 +2,12 @@
 
 import React, { useState, useMemo } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
 import { useAviation } from "@/lib/aviationContext";
 import { Booking } from "@/types/aviation";
 import { formatCurrency } from "@/lib/pricingCalculator";
-import { renderFormattedId, formatDocumentId } from "@/lib/idGenerator";
+import { renderFormattedId, formatDocumentId, extractFeToken } from "@/lib/idGenerator";
 import StatusPill from "@/components/ui/StatusPill";
 import {
   FileText,
@@ -34,8 +34,13 @@ import {
 export default function QuoteDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const rawId = (params?.id as string) || "";
   const decodedId = decodeURIComponent(rawId);
+
+  const [activeTab, setActiveTab] = useState<"overview" | "revisions">(() => {
+    return searchParams.get("tab") === "revisions" ? "revisions" : "overview";
+  });
 
   const {
     bookings,
@@ -61,6 +66,25 @@ export default function QuoteDetailPage() {
       return qId === target || qRef === target || bId === target || tNum === target || tId === target;
     });
   }, [bookings, decodedId]);
+
+  const quoteRevisions = useMemo(() => {
+    if (!quote) return [];
+    const feToken = extractFeToken(quote.tripId || quote.tripNumber || quote.quoteReference || quote.quoteId || quote.id);
+    return bookings
+      .filter((b) => {
+        if (b.isBooked) return false;
+        const bToken = extractFeToken(b.tripId || b.tripNumber || b.quoteReference || b.quoteId || b.id);
+        if (feToken && bToken && feToken.toUpperCase() === bToken.toUpperCase()) return true;
+        if (b.tripId && quote.tripId && b.tripId.toUpperCase() === quote.tripId.toUpperCase()) return true;
+        return b.id === quote.id;
+      })
+      .sort((a, b) => (b.quoteVersion || 1) - (a.quoteVersion || 1));
+  }, [bookings, quote]);
+
+  const latestQuoteVersion = useMemo(() => {
+    if (quoteRevisions.length === 0) return quote?.quoteVersion || 1;
+    return Math.max(...quoteRevisions.map((r) => r.quoteVersion || 1));
+  }, [quoteRevisions, quote]);
 
   if (!quote) {
     return (
@@ -208,7 +232,141 @@ export default function QuoteDetailPage() {
           <span className="font-mono text-[11px] font-bold text-slate-500 uppercase tracking-wide">STAGE: QUOTED</span>
         </div>
 
-        {/* Two-Column Grid: Quote Details & Client/Pricing */}
+        {/* Tab Navigation (Overview & Revisions) */}
+        <div className="flex items-center gap-2 border-b border-[var(--line)]">
+          <button
+            type="button"
+            onClick={() => setActiveTab("overview")}
+            className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors flex items-center gap-2 ${
+              activeTab === "overview"
+                ? "border-[var(--accent)] text-[var(--accent)] font-bold"
+                : "border-transparent text-[var(--muted)] hover:text-[var(--ink)]"
+            }`}
+          >
+            <FileText className="w-4 h-4" />
+            <span>Overview</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("revisions")}
+            className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors flex items-center gap-2 ${
+              activeTab === "revisions"
+                ? "border-[var(--accent)] text-[var(--accent)] font-bold"
+                : "border-transparent text-[var(--muted)] hover:text-[var(--ink)]"
+            }`}
+          >
+            <RotateCcw className="w-4 h-4" />
+            <span>Revisions</span>
+            <span
+              className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+                activeTab === "revisions" ? "bg-amber-100 text-amber-800" : "bg-gray-100 text-gray-600"
+              }`}
+            >
+              {quoteRevisions.length}
+            </span>
+          </button>
+        </div>
+
+        {/* Tab Content: Revisions */}
+        {activeTab === "revisions" && (
+          <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-bold font-display text-[var(--ink)] m-0">Version Control Timeline</h3>
+                <p className="text-xs text-[var(--muted)]">All historical quote iterations newest first. Older versions remain frozen and marked cancelled.</p>
+              </div>
+              <button
+                type="button"
+                onClick={handleReviseQuote}
+                className="btn-secondary text-xs flex items-center gap-1.5"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Create New Revision</span>
+              </button>
+            </div>
+
+            <div className="tablewrap">
+              <table className="dense-table">
+                <thead>
+                  <tr>
+                    <th>Version</th>
+                    <th>Type</th>
+                    <th>Route &amp; Aircraft</th>
+                    <th>Total Amount</th>
+                    <th>State</th>
+                    <th>Documents</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {quoteRevisions.map((rev) => {
+                    const isLatest = (rev.quoteVersion || 1) === latestQuoteVersion;
+                    const revDocId = rev.quoteId || formatDocumentId("Q", quote.tripId || "FE1001", rev.quoteVersion || 1);
+                    const revLeg = rev.legs[0];
+
+                    return (
+                      <tr key={rev.id}>
+                        <td className="font-mono font-bold whitespace-nowrap">
+                          {renderFormattedId(revDocId)}
+                          {rev.id === quote.id && (
+                            <span className="ml-2 text-[10px] font-sans px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">Viewing</span>
+                          )}
+                        </td>
+                        <td>
+                          <span className="text-xs font-semibold">Charter Quotation</span>
+                        </td>
+                        <td>
+                          <span className="font-display font-bold text-xs block whitespace-nowrap">
+                            {revLeg?.origin?.icao || "—"} ⇄ {revLeg?.destination?.icao || "—"}
+                          </span>
+                          <span className="font-mono text-[10px] text-[var(--muted)]">
+                            {rev.aircraft?.name || "Private Jet"}
+                          </span>
+                        </td>
+                        <td className="font-mono font-bold whitespace-nowrap">
+                          {formatCurrency(rev.pricing?.totalFlightPrice || 0, rev.pricing?.currency)}
+                        </td>
+                        <td>
+                          {isLatest ? (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                              ACTIVE
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-red-100 text-red-800 border border-red-300">
+                              CANCELLED
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => openDocument(rev, "quotation")}
+                              className="btn-secondary text-[11px] py-1 px-2.5 flex items-center gap-1 text-[var(--accent)] hover:underline"
+                            >
+                              <FileText className="w-3.5 h-3.5" />
+                              <span>Generate PDF</span>
+                            </button>
+                            {rev.id !== quote.id && (
+                              <Link
+                                href={`/quotes/${encodeURIComponent(revDocId)}`}
+                                className="text-[11px] font-mono text-[var(--muted)] hover:text-[var(--ink)] underline ml-1"
+                              >
+                                View Details
+                              </Link>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Tab Content: Overview */}
+        {activeTab === "overview" && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Main 2 Cols: Flight Routing, Aircraft, Services */}
           <div className="lg:col-span-2 space-y-5">
@@ -468,6 +626,7 @@ export default function QuoteDetailPage() {
             </div>
           </div>
         </div>
+        )}
       </div>
     </AppShell>
   );

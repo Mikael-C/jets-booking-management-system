@@ -2297,7 +2297,7 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
                   <p className="text-xs text-[var(--muted)]">All historical iterations newest first. Older versions remain frozen and read-only.</p>
                 </div>
                 <Link
-                  href={`/quotes/new?reviseTrip=${encodeURIComponent(currentTrip.id)}`}
+                  href={`/bookings/${encodeURIComponent(currentTrip.id)}/revise`}
                   className="btn-secondary text-xs flex items-center gap-1.5"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
@@ -2351,8 +2351,8 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
                             </td>
                             <td>
                               <StatusPill
-                                label={isCurrent ? "ACTIVE" : "FROZEN"}
-                                variant={isCurrent ? "green" : "grey"}
+                                label={isCurrent ? "ACTIVE" : "CANCELLED"}
+                                variant={isCurrent ? "green" : "red"}
                               />
                             </td>
                             <td>

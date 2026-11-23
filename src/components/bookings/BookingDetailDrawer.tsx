@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useAviation } from "@/lib/aviationContext";
 import { formatCurrency } from "@/lib/pricingCalculator";
 import { api } from "@/lib/api";
@@ -36,6 +37,7 @@ import {
 } from "lucide-react";
 
 export default function BookingDetailDrawer() {
+  const router = useRouter();
   const {
     selectedBookingForDetail,
     setSelectedBookingForDetail,
@@ -1001,9 +1003,8 @@ export default function BookingDetailDrawer() {
               <>
                 {canReviseBooking ? <button
                   onClick={() => {
-                    setBookingToRevise(booking);
                     setSelectedBookingForDetail(null);
-                    setActiveNav("quotes");
+                    router.push(`/bookings/${encodeURIComponent(booking.id)}/revise`);
                   }}
                   className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-extrabold bg-[#F5F2EC] hover:bg-[#EBE5DB] text-[#0F1420] border border-[#E0DAD0] transition-all"
                 >

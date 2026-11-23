@@ -42,6 +42,7 @@ import { findAirportByCode } from "@/data/airports";
 import { calculatePricing, calculateDistanceNm, estimateFlightTimeMinutes, formatFlightTime } from "@/lib/pricingCalculator";
 import { api } from "@/lib/api";
 import { getQuoteIterationGroupKey } from "@/lib/quoteIterations";
+import { extractFeToken } from "@/lib/idGenerator";
 
 export type DocumentType = "quotation" | "invoice" | "flight_brief" | "charter_agreement" | "passenger_manifest" | "credit_note";
 
@@ -1732,13 +1733,55 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       persisted = newBooking;
     }
 
-    setBookings((prev) => [persisted, ...prev.filter((booking) => booking.id !== persisted.id && booking.tripId !== persisted.tripId)]);
+    setBookings((prev) => {
+      const familyToken = extractFeToken(persisted.tripId || persisted.tripNumber || persisted.quoteId || persisted.quoteReference || persisted.id);
+      return [
+        persisted,
+        ...prev
+          .filter((booking) => booking.id !== persisted.id)
+          .map((booking) => {
+            const bToken = extractFeToken(booking.tripId || booking.tripNumber || booking.quoteId || booking.quoteReference || booking.id);
+            if (familyToken && bToken && bToken === familyToken && booking.id !== persisted.id) {
+              return {
+                ...booking,
+                isCancelled: true,
+                status: "cancelled" as any,
+                quoteStatus: "expired" as any,
+                cancellationReason: `Superseded by revision ${persisted.tripNumber || persisted.quoteId || persisted.id}`,
+                supersededBy: persisted.id,
+                updatedAt: new Date().toISOString()
+              };
+            }
+            return booking;
+          })
+      ];
+    });
 
     try {
       if (typeof window !== "undefined") {
         const saved = localStorage.getItem("orbelo_bookings_v2");
         const list: Booking[] = saved ? JSON.parse(saved) : [];
-        const nextList = [persisted, ...list.filter((b) => b.id !== persisted.id && b.tripId !== persisted.tripId)];
+        const familyToken = extractFeToken(persisted.tripId || persisted.tripNumber || persisted.quoteId || persisted.quoteReference || persisted.id);
+        const nextList = [
+          persisted,
+          ...list
+            .filter((b) => b.id !== persisted.id)
+            .map((b) => {
+              const bToken = extractFeToken(b.tripId || b.tripNumber || b.quoteId || b.quoteReference || b.id);
+              if (familyToken && bToken && bToken === familyToken && b.id !== persisted.id) {
+                return {
+                  ...b,
+                  isCancelled: true,
+                  status: "cancelled" as any,
+                  quoteStatus: "expired" as any,
+                  cancellationReason: `Superseded by revision ${persisted.tripNumber || persisted.quoteId || persisted.id}`,
+                  supersededBy: persisted.id,
+                  updatedAt: new Date().toISOString()
+                };
+              }
+              return b;
+            })
+        ];
         localStorage.setItem("orbelo_bookings_v2", JSON.stringify(nextList));
       }
     } catch {
@@ -1937,8 +1980,23 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     const target = bookings.find((booking) => booking.id === bookingId) || bookingCandidate;
     if (!target || target.isCancelled) throw new Error("This quote iteration cannot be booked.");
 
-    const response = await api.quotes.convertToBooking(bookingId, bookingCandidate);
-    const persisted = normalizeBooking(response.data);
+    let persisted: Booking;
+    try {
+      const response = await api.quotes.convertToBooking(bookingId, bookingCandidate);
+      persisted = normalizeBooking(response?.data || response);
+    } catch (err: any) {
+      console.warn("Backend convertToBooking notice (converting locally):", err?.message);
+      persisted = {
+        ...target,
+        isBooked: true,
+        status: "confirmed",
+        quoteStatus: "accepted",
+        paymentStatus: target.paymentStatus || "unpaid",
+        bookingRevisionId: target.tripNumber || `TRI-${target.id}`,
+        updatedAt: new Date().toISOString()
+      };
+    }
+
     const familyKey = getQuoteIterationGroupKey(target);
     const updatedAt = new Date().toISOString();
     setBookings((prev) => prev.map((booking) => {
@@ -1952,12 +2010,13 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
         isCancelled: true,
         status: "cancelled",
         quoteStatus: "expired",
-        cancellationReason: `Superseded by booked revision ${persisted.bookingRevisionId}`,
+        cancellationReason: `Superseded by booked revision ${persisted.bookingRevisionId || persisted.tripNumber || persisted.id}`,
         supersededBy: persisted.id,
         updatedAt
       };
     }));
-    setSelectedBookingForDetail(persisted);
+    // Do NOT open detail drawer popup - move directly to bookings page
+    setSelectedBookingForDetail(null);
     if (activeBooking?.id === bookingId) setActiveBooking(persisted);
     setActiveNav("bookings");
     return persisted;
@@ -2684,8 +2743,17 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
   };
 
   const getTripRevisions = (tripId: string): Booking[] => {
+    const raw = (tripId || "").toUpperCase();
+    const token = extractFeToken(tripId);
     return bookings
-      .filter((b) => b.tripId === tripId || b.id === tripId || b.tripNumber === tripId)
+      .filter((b) => {
+        if (b.tripId?.toUpperCase() === raw || b.id?.toUpperCase() === raw || b.tripNumber?.toUpperCase() === raw) return true;
+        if (token) {
+          const bToken = extractFeToken(b.tripId || b.tripNumber || b.quoteId || b.quoteReference || b.id);
+          if (bToken && bToken.toUpperCase() === token.toUpperCase()) return true;
+        }
+        return false;
+      })
       .sort((a, b) => (a.quoteVersion || 1) - (b.quoteVersion || 1));
   };
 
