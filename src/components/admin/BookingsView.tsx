@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAviation } from "@/lib/aviationContext";
@@ -9,7 +9,8 @@ import { extractFeToken, renderFormattedId } from "@/lib/idGenerator";
 import { formatCurrency } from "@/lib/pricingCalculator";
 import {
   Search,
-  ChevronDown
+  ChevronDown,
+  RotateCw
 } from "lucide-react";
 
 type BookingFilter =
@@ -55,7 +56,11 @@ interface BookingRowData {
 
 export default function BookingsView() {
   const router = useRouter();
-  const { bookings } = useAviation();
+  const { bookings, refreshBookings, isBookingsLoading } = useAviation();
+
+  useEffect(() => {
+    refreshBookings();
+  }, []);
 
   const [activeFilter, setActiveFilter] = useState<BookingFilter>("upcoming");
   const [searchQuery, setSearchQuery] = useState("");
@@ -228,6 +233,16 @@ export default function BookingsView() {
             className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 px-3.5 py-1.5 rounded-lg text-xs font-medium shadow-2xs transition-colors"
           >
             Export
+          </button>
+          <button
+            type="button"
+            onClick={() => refreshBookings()}
+            disabled={isBookingsLoading}
+            className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 px-3 py-1.5 rounded-lg text-xs font-medium shadow-2xs transition-colors flex items-center gap-1.5"
+            title="Refresh bookings from server"
+          >
+            <RotateCw className={`w-3.5 h-3.5 ${isBookingsLoading ? "animate-spin text-blue-600" : ""}`} />
+            <span>Refresh</span>
           </button>
         </div>
       </div>

@@ -1158,16 +1158,37 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
         .catch(() => {});
 
       setIsBookingsLoading(true);
-      api.bookings.list({ limit: 100 })
-        .then((res) => {
-          if (Array.isArray(res?.data)) {
-            const normalized = res.data.map(normalizeBooking);
+      Promise.allSettled([
+        api.bookings.list({ limit: 100 }),
+        api.quotes.list({ limit: 100 })
+      ])
+        .then(([bookingsRes, quotesRes]) => {
+          const itemsMap = new Map<string, any>();
+          if (bookingsRes.status === "fulfilled" && Array.isArray(bookingsRes.value?.data)) {
+            bookingsRes.value.data.forEach((b: any) => {
+              const id = b.id || b._id;
+              if (id) itemsMap.set(String(id), b);
+            });
+          }
+          if (quotesRes.status === "fulfilled") {
+            const qList = (quotesRes.value as any)?.quotes || (quotesRes.value as any)?.data;
+            if (Array.isArray(qList)) {
+              qList.forEach((q: any) => {
+                const id = q.id || q._id;
+                if (id && !itemsMap.has(String(id))) {
+                  itemsMap.set(String(id), q);
+                }
+              });
+            }
+          }
+          if (itemsMap.size > 0) {
+            const normalized = Array.from(itemsMap.values()).map(normalizeBooking);
             setBookings(normalized);
             setBookingsSource("backend");
           }
         })
         .catch((err) => {
-          console.warn("Backend bookings sync notice:", err?.message);
+          console.warn("Backend bookings & quotes sync notice:", err?.message);
         })
         .finally(() => {
           setIsBookingsLoading(false);
@@ -2071,15 +2092,40 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
   const refreshBookings = async (): Promise<Booking[]> => {
     setIsBookingsLoading(true);
     try {
-      const res = await api.bookings.list({ limit: 100 });
-      if (Array.isArray(res?.data)) {
-        const normalized = res.data.map(normalizeBooking);
+      const [bookingsRes, quotesRes] = await Promise.allSettled([
+        api.bookings.list({ limit: 100 }),
+        api.quotes.list({ limit: 100 })
+      ]);
+
+      const itemsMap = new Map<string, any>();
+
+      if (bookingsRes.status === "fulfilled" && Array.isArray(bookingsRes.value?.data)) {
+        bookingsRes.value.data.forEach((b: any) => {
+          const id = b.id || b._id;
+          if (id) itemsMap.set(String(id), b);
+        });
+      }
+
+      if (quotesRes.status === "fulfilled") {
+        const qList = (quotesRes.value as any)?.quotes || (quotesRes.value as any)?.data;
+        if (Array.isArray(qList)) {
+          qList.forEach((q: any) => {
+            const id = q.id || q._id;
+            if (id && !itemsMap.has(String(id))) {
+              itemsMap.set(String(id), q);
+            }
+          });
+        }
+      }
+
+      if (itemsMap.size > 0) {
+        const normalized = Array.from(itemsMap.values()).map(normalizeBooking);
         setBookings(normalized);
         setBookingsSource("backend");
         return normalized;
       }
     } catch (err: any) {
-      console.warn("Backend bookings fetch notice:", err?.message);
+      console.warn("Backend bookings & quotes fetch notice:", err?.message);
     } finally {
       setIsBookingsLoading(false);
     }

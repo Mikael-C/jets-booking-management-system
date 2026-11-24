@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAviation } from "@/lib/aviationContext";
@@ -12,7 +12,8 @@ import {
   Plus,
   ExternalLink,
   ChevronDown,
-  FileText
+  FileText,
+  RotateCw
 } from "lucide-react";
 
 type QuoteFilter =
@@ -65,7 +66,11 @@ interface QuoteItemData {
 
 export default function QuotesView() {
   const router = useRouter();
-  const { bookings, openDocument, convertQuoteToBooked } = useAviation();
+  const { bookings, openDocument, convertQuoteToBooked, refreshBookings, isBookingsLoading } = useAviation();
+
+  useEffect(() => {
+    refreshBookings();
+  }, []);
 
   const [activeFilter, setActiveFilter] = useState<QuoteFilter>("open");
   const [searchQuery, setSearchQuery] = useState("");
@@ -251,6 +256,16 @@ export default function QuotesView() {
         </h1>
 
         <div className="flex items-center gap-2 self-start sm:self-auto">
+          <button
+            type="button"
+            onClick={() => refreshBookings()}
+            disabled={isBookingsLoading}
+            className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 px-3.5 py-1.5 rounded-lg text-xs font-medium shadow-2xs transition-colors flex items-center gap-1.5"
+            title="Refresh quotes from server"
+          >
+            <RotateCw className={`w-3.5 h-3.5 ${isBookingsLoading ? "animate-spin text-blue-600" : ""}`} />
+            <span>Refresh</span>
+          </button>
           <button
             type="button"
             className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 px-3.5 py-1.5 rounded-lg text-xs font-medium shadow-2xs transition-colors"

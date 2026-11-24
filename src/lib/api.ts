@@ -445,6 +445,11 @@ export const api = {
 
   // Quotes
   quotes: {
+    list: (params?: Record<string, any>) => {
+      const query = params ? `?${new URLSearchParams(params).toString()}` : "";
+      return request<{ quotes?: any[]; data?: any[]; total?: number; page?: number; pages?: number }>(`/quotes${query}`);
+    },
+    get: (id: string) => request<any>(`/quotes/${id}`),
     create: (data: any) =>
       request<{ success: boolean; data: any }>("/bookings", {
         method: "POST",
