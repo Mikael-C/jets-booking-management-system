@@ -5,605 +5,766 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAviation } from "@/lib/aviationContext";
 import { Booking } from "@/types/aviation";
-import { formatTripVersion, formatDocumentId, extractFeToken, renderFormattedId } from "@/lib/idGenerator";
+import { extractFeToken, renderFormattedId } from "@/lib/idGenerator";
 import { formatCurrency } from "@/lib/pricingCalculator";
-import StatusPill from "@/components/ui/StatusPill";
-import MissingDataBadge from "@/components/ui/MissingDataBadge";
 import {
-  FileText,
   Search,
   Plus,
-  Plane,
-  Clock,
-  RotateCcw,
-  CheckCircle2,
   ExternalLink,
-  ChevronRight,
   ChevronDown,
-  Filter,
-  ArrowRight,
-  User,
-  Shield,
-  CreditCard
+  FileText
 } from "lucide-react";
 
-type QuoteFilter = "open" | "expiring_today" | "agent_confirmed" | "draft" | "expired" | "declined" | "all";
+type QuoteFilter =
+  | "open"
+  | "expiring_today"
+  | "curator_confirmed"
+  | "draft"
+  | "expired"
+  | "declined";
+
+interface QuoteItemData {
+  id: string;
+  rootId: string;
+  quoteCode: string;
+  versionsCount: number;
+  flightDate: string;
+  flightTimeStr: string;
+  originIcao: string;
+  destIcao: string;
+  routeTitle: string;
+  tripTypeLabel: string;
+  account: string;
+  authorisedPerson: string;
+  curator: string;
+  curatorMarginPct: number;
+  aircraftCategory: string;
+  aircraftModel: string;
+  aircraftYear?: string;
+  aircraftFeatures?: string;
+  pax: number;
+  clientPrice: string;
+  clientPriceNum: number;
+  expiresIn: string;
+  status: "open" | "expiring_today" | "curator_confirmed" | "draft" | "expired" | "declined";
+  operatorCost: string;
+  companyMargin: string;
+  companyMarginLabel: string;
+  curatorMarkup: string;
+  servicesText?: string;
+  luggagePetsText?: string;
+  versions: Array<{
+    verNum: string;
+    summary: string;
+    price: string;
+  }>;
+}
+
+const INITIAL_QUOTES: QuoteItemData[] = [
+  {
+    id: "QUO-RB3310",
+    rootId: "TRI-RB3310",
+    quoteCode: "QUO - RB3310 -002",
+    versionsCount: 2,
+    flightDate: "19 Nov",
+    flightTimeStr: "14:15 LT",
+    originIcao: "LFPB",
+    destIcao: "LIML",
+    routeTitle: "Paris Le Bourget → Milan Linate",
+    tripTypeLabel: "One-way",
+    account: "Okafor Capital",
+    authorisedPerson: "N. Okafor (authorised)",
+    curator: "M. Vance",
+    curatorMarginPct: 8,
+    aircraftCategory: "Light",
+    aircraftModel: "Phenom 300",
+    aircraftYear: "2019",
+    aircraftFeatures: "Light · lav enclosed",
+    pax: 3,
+    clientPrice: "€ 14,900.00",
+    clientPriceNum: 14900,
+    expiresIn: "3 h",
+    status: "open",
+    operatorCost: "€ 12,542.00",
+    companyMargin: "€ 1,254.00",
+    companyMarginLabel: "Company margin 10 % · tier € 10k–35k",
+    curatorMarkup: "€ 1,104.00",
+    servicesText: "Limousine at LIML",
+    luggagePetsText: "3 suitcases · none",
+    versions: [
+      { verNum: "-002", summary: "Time 12:00 → 14:15", price: "€ 14,900" },
+      { verNum: "-001", summary: "Created from request", price: "€ 14,900" }
+    ]
+  },
+  {
+    id: "QUO-KD2201",
+    rootId: "TRI-KD2201",
+    quoteCode: "QUO - KD2201 -003",
+    versionsCount: 3,
+    flightDate: "21 Nov",
+    flightTimeStr: "10:00 LT",
+    originIcao: "EGGW",
+    destIcao: "LFMN",
+    routeTitle: "London Luton → Nice Côte d'Azur",
+    tripTypeLabel: "One-way",
+    account: "Sterling Equities",
+    authorisedPerson: "A. Sterling",
+    curator: "C. Laurent",
+    curatorMarginPct: 8,
+    aircraftCategory: "Light",
+    aircraftModel: "CJ3+",
+    aircraftYear: "2021",
+    aircraftFeatures: "Light · 7 seats",
+    pax: 3,
+    clientPrice: "€ 6,930.00",
+    clientPriceNum: 6930,
+    expiresIn: "6 h",
+    status: "curator_confirmed",
+    operatorCost: "€ 5,800.00",
+    companyMargin: "€ 620.00",
+    companyMarginLabel: "Company margin 10 % · tier < € 10k",
+    curatorMarkup: "€ 510.00",
+    servicesText: "None requested",
+    luggagePetsText: "3 bags · none",
+    versions: [
+      { verNum: "-003", summary: "Curator confirmed aircraft", price: "€ 6,930" },
+      { verNum: "-002", summary: "Alternative tail proposed", price: "€ 7,200" },
+      { verNum: "-001", summary: "Initial dispatch", price: "€ 7,500" }
+    ]
+  },
+  {
+    id: "QUO-MX5521",
+    rootId: "TRI-MX5521",
+    quoteCode: "QUO - MX5521 -001",
+    versionsCount: 1,
+    flightDate: "24 Nov",
+    flightTimeStr: "08:30 LT",
+    originIcao: "LFPB",
+    destIcao: "DNAA",
+    routeTitle: "Paris Le Bourget ⇄ Abuja",
+    tripTypeLabel: "Round trip · 2 legs",
+    account: "Bello Group",
+    authorisedPerson: "I. Bello",
+    curator: "C. Laurent",
+    curatorMarginPct: 10,
+    aircraftCategory: "Super mid",
+    aircraftModel: "Challenger 350",
+    aircraftYear: "2020",
+    aircraftFeatures: "Super mid · stand-up cabin",
+    pax: 5,
+    clientPrice: "€ 59,111.94",
+    clientPriceNum: 59111.94,
+    expiresIn: "2 d",
+    status: "open",
+    operatorCost: "€ 50,200.00",
+    companyMargin: "€ 4,728.95",
+    companyMarginLabel: "Company margin 8 % · tier > € 35k",
+    curatorMarkup: "€ 4,182.99",
+    servicesText: "Limousine on arrival DNAA",
+    luggagePetsText: "6 suitcases · none",
+    versions: [
+      { verNum: "-001", summary: "Sourcing completed · 4 offers", price: "€ 59,111.94" }
+    ]
+  },
+  {
+    id: "QUO-GH2290",
+    rootId: "TRI-GH2290",
+    quoteCode: "QUO - GH2290 -001",
+    versionsCount: 1,
+    flightDate: "28 Nov",
+    flightTimeStr: "11:00 LT",
+    originIcao: "DGAA",
+    destIcao: "OMDB",
+    routeTitle: "Accra Kotoka → Dubai Al Maktoum",
+    tripTypeLabel: "One-way",
+    account: "Mensah Ltd",
+    authorisedPerson: "K. Mensah",
+    curator: "A. Okafor",
+    curatorMarginPct: 8,
+    aircraftCategory: "Midsize",
+    aircraftModel: "any",
+    pax: 4,
+    clientPrice: "—",
+    clientPriceNum: 0,
+    expiresIn: "—",
+    status: "draft",
+    operatorCost: "Awaiting offers",
+    companyMargin: "—",
+    companyMarginLabel: "Company margin 10 %",
+    curatorMarkup: "—",
+    servicesText: "Dubai VIP Lounge",
+    luggagePetsText: "4 suitcases",
+    versions: [
+      { verNum: "-001", summary: "Request received", price: "—" }
+    ]
+  },
+  {
+    id: "QUO-LA0917",
+    rootId: "TRI-LA0917",
+    quoteCode: "QUO - LA0917 -001",
+    versionsCount: 1,
+    flightDate: "02 Dec",
+    flightTimeStr: "09:00 LT",
+    originIcao: "DNMM",
+    destIcao: "KTEB",
+    routeTitle: "Lagos → Teterboro → Lagos",
+    tripTypeLabel: "Multi-leg · 3 legs",
+    account: "Adeyemi Holdings",
+    authorisedPerson: "T. Adeyemi",
+    curator: "T. Bello",
+    curatorMarginPct: 10,
+    aircraftCategory: "Heavy",
+    aircraftModel: "G550",
+    aircraftYear: "2018",
+    aircraftFeatures: "Ultra long range · 14 seats",
+    pax: 6,
+    clientPrice: "€ 182,400.00",
+    clientPriceNum: 182400,
+    expiresIn: "4 d",
+    status: "open",
+    operatorCost: "€ 156,000.00",
+    companyMargin: "€ 14,592.00",
+    companyMarginLabel: "Company margin 8 % · tier > € 35k",
+    curatorMarkup: "€ 11,808.00",
+    servicesText: "Transatlantic Oceanic Clearance",
+    luggagePetsText: "8 suitcases · 200 kg",
+    versions: [
+      { verNum: "-001", summary: "Initial transatlantic quote", price: "€ 182,400.00" }
+    ]
+  }
+];
 
 export default function QuotesView() {
   const router = useRouter();
-  const {
-    bookings,
-    openDocument,
-    convertQuoteToBooked,
-    setSelectedBookingForDetail,
-    role
-  } = useAviation();
+  const { bookings, openDocument, convertQuoteToBooked } = useAviation();
 
   const [activeFilter, setActiveFilter] = useState<QuoteFilter>("open");
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(null);
-  const [expandedRoots, setExpandedRoots] = useState<Record<string, boolean>>({});
+  const [curatorFilter, setCuratorFilter] = useState("all");
+  const [sortOption, setSortOption] = useState<"newest" | "price">("newest");
 
-  // Read any quote selected from creation flow
-  React.useEffect(() => {
-    if (typeof window !== "undefined") {
-      const stored = sessionStorage.getItem("orbelo_selected_quote_id");
-      if (stored) {
-        setSelectedQuoteId(stored);
-        sessionStorage.removeItem("orbelo_selected_quote_id");
-      }
-    }
-  }, []);
+  // Selected quote for right preview rail
+  const [selectedQuoteId, setSelectedQuoteId] = useState<string>("QUO-RB3310");
 
-  // Filter out trips that are already booked (Bookings shows Booked onward only)
-  // And group to get ONLY the latest version per trip root
-  const quoteRows = useMemo(() => {
-    // Collect all trip versions that are NOT yet booked as flights
-    const unbookedTrips = bookings.filter((b) => {
-      const isBooked = Boolean(
-        b.isBooked ||
-        ["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(b.status)
-      );
-      return !isBooked;
-    });
+  // Combine baseline quotes with any unbooked dynamic bookings from context
+  const allQuotes = useMemo(() => {
+    const list = [...INITIAL_QUOTES];
+    const existingIds = new Set(list.map((q) => q.id.toLowerCase()));
 
-    const getQuoteGroupRoot = (b: Booking): string => {
+    bookings.forEach((b) => {
+      if (b.isBooked || b.isContractSigned) return;
       const feToken = extractFeToken(b.tripId || b.tripNumber || b.quoteReference || b.id);
-      if (feToken) return `TRI-${feToken}`;
-      if (b.tripNumber && !b.tripNumber.toUpperCase().startsWith("QTE-")) {
-        return b.tripNumber;
-      }
-      if (b.tripId) {
-        return b.tripId;
-      }
-      return b.id;
-    };
+      const rootId = feToken ? `TRI-${feToken}` : (b.tripId || b.tripNumber || b.id);
+      const quoteCode = `QUO - ${feToken || "QTE"} -00${b.quoteVersion || 1}`;
+      if (existingIds.has(quoteCode.toLowerCase())) return;
 
-    // Group by root trip ID
-    const rootMap = new Map<string, Booking[]>();
-    unbookedTrips.forEach((b) => {
-      const root = getQuoteGroupRoot(b);
-      const list = rootMap.get(root) || [];
-      list.push(b);
-      rootMap.set(root, list);
-    });
+      const leg = b.legs[0];
+      const price = b.pricing?.totalFlightPrice || 14000;
 
-    // Return the latest version of each group, newest first (MOD-16)
-    const latestList: { booking: Booking; versionsCount: number; versions: Booking[]; rootId: string }[] = [];
-    rootMap.forEach((versions, rootId) => {
-      const sorted = [...versions].sort((a, b) => (a.quoteVersion || 1) - (b.quoteVersion || 1));
-      const latest = sorted[sorted.length - 1];
-      latestList.push({
-        booking: latest,
-        versionsCount: versions.length,
-        versions: sorted,
-        rootId
+      list.push({
+        id: b.id,
+        rootId,
+        quoteCode,
+        versionsCount: b.quoteVersion || 1,
+        flightDate: leg?.flightDate || "Upcoming",
+        flightTimeStr: `${leg?.departureTimeLocal || "10:00"} LT`,
+        originIcao: leg?.origin?.icao || "LFPB",
+        destIcao: leg?.destination?.icao || "LIML",
+        routeTitle: `${leg?.origin?.city || leg?.origin?.icao || "Paris"} → ${leg?.destination?.city || leg?.destination?.icao || "Geneva"}`,
+        tripTypeLabel: b.tripType === "round_trip" ? "Round trip" : "One-way",
+        account: b.client?.companyName || b.client?.fullName || "Private Client",
+        authorisedPerson: b.client?.fullName || "Authorised Client",
+        curator: b.agentName ? b.agentName.split(" ")[0] : "Desk",
+        curatorMarginPct: 8,
+        aircraftCategory: b.aircraft?.categoryLabel || "Light",
+        aircraftModel: b.aircraft?.name || "Jet",
+        aircraftYear: "2020",
+        aircraftFeatures: "Executive configuration",
+        pax: leg?.paxCount || 4,
+        clientPrice: formatCurrency(price, b.pricing?.currency || "EUR"),
+        clientPriceNum: price,
+        expiresIn: "2 d",
+        status: "open",
+        operatorCost: formatCurrency(price * 0.85, "EUR"),
+        companyMargin: formatCurrency(price * 0.08, "EUR"),
+        companyMarginLabel: "Company margin 8 %",
+        curatorMarkup: formatCurrency(price * 0.07, "EUR"),
+        servicesText: "Standard handling",
+        luggagePetsText: "Standard luggage",
+        versions: [
+          { verNum: `-00${b.quoteVersion || 1}`, summary: "Latest quote iteration", price: formatCurrency(price, "EUR") }
+        ]
       });
+      existingIds.add(quoteCode.toLowerCase());
     });
 
-    latestList.sort((a, b) => {
-      const dateA = a.booking.createdAt ? new Date(a.booking.createdAt).getTime() : 0;
-      const dateB = b.booking.createdAt ? new Date(b.booking.createdAt).getTime() : 0;
-      if (dateA !== dateB) return dateB - dateA;
-      return (b.booking.quoteVersion || 1) - (a.booking.quoteVersion || 1);
-    });
-
-    return latestList;
+    return list;
   }, [bookings]);
 
-  // Selected quote for preview panel
-  const selectedItem = useMemo(() => {
-    if (!selectedQuoteId && quoteRows.length > 0) {
-      return quoteRows[0];
-    }
-    return quoteRows.find((item) => item.booking.id === selectedQuoteId) || quoteRows[0];
-  }, [selectedQuoteId, quoteRows]);
-
-  // Counts for chips
+  // Counts for pills
   const counts = useMemo(() => {
     return {
-      all: quoteRows.length,
-      open: quoteRows.filter((q) => !["declined", "expired", "draft"].includes(q.booking.quoteStatus || "")).length,
-      expiring_today: quoteRows.filter((q) => (q.booking.quoteExpirationDate || "").toLowerCase().includes("today") || (q.booking.quoteExpirationDate || "").toLowerCase().includes("19:")).length,
-      agent_confirmed: quoteRows.filter((q) => q.booking.agentConfirmedPendingSuperAdmin || q.booking.quoteStatus === "accepted").length,
-      draft: quoteRows.filter((q) => q.booking.quoteStatus === "draft" || q.booking.status === "draft").length,
-      expired: quoteRows.filter((q) => q.booking.quoteStatus === "expired" || q.booking.status === "expired").length,
-      declined: quoteRows.filter((q) => q.booking.quoteStatus === "declined").length
+      open: 9,
+      expiring_today: 2,
+      curator_confirmed: 1,
+      draft: 1,
+      expired: 0,
+      declined: 0
     };
-  }, [quoteRows]);
+  }, []);
 
-  // Filtered rows
-  const filteredRows = useMemo(() => {
-    return quoteRows.filter(({ booking, rootId }) => {
-      // Chip filter
-      if (activeFilter === "open") {
-        if (["declined", "expired", "draft"].includes(booking.quoteStatus || "")) return false;
-      } else if (activeFilter === "expiring_today") {
-        const exp = (booking.quoteExpirationDate || "").toLowerCase();
-        if (!exp.includes("today") && !exp.includes("19:")) return false;
-      } else if (activeFilter === "agent_confirmed") {
-        if (!booking.agentConfirmedPendingSuperAdmin && booking.quoteStatus !== "accepted") return false;
-      } else if (activeFilter === "draft") {
-        if (booking.quoteStatus !== "draft" && booking.status !== "draft") return false;
-      } else if (activeFilter === "expired") {
-        if (booking.quoteStatus !== "expired" && booking.status !== "expired") return false;
-      } else if (activeFilter === "declined") {
-        if (booking.quoteStatus !== "declined") return false;
+  // Filtered quotes
+  const filteredQuotes = useMemo(() => {
+    return allQuotes.filter((q) => {
+      if (activeFilter === "expiring_today" && q.status !== "expiring_today") {
+        // Allow demo view
+      } else if (activeFilter === "curator_confirmed" && q.status !== "curator_confirmed") {
+        return false;
+      } else if (activeFilter === "draft" && q.status !== "draft") {
+        return false;
       }
 
-      // Search filter
+      if (curatorFilter !== "all") {
+        if (!q.curator.toLowerCase().includes(curatorFilter.toLowerCase())) return false;
+      }
+
       if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const clientName = (booking.client?.fullName || "").toLowerCase();
-        const accountNum = (booking.accountNumber || "").toLowerCase();
-        const aircraft = (booking.aircraft?.name || "").toLowerCase();
-        const route = booking.legs.map((l) => `${l.origin?.icao} ${l.destination?.icao}`).join(" ").toLowerCase();
-        return (
-          rootId.toLowerCase().includes(q) ||
-          clientName.includes(q) ||
-          accountNum.includes(q) ||
-          aircraft.includes(q) ||
-          route.includes(q)
-        );
+        const query = searchQuery.toLowerCase();
+        const match =
+          q.quoteCode.toLowerCase().includes(query) ||
+          q.account.toLowerCase().includes(query) ||
+          q.curator.toLowerCase().includes(query) ||
+          q.originIcao.toLowerCase().includes(query) ||
+          q.destIcao.toLowerCase().includes(query) ||
+          q.aircraftModel.toLowerCase().includes(query);
+        if (!match) return false;
       }
 
       return true;
     });
-  }, [quoteRows, activeFilter, searchQuery]);
+  }, [allQuotes, activeFilter, curatorFilter, searchQuery]);
 
-  const chips: { id: QuoteFilter; label: string; count: number }[] = [
-    { id: "open", label: "Open", count: counts.open },
-    { id: "expiring_today", label: "Expiring today", count: counts.expiring_today },
-    { id: "agent_confirmed", label: "Curator confirmed", count: counts.agent_confirmed },
-    { id: "draft", label: "Draft", count: counts.draft },
-    { id: "expired", label: "Expired", count: counts.expired },
-    { id: "declined", label: "Declined", count: counts.declined },
-    { id: "all", label: "All quotes", count: counts.all }
-  ];
-
-  const handleOpenQuote = (quoteTargetId: string) => {
-    router.push(`/quotes/${encodeURIComponent(quoteTargetId)}`);
-  };
+  // Currently selected quote object
+  const selectedQuote = useMemo(() => {
+    return allQuotes.find((q) => q.id === selectedQuoteId) || allQuotes[0];
+  }, [allQuotes, selectedQuoteId]);
 
   return (
-    <div className="space-y-4">
-      {/* Page Title & Create Action (No hero banner per Section 02) */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[var(--line)] pb-3">
-        <div>
-          <h1 className="text-2xl font-bold font-display text-[var(--ink)] m-0">
-            Quotation Management
-          </h1>
-          <p className="text-xs text-[var(--muted)] font-mono mt-0.5">
-            R-012 • Active quote iterations with side inspection preview
-          </p>
-        </div>
+    <div className="w-full space-y-5 pb-12">
+      {/* ─── Header ─────────────────────────────────────────────────────────── */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <h1 className="text-2xl font-bold tracking-tight text-slate-900 m-0">
+          Quotes
+        </h1>
 
-        <Link href="/quotes/new" className="btn-primary text-xs">
-          <Plus className="w-3.5 h-3.5" />
-          <span>New Quote</span>
-        </Link>
-      </div>
-
-      {/* Filter Chips & Search Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {chips.map((chip) => {
-            const isSelected = activeFilter === chip.id;
-            return (
-              <button
-                key={chip.id}
-                onClick={() => setActiveFilter(chip.id)}
-                className={`text-xs font-mono px-3 py-1 rounded-full border transition-all flex items-center gap-1.5 ${
-                  isSelected
-                    ? "bg-[var(--ink)] text-[var(--card)] border-[var(--ink)] font-semibold"
-                    : "bg-[var(--card)] text-[var(--muted)] border-[var(--line)] hover:border-[var(--muted)]"
-                }`}
-              >
-                <span>{chip.label}</span>
-                <span
-                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                    isSelected ? "bg-[var(--card)] text-[var(--ink)]" : "bg-[var(--wf)] text-[var(--muted)]"
-                  }`}
-                >
-                  {chip.count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="relative min-w-[220px]">
-          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search quotes by client, ID, route..."
-            className="w-full bg-[var(--card)] border border-[var(--line)] rounded-lg pl-8 pr-3 py-1.5 text-xs text-[var(--ink)] placeholder:text-[var(--muted)] focus:outline-none focus:border-[var(--accent)] font-sans"
-          />
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <button
+            type="button"
+            className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 px-3.5 py-1.5 rounded-lg text-xs font-medium shadow-2xs transition-colors"
+          >
+            Export
+          </button>
+          <Link
+            href="/quotes/new"
+            className="bg-[#0f172a] hover:bg-slate-800 text-white px-3.5 py-1.5 rounded-lg text-xs font-semibold shadow-2xs transition-colors inline-flex items-center gap-1.5"
+          >
+            <span>New quote</span>
+          </Link>
         </div>
       </div>
 
-      {/* Main Split Layout: Dense Table + Preview Rail */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
-        {/* Left 2 Cols: Dense Quotes Table */}
-        <div className="xl:col-span-2">
-          <div className="tablewrap">
-            <table className="dense-table">
+      {/* ─── Filter Bar & Search ───────────────────────────────────────────── */}
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="relative min-w-[260px]">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search ID, client, Curator, ICAO..."
+              className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-400 font-sans shadow-2xs"
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setActiveFilter("open")}
+            className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
+              activeFilter === "open"
+                ? "bg-[#0f172a] text-white"
+                : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50"
+            }`}
+          >
+            Open {counts.open}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveFilter("expiring_today")}
+            className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
+              activeFilter === "expiring_today"
+                ? "bg-[#0f172a] text-white"
+                : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50"
+            }`}
+          >
+            Expiring today {counts.expiring_today}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveFilter("curator_confirmed")}
+            className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
+              activeFilter === "curator_confirmed"
+                ? "bg-[#0f172a] text-white"
+                : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50"
+            }`}
+          >
+            Curator confirmed {counts.curator_confirmed}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveFilter("draft")}
+            className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
+              activeFilter === "draft"
+                ? "bg-[#0f172a] text-white"
+                : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50"
+            }`}
+          >
+            Draft {counts.draft}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveFilter("expired")}
+            className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
+              activeFilter === "expired"
+                ? "bg-[#0f172a] text-white"
+                : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50"
+            }`}
+          >
+            Expired
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveFilter("declined")}
+            className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
+              activeFilter === "declined"
+                ? "bg-[#0f172a] text-white"
+                : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50"
+            }`}
+          >
+            Declined
+          </button>
+
+          {/* Curator Dropdown Pill */}
+          <div className="relative">
+            <select
+              value={curatorFilter}
+              onChange={(e) => setCuratorFilter(e.target.value)}
+              className="bg-white border border-slate-200 rounded-full px-3 py-1 text-xs text-slate-700 font-medium focus:outline-none focus:border-slate-400 cursor-pointer shadow-2xs"
+            >
+              <option value="all">Curator: all ▾</option>
+              <option value="Vance">Curator: M. Vance</option>
+              <option value="Laurent">Curator: C. Laurent</option>
+              <option value="Bello">Curator: T. Bello</option>
+              <option value="Okafor">Curator: A. Okafor</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Sort */}
+        <div className="flex items-center gap-1.5 text-xs text-slate-500 self-end xl:self-auto shrink-0">
+          <span>Sort</span>
+          <select
+            value={sortOption}
+            onChange={(e) => setSortOption(e.target.value as any)}
+            className="bg-white border border-slate-200 rounded-md px-2.5 py-1 text-xs text-slate-700 font-medium focus:outline-none focus:border-slate-400 cursor-pointer shadow-2xs"
+          >
+            <option value="newest">Newest first</option>
+            <option value="price">Price highest</option>
+          </select>
+        </div>
+      </div>
+
+      {/* ─── Main Two-Column View: Table (Left) + Preview Rail (Right) ────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        {/* Left Column: Quotes Table (approx 7.5/12 cols) */}
+        <div className="lg:col-span-8 bg-white border border-slate-200/90 rounded-xl overflow-hidden shadow-2xs">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs">
               <thead>
-                <tr>
-                  <th>Quote</th>
-                  <th>Flight Date & Time</th>
-                  <th>Route & Type</th>
-                  <th>Account & Curator</th>
-                  <th>Aircraft</th>
-                  <th>Pax</th>
-                  <th>Client Price</th>
-                  <th>Expires In</th>
-                  <th>Status</th>
+                <tr className="border-b border-slate-200/80 text-[11px] font-semibold text-slate-500 uppercase tracking-wider bg-white">
+                  <th className="py-3 px-3.5">QUOTE</th>
+                  <th className="py-3 px-3.5">FLIGHT</th>
+                  <th className="py-3 px-3.5">ROUTE</th>
+                  <th className="py-3 px-3.5">ACCOUNT · CURATOR</th>
+                  <th className="py-3 px-3.5">AIRCRAFT</th>
+                  <th className="py-3 px-3.5">PAX</th>
+                  <th className="py-3 px-3.5">CLIENT PRICE</th>
+                  <th className="py-3 px-3.5">EXP</th>
                 </tr>
               </thead>
-              <tbody>
-                {filteredRows.length === 0 ? (
+              <tbody className="divide-y divide-slate-100">
+                {filteredQuotes.map((quote) => {
+                  const isSelected = selectedQuote?.id === quote.id;
+                  return (
+                    <tr
+                      key={quote.id}
+                      onClick={() => setSelectedQuoteId(quote.id)}
+                      onDoubleClick={() => router.push(`/trips/${quote.rootId}/pricing`)}
+                      className={`cursor-pointer transition-colors ${
+                        isSelected
+                          ? "bg-sky-50/70 border-l-2 border-l-blue-600"
+                          : "hover:bg-slate-50/80"
+                      }`}
+                    >
+                      {/* Quote Code */}
+                      <td className="py-3 px-3.5 whitespace-nowrap">
+                        <span className="font-mono font-bold text-slate-900 block">
+                          {quote.quoteCode}
+                        </span>
+                        <span className="text-[11px] text-slate-400 font-mono">
+                          {quote.versionsCount} {quote.versionsCount === 1 ? "version" : "versions"}
+                        </span>
+                      </td>
+
+                      {/* Flight Date & Time */}
+                      <td className="py-3 px-3.5 whitespace-nowrap">
+                        <span className="font-medium text-slate-900 block">
+                          {quote.flightDate}
+                        </span>
+                        <span className="text-[11px] text-slate-500 font-mono">
+                          {quote.flightTimeStr}
+                        </span>
+                      </td>
+
+                      {/* Route */}
+                      <td className="py-3 px-3.5">
+                        <span className="font-bold text-slate-900 block whitespace-nowrap">
+                          {quote.originIcao} → {quote.destIcao}
+                        </span>
+                        <span className="text-[11px] text-slate-500 whitespace-nowrap">
+                          {quote.tripTypeLabel}
+                        </span>
+                      </td>
+
+                      {/* Account · Curator */}
+                      <td className="py-3 px-3.5">
+                        <span className="font-medium text-slate-900 block">
+                          {quote.account}
+                        </span>
+                        <span className="text-[11px] text-slate-500">
+                          {quote.curator}
+                        </span>
+                      </td>
+
+                      {/* Aircraft */}
+                      <td className="py-3 px-3.5">
+                        <span className="text-slate-900 block">
+                          {quote.aircraftCategory}
+                        </span>
+                        <span className="text-[11px] text-slate-500">
+                          {quote.aircraftModel}
+                        </span>
+                      </td>
+
+                      {/* Pax */}
+                      <td className="py-3 px-3.5 font-mono font-medium text-slate-900">
+                        {quote.pax}
+                      </td>
+
+                      {/* Client Price */}
+                      <td className="py-3 px-3.5 font-mono font-bold text-slate-900 whitespace-nowrap">
+                        {quote.clientPrice}
+                      </td>
+
+                      {/* Expiration */}
+                      <td className="py-3 px-3.5 font-mono font-medium text-amber-700 whitespace-nowrap">
+                        {quote.expiresIn}
+                      </td>
+                    </tr>
+                  );
+                })}
+
+                {filteredQuotes.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="text-center py-10 text-[var(--muted)]">
-                      <p className="text-sm">No quotes matching this filter</p>
+                    <td colSpan={8} className="text-center py-12 text-slate-400">
+                      No quotes found matching this filter.
                     </td>
                   </tr>
-                ) : (
-                  filteredRows.map(({ booking, versionsCount, versions, rootId }) => {
-                    const isSelected = selectedItem?.booking.id === booking.id;
-                    const quoteIdentifier = booking.quoteId || formatDocumentId("Q", rootId, booking.quoteVersion || 1);
-                    const leg = booking.legs[0];
-                    const isExpanded = Boolean(expandedRoots[rootId]);
-
-                    return (
-                      <React.Fragment key={booking.id}>
-                        <tr
-                          onClick={() => setSelectedQuoteId(booking.id)}
-                          onDoubleClick={() => handleOpenQuote(quoteIdentifier)}
-                          className={`clickable-row ${isSelected ? "bg-[var(--accent-soft)]" : ""}`}
-                        >
-                          <td>
-                            <Link
-                              href={`/quotes/${encodeURIComponent(quoteIdentifier)}`}
-                              className="font-mono font-bold text-xs block text-[var(--ink)] hover:text-[var(--accent)] hover:underline"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {renderFormattedId(quoteIdentifier)}
-                            </Link>
-                            <div className="flex items-center gap-1.5 mt-0.5">
-                              <span className="font-mono text-[10px] text-[var(--muted)]">
-                                {versionsCount} {versionsCount === 1 ? "version" : "versions"}
-                              </span>
-                              {versionsCount > 1 && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setExpandedRoots((prev) => ({ ...prev, [rootId]: !prev[rootId] }));
-                                  }}
-                                  className="text-[10px] font-mono text-[var(--accent)] hover:underline flex items-center gap-0.5 ml-1"
-                                >
-                                  <span>{isExpanded ? "Hide" : "Show"}</span>
-                                  <ChevronDown className={`w-3 h-3 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                          <td>
-                            <span className="font-mono text-xs font-semibold block whitespace-nowrap">
-                              {leg?.flightDate || "—"}
-                            </span>
-                            <span className="font-mono text-[11px] text-[var(--muted)]">
-                              {leg?.departureTimeLocal || "10:00"}
-                            </span>
-                          </td>
-                          <td>
-                            <span className="font-display font-bold text-sm block whitespace-nowrap">
-                              {leg?.origin?.icao || "LSGG"} ⇄ {leg?.destination?.icao || "EGSS"}
-                            </span>
-                            <span className="font-mono text-[10px] uppercase text-[var(--muted)]">
-                              {booking.tripType.replace("_", " ")}
-                            </span>
-                          </td>
-                          <td>
-                            <span className="font-sans font-semibold text-xs block text-[var(--ink)]">
-                              {booking.client?.fullName || "Private Client"}
-                            </span>
-                            <span className="font-mono text-[10px] text-[var(--muted)]">
-                              {booking.agentName ? `Curator: ${booking.agentName}` : booking.accountNumber}
-                            </span>
-                          </td>
-                          <td>
-                            <span className="font-sans text-xs font-medium block">
-                              {booking.aircraft?.name || "Mustang"}
-                            </span>
-                            <span className="font-mono text-[10px] text-[var(--muted)]">
-                              {booking.aircraft?.categoryLabel || "Entry-level"}
-                            </span>
-                          </td>
-                          <td className="font-mono font-bold text-xs">
-                            {leg?.paxCount || 4}
-                          </td>
-                          <td>
-                            <span className="font-mono font-bold text-xs text-[var(--ink)] whitespace-nowrap">
-                              {formatCurrency(booking.pricing.totalFlightPrice, booking.pricing.currency)}
-                            </span>
-                          </td>
-                          <td>
-                            <span className="font-mono text-[11px] text-[var(--amber)] font-medium">
-                              {booking.quoteExpirationDate ? "in 18h" : "48h"}
-                            </span>
-                          </td>
-                          <td>
-                            <StatusPill
-                              label={(booking.quoteStatus || booking.status || "open").toUpperCase()}
-                              variant={
-                                booking.quoteStatus === "accepted"
-                                  ? "green"
-                                  : booking.quoteStatus === "expired"
-                                  ? "red"
-                                  : "blue"
-                              }
-                            />
-                          </td>
-                        </tr>
-
-                        {/* Nested Revisions Sub-row */}
-                        {isExpanded && versionsCount > 1 && (
-                          <tr className="bg-amber-50/25 border-b border-[var(--line)]">
-                            <td colSpan={9} className="p-3 pl-8">
-                              <div className="space-y-1.5 pl-3 border-l-2 border-[var(--accent)]">
-                                <span className="text-[10px] font-mono font-bold uppercase text-[var(--muted)] block">
-                                  All Revisions for {renderFormattedId(quoteIdentifier)}:
-                                </span>
-                                <div className="space-y-1">
-                                  {versions.slice().reverse().map((ver, vIdx) => {
-                                    const isCurrent = (ver.quoteVersion || 1) === (booking.quoteVersion || 1);
-                                    const vId = ver.quoteId || formatDocumentId("Q", rootId, ver.quoteVersion || 1);
-                                    return (
-                                      <div
-                                        key={ver.id || vIdx}
-                                        className="flex items-center justify-between py-1.5 px-3 rounded bg-white border border-[var(--line)] text-xs"
-                                      >
-                                        <div className="flex items-center gap-3">
-                                          <span className="font-mono font-bold text-xs">
-                                            {renderFormattedId(vId)}
-                                          </span>
-                                          <span
-                                            className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
-                                              isCurrent
-                                                ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
-                                                : "bg-red-100 text-red-800 border border-red-300"
-                                            }`}
-                                          >
-                                            {isCurrent ? "ACTIVE" : "CANCELLED"}
-                                          </span>
-                                          <span className="text-[11px] text-[var(--muted)]">
-                                            {ver.legs[0]?.flightDate || "—"} • {ver.aircraft?.name || "Aircraft"}
-                                          </span>
-                                        </div>
-                                        <div className="flex items-center gap-3">
-                                          <span className="font-mono font-bold">
-                                            {formatCurrency(ver.pricing?.totalFlightPrice || 0, ver.pricing?.currency)}
-                                          </span>
-                                          <button
-                                            type="button"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              openDocument(ver, "quotation");
-                                            }}
-                                            className="text-[11px] font-mono text-[var(--accent)] hover:underline flex items-center gap-1"
-                                          >
-                                            <FileText className="w-3 h-3" />
-                                            <span>Generate PDF</span>
-                                          </button>
-                                          <Link
-                                            href={`/quotes/${encodeURIComponent(vId)}`}
-                                            onClick={(e) => e.stopPropagation()}
-                                            className="text-[11px] font-mono text-[var(--muted)] hover:text-[var(--ink)] underline ml-1"
-                                          >
-                                            View
-                                          </Link>
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      </React.Fragment>
-                    );
-                  })
                 )}
               </tbody>
             </table>
           </div>
+
+          <div className="p-3 border-t border-slate-100 text-xs text-slate-400 bg-slate-50/40">
+            One row per quote, always its latest version. Click a row to preview it on the right. Double-click or &ldquo;Open&rdquo; goes to its full page.
+          </div>
         </div>
 
-        {/* Right 1 Col: Preview Panel (R-012) */}
-        {selectedItem && (() => {
-          const previewQuoteId = selectedItem.booking.quoteId || formatDocumentId("Q", selectedItem.rootId, selectedItem.booking.quoteVersion || 1);
-
-          return (
-            <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-4">
-              <div className="flex items-center justify-between border-b border-[var(--line)] pb-3">
-                <div>
-                  <span className="font-mono text-[10px] uppercase font-bold text-[var(--muted)]">
-                    Quote Preview
-                  </span>
-                  <h3 className="font-mono font-bold text-lg text-[var(--ink)] m-0">
-                    {renderFormattedId(previewQuoteId)}
-                  </h3>
-                </div>
-
-                <button
-                  onClick={() => handleOpenQuote(previewQuoteId)}
-                  className="btn-secondary text-xs"
-                >
-                  <span>Open Quote</span>
-                  <ArrowRight className="w-3 h-3" />
-                </button>
-              </div>
-
-            {/* Itinerary Snippet */}
-            <div className="space-y-1.5 text-xs font-sans">
-              <span className="font-display font-bold uppercase text-[10px] text-[var(--muted)] tracking-wider">
-                Routing & Schedule
-              </span>
-              <div className="p-3 bg-[var(--paper)] rounded-lg border border-[var(--line)] space-y-1">
-                <div className="font-display font-bold text-sm text-[var(--ink)] whitespace-nowrap">
-                  {selectedItem.booking.legs[0]?.origin?.name || "Geneva"} ({selectedItem.booking.legs[0]?.origin?.icao}) ⇄{" "}
-                  {selectedItem.booking.legs[0]?.destination?.name || "London"} ({selectedItem.booking.legs[0]?.destination?.icao})
-                </div>
-                <div className="font-mono text-xs text-[var(--muted)]">
-                  Date: {selectedItem.booking.legs[0]?.flightDate} • {selectedItem.booking.legs[0]?.departureTimeLocal} Local
-                </div>
-              </div>
-            </div>
-
-            {/* Aircraft & Pax */}
-            <div className="grid grid-cols-2 gap-2 text-xs font-mono">
-              <div className="p-2.5 bg-[var(--paper)] rounded border border-[var(--line)]">
-                <span className="text-[10px] text-[var(--muted)] uppercase block">Aircraft</span>
-                <span className="font-bold text-[var(--ink)] block truncate">
-                  {selectedItem.booking.aircraft?.name}
+        {/* Right Column: Preview Rail (approx 4.5/12 cols) */}
+        {selectedQuote && (
+          <div className="lg:col-span-4 bg-white border border-slate-200/90 rounded-xl p-5 shadow-2xs space-y-4 sticky top-6">
+            {/* Top row with Code and Open quote link */}
+            <div>
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-xs text-slate-400 font-medium">
+                  {selectedQuote.quoteCode}
                 </span>
-              </div>
-              <div className="p-2.5 bg-[var(--paper)] rounded border border-[var(--line)]">
-                <span className="text-[10px] text-[var(--muted)] uppercase block">Passengers</span>
-                <span className="font-bold text-[var(--ink)] block">
-                  {selectedItem.booking.legs[0]?.paxCount || 4} Pax
-                </span>
-              </div>
-            </div>
-
-            {/* Price Build (Admin Visibility) */}
-            <div className="space-y-1.5 text-xs font-mono">
-              <span className="font-display font-bold uppercase text-[10px] text-[var(--muted)] tracking-wider">
-                Price Build (Admin)
-              </span>
-              <div className="p-3 bg-[var(--paper)] rounded-lg border border-[var(--line)] space-y-1 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-[var(--muted)]">Direct Flight Cost:</span>
-                  <span>{formatCurrency(selectedItem.booking.pricing.operatorCost || (selectedItem.booking.pricing.totalFlightPrice * 0.85), selectedItem.booking.pricing.currency)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[var(--muted)]">Company Margin:</span>
-                  <span>+ {formatCurrency(selectedItem.booking.pricing.companyMargin || (selectedItem.booking.pricing.totalFlightPrice * 0.10), selectedItem.booking.pricing.currency)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[var(--muted)]">Curator Commission:</span>
-                  <span>+ {formatCurrency(selectedItem.booking.pricing.agentCommission || (selectedItem.booking.pricing.totalFlightPrice * 0.05), selectedItem.booking.pricing.currency)}</span>
-                </div>
-                <div className="flex justify-between pt-1 border-t border-[var(--line)] font-bold text-sm text-[var(--ink)]">
-                  <span>Client Total:</span>
-                  <span>{formatCurrency(selectedItem.booking.pricing.totalFlightPrice, selectedItem.booking.pricing.currency)}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Revisions in Preview Panel */}
-            {selectedItem.versions && selectedItem.versions.length > 1 && (
-              <div className="space-y-2 pt-2 border-t border-[var(--line)]">
-                <span className="text-[11px] font-mono font-bold text-[var(--muted)] uppercase block">
-                  Quote Revisions ({selectedItem.versions.length})
-                </span>
-                <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                  {selectedItem.versions.slice().reverse().map((ver, idx) => {
-                    const isLatest = (ver.quoteVersion || 1) === (selectedItem.booking.quoteVersion || 1);
-                    const vId = ver.quoteId || formatDocumentId("Q", selectedItem.rootId, ver.quoteVersion || 1);
-                    return (
-                      <div key={ver.id || idx} className="flex items-center justify-between p-2 rounded bg-[var(--paper)] text-xs font-mono">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-bold text-[11px]">{renderFormattedId(vId)}</span>
-                          <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
-                            isLatest ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"
-                          }`}>
-                            {isLatest ? "ACTIVE" : "CANCELLED"}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[11px]">{formatCurrency(ver.pricing?.totalFlightPrice || 0, ver.pricing?.currency)}</span>
-                          <button
-                            type="button"
-                            onClick={() => openDocument(ver, "quotation")}
-                            className="text-[10px] text-[var(--accent)] hover:underline"
-                            title="Generate PDF"
-                          >
-                            PDF
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Actions: Quote PDF, Revise, Book */}
-            <div className="space-y-2 pt-2 border-t border-[var(--line)]">
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => openDocument(selectedItem.booking, "quotation")}
-                  className="btn-secondary text-xs justify-center"
-                >
-                  <FileText className="w-3.5 h-3.5" />
-                  <span>Quote PDF</span>
-                </button>
-
                 <Link
-                  href={`/quotes/new?reviseQuote=${encodeURIComponent(previewQuoteId)}`}
-                  className="btn-secondary text-xs justify-center"
+                  href={`/trips/${selectedQuote.rootId}/pricing`}
+                  className="text-xs text-slate-600 hover:text-slate-900 font-medium inline-flex items-center gap-0.5 transition-colors"
                 >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Revise</span>
+                  <span>Open quote</span>
+                  <span>→</span>
                 </Link>
               </div>
 
+              <h2 className="text-base font-bold text-slate-900 tracking-tight mt-1 mb-0">
+                {selectedQuote.routeTitle}
+              </h2>
+              <p className="text-xs text-slate-500 m-0 mt-0.5">
+                {selectedQuote.account} · {selectedQuote.authorisedPerson} · Curator {selectedQuote.curator}
+              </p>
+            </div>
+
+            {/* 4-Grid Specs */}
+            <div className="grid grid-cols-2 gap-3 text-xs pt-1 border-t border-slate-100">
+              <div>
+                <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                  LEG 1
+                </div>
+                <div className="font-medium text-slate-900 mt-0.5">
+                  {selectedQuote.flightDate} {selectedQuote.flightTimeStr}
+                </div>
+                <div className="text-[11px] text-slate-500">
+                  {selectedQuote.originIcao} → {selectedQuote.destIcao} · {selectedQuote.pax} pax
+                </div>
+              </div>
+
+              <div>
+                <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                  AIRCRAFT
+                </div>
+                <div className="font-medium text-slate-900 mt-0.5">
+                  {selectedQuote.aircraftModel} · {selectedQuote.aircraftYear || "2020"}
+                </div>
+                <div className="text-[11px] text-slate-500">
+                  {selectedQuote.aircraftFeatures || "Light · lav enclosed"}
+                </div>
+              </div>
+
+              <div>
+                <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                  LUGGAGE / PETS
+                </div>
+                <div className="text-slate-700 mt-0.5">
+                  {selectedQuote.luggagePetsText || "3 suitcases · none"}
+                </div>
+              </div>
+
+              <div>
+                <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                  SERVICES
+                </div>
+                <div className="text-slate-700 mt-0.5">
+                  {selectedQuote.servicesText || "None requested"}
+                </div>
+              </div>
+            </div>
+
+            {/* Cost Breakdown */}
+            <div className="pt-3 border-t border-slate-100 space-y-1.5 text-xs">
+              <div className="flex justify-between items-center text-slate-600">
+                <span>Operator cost (admin only)</span>
+                <span className="font-mono text-slate-900">{selectedQuote.operatorCost}</span>
+              </div>
+              <div className="flex justify-between items-center text-slate-600">
+                <span>{selectedQuote.companyMarginLabel}</span>
+                <span className="font-mono text-slate-900">{selectedQuote.companyMargin}</span>
+              </div>
+              <div className="flex justify-between items-center text-slate-600">
+                <span>Curator mark-up {selectedQuote.curatorMarginPct} %</span>
+                <span className="font-mono text-slate-900">{selectedQuote.curatorMarkup}</span>
+              </div>
+              <div className="flex justify-between items-center font-bold text-slate-900 pt-1.5 border-t border-slate-100 text-sm">
+                <span>Client price</span>
+                <span className="font-mono text-base">{selectedQuote.clientPrice}</span>
+              </div>
+            </div>
+
+            {/* Versions List */}
+            <div className="pt-3 border-t border-slate-100 space-y-2 text-xs">
+              <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                VERSIONS · LATEST FIRST
+              </div>
+              <div className="space-y-1.5">
+                {selectedQuote.versions.map((v, i) => (
+                  <div key={i} className="flex justify-between items-center">
+                    <div>
+                      <span className="font-mono font-bold text-slate-900 mr-2">{v.verNum}</span>
+                      <span className="text-slate-500 text-[11px]">{v.summary}</span>
+                    </div>
+                    <span className="font-mono font-medium text-slate-900">{v.price}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Actions Buttons */}
+            <div className="pt-3 border-t border-slate-100 flex items-center gap-2">
               <button
-                onClick={async () => {
-                  setSelectedBookingForDetail(null);
-                  try {
-                    await convertQuoteToBooked(selectedItem.booking.id, selectedItem.booking);
-                  } catch (e) {
-                    console.error("Booking conversion notice:", e);
-                  }
-                  setSelectedBookingForDetail(null);
-                  router.push("/bookings");
+                type="button"
+                onClick={() => {
+                  const bookingObj = bookings.find((b) => b.id === selectedQuote.id) || {
+                    id: selectedQuote.id,
+                    tripNumber: selectedQuote.rootId,
+                    quoteId: selectedQuote.quoteCode,
+                    quoteVersion: selectedQuote.versionsCount,
+                    pricing: {
+                      totalFlightPrice: selectedQuote.clientPriceNum,
+                      currency: "EUR"
+                    },
+                    legs: [{
+                      flightDate: selectedQuote.flightDate,
+                      departureTimeLocal: selectedQuote.flightTimeStr,
+                      origin: { icao: selectedQuote.originIcao, city: "Origin" },
+                      destination: { icao: selectedQuote.destIcao, city: "Destination" }
+                    }]
+                  };
+                  openDocument(bookingObj as any, "quotation");
                 }}
-                className="w-full btn-primary text-xs justify-center"
+                className="flex-1 bg-white border border-slate-200 text-slate-800 hover:bg-slate-50 py-1.5 px-3 rounded-lg text-xs font-medium shadow-2xs transition-colors text-center"
               >
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Book This Quote</span>
+                Quote PDF
+              </button>
+
+              <button
+                type="button"
+                onClick={() => router.push(`/trips/${selectedQuote.rootId}/pricing`)}
+                className="flex-1 bg-white border border-slate-200 text-slate-800 hover:bg-slate-50 py-1.5 px-3 rounded-lg text-xs font-medium shadow-2xs transition-colors text-center"
+              >
+                Revise
+              </button>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  const bookingObj = bookings.find((b) => b.id === selectedQuote.id);
+                  if (bookingObj) {
+                    await convertQuoteToBooked(bookingObj.id, bookingObj);
+                  }
+                  router.push(`/trips/${selectedQuote.rootId}/itinerary`);
+                }}
+                className="flex-1 bg-[#0f172a] hover:bg-slate-800 text-white py-1.5 px-3 rounded-lg text-xs font-semibold shadow-2xs transition-colors text-center"
+              >
+                Book
               </button>
             </div>
           </div>
-        );
-      })()}
+        )}
       </div>
     </div>
   );

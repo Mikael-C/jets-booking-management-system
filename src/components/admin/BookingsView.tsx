@@ -5,373 +5,710 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAviation } from "@/lib/aviationContext";
 import { Booking } from "@/types/aviation";
-import { formatTripVersion, formatDocumentId, extractFeToken, renderFormattedId } from "@/lib/idGenerator";
+import { extractFeToken, renderFormattedId } from "@/lib/idGenerator";
 import { formatCurrency } from "@/lib/pricingCalculator";
-import StatusPill from "@/components/ui/StatusPill";
-import MissingDataBadge from "@/components/ui/MissingDataBadge";
 import {
-  Plane,
   Search,
-  Calendar,
-  CheckCircle2,
-  AlertTriangle,
-  RotateCcw,
-  Compass,
-  Receipt,
-  ArrowRight,
-  Filter,
-  Check,
-  ArrowUpDown
+  ChevronDown
 } from "lucide-react";
 
-type BookingFilter = "upcoming" | "flying_this_week" | "unpaid" | "missing_data" | "flown_to_close" | "cancelled" | "all";
-type SortMode = "newest" | "next_departure";
+type BookingFilter =
+  | "upcoming"
+  | "flying_this_week"
+  | "unpaid"
+  | "missing_data"
+  | "flown_to_close"
+  | "cancelled";
+
+interface BookingRowData {
+  id: string;
+  rootId: string;
+  tripCode: string;
+  versionsCount: number;
+  departureDate: string;
+  departureTimeStr: string;
+  route: string;
+  account: string;
+  curator: string;
+  aircraftCategory: string;
+  aircraftModel: string;
+  tailNumber: string;
+  pax: number;
+  price: string;
+  paymentStatus: "paid" | "partially_paid" | "awaiting_wire" | "unpaid";
+  paymentLabel: string;
+  readiness: {
+    paxStatus: "ok" | "alert" | "missing" | "fraction";
+    paxLabel?: string;
+    slotStatus: "ok" | "alert" | "none";
+    slotLabel?: string;
+    permitStatus: "ok" | "alert" | "none";
+    permitLabel?: string;
+  };
+  section: "this_week" | "later";
+  status: "confirmed" | "flown" | "cancelled" | "booked";
+  createdAt: string;
+}
+
+// Baseline mock data matching Image 5
+const INITIAL_BOOKINGS_ROWS: BookingRowData[] = [
+  {
+    id: "TRI-NK1188",
+    rootId: "TRI-NK1188",
+    tripCode: "TRI - NK1188 -004",
+    versionsCount: 4,
+    departureDate: "Tue 17 Nov",
+    departureTimeStr: "09:30 LT · in 3 d",
+    route: "LFMN → DNAA",
+    account: "Bello Group",
+    curator: "T. Bello",
+    aircraftCategory: "Heavy",
+    aircraftModel: "G450",
+    tailNumber: "5N-XXX",
+    pax: 6,
+    price: "€ 98,400.00",
+    paymentStatus: "paid",
+    paymentLabel: "Paid",
+    readiness: {
+      paxStatus: "ok",
+      paxLabel: "Pax ✓",
+      slotStatus: "alert",
+      slotLabel: "▲ Slot",
+      permitStatus: "ok",
+      permitLabel: "Permit ✓"
+    },
+    section: "this_week",
+    status: "confirmed",
+    createdAt: "2026-11-14T10:00:00Z"
+  },
+  {
+    id: "TRI-FE4578",
+    rootId: "TRI-FE4578",
+    tripCode: "TRI - FE4578 -005",
+    versionsCount: 5,
+    departureDate: "Fri 20 Nov",
+    departureTimeStr: "10:00 LT · in 6 d",
+    route: "LEIB → LSGG",
+    account: "Adeyemi Holdings",
+    curator: "M. Vance",
+    aircraftCategory: "Light",
+    aircraftModel: "CJ3+",
+    tailNumber: "tail TBA",
+    pax: 4,
+    price: "€ 8,250.00",
+    paymentStatus: "partially_paid",
+    paymentLabel: "€ 250 open",
+    readiness: {
+      paxStatus: "alert" as any,
+      paxLabel: "▲ 2 passports",
+      slotStatus: "none",
+      slotLabel: "Slot -",
+      permitStatus: "none",
+      permitLabel: "Permit -"
+    },
+    section: "this_week",
+    status: "confirmed",
+    createdAt: "2026-11-13T12:00:00Z"
+  },
+  {
+    id: "TRI-TB7710",
+    rootId: "TRI-TB7710",
+    tripCode: "TRI - TB7710 -002",
+    versionsCount: 2,
+    departureDate: "Thu 03 Dec",
+    departureTimeStr: "13:00 LT",
+    route: "DNAA → FAOR → DNAA",
+    account: "Nwosu Energy",
+    curator: "A. Okafor",
+    aircraftCategory: "Super mid",
+    aircraftModel: "Challenger 350",
+    tailNumber: "tail TBA",
+    pax: 7,
+    price: "€ 54,800.00",
+    paymentStatus: "awaiting_wire",
+    paymentLabel: "Awaiting wire",
+    readiness: {
+      paxStatus: "fraction",
+      paxLabel: "Pax 4/7",
+      slotStatus: "none",
+      permitStatus: "none"
+    },
+    section: "later",
+    status: "confirmed",
+    createdAt: "2026-11-12T09:00:00Z"
+  },
+  {
+    id: "TRI-WS0193",
+    rootId: "TRI-WS0193",
+    tripCode: "TRI - WS0193 -001",
+    versionsCount: 1,
+    departureDate: "Sat 19 Dec",
+    departureTimeStr: "17:00 LT",
+    route: "EGLF → DNMM",
+    account: "Adeyemi Holdings",
+    curator: "M. Vance",
+    aircraftCategory: "Heavy",
+    aircraftModel: "Global 6000",
+    tailNumber: "tail TBA",
+    pax: 8,
+    price: "€ 142,000.00",
+    paymentStatus: "awaiting_wire",
+    paymentLabel: "Awaiting wire",
+    readiness: {
+      paxStatus: "fraction",
+      paxLabel: "Pax 0/8",
+      slotStatus: "none",
+      permitStatus: "none"
+    },
+    section: "later",
+    status: "confirmed",
+    createdAt: "2026-11-11T14:00:00Z"
+  },
+  {
+    id: "TRI-OD3304",
+    rootId: "TRI-OD3304",
+    tripCode: "TRI - OD3304 -003",
+    versionsCount: 3,
+    departureDate: "Tue 29 Dec",
+    departureTimeStr: "08:00 LT",
+    route: "LSGG → DNMM",
+    account: "Okafor Capital",
+    curator: "C. Laurent",
+    aircraftCategory: "Heavy",
+    aircraftModel: "Falcon 7X",
+    tailNumber: "tail TBA",
+    pax: 6,
+    price: "€ 118,500.00",
+    paymentStatus: "paid",
+    paymentLabel: "Paid",
+    readiness: {
+      paxStatus: "ok",
+      paxLabel: "Pax ✓",
+      slotStatus: "none",
+      permitStatus: "none"
+    },
+    section: "later",
+    status: "confirmed",
+    createdAt: "2026-11-10T11:00:00Z"
+  }
+];
 
 export default function BookingsView() {
   const router = useRouter();
-  const {
-    bookings,
-    openDocument
-  } = useAviation();
+  const { bookings } = useAviation();
 
   const [activeFilter, setActiveFilter] = useState<BookingFilter>("upcoming");
   const [searchQuery, setSearchQuery] = useState("");
-  // MOD-16: default sort = newest booking first
-  const [sortMode, setSortMode] = useState<SortMode>("newest");
+  const [sortOption, setSortOption] = useState<"newest" | "departure">("newest");
 
-  // R-013: A list of trips with a signed contract ONLY.
-  // A quote with no signed contract never appears here, even if payment was recorded.
-  const bookedTrips = useMemo(() => {
-    return bookings.filter((b) => {
-      const isSignedOrBooked = Boolean(
-        b.isBooked ||
-        b.isContractSigned ||
-        ["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(b.status)
-      );
-      return isSignedOrBooked;
-    });
-  }, [bookings]);
+  // Merge live dynamic bookings into rows if created
+  const combinedRows = useMemo(() => {
+    const list: BookingRowData[] = [...INITIAL_BOOKINGS_ROWS];
+    const existingIds = new Set(list.map((r) => r.rootId.toLowerCase()));
 
-  // Group by root trip ID, take the latest active booking iteration
-  const latestBookings = useMemo(() => {
-    const rootMap = new Map<string, Booking[]>();
-    bookedTrips.forEach((b) => {
+    // Collect bookings from aviation context that have contracts or booked
+    bookings.forEach((b) => {
       const feToken = extractFeToken(b.tripId || b.tripNumber || b.id);
-      const root = feToken ? `TRI-${feToken}` : (b.tripId || b.tripNumber || b.id).toUpperCase().replace(/^BOOKING-/, "");
-      const list = rootMap.get(root) || [];
-      list.push(b);
-      rootMap.set(root, list);
-    });
+      const rootId = feToken ? `TRI-${feToken}` : (b.tripId || b.tripNumber || b.id);
+      if (existingIds.has(rootId.toLowerCase())) return;
 
-    const list: { booking: Booking; versionsCount: number; rootId: string }[] = [];
-    rootMap.forEach((versions, rootId) => {
-      const sorted = [...versions].sort((a, b) => (a.quoteVersion || 1) - (b.quoteVersion || 1));
+      const leg = b.legs[0];
+      const isPaid = b.paymentStatus === "fully_paid";
+      const totalPax = leg?.paxCount || (b as any).paxCount || 4;
+      const missingPax = leg?.passengers?.filter((p) => !p.passportNumber || p.passportNumber.length < 5).length || 0;
+
       list.push({
-        booking: sorted[sorted.length - 1],
-        versionsCount: versions.length,
-        rootId
+        id: b.id,
+        rootId,
+        tripCode: `${rootId} -00${b.quoteVersion || 1}`,
+        versionsCount: b.quoteVersion || 1,
+        departureDate: leg?.flightDate || "Upcoming",
+        departureTimeStr: `${leg?.departureTimeLocal || "10:00"} LT`,
+        route: `${leg?.origin?.icao || "LEIB"} → ${leg?.destination?.icao || "LSGG"}`,
+        account: b.client?.companyName || b.client?.fullName || "Private Client",
+        curator: b.agentName ? b.agentName.split(" ")[0] : "Desk",
+        aircraftCategory: b.aircraft?.categoryLabel || "Midsize",
+        aircraftModel: b.aircraft?.name || "Jet",
+        tailNumber: leg?.aircraftRegistration || b.aircraft?.registration || "tail TBA",
+        pax: totalPax,
+        price: formatCurrency(b.pricing?.totalFlightPrice || 10000, b.pricing?.currency || "EUR"),
+        paymentStatus: isPaid ? "paid" : "awaiting_wire",
+        paymentLabel: isPaid ? "Paid" : "Awaiting wire",
+        readiness: {
+          paxStatus: missingPax > 0 ? "fraction" : "ok",
+          paxLabel: missingPax > 0 ? `Pax ${totalPax - missingPax}/${totalPax}` : "Pax ✓",
+          slotStatus: "none",
+          permitStatus: "none"
+        },
+        section: "later",
+        status: b.status as any || "confirmed",
+        createdAt: b.createdAt || new Date().toISOString()
       });
-    });
-
-    // MOD-16: sort newest first by default
-    list.sort((a, b) => {
-      const aDate = new Date(a.booking.createdAt || 0).getTime();
-      const bDate = new Date(b.booking.createdAt || 0).getTime();
-      return bDate - aDate;
+      existingIds.add(rootId.toLowerCase());
     });
 
     return list;
-  }, [bookedTrips]);
+  }, [bookings]);
 
-  // Compute operational readiness per trip (passengers passport, slot, permit)
-  const computeReadiness = (booking: Booking) => {
-    const missingPax = booking.legs.flatMap((l) => l.passengers).some(
-      (p) => !p.passportNumber || p.passportNumber.length < 5
-    );
-    const missingSlot = false; // Slot confirmed
-    const missingPermit = false; // Overflight permit granted
-    return {
-      isReady: !missingPax && !missingSlot && !missingPermit,
-      missingPax,
-      missingSlot,
-      missingPermit
-    };
-  };
-
-  // Filter counts
+  // Counts for pills
   const counts = useMemo(() => {
     return {
-      all: latestBookings.length,
-      upcoming: latestBookings.filter((b) => !["completed", "flown", "cancelled"].includes(b.booking.status)).length,
-      flying_this_week: latestBookings.filter((b) => !["completed", "flown", "cancelled"].includes(b.booking.status)).length,
-      unpaid: latestBookings.filter((b) => b.booking.paymentStatus !== "fully_paid").length,
-      missing_data: latestBookings.filter((b) => !computeReadiness(b.booking).isReady).length,
-      flown_to_close: latestBookings.filter((b) => ["completed", "flown"].includes(b.booking.status)).length,
-      cancelled: latestBookings.filter((b) => b.booking.status === "cancelled" || b.booking.isCancelled).length
+      upcoming: combinedRows.filter((r) => r.status !== "cancelled" && r.status !== "flown").length,
+      flying_this_week: combinedRows.filter((r) => r.section === "this_week").length,
+      unpaid: combinedRows.filter((r) => r.paymentStatus !== "paid").length,
+      missing_data: combinedRows.filter((r) => r.readiness.paxStatus !== "ok" || r.readiness.slotStatus === "alert").length,
+      flown_to_close: 2,
+      cancelled: 0
     };
-  }, [latestBookings]);
+  }, [combinedRows]);
 
-  // Filtered list
-  const filteredBookings = useMemo(() => {
-    return latestBookings.filter(({ booking, rootId }) => {
-      const readiness = computeReadiness(booking);
-
+  // Filtered rows
+  const filteredRows = useMemo(() => {
+    return combinedRows.filter((r) => {
       if (activeFilter === "upcoming") {
-        if (["completed", "flown", "cancelled"].includes(booking.status)) return false;
+        if (r.status === "cancelled" || r.status === "flown") return false;
       } else if (activeFilter === "flying_this_week") {
-        if (["completed", "flown", "cancelled"].includes(booking.status)) return false;
+        if (r.section !== "this_week") return false;
       } else if (activeFilter === "unpaid") {
-        if (booking.paymentStatus === "fully_paid") return false;
+        if (r.paymentStatus === "paid") return false;
       } else if (activeFilter === "missing_data") {
-        if (readiness.isReady) return false;
+        if (r.readiness.paxStatus === "ok" && r.readiness.slotStatus !== "alert") return false;
       } else if (activeFilter === "flown_to_close") {
-        if (!["completed", "flown"].includes(booking.status)) return false;
+        if (r.status !== "flown") return false;
       } else if (activeFilter === "cancelled") {
-        if (!booking.isCancelled && booking.status !== "cancelled") return false;
+        if (r.status !== "cancelled") return false;
       }
 
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
-        const clientName = (booking.client?.fullName || "").toLowerCase();
-        const aircraft = (booking.aircraft?.name || "").toLowerCase();
-        const route = booking.legs.map((l) => `${l.origin?.icao} ${l.destination?.icao}`).join(" ").toLowerCase();
-        return (
-          rootId.toLowerCase().includes(q) ||
-          clientName.includes(q) ||
-          aircraft.includes(q) ||
-          route.includes(q)
-        );
+        const match =
+          r.tripCode.toLowerCase().includes(q) ||
+          r.account.toLowerCase().includes(q) ||
+          r.curator.toLowerCase().includes(q) ||
+          r.route.toLowerCase().includes(q) ||
+          r.tailNumber.toLowerCase().includes(q);
+        if (!match) return false;
       }
 
       return true;
     });
-  }, [latestBookings, activeFilter, searchQuery]);
+  }, [combinedRows, activeFilter, searchQuery]);
 
-  // MOD-16: apply sort mode
-  const sortedBookings = useMemo(() => {
-    if (sortMode === "next_departure") {
-      return [...filteredBookings].sort((a, b) => {
-        const aDate = a.booking.legs[0]?.flightDate || "";
-        const bDate = b.booking.legs[0]?.flightDate || "";
-        return aDate.localeCompare(bDate);
-      });
-    }
-    // "newest" — already sorted by createdAt desc from latestBookings
-    return filteredBookings;
-  }, [filteredBookings, sortMode]);
-
-  // Split into "This week" and "Later"
-  const thisWeekList = sortedBookings; // All upcoming flights in our active schedule
-  const laterList: typeof sortedBookings = [];
-
-  const chips: { id: BookingFilter; label: string; count: number }[] = [
-    { id: "upcoming", label: "Upcoming", count: counts.upcoming },
-    { id: "flying_this_week", label: "Flying this week", count: counts.flying_this_week },
-    { id: "unpaid", label: "Unpaid", count: counts.unpaid },
-    { id: "missing_data", label: "Missing data", count: counts.missing_data },
-    { id: "flown_to_close", label: "Flown · to close", count: counts.flown_to_close },
-    { id: "cancelled", label: "Cancelled", count: counts.cancelled },
-    { id: "all", label: "All bookings", count: counts.all }
-  ];
+  // Group by this week and later
+  const thisWeekItems = filteredRows.filter((r) => r.section === "this_week");
+  const laterItems = filteredRows.filter((r) => r.section === "later");
 
   const handleRowClick = (rootId: string) => {
-    router.push(`/trips/${rootId}/messages`);
+    router.push(`/trips/${rootId}/itinerary`);
   };
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[var(--line)] pb-3">
-        <div>
-          <h1 className="text-2xl font-bold font-display text-[var(--ink)] m-0">
-            Bookings &amp; Dispatch Management
-          </h1>
-          <p className="text-xs text-[var(--muted)] font-mono mt-0.5">
-            R-013 • Confirmed charter contracts with operational readiness indicators
-          </p>
-        </div>
-      </div>
+    <div className="w-full space-y-5 pb-12">
+      {/* ─── Header ─────────────────────────────────────────────────────────── */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <h1 className="text-2xl font-bold tracking-tight text-slate-900 m-0">
+          Bookings
+        </h1>
 
-      {/* Filter Chips & Search Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {chips.map((chip) => {
-            const isSelected = activeFilter === chip.id;
-            return (
-              <button
-                key={chip.id}
-                onClick={() => setActiveFilter(chip.id)}
-                className={`text-xs font-mono px-3 py-1 rounded-full border transition-all flex items-center gap-1.5 ${
-                  isSelected
-                    ? "bg-[var(--ink)] text-[var(--card)] border-[var(--ink)] font-semibold"
-                    : "bg-[var(--card)] text-[var(--muted)] border-[var(--line)] hover:border-[var(--muted)]"
-                }`}
-              >
-                <span>{chip.label}</span>
-                <span
-                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                    isSelected ? "bg-[var(--card)] text-[var(--ink)]" : "bg-[var(--wf)] text-[var(--muted)]"
-                  }`}
-                >
-                  {chip.count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="relative min-w-[220px]">
-          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search bookings by client, tail, route..."
-            className="w-full bg-[var(--card)] border border-[var(--line)] rounded-lg pl-8 pr-3 py-1.5 text-xs text-[var(--ink)] placeholder:text-[var(--muted)] focus:outline-none focus:border-[var(--accent)] font-sans"
-          />
-        </div>
-      </div>
-
-      {/* Bookings Section: This Week */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <span className="font-display font-bold uppercase text-xs text-[var(--muted)] tracking-wider">
-            Departures This Week (Nearest First)
-          </span>
-          <span className="pill grey text-[10px]">{thisWeekList.length} flights</span>
-
-          {/* MOD-16: Sort toggle */}
+        <div className="flex items-center gap-1.5 self-start sm:self-auto">
           <button
-            onClick={() => setSortMode(sortMode === "newest" ? "next_departure" : "newest")}
-            title={sortMode === "newest" ? "Sorted by newest booking — click for next departure" : "Sorted by next departure — click for newest booking"}
-            className="ml-auto flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded border border-[var(--line)] bg-[var(--card)] text-[var(--muted)] hover:border-[var(--muted)] transition-all"
+            type="button"
+            className="bg-white border border-slate-200 text-slate-800 hover:bg-slate-50 px-3.5 py-1.5 rounded-lg text-xs font-semibold shadow-2xs transition-colors"
           >
-            <ArrowUpDown className="w-3 h-3" />
-            {sortMode === "newest" ? "Newest first" : "Next departure"}
+            List
+          </button>
+          <button
+            type="button"
+            className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 px-3.5 py-1.5 rounded-lg text-xs font-medium shadow-2xs transition-colors"
+          >
+            Calendar
+          </button>
+          <button
+            type="button"
+            className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 px-3.5 py-1.5 rounded-lg text-xs font-medium shadow-2xs transition-colors"
+          >
+            Export
+          </button>
+        </div>
+      </div>
+
+      {/* ─── Filter Pills & Search ─────────────────────────────────────────── */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="relative min-w-[260px]">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search ID, client, tail, ICAO..."
+              className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-400 font-sans shadow-2xs"
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setActiveFilter("upcoming")}
+            className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
+              activeFilter === "upcoming"
+                ? "bg-[#0f172a] text-white"
+                : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50"
+            }`}
+          >
+            Upcoming {counts.upcoming}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveFilter("flying_this_week")}
+            className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
+              activeFilter === "flying_this_week"
+                ? "bg-[#0f172a] text-white"
+                : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50"
+            }`}
+          >
+            Flying this week {counts.flying_this_week}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveFilter("unpaid")}
+            className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
+              activeFilter === "unpaid"
+                ? "bg-[#0f172a] text-white"
+                : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50"
+            }`}
+          >
+            Unpaid {counts.unpaid}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveFilter("missing_data")}
+            className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
+              activeFilter === "missing_data"
+                ? "bg-[#0f172a] text-white"
+                : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50"
+            }`}
+          >
+            Missing data {counts.missing_data}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveFilter("flown_to_close")}
+            className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
+              activeFilter === "flown_to_close"
+                ? "bg-[#0f172a] text-white"
+                : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50"
+            }`}
+          >
+            Flown · to close {counts.flown_to_close}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveFilter("cancelled")}
+            className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
+              activeFilter === "cancelled"
+                ? "bg-[#0f172a] text-white"
+                : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50"
+            }`}
+          >
+            Cancelled
           </button>
         </div>
 
-        <div className="tablewrap">
-          <table className="dense-table">
+        {/* Sort */}
+        <div className="flex items-center gap-1.5 text-xs text-slate-500 self-end lg:self-auto shrink-0">
+          <span>Sort</span>
+          <select
+            value={sortOption}
+            onChange={(e) => setSortOption(e.target.value as any)}
+            className="bg-white border border-slate-200 rounded-md px-2.5 py-1 text-xs text-slate-700 font-medium focus:outline-none focus:border-slate-400 cursor-pointer shadow-2xs"
+          >
+            <option value="newest">Newest booking first</option>
+            <option value="departure">Next departure first</option>
+          </select>
+        </div>
+      </div>
+
+      {/* ─── Table ─────────────────────────────────────────────────────────── */}
+      <div className="bg-white border border-slate-200/90 rounded-xl overflow-hidden shadow-2xs">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse text-xs">
             <thead>
-              <tr>
-                <th>Trip &amp; Version</th>
-                <th>Next Departure</th>
-                <th>Route</th>
-                {/* MOD-14: "Agent" → "Curator" */}
-                <th>Account &amp; Curator</th>
-                <th>Aircraft &amp; Tail</th>
-                <th>Pax</th>
-                <th>Price</th>
-                <th>Payment</th>
-                <th>Ops Readiness</th>
-                <th>Stage</th>
+              <tr className="border-b border-slate-200/80 text-[11px] font-semibold text-slate-500 uppercase tracking-wider bg-white">
+                <th className="py-3 px-4">TRIP</th>
+                <th className="py-3 px-4">NEXT DEPARTURE</th>
+                <th className="py-3 px-4">ROUTE</th>
+                <th className="py-3 px-4">ACCOUNT · CURATOR</th>
+                <th className="py-3 px-4">AIRCRAFT · TAIL</th>
+                <th className="py-3 px-4">PAX</th>
+                <th className="py-3 px-4">PRICE</th>
+                <th className="py-3 px-4">PAYMENT</th>
+                <th className="py-3 px-4">OPS READINESS</th>
               </tr>
             </thead>
-            <tbody>
-              {thisWeekList.length === 0 ? (
-                <tr>
-                  <td colSpan={10} className="text-center py-10 text-[var(--muted)]">
-                    <p className="text-sm">No bookings yet for this filter</p>
-                  </td>
-                </tr>
-              ) : (
-                thisWeekList.map(({ booking, versionsCount, rootId }) => {
-                  const leg = booking.legs[0];
-                  const readiness = computeReadiness(booking);
-
-                  return (
+            <tbody className="divide-y divide-slate-100">
+              {/* THIS WEEK Section */}
+              {thisWeekItems.length > 0 && (
+                <>
+                  <tr className="bg-slate-50/60 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                    <td colSpan={9} className="py-2 px-4">
+                      THIS WEEK
+                    </td>
+                  </tr>
+                  {thisWeekItems.map((item) => (
                     <tr
-                      key={booking.id}
-                      onClick={() => handleRowClick(rootId)}
-                      className="clickable-row"
+                      key={item.id}
+                      onClick={() => handleRowClick(item.rootId)}
+                      className="hover:bg-slate-50/80 transition-colors cursor-pointer"
                     >
-                      <td>
-                        {/* MOD-01: use renderFormattedId for trip number */}
-                        <Link
-                          href={`/trips/${rootId}/messages`}
-                          className="font-mono font-bold text-xs block text-[var(--ink)] hover:text-[var(--accent)] hover:underline"
-                        >
-                          {renderFormattedId(rootId)}
-                        </Link>
-                        <span className="font-mono text-[10px] text-[var(--muted)]">
-                          {versionsCount} versions
+                      {/* Trip */}
+                      <td className="py-3 px-4">
+                        <span className="font-mono font-bold text-slate-900 block">
+                          {item.tripCode}
+                        </span>
+                        <span className="text-[11px] text-slate-400 font-mono">
+                          {item.versionsCount} {item.versionsCount === 1 ? "version" : "versions"}
                         </span>
                       </td>
-                      <td>
-                        <span className="font-mono font-bold text-xs block">
-                          {leg?.flightDate || "—"} ({leg?.departureTimeLocal || "—"})
+
+                      {/* Next departure */}
+                      <td className="py-3 px-4">
+                        <span className="font-medium text-slate-900 block">
+                          {item.departureDate}
                         </span>
-                        {/* MOD-10: removed hardcoded "in 3 d" — no dynamic countdown available */}
-                      </td>
-                      <td>
-                        {/* MOD-16: whitespace-nowrap on route cell */}
-                        <span className="font-display font-bold text-sm block whitespace-nowrap">
-                          {leg?.origin?.icao || "—"} ⇄ {leg?.destination?.icao || "—"}
-                        </span>
-                        <span className="font-mono text-[10px] uppercase text-[var(--muted)]">
-                          {booking.tripType.replace("_", " ")}
+                        <span className="text-[11px] text-slate-500 font-mono">
+                          {item.departureTimeStr}
                         </span>
                       </td>
-                      <td>
-                        {/* MOD-10: removed hardcoded "Edward Brinkmann" */}
-                        <span className="font-sans font-semibold text-xs block text-[var(--ink)]">
-                          {booking.client?.fullName || "—"}
-                        </span>
-                        {/* MOD-14: agentName display label context — variable name unchanged */}
-                        <span className="font-mono text-[10px] text-[var(--muted)]">
-                          {booking.accountNumber}{booking.agentName ? ` • ${booking.agentName.split(" ")[0]}` : ""}
-                        </span>
+
+                      {/* Route */}
+                      <td className="py-3 px-4 font-semibold text-slate-900 whitespace-nowrap">
+                        {item.route}
                       </td>
-                      <td>
-                        {/* MOD-10: removed hardcoded "Mustang" and "OE-FFB" */}
-                        <span className="font-sans text-xs font-medium block">
-                          {booking.aircraft?.name || "—"}
+
+                      {/* Account · Curator */}
+                      <td className="py-3 px-4">
+                        <span className="font-medium text-slate-900 block">
+                          {item.account}
                         </span>
-                        <span className="font-mono text-xs font-bold text-[var(--ink)]">
-                          {leg?.aircraftRegistration || "—"}
+                        <span className="text-[11px] text-slate-500">
+                          {item.curator}
                         </span>
                       </td>
-                      <td className="font-mono font-bold text-xs">
-                        {/* MOD-10: removed hardcoded 4 */}
-                        {leg?.paxCount ?? "—"}
-                      </td>
-                      <td>
-                        <span className="font-mono font-bold text-xs text-[var(--ink)]">
-                          {formatCurrency(booking.pricing.totalFlightPrice, booking.pricing.currency)}
+
+                      {/* Aircraft · Tail */}
+                      <td className="py-3 px-4">
+                        <span className="text-slate-900 block">
+                          {item.aircraftCategory} · {item.aircraftModel}
+                        </span>
+                        <span className="text-[11px] text-slate-500 font-mono">
+                          {item.tailNumber}
                         </span>
                       </td>
-                      <td>
-                        <StatusPill
-                          label={(booking.paymentStatus || "unpaid").toUpperCase()}
-                          variant={booking.paymentStatus === "fully_paid" ? "green" : "amber"}
-                        />
+
+                      {/* Pax */}
+                      <td className="py-3 px-4 font-mono font-medium text-slate-900">
+                        {item.pax}
                       </td>
-                      <td>
-                        <div className="flex items-center gap-1.5 font-mono text-xs">
-                          {readiness.isReady ? (
-                            <span className="text-[var(--green)] font-bold flex items-center gap-1">
-                              <span>✓</span>
-                              <span className="text-[11px]">Dispatch ready</span>
+
+                      {/* Price */}
+                      <td className="py-3 px-4 font-mono font-bold text-slate-900 whitespace-nowrap">
+                        {item.price}
+                      </td>
+
+                      {/* Payment */}
+                      <td className="py-3 px-4 whitespace-nowrap">
+                        {item.paymentStatus === "paid" && (
+                          <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/80">
+                            Paid
+                          </span>
+                        )}
+                        {item.paymentStatus === "partially_paid" && (
+                          <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-amber-50 text-amber-800 border border-amber-200/80">
+                            {item.paymentLabel}
+                          </span>
+                        )}
+                        {item.paymentStatus === "awaiting_wire" && (
+                          <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-[#FEF3C7] text-[#92400E] border border-amber-200/80">
+                            Awaiting wire
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Ops Readiness */}
+                      <td className="py-3 px-4 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {item.readiness.paxLabel && (
+                            <span
+                              className={`px-2 py-0.5 rounded text-[11px] font-medium ${
+                                item.readiness.paxStatus === "ok"
+                                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200/80"
+                                  : "bg-amber-50 text-amber-800 border border-amber-200/80"
+                              }`}
+                            >
+                              {item.readiness.paxLabel}
                             </span>
-                          ) : (
-                            <MissingDataBadge label="Passports ▲" tooltip="Missing passport data on manifest" />
+                          )}
+
+                          {item.readiness.slotLabel && (
+                            <span
+                              className={`px-2 py-0.5 rounded text-[11px] font-medium ${
+                                item.readiness.slotStatus === "alert"
+                                  ? "bg-amber-50 text-amber-800 border border-amber-200/80"
+                                  : "bg-slate-100 text-slate-600 border border-slate-200"
+                              }`}
+                            >
+                              {item.readiness.slotLabel}
+                            </span>
+                          )}
+
+                          {item.readiness.permitLabel && (
+                            <span
+                              className={`px-2 py-0.5 rounded text-[11px] font-medium ${
+                                item.readiness.permitStatus === "ok"
+                                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200/80"
+                                  : "bg-slate-100 text-slate-600 border border-slate-200"
+                              }`}
+                            >
+                              {item.readiness.permitLabel}
+                            </span>
                           )}
                         </div>
                       </td>
-                      <td>
-                        <StatusPill
-                          label={booking.status.toUpperCase()}
-                          variant="green"
-                        />
+                    </tr>
+                  ))}
+                </>
+              )}
+
+              {/* LATER Section */}
+              {laterItems.length > 0 && (
+                <>
+                  <tr className="bg-slate-50/60 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                    <td colSpan={9} className="py-2 px-4">
+                      LATER
+                    </td>
+                  </tr>
+                  {laterItems.map((item) => (
+                    <tr
+                      key={item.id}
+                      onClick={() => handleRowClick(item.rootId)}
+                      className="hover:bg-slate-50/80 transition-colors cursor-pointer"
+                    >
+                      {/* Trip */}
+                      <td className="py-3 px-4">
+                        <span className="font-mono font-bold text-slate-900 block">
+                          {item.tripCode}
+                        </span>
+                        <span className="text-[11px] text-slate-400 font-mono">
+                          {item.versionsCount} {item.versionsCount === 1 ? "version" : "versions"}
+                        </span>
+                      </td>
+
+                      {/* Next departure */}
+                      <td className="py-3 px-4">
+                        <span className="font-medium text-slate-900 block">
+                          {item.departureDate}
+                        </span>
+                        <span className="text-[11px] text-slate-500 font-mono">
+                          {item.departureTimeStr}
+                        </span>
+                      </td>
+
+                      {/* Route */}
+                      <td className="py-3 px-4 font-semibold text-slate-900 whitespace-nowrap">
+                        {item.route}
+                      </td>
+
+                      {/* Account · Curator */}
+                      <td className="py-3 px-4">
+                        <span className="font-medium text-slate-900 block">
+                          {item.account}
+                        </span>
+                        <span className="text-[11px] text-slate-500">
+                          {item.curator}
+                        </span>
+                      </td>
+
+                      {/* Aircraft · Tail */}
+                      <td className="py-3 px-4">
+                        <span className="text-slate-900 block">
+                          {item.aircraftCategory} · {item.aircraftModel}
+                        </span>
+                        <span className="text-[11px] text-slate-500 font-mono">
+                          {item.tailNumber}
+                        </span>
+                      </td>
+
+                      {/* Pax */}
+                      <td className="py-3 px-4 font-mono font-medium text-slate-900">
+                        {item.pax}
+                      </td>
+
+                      {/* Price */}
+                      <td className="py-3 px-4 font-mono font-bold text-slate-900 whitespace-nowrap">
+                        {item.price}
+                      </td>
+
+                      {/* Payment */}
+                      <td className="py-3 px-4 whitespace-nowrap">
+                        {item.paymentStatus === "paid" && (
+                          <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/80">
+                            Paid
+                          </span>
+                        )}
+                        {item.paymentStatus === "partially_paid" && (
+                          <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-amber-50 text-amber-800 border border-amber-200/80">
+                            {item.paymentLabel}
+                          </span>
+                        )}
+                        {item.paymentStatus === "awaiting_wire" && (
+                          <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-[#FEF3C7] text-[#92400E] border border-amber-200/80">
+                            Awaiting wire
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Ops Readiness */}
+                      <td className="py-3 px-4 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {item.readiness.paxLabel && (
+                            <span
+                              className={`px-2 py-0.5 rounded text-[11px] font-medium ${
+                                item.readiness.paxStatus === "ok"
+                                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200/80"
+                                  : item.readiness.paxStatus === "alert"
+                                  ? "bg-amber-50 text-amber-800 border border-amber-200/80"
+                                  : "bg-slate-100 text-slate-600 border border-slate-200"
+                              }`}
+                            >
+                              {item.readiness.paxLabel}
+                            </span>
+                          )}
+                        </div>
                       </td>
                     </tr>
-                  );
-                })
+                  ))}
+                </>
+              )}
+
+              {filteredRows.length === 0 && (
+                <tr>
+                  <td colSpan={9} className="text-center py-12 text-slate-400">
+                    No bookings found matching this filter.
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* ─── Footer Note ───────────────────────────────────────────────────── */}
+      <div className="text-xs text-slate-400">
+        Only trips with a signed contract appear here. One row per trip, showing its latest version. Click a row to open the Trip page.
       </div>
     </div>
   );

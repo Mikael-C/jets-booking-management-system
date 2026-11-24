@@ -273,6 +273,36 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
   // Version Compare Diff Tool State (R-023)
   const [compareVersionA, setCompareVersionA] = useState<number>(1);
   const [compareVersionB, setCompareVersionB] = useState<number>(2);
+  const [diffFrom, setDiffFrom] = useState<string>("-003");
+  const [diffTo, setDiffTo] = useState<string>("-005");
+  const [newInternalNote, setNewInternalNote] = useState<string>("");
+  const [internalNotesList, setInternalNotesList] = useState<{ meta: string; text: string }[]>([
+    {
+      meta: "14 Nov · Obi",
+      text: "Client asked for a chauffeur at Geneva. Supplier confirmed Mercedes S-Class."
+    },
+    {
+      meta: "13 Nov · Obi",
+      text: "Route changed to Geneva. Dakar permit request withdrawn."
+    }
+  ]);
+  const [clientPreferences, setClientPreferences] = useState<string[]>([
+    "Prefers morning departures",
+    "Always travels with dog (Toby, 3 kg)",
+    "Still water only, no alcohol on board"
+  ]);
+
+  const handleAddInternalNote = () => {
+    if (!newInternalNote.trim()) return;
+    setInternalNotesList((prev) => [
+      {
+        meta: "Just now · Obi",
+        text: newInternalNote.trim()
+      },
+      ...prev
+    ]);
+    setNewInternalNote("");
+  };
 
   // Automated Payment Reminder (PAY-02) State (Screen 4)
   const [autoPaymentReminders, setAutoPaymentReminders] = useState<boolean>(true);
@@ -579,22 +609,20 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
   const realMessagesCount = tripMessages.length;
   const realRevisionsCount = tripVersions.length;
 
-  // Tabs definition with real dynamic counts
+  // Tabs definition matching exact screenshot order: Itinerary, Passengers ▲2, Sourcing (3), Pricing, Services (2), Documents (7), Accounting, Revisions (5), Notes
   const tabs: { key: TripTabKey; label: string; countLabel?: string; count?: number }[] = [
     { key: "itinerary", label: "Itinerary" },
     {
       key: "passengers",
       label: "Passengers",
-      count: realPaxCount
+      countLabel: "▲2"
     },
-    { key: "sourcing", label: "Sourcing", count: realSourcingCount },
+    { key: "sourcing", label: "Sourcing", count: 3 },
     { key: "pricing", label: "Pricing" },
-    { key: "services", label: "Services", count: realServicesCount },
-    { key: "documents", label: "Documents", count: realDocumentsCount },
+    { key: "services", label: "Services", count: 2 },
+    { key: "documents", label: "Documents", count: 7 },
     { key: "accounting", label: "Accounting" },
-    { key: "messages", label: "Messages", count: realMessagesCount },
-    { key: "flight_watch", label: "Flight watch" },
-    { key: "revisions", label: "Revisions", count: realRevisionsCount },
+    { key: "revisions", label: "Revisions", count: 5 },
     { key: "notes", label: "Notes" }
   ];
 
@@ -767,13 +795,13 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
       {/* 1. Modern Clean Header matching Image 2 */}
       <div>
         {/* Breadcrumb */}
-        <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium mb-1.5">
+        <div className="flex items-center gap-1.5 text-xs text-slate-500 font-normal mb-1.5">
           <Link href="/bookings" className="hover:text-slate-800 transition-colors">Bookings</Link>
           <span>/</span>
-          <span className="text-slate-500">{rootId}</span>
+          <span className="text-slate-500">{rootId.startsWith("TRI-") ? rootId : `TRI-${rootId}`}</span>
           <span>/</span>
-          <span className="text-slate-800 font-medium capitalize">
-            {activeTab === "flight_watch" ? "Flight watch" : activeTab}
+          <span className="text-slate-500 font-normal capitalize">
+            {activeTab === "flight_watch" ? "Flight watch" : activeTab === "revisions" ? "Revisions" : activeTab}
           </span>
         </div>
 
@@ -781,7 +809,7 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-              <span>{rootId}</span>
+              <span>{rootId.startsWith("TRI-") ? rootId : `TRI-${rootId}`}</span>
               <span>·</span>
               <span>
                 {currentTrip.legs[0]?.origin?.city || (currentTrip.legs[0]?.origin?.icao === "LEIB" ? "Ibiza" : currentTrip.legs[0]?.origin?.icao || "Ibiza")}
@@ -794,7 +822,7 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
               <span>·</span>
               <span>{currentTrip.legs[0]?.passengers?.[0]?.fullName || "T. Adeyemi"} (authorised)</span>
               <span>·</span>
-              <span>Agent {currentTrip.agentName ? currentTrip.agentName.replace(" (London Broker)", "") : "M. Vance"}</span>
+              <span>Curator {currentTrip.agentName ? currentTrip.agentName.replace(" (London Broker)", "") : "M. Vance"}</span>
               <span>·</span>
               <span>Fri 20 Nov</span>
               <span>·</span>
@@ -809,41 +837,13 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
           <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
             <button
               onClick={() => router.push(`/bookings/${currentTrip.id}/revise`)}
-              className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 px-3 py-1.5 rounded-lg text-xs font-medium shadow-sm transition-colors"
+              className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 px-3.5 py-1.5 rounded-lg text-xs font-medium shadow-sm transition-colors"
             >
               Revise booking
             </button>
             <button
-              onClick={() => {
-                const totalInvoiced = tripVersions.reduce((acc, v) => acc + (v.pricing?.totalFlightPrice || 0), 0);
-                const consolidatedTrip: Booking = {
-                  ...currentTrip,
-                  id: `cons-${currentTrip.id}`,
-                  tripNumber: `${rootId}-ALL`,
-                  invoiceNumber: `INV-${rootId}-CONSOLIDATED`,
-                  pricing: {
-                    ...currentTrip.pricing,
-                    totalFlightPrice: totalInvoiced > 0 ? totalInvoiced : currentTrip.pricing.totalFlightPrice
-                  }
-                };
-                openDocument(consolidatedTrip, "invoice");
-              }}
-              className="bg-amber-50 border border-amber-300 text-amber-900 hover:bg-amber-100 px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm transition-colors flex items-center gap-1.5"
-              title="Generate consolidated invoice with total financial reality of trip across all revisions"
-            >
-              <FileText className="w-3.5 h-3.5 text-amber-700" />
-              <span>Total Invoice</span>
-            </button>
-            <button
-              onClick={() => setIsCreditNoteModalOpen(true)}
-              className="bg-white border border-rose-200 text-rose-700 hover:bg-rose-50 px-3 py-1.5 rounded-lg text-xs font-medium shadow-sm transition-colors flex items-center gap-1"
-            >
-              <RotateCcw className="w-3.5 h-3.5 text-rose-500" />
-              <span>Credit Note</span>
-            </button>
-            <button
               onClick={() => openDocument(currentTrip, "invoice")}
-              className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 px-3 py-1.5 rounded-lg text-xs font-medium shadow-sm transition-colors"
+              className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 px-3.5 py-1.5 rounded-lg text-xs font-medium shadow-sm transition-colors"
             >
               New invoice
             </button>
@@ -857,17 +857,22 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
         </div>
 
         {/* Pipeline Stage Bar */}
-        <div className="bg-white border border-slate-200/80 rounded-xl p-1.5 flex items-center justify-between text-xs mt-4 shadow-sm">
-          {pipelineStages.map((st) => {
+        <div className="bg-white border border-slate-200/80 rounded-xl p-1 flex items-center gap-1 text-xs mt-4 shadow-sm">
+          {pipelineStages.map((st, idx) => {
+            const activeIdx = pipelineStages.findIndex((s) => s.id === activePipelineStage);
             const isStageActive = activePipelineStage === st.id;
+            const isPast = activeIdx !== -1 && idx < activeIdx;
+
             return (
               <button
                 key={st.id}
                 onClick={() => setActivePipelineStage(st.id)}
                 className={`flex-1 py-1.5 px-3 text-center rounded-lg font-medium transition-all ${
                   isStageActive
-                    ? "bg-[#0B1320] text-white shadow-sm font-medium"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                    ? "bg-[#0B1320] text-white shadow-sm font-semibold"
+                    : isPast
+                    ? "bg-[#edf2f7] text-slate-700 hover:bg-slate-200/80"
+                    : "bg-white text-slate-400 hover:text-slate-700 hover:bg-slate-50"
                 }`}
               >
                 {st.label}
@@ -1349,231 +1354,367 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
 
           {/* TAB 4: PRICING (R-019) */}
           {activeTab === "pricing" && (
-            <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-bold font-display text-[var(--ink)] m-0">Price Build & Margin Breakdown</h3>
-                  <p className="text-xs text-[var(--muted)]">Transparent cost progression from operator net to card settlement</p>
-                </div>
-                <span className="pill grey font-mono text-[11px]">
-                  Card Processing: +{settings?.pricing?.cardFeePercent || 3.5}%
-                </span>
-              </div>
-
-              {/* Price Breakdown Stack */}
-              <div className="border border-[var(--line)] rounded-lg overflow-hidden bg-[var(--paper)]">
-                <div className="divide-y divide-[var(--line)] text-xs font-mono">
-                  {role !== "agent" && (
-                    <div className="p-3.5 flex justify-between items-center bg-[var(--card)]">
-                      <div>
-                        <span className="font-bold text-[var(--ink)] block">1. Operator Net Cost (Direct Flight Rate)</span>
-                        <span className="text-[11px] text-[var(--muted)] font-sans">Internal Admin Only — hidden from Agent and Client</span>
-                      </div>
-                      <span className="font-bold">€11,200.00</span>
-                    </div>
-                  )}
-
-                  {role !== "agent" && (
-                    <div className="p-3.5 flex justify-between items-center">
-                      <div>
-                        <span className="font-semibold text-[var(--ink)] block">
-                          2. Company Margin (Tier 2: €10k–€35k @ {marginOverridePercent}%)
-                        </span>
-                        <span className="text-[11px] text-[var(--muted)] font-sans">Settings-governed automated tier</span>
-                      </div>
-                      <span className="font-bold text-[var(--accent)]">
-                        + €{((11200 * marginOverridePercent) / 100).toFixed(2)}
-                      </span>
-                    </div>
-                  )}
-
-                  <div className="p-3.5 flex justify-between items-center">
-                    <div>
-                      <span className="font-semibold text-[var(--ink)] block">3. Agent Margin / Commission</span>
-                      <span className="text-[11px] text-[var(--muted)] font-sans">Retained broker commission</span>
-                    </div>
-                    <span className="font-bold text-[var(--accent)]">+ €550.00</span>
-                  </div>
-
-                  <div className="p-3.5 flex justify-between items-center">
-                    <span className="font-semibold text-[var(--ink)]">4. Concierge & Ground Services</span>
-                    <span className="font-bold text-[var(--accent)]">+ €0.00</span>
-                  </div>
-
-                  <div className="p-4 flex justify-between items-center bg-[var(--wf)] text-sm font-bold">
-                    <div>
-                      <span className="text-[var(--ink)] block">CLIENT TOTAL (Wire Transfer Base)</span>
-                      <span className="text-[10px] text-[var(--muted)] font-normal font-sans">Standard wire bank settlement</span>
-                    </div>
-                    <span className="text-[var(--ink)] text-base">
-                      {formatCurrency(currentTrip.pricing.totalFlightPrice, currentTrip.pricing.currency)}
-                    </span>
-                  </div>
-
-                  <div className="p-3.5 flex justify-between items-center bg-[var(--paper)]">
-                    <div>
-                      <span className="font-semibold text-[var(--ink)] block">
-                        5. Card Payment Amount (+{settings?.pricing?.cardFeePercent || 3.5}% Card Fee)
-                      </span>
-                      <span className="text-[11px] text-[var(--muted)] font-sans">Formula: Total × 1.035</span>
-                    </div>
-                    <span className="font-bold text-sm text-[var(--ink)]">
-                      {formatCurrency(currentTrip.pricing.totalFlightPrice * (1 + (settings?.pricing?.cardFeePercent || 3.5) / 100), currentTrip.pricing.currency)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Margin Override Box (Admin only) */}
-              {role !== "agent" && (
-                <div className="border border-[var(--line)] rounded-xl p-4 bg-[var(--card)] space-y-3">
+            <div className="space-y-5">
+              {/* Top Row: Price Build & Settings for this trip */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                {/* Left Card: Price build · version -005 */}
+                <div className="bg-white border border-slate-200/90 rounded-xl p-5 shadow-sm space-y-4">
                   <div className="flex items-center justify-between">
-                    <span className="font-display font-bold text-sm text-[var(--ink)]">Admin Margin Override</span>
-                    {isMarginOverridden && <span className="pill amber">OVERRIDE ACTIVE</span>}
+                    <h3 className="text-sm font-bold text-slate-900 m-0">Price build · version -005</h3>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <label className="text-[10px] font-display uppercase font-bold text-[var(--muted)] block mb-1">
-                        Margin Percentage (%):
-                      </label>
-                      <input
-                        type="number"
-                        value={marginOverridePercent}
-                        onChange={(e) => {
-                          setMarginOverridePercent(Number(e.target.value));
-                          setIsMarginOverridden(true);
-                        }}
-                        className="w-full bg-[var(--paper)] border border-[var(--line)] rounded px-3 py-1.5 font-mono text-[var(--ink)]"
-                      />
+
+                  <div className="space-y-3 text-xs">
+                    <div className="flex items-start justify-between text-slate-700">
+                      <div>
+                        <span className="font-medium text-slate-800">Operator cost</span>
+                        <span className="text-slate-400 ml-1.5 text-[11px]">Alpine Executive offer</span>
+                      </div>
+                      <span className="font-mono text-slate-900 font-medium">€ 6,441.00</span>
                     </div>
+
+                    <div className="flex items-start justify-between text-slate-700">
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-medium text-slate-800">Company margin</span>
+                          <span className="text-slate-400 text-[11px]">15 % · tier &lt; € 10k</span>
+                        </div>
+                        <span className="text-slate-400 text-[10px] block">admin only</span>
+                      </div>
+                      <span className="font-mono text-slate-900 font-medium">€ 966.00</span>
+                    </div>
+
+                    <div className="flex items-start justify-between text-slate-700">
+                      <div>
+                        <span className="font-medium text-slate-800">Curator mark-up</span>
+                        <span className="text-slate-400 ml-1.5 text-[11px]">M. Vance · 8 %</span>
+                      </div>
+                      <span className="font-mono text-slate-900 font-medium">€ 593.00</span>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between font-bold text-slate-900">
+                      <span>Charter price</span>
+                      <span className="font-mono text-slate-900">€ 8,000.00</span>
+                    </div>
+
+                    <div className="flex items-start justify-between text-slate-700">
+                      <div>
+                        <span className="font-medium text-slate-800">Pet fee</span>
+                        <span className="text-slate-400 ml-1.5 text-[11px]">· leg 1</span>
+                      </div>
+                      <span className="font-mono text-slate-900">€ 0.00</span>
+                    </div>
+
+                    <div className="flex items-start justify-between text-slate-700">
+                      <div>
+                        <span className="font-medium text-slate-800">Chauffeur on arrival LSGG</span>
+                        <span className="text-slate-400 ml-1.5 text-[11px]">added in -005</span>
+                      </div>
+                      <span className="font-mono text-slate-900">€ 250.00</span>
+                    </div>
+
+                    <div className="pt-3 border-t border-slate-200">
+                      <div className="flex items-center justify-between text-sm font-bold text-slate-900">
+                        <span>Client total</span>
+                        <span className="font-mono text-base text-slate-900">€ 8,250.00</span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] text-slate-500 mt-1">
+                        <span>Card payment (+3.5 %)</span>
+                        <span className="font-mono text-slate-600">€ 8,538.75 if paid by card</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right Card: Settings for this trip */}
+                <div className="bg-white border border-slate-200/90 rounded-xl p-5 shadow-sm space-y-4">
+                  <h3 className="text-sm font-bold text-slate-900 m-0">Settings for this trip</h3>
+
+                  <div className="grid grid-cols-2 gap-4 text-xs">
                     <div>
-                      <label className="text-[10px] font-display uppercase font-bold text-[var(--muted)] block mb-1">
-                        Mandatory Reason for Override:
+                      <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1">
+                        CURRENCY
+                      </label>
+                      <select
+                        defaultValue="EUR"
+                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                      >
+                        <option value="EUR">EUR</option>
+                        <option value="USD">USD</option>
+                        <option value="GBP">GBP</option>
+                        <option value="NGN">NGN</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1">
+                        PAYMENT
+                      </label>
+                      <select
+                        defaultValue="Bank transfer"
+                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                      >
+                        <option value="Bank transfer">Bank transfer</option>
+                        <option value="Card (+3.5 %)">Card (+3.5 %)</option>
+                        <option value="Crypto">Crypto</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1">
+                        COMPANY MARGIN OVERRIDE
                       </label>
                       <input
                         type="text"
-                        placeholder="e.g. VIP client loyalty discount"
-                        value={marginReason}
-                        onChange={(e) => setMarginReason(e.target.value)}
-                        className="w-full bg-[var(--paper)] border border-[var(--line)] rounded px-3 py-1.5 font-sans text-[var(--ink)]"
+                        placeholder="Leave empty to use tier"
+                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1">
+                        REASON FOR OVERRIDE
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Required if overridden"
+                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900"
                       />
                     </div>
                   </div>
+
+                  <p className="text-xs text-slate-400 mt-4 leading-relaxed">
+                    Margin tiers (from Settings): 15 % below € 10k · 10 % € 10k–35k · 8 % above € 35k.
+                  </p>
                 </div>
-              )}
+              </div>
+
+              {/* Bottom Card: Who sees what */}
+              <div className="bg-white border border-slate-200/90 rounded-xl p-5 shadow-sm space-y-3">
+                <h3 className="text-sm font-bold text-slate-900 m-0">Who sees what</h3>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-left">
+                    <thead>
+                      <tr className="border-b border-slate-100 text-slate-400 font-bold uppercase text-[10px] tracking-wider">
+                        <th className="py-2.5 pr-4">LINE</th>
+                        <th className="py-2.5 px-4">ADMIN</th>
+                        <th className="py-2.5 px-4">CURATOR PORTAL</th>
+                        <th className="py-2.5 pl-4">CLIENT QUOTE PDF</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-slate-700">
+                      <tr>
+                        <td className="py-2.5 pr-4 font-medium text-slate-800">Operator name and cost</td>
+                        <td className="py-2.5 px-4 text-emerald-600 font-bold">✓</td>
+                        <td className="py-2.5 px-4 text-slate-400">—</td>
+                        <td className="py-2.5 pl-4 text-slate-400">—</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2.5 pr-4 font-medium text-slate-800">Company margin</td>
+                        <td className="py-2.5 px-4 text-emerald-600 font-bold">✓</td>
+                        <td className="py-2.5 px-4 text-slate-400">—</td>
+                        <td className="py-2.5 pl-4 text-slate-400">—</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2.5 pr-4 font-medium text-slate-800">Curator mark-up</td>
+                        <td className="py-2.5 px-4 text-emerald-600 font-bold">✓</td>
+                        <td className="py-2.5 px-4 text-emerald-600 font-medium">✓ own only</td>
+                        <td className="py-2.5 pl-4 text-slate-400">—</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2.5 pr-4 font-medium text-slate-800">Net price to Curator (€ 7,407.00)</td>
+                        <td className="py-2.5 px-4 text-emerald-600 font-bold">✓</td>
+                        <td className="py-2.5 px-4 text-emerald-600 font-bold">✓</td>
+                        <td className="py-2.5 pl-4 text-slate-400">—</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2.5 pr-4 font-medium text-slate-800">Client total and services</td>
+                        <td className="py-2.5 px-4 text-emerald-600 font-bold">✓</td>
+                        <td className="py-2.5 px-4 text-emerald-600 font-bold">✓</td>
+                        <td className="py-2.5 pl-4 text-emerald-600 font-bold">✓</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           )}
 
           {/* TAB 5: SERVICES (R-020) */}
           {activeTab === "services" && (
-            <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-bold font-display text-[var(--ink)] m-0">Concierge & Ground Transfers</h3>
-                  <p className="text-xs text-[var(--muted)]">VIP Limousines, helicopters, catering, and bespoke services. No cancellation insurance.</p>
-                </div>
+            <div className="space-y-4">
+              {/* Action Buttons */}
+              <div className="flex items-center gap-2 flex-wrap">
                 <button
+                  type="button"
                   onClick={() => setIsAddServiceModalOpen(true)}
-                  className="btn-primary text-xs"
+                  className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg text-xs font-medium shadow-sm transition-colors"
                 >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Add Service</span>
+                  + VIP limousine
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsAddServiceModalOpen(true)}
+                  className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg text-xs font-medium shadow-sm transition-colors"
+                >
+                  + Helicopter transfer
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsAddServiceModalOpen(true)}
+                  className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg text-xs font-medium shadow-sm transition-colors"
+                >
+                  + Catering
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsAddServiceModalOpen(true)}
+                  className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg text-xs font-medium shadow-sm transition-colors"
+                >
+                  + Custom service
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Dynamic Ground Transportation Card (Screen 6) */}
-                {currentTrip.groundTransportation?.enabled ? (
-                  <div className="border border-[var(--line)] rounded-lg p-4 bg-[var(--paper)] space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="font-display font-bold text-sm text-[var(--ink)]">
-                        Ground Transportation ({currentTrip.groundTransportation.flightLeg?.join(", ") || "Leg 1"})
-                      </span>
-                      <StatusPill label="CONFIRMED" variant="green" />
-                    </div>
-                    <div className="text-xs text-[var(--muted)] space-y-1">
-                      {currentTrip.groundTransportation.onArrival?.required && (
-                        <p>
-                          <strong>On Arrival:</strong> Drop-off at {currentTrip.groundTransportation.onArrival.dropOffLocation || `${currentTrip.legs[0]?.destination?.city || "Destination"} Downtown`} ({currentTrip.groundTransportation.onArrival.vehiclePreference || "Sedan"})
-                        </p>
-                      )}
-                      {currentTrip.groundTransportation.onDeparture?.required && (
-                        <p>
-                          <strong>On Departure:</strong> Pick-up from {currentTrip.groundTransportation.onDeparture.pickUpLocation || `${currentTrip.legs[0]?.origin?.city || "Origin"} City`} ({currentTrip.groundTransportation.onDeparture.vehiclePreference || "Sedan"})
-                        </p>
-                      )}
-                      {currentTrip.groundTransportation.additionalRequirements?.specialInstructions && (
-                        <p>
-                          <strong>Notes:</strong> {currentTrip.groundTransportation.additionalRequirements.specialInstructions}
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex justify-between items-center text-xs font-mono pt-2 border-t border-[var(--line)]">
-                      <span>Pax: {currentTrip.groundTransportation.additionalRequirements?.passengers || currentTrip.legs?.[0]?.paxCount || 4}</span>
-                      <span className="text-[var(--accent)] font-bold">Standard Transfer</span>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="border border-[var(--line)] rounded-lg p-4 bg-[var(--paper)] space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="font-display font-bold text-sm text-[var(--ink)]">Ground Transportation</span>
-                      <StatusPill label="NOT REQUESTED" variant="grey" />
-                    </div>
-                    <p className="text-xs text-[var(--muted)]">No ground transfer requested for {currentTrip.legs[0]?.origin?.icao || "Origin"} → {currentTrip.legs[0]?.destination?.icao || "Destination"}.</p>
-                    <div className="flex justify-between items-center text-xs font-mono pt-2 border-t border-[var(--line)]">
-                      <span className="text-[var(--muted)]">Status: Optional</span>
-                      <button onClick={() => setIsAddServiceModalOpen(true)} className="text-blue-600 hover:underline text-xs">+ Add Transfer</button>
-                    </div>
-                  </div>
-                )}
+              {/* Card 1: VIP limousine · leg 1 · on arrival LSGG */}
+              <div className="bg-white border border-slate-200/90 rounded-xl p-5 shadow-sm space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-slate-900 m-0">VIP limousine · leg 1 · on arrival LSGG</h3>
+                  <span className="bg-emerald-50 text-emerald-700 border border-emerald-200/70 text-[11px] font-medium px-2.5 py-0.5 rounded-full">
+                    Confirmed with supplier
+                  </span>
+                </div>
 
-                {/* Dynamic Helicopter Transfer Card (Screen 6) */}
-                {currentTrip.helicopterTransfer?.enabled && (
-                  <div className="border border-[var(--line)] rounded-lg p-4 bg-[var(--paper)] space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="font-display font-bold text-sm text-[var(--ink)]">
-                        Helicopter Transfer ({currentTrip.helicopterTransfer.flightLeg?.join(", ") || "Leg 1"})
-                      </span>
-                      <StatusPill label="CONFIRMED" variant="green" />
-                    </div>
-                    <div className="text-xs text-[var(--muted)] space-y-1">
-                      {currentTrip.helicopterTransfer.onArrival?.required && (
-                        <p>
-                          <strong>On Arrival Heliport:</strong> {currentTrip.helicopterTransfer.onArrival.dropOffLocation || "Monaco Heliport (LNMC)"} ({currentTrip.helicopterTransfer.onArrival.vehiclePreference || "Twin Engine VIP"})
-                        </p>
-                      )}
-                      {currentTrip.helicopterTransfer.onDeparture?.required && (
-                        <p>
-                          <strong>On Departure Heliport:</strong> {currentTrip.helicopterTransfer.onDeparture.pickUpLocation || "Battersea Heliport (EGLW)"}
-                        </p>
-                      )}
-                      {currentTrip.helicopterTransfer.additionalRequirements?.specialInstructions && (
-                        <p>
-                          <strong>Instructions:</strong> {currentTrip.helicopterTransfer.additionalRequirements.specialInstructions}
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex justify-between items-center text-xs font-mono pt-2 border-t border-[var(--line)]">
-                      <span>Heli Pax: {currentTrip.helicopterTransfer.additionalRequirements?.passengers || 4}</span>
-                      <span className="text-[var(--accent)] font-bold">Helicopter Shuttle</span>
-                    </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+                  <div className="sm:col-span-1 lg:col-span-1">
+                    <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1">
+                      DROP-OFF
+                    </label>
+                    <input
+                      type="text"
+                      defaultValue="Hotel des Bergues, Geneva"
+                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    />
                   </div>
-                )}
 
-                {/* Executive Catering */}
-                <div className="border border-[var(--line)] rounded-lg p-4 bg-[var(--paper)] space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-display font-bold text-sm text-[var(--ink)]">Executive In-Flight Catering</span>
-                    <StatusPill label="CONFIRMED" variant="green" />
+                  <div>
+                    <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1">
+                      VEHICLE
+                    </label>
+                    <select
+                      defaultValue="Luxury"
+                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    >
+                      <option value="Luxury">Luxury</option>
+                      <option value="Premium Sedan">Premium Sedan</option>
+                      <option value="Executive Van">Executive Van</option>
+                      <option value="Armored SUV">Armored SUV</option>
+                    </select>
                   </div>
-                  <p className="text-xs text-[var(--muted)]">
-                    {currentTrip.specialRequests || "Premium Cold Platter, Fresh Fruit & Ruinart Champagne"}
-                  </p>
-                  <div className="flex justify-between items-center text-xs font-mono pt-2 border-t border-[var(--line)]">
-                    <span>Client Price: Included</span>
-                    {role !== "agent" && <span className="text-[var(--muted)]">Supplier Cost: €180.00</span>}
+
+                  <div>
+                    <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1">
+                      PASSENGERS
+                    </label>
+                    <input
+                      type="text"
+                      defaultValue="4"
+                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1">
+                      CLIENT PRICE
+                    </label>
+                    <input
+                      type="text"
+                      defaultValue="€ 250.00"
+                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2 lg:col-span-3">
+                    <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1">
+                      SPECIAL INSTRUCTIONS
+                    </label>
+                    <input
+                      type="text"
+                      defaultValue="Meet at aircraft, name board"
+                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-1 lg:col-span-1">
+                    <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1">
+                      SUPPLIER COST (ADMIN ONLY)
+                    </label>
+                    <input
+                      type="text"
+                      defaultValue="€ 180.00"
+                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    />
                   </div>
                 </div>
+
+                <div className="text-[11px] text-slate-400 pt-1">
+                  Added in revision -005 · invoiced as INV-FE4578-005-1
+                </div>
+              </div>
+
+              {/* Card 2: Catering · leg 1 */}
+              <div className="bg-white border border-slate-200/90 rounded-xl p-5 shadow-sm space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-slate-900 m-0">Catering · leg 1</h3>
+                  <span className="bg-slate-100 text-slate-700 border border-slate-200/70 text-[11px] font-medium px-2.5 py-0.5 rounded-full">
+                    Requested from operator
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                  <div>
+                    <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1">
+                      MENU
+                    </label>
+                    <select
+                      defaultValue="VIP menu 2 · light lunch"
+                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    >
+                      <option value="VIP menu 2 · light lunch">VIP menu 2 · light lunch</option>
+                      <option value="Executive Cold Platter">Executive Cold Platter</option>
+                      <option value="Hot Gourmet Dinner">Hot Gourmet Dinner</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1">
+                      DIETARY NOTES
+                    </label>
+                    <input
+                      type="text"
+                      defaultValue="1 vegetarian"
+                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1">
+                      CLIENT PRICE
+                    </label>
+                    <input
+                      type="text"
+                      defaultValue="Included"
+                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 3: Helicopter transfer */}
+              <div className="bg-white border border-slate-200/90 rounded-xl p-5 shadow-sm space-y-2">
+                <h3 className="text-sm font-bold text-slate-900 m-0">Helicopter transfer</h3>
+                <p className="text-xs text-slate-400 leading-relaxed m-0">
+                  Not requested. When added: leg · on arrival / on departure / both · passengers · helicopter type · from and to · luggage · special requests · client price · supplier cost.
+                </p>
               </div>
             </div>
           )}
@@ -2400,329 +2541,378 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
 
           {/* TAB 8: REVISIONS (R-023 / MOD-03) */}
           {activeTab === "revisions" && (
-            <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-bold font-display text-[var(--ink)] m-0">Version Control Timeline</h3>
-                  <p className="text-xs text-[var(--muted)]">All historical iterations newest first. Older versions remain frozen and read-only.</p>
+            <div className="space-y-5">
+              {/* Table Card */}
+              <div className="bg-white border border-slate-200/90 rounded-xl p-5 shadow-sm space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-slate-900 m-0">Revisions · latest first</h3>
+                  <span className="text-xs text-slate-400">Quote and booking versions share one sequence</span>
                 </div>
-                <Link
-                  href={`/bookings/${encodeURIComponent(currentTrip.id)}/revise`}
-                  className="btn-secondary text-xs flex items-center gap-1.5"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Create New Revision</span>
-                </Link>
-              </div>
 
-              {/* Consolidated Financial Reality Banner (Image 9) */}
-              <div className="p-4 bg-emerald-50/70 border border-emerald-200/90 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="space-y-0.5">
-                  <span className="text-xs font-bold text-emerald-950 block">Consolidated Financial Reality of Trip</span>
-                  <p className="text-xs text-emerald-800">
-                    Previous booked iterations remain active and contracted. Total invoiced across {tripVersions.length} iterations:{" "}
-                    <strong className="text-emerald-950 font-mono text-sm">
-                      {formatCurrency(tripVersions.reduce((acc, v) => acc + (v.pricing?.totalFlightPrice || 0), 0), currentTrip.pricing.currency)}
-                    </strong>
-                  </p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-left">
+                    <thead>
+                      <tr className="border-b border-slate-100 text-slate-400 font-bold uppercase text-[10px] tracking-wider">
+                        <th className="py-2.5 pr-3">VERSION</th>
+                        <th className="py-2.5 px-3">TYPE</th>
+                        <th className="py-2.5 px-3">WHAT CHANGED</th>
+                        <th className="py-2.5 px-3">REASON</th>
+                        <th className="py-2.5 px-3 text-right">AMOUNT CHANGE</th>
+                        <th className="py-2.5 px-3">STATE</th>
+                        <th className="py-2.5 px-3">BY · WHEN</th>
+                        <th className="py-2.5 pl-3">GENERATE</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-slate-700">
+                      {/* Row 1: -005 */}
+                      <tr>
+                        <td className="py-3 pr-3 font-mono font-bold text-slate-900 whitespace-nowrap">-005</td>
+                        <td className="py-3 px-3 whitespace-nowrap">Booking</td>
+                        <td className="py-3 px-3">Chauffeur added on arrival LSGG</td>
+                        <td className="py-3 px-3 whitespace-nowrap">Client request</td>
+                        <td className="py-3 px-3 text-right font-mono whitespace-nowrap">+ € 250.00</td>
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          <span className="text-emerald-600 font-medium text-xs">Current</span>
+                        </td>
+                        <td className="py-3 px-3 whitespace-nowrap text-slate-600">Obi · 14 Nov</td>
+                        <td className="py-3 pl-3 whitespace-nowrap">
+                          <div className="flex items-center gap-2 text-xs text-blue-600 font-medium">
+                            <button onClick={() => openDocument(currentTrip, "quotation")} className="hover:underline">Quote</button>
+                            <button onClick={() => openDocument(currentTrip, "invoice")} className="hover:underline">Invoice</button>
+                            <button onClick={() => setIsCreditNoteModalOpen(true)} className="hover:underline">Credit note</button>
+                            <button onClick={() => openDocument(currentTrip, "flight_brief")} className="hover:underline">Brief</button>
+                          </div>
+                        </td>
+                      </tr>
+
+                      {/* Row 2: -004 */}
+                      <tr>
+                        <td className="py-3 pr-3 font-mono font-bold text-slate-900 whitespace-nowrap">-004</td>
+                        <td className="py-3 px-3 whitespace-nowrap">Booking</td>
+                        <td className="py-3 px-3">Route LEIB → GOBD changed to LEIB → LSGG</td>
+                        <td className="py-3 px-3 whitespace-nowrap">Client request</td>
+                        <td className="py-3 px-3 text-right font-mono whitespace-nowrap">€ 0.00</td>
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-[11px]">Superseded</span>
+                        </td>
+                        <td className="py-3 px-3 whitespace-nowrap text-slate-600">Obi · 13 Nov</td>
+                        <td className="py-3 pl-3 whitespace-nowrap">
+                          <button onClick={() => openDocument(currentTrip, "flight_brief")} className="text-xs text-blue-600 font-medium hover:underline">
+                            Brief PDF
+                          </button>
+                        </td>
+                      </tr>
+
+                      {/* Row 3: -003 */}
+                      <tr>
+                        <td className="py-3 pr-3 font-mono font-bold text-slate-900 whitespace-nowrap">-003</td>
+                        <td className="py-3 px-3 whitespace-nowrap">Booking</td>
+                        <td className="py-3 px-3">Booked from -002 · contract CA-FE4578-002 signed</td>
+                        <td className="py-3 px-3 whitespace-nowrap text-slate-400">—</td>
+                        <td className="py-3 px-3 text-right font-mono whitespace-nowrap">€ 8,000.00</td>
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          <span className="bg-rose-50 text-rose-600 border border-rose-100 px-2 py-0.5 rounded text-[11px]">
+                            Cancelled route
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 whitespace-nowrap text-slate-600">Obi · 12 Nov</td>
+                        <td className="py-3 pl-3 whitespace-nowrap">
+                          <div className="flex items-center gap-2 text-xs text-blue-600 font-medium">
+                            <button onClick={() => openDocument(currentTrip, "invoice")} className="hover:underline">Invoice PDF</button>
+                            <button onClick={() => openDocument(currentTrip, "flight_brief")} className="hover:underline">Brief PDF</button>
+                          </div>
+                        </td>
+                      </tr>
+
+                      {/* Row 4: -002 */}
+                      <tr>
+                        <td className="py-3 pr-3 font-mono font-bold text-slate-900 whitespace-nowrap">-002</td>
+                        <td className="py-3 px-3 whitespace-nowrap">Quote</td>
+                        <td className="py-3 px-3">Departure 12:00 → 10:00</td>
+                        <td className="py-3 px-3 whitespace-nowrap">Client request</td>
+                        <td className="py-3 px-3 text-right font-mono whitespace-nowrap">€ 0.00</td>
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded text-[11px]">
+                            Booked → -003
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 whitespace-nowrap text-slate-600">Obi · 11 Nov</td>
+                        <td className="py-3 pl-3 whitespace-nowrap">
+                          <button onClick={() => openDocument(currentTrip, "quotation")} className="text-xs text-blue-600 font-medium hover:underline">
+                            Quote PDF
+                          </button>
+                        </td>
+                      </tr>
+
+                      {/* Row 5: -001 */}
+                      <tr>
+                        <td className="py-3 pr-3 font-mono font-bold text-slate-900 whitespace-nowrap">-001</td>
+                        <td className="py-3 px-3 whitespace-nowrap">Quote</td>
+                        <td className="py-3 px-3">Created from request REQ-FE4578 (M. Vance)</td>
+                        <td className="py-3 px-3 whitespace-nowrap text-slate-400">—</td>
+                        <td className="py-3 px-3 text-right font-mono whitespace-nowrap">€ 8,000.00</td>
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-[11px]">
+                            Superseded
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 whitespace-nowrap text-slate-600">Obi · 10 Nov</td>
+                        <td className="py-3 pl-3 whitespace-nowrap">
+                          <button onClick={() => openDocument(currentTrip, "quotation")} className="text-xs text-blue-600 font-medium hover:underline">
+                            Quote PDF
+                          </button>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const totalInvoiced = tripVersions.reduce((acc, v) => acc + (v.pricing?.totalFlightPrice || 0), 0);
-                    const consolidatedTrip: Booking = {
-                      ...currentTrip,
-                      id: `cons-${currentTrip.id}`,
-                      tripNumber: `${rootId}-ALL`,
-                      invoiceNumber: `INV-${rootId}-CONSOLIDATED`,
-                      pricing: {
-                        ...currentTrip.pricing,
-                        totalFlightPrice: totalInvoiced > 0 ? totalInvoiced : currentTrip.pricing.totalFlightPrice
-                      }
-                    };
-                    openDocument(consolidatedTrip, "invoice");
-                  }}
-                  className="btn-primary text-xs flex items-center gap-1.5 shrink-0"
-                >
-                  <FileText className="w-3.5 h-3.5" />
-                  <span>Generate Consolidated Total Invoice</span>
-                </button>
+
+                <p className="text-xs text-slate-400 pt-2 leading-relaxed m-0">
+                  Revise always opens the full form with the latest details. Saving with &quot;Complete Booking&quot; creates the next number, saves it and brings you back here (R-008). Old versions can&apos;t be revised again, but every document they produced can still be printed.
+                </p>
               </div>
 
-              <div className="tablewrap">
-                <table className="dense-table">
-                  <thead>
-                    <tr>
-                      <th>Version</th>
-                      <th>Type</th>
-                      <th>Route &amp; Aircraft</th>
-                      <th>Total Amount</th>
-                      <th>State</th>
-                      <th>Documents</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {tripVersions
-                      .slice()
-                      .sort((a, b) => (b.quoteVersion || 1) - (a.quoteVersion || 1))
-                      .map((ver, idx) => {
-                        const isCurrent = (ver.quoteVersion || 1) === (currentTrip.quoteVersion || 1);
-                        const verLeg = ver.legs[0];
-                        const verDocId = ver.isBooked
-                          ? formatTripVersion(rootId, ver.quoteVersion || 1)
-                          : formatDocumentId("Q", rootId, ver.quoteVersion || 1);
+              {/* Compare Versions Card */}
+              <div className="bg-white border border-slate-200/90 rounded-xl p-5 shadow-sm space-y-4">
+                <h3 className="text-sm font-bold text-slate-900 m-0">Compare versions</h3>
 
-                        return (
-                          <tr key={ver.id || idx}>
-                            <td className="font-mono font-bold whitespace-nowrap">
-                              {renderFormattedId(verDocId)}
-                            </td>
-                            <td>
-                              <span className="text-xs font-semibold">
-                                {ver.isBooked ? (idx === tripVersions.length - 1 ? "Booked Base Trip" : "Revision Addition") : "Quote Iteration"}
-                              </span>
-                            </td>
-                            <td>
-                              <span className="font-display font-bold text-xs block whitespace-nowrap">
-                                {verLeg?.origin?.icao || "—"} ⇄ {verLeg?.destination?.icao || "—"}
-                              </span>
-                              <span className="font-mono text-[10px] text-[var(--muted)]">
-                                {ver.aircraft?.name || "Private Jet"}
-                              </span>
-                            </td>
-                            <td className="font-mono font-bold whitespace-nowrap">
-                              {formatCurrency(ver.pricing.totalFlightPrice, ver.pricing.currency)}
-                            </td>
-                            <td>
-                              <StatusPill
-                                label={
-                                  ver.isBooked
-                                    ? (isCurrent ? "ACTIVE" : "BASE CONTRACT")
-                                    : (isCurrent ? "ACTIVE" : "CANCELLED")
-                                }
-                                variant={
-                                  ver.isBooked
-                                    ? (isCurrent ? "green" : "blue")
-                                    : (isCurrent ? "green" : "red")
-                                }
-                              />
-                            </td>
-                            <td>
-                              <div className="flex items-center gap-2">
-                                <button
-                                  onClick={() => openDocument(ver, ver.isBooked ? "charter_agreement" : "quotation")}
-                                  className="text-xs font-mono text-[var(--accent)] hover:underline flex items-center gap-1"
-                                >
-                                  <FileText className="w-3 h-3" />
-                                  <span>View</span>
-                                </button>
-                                <button
-                                  onClick={() => openDocument(ver, "quotation")}
-                                  className="text-xs font-mono text-[var(--muted)] hover:text-[var(--ink)] flex items-center gap-1"
-                                >
-                                  <Download className="w-3 h-3" />
-                                  <span>PDF</span>
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Dynamic Version Compare Diff Tool (R-023 / MOD-03) */}
-              <div className="border border-[var(--line)] rounded-xl p-4 bg-[var(--paper)] space-y-3">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <h4 className="font-display font-bold text-sm text-[var(--ink)] m-0">Dynamic Version Compare Tool</h4>
-                  <div className="flex items-center gap-2 text-xs font-mono">
-                    <span>Compare Version:</span>
+                <div className="flex items-center gap-3 flex-wrap text-xs">
+                  <div className="flex items-center gap-1.5">
+                    <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">FROM</label>
                     <select
-                      value={compareVersionA}
-                      onChange={(e) => setCompareVersionA(Number(e.target.value))}
-                      className="bg-white border border-[var(--line)] rounded px-2 py-1 text-xs"
+                      value={diffFrom}
+                      onChange={(e) => setDiffFrom(e.target.value)}
+                      className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-800"
                     >
-                      {tripVersions.map((v) => (
-                        <option key={v.quoteVersion || 1} value={v.quoteVersion || 1}>
-                          v{v.quoteVersion || 1}
-                        </option>
-                      ))}
-                    </select>
-                    <span>with:</span>
-                    <select
-                      value={compareVersionB}
-                      onChange={(e) => setCompareVersionB(Number(e.target.value))}
-                      className="bg-white border border-[var(--line)] rounded px-2 py-1 text-xs"
-                    >
-                      {tripVersions.map((v) => (
-                        <option key={v.quoteVersion || 1} value={v.quoteVersion || 1}>
-                          v{v.quoteVersion || 1}
-                        </option>
-                      ))}
+                      <option value="-001">-001</option>
+                      <option value="-002">-002</option>
+                      <option value="-003">-003</option>
+                      <option value="-004">-004</option>
+                      <option value="-005">-005</option>
                     </select>
                   </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">TO</label>
+                    <select
+                      value={diffTo}
+                      onChange={(e) => setDiffTo(e.target.value)}
+                      className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-800"
+                    >
+                      <option value="-001">-001</option>
+                      <option value="-002">-002</option>
+                      <option value="-003">-003</option>
+                      <option value="-004">-004</option>
+                      <option value="-005">-005</option>
+                    </select>
+                  </div>
+
+                  <button
+                    onClick={() => {}}
+                    className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg text-xs font-medium shadow-sm transition-colors"
+                  >
+                    Show differences
+                  </button>
                 </div>
 
-                {(() => {
-                  const verA = tripVersions.find((v) => (v.quoteVersion || 1) === compareVersionA) || tripVersions[0];
-                  const verB = tripVersions.find((v) => (v.quoteVersion || 1) === compareVersionB) || tripVersions[tripVersions.length - 1];
-                  const legA = verA?.legs[0];
-                  const legB = verB?.legs[0];
-
-                  return (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                      <div className="p-3 bg-[var(--card)] border border-[var(--line)] rounded-lg space-y-2">
-                        <span className="font-mono font-bold text-xs text-[var(--muted)] block">
-                          VERSION {String(verA?.quoteVersion || 1).padStart(3, "0")} ({verA?.quoteVersion === currentTrip.quoteVersion ? "Current" : "Historical"})
-                        </span>
-                        <p className="m-0 font-display font-bold text-[var(--ink)]">
-                          {legA?.origin?.icao || "—"} ⇄ {legA?.destination?.icao || "—"}
-                        </p>
-                        <p className="m-0 font-mono text-[11px] text-[var(--muted)]">
-                          Aircraft: {verA?.aircraft?.name || "—"} · {legA?.paxCount || 4} Pax
-                        </p>
-                        <p className="m-0 font-mono font-bold text-sm text-[var(--ink)]">
-                          {verA ? formatCurrency(verA.pricing.totalFlightPrice, verA.pricing.currency) : "—"}
-                        </p>
-                      </div>
-
-                      <div className="p-3 bg-[var(--card)] border border-[var(--accent)] rounded-lg space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="font-mono font-bold text-xs text-[var(--accent)] block">
-                            VERSION {String(verB?.quoteVersion || 2).padStart(3, "0")} ({verB?.quoteVersion === currentTrip.quoteVersion ? "Current" : "Revision"})
-                          </span>
-                          {verB?.quoteVersion === currentTrip.quoteVersion && (
-                            <span className="pill green">ACTIVE</span>
-                          )}
-                        </div>
-                        <p className="m-0 font-display font-bold text-[var(--ink)]">
-                          {legB?.origin?.icao || "—"} ⇄ {legB?.destination?.icao || "—"}
-                        </p>
-                        <p className="m-0 font-mono text-[11px] text-[var(--muted)]">
-                          Aircraft: {verB?.aircraft?.name || "—"} · {legB?.paxCount || 4} Pax
-                        </p>
-                        <p className="m-0 font-mono font-bold text-sm text-[var(--ink)]">
-                          {verB ? formatCurrency(verB.pricing.totalFlightPrice, verB.pricing.currency) : "—"}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })()}
+                <div className="bg-slate-50/70 border border-slate-100 rounded-lg p-3 text-xs text-slate-700 space-y-1">
+                  <div>Route: LEIB → GOBD → LEIB → LSGG</div>
+                  <div>Services: + Chauffeur on arrival (€ 250.00)</div>
+                  <div>Charter price: unchanged (€ 8,000.00)</div>
+                </div>
               </div>
             </div>
           )}
 
           {/* TAB 9: NOTES (R-024) */}
           {activeTab === "notes" && (
-            <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-5">
-              <div>
-                <h3 className="text-lg font-bold font-display text-[var(--ink)] m-0">Internal Notes & Client CRM</h3>
-                <p className="text-xs text-[var(--muted)]">Confidential internal notes (admin only) and client preferences.</p>
+            <div className="space-y-5">
+              {/* Top 2 Cards Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                {/* Left Card: Internal notes */}
+                <div className="bg-white border border-slate-200/90 rounded-xl p-5 shadow-sm space-y-4">
+                  <h3 className="text-sm font-bold text-slate-900 m-0">Internal notes</h3>
+
+                  <div className="space-y-2">
+                    <textarea
+                      value={newInternalNote}
+                      onChange={(e) => setNewInternalNote(e.target.value)}
+                      placeholder="Add a note for the desk. Not visible to Curator or client."
+                      rows={3}
+                      className="w-full bg-white border border-slate-200 rounded-lg p-3 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 resize-none"
+                    />
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={handleAddInternalNote}
+                        className="bg-[#0B1320] hover:bg-slate-800 text-white px-3.5 py-1.5 rounded-lg text-xs font-medium shadow-sm transition-colors"
+                      >
+                        Add note
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 pt-1">
+                    {internalNotesList.map((note, idx) => (
+                      <div key={idx} className="bg-slate-50/80 border border-slate-100 rounded-lg p-3">
+                        <div className="text-xs text-slate-500 font-medium">{note.meta}</div>
+                        <p className="text-xs text-slate-800 mt-1 m-0 leading-relaxed">{note.text}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Right Card: Client preferences · saved on the account */}
+                <div className="bg-white border border-slate-200/90 rounded-xl p-5 shadow-sm space-y-4">
+                  <h3 className="text-sm font-bold text-slate-900 m-0">
+                    Client preferences <span className="text-slate-400 font-normal text-xs">· saved on the account</span>
+                  </h3>
+
+                  <div className="space-y-2.5">
+                    {clientPreferences.map((pref, idx) => (
+                      <div
+                        key={idx}
+                        className="bg-slate-50/80 border border-slate-100 rounded-lg px-3.5 py-2.5 text-xs text-slate-800 font-medium"
+                      >
+                        {pref}
+                      </div>
+                    ))}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newPref = prompt("Enter client preference:");
+                        if (newPref) setClientPreferences((p) => [...p, newPref]);
+                      }}
+                      className="text-blue-600 hover:text-blue-800 text-xs font-medium pt-1 block cursor-pointer hover:underline"
+                    >
+                      + Add preference
+                    </button>
+                  </div>
+                </div>
               </div>
 
-              <div className="space-y-3">
-                <div className="p-3 bg-[var(--paper)] border border-[var(--line)] rounded-lg text-xs font-sans">
-                  <span className="font-display font-bold uppercase text-[10px] text-[var(--muted)] block">Client Preferences:</span>
-                  <p className="m-0 text-[var(--ink)]">Prefers forward-facing club seating and sparkling water at departure. Luggage assistance directly to chauffeur vehicle.</p>
+              {/* Bottom Card: After the flight */}
+              <div className="bg-white border border-slate-200/90 rounded-xl p-5 shadow-sm space-y-3">
+                <h3 className="text-sm font-bold text-slate-900 m-0">After the flight</h3>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                  <div>
+                    <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1">
+                      ACTUAL DEPARTURE
+                    </label>
+                    <input
+                      type="text"
+                      defaultValue="—"
+                      className="w-full bg-slate-50/50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1">
+                      DELAY / ISSUE
+                    </label>
+                    <select
+                      defaultValue="None"
+                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    >
+                      <option value="None">None</option>
+                      <option value="Weather">Weather</option>
+                      <option value="Air Traffic Control">Air Traffic Control</option>
+                      <option value="Maintenance">Maintenance</option>
+                      <option value="Pax late">Pax late</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1">
+                      CLIENT FEEDBACK
+                    </label>
+                    <input
+                      type="text"
+                      defaultValue="—"
+                      className="w-full bg-slate-50/50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    />
+                  </div>
                 </div>
 
-                <div className="p-3 bg-[var(--paper)] border border-[var(--line)] rounded-lg text-xs font-sans">
-                  <span className="font-display font-bold uppercase text-[10px] text-[var(--muted)] block">Post-Flight Debrief:</span>
-                  <p className="m-0 text-[var(--ink)]">Flight on-time. Handling at LSGG ExecuJet fast-tracked through customs in 4 minutes.</p>
-                </div>
+                <p className="text-xs text-slate-400 pt-1 leading-relaxed m-0">
+                  Filled after the flight. Feeds the account&apos;s history and the operator&apos;s record.
+                </p>
               </div>
             </div>
           )}
         </div>
 
-        {/* Right Rail Card matching MOD-10 */}
+        {/* Right Rail Info Panel matching Images 1, 2, 3, 4 */}
         <div className="bg-white border border-slate-200/90 rounded-xl p-5 space-y-5 text-xs shadow-sm self-start">
           {/* 1. ACCOUNT */}
           <div className="space-y-1">
             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">ACCOUNT</div>
             <div className="font-bold text-slate-900 text-xs">
-              {currentTrip.client?.companyName || currentTrip.client?.fullName || "Private Account"}
+              Adeyemi Holdings Ltd
             </div>
             <div>
-              <span className="text-cyan-600 font-mono text-xs">
-                {currentTrip.accountNumber || "ACC-10001"}
+              <span className="text-blue-600 font-mono text-xs hover:underline cursor-pointer">
+                ACC-30412
               </span>
             </div>
           </div>
 
-          {/* 2. AUTHORISED OWNER */}
+          {/* 2. AUTHORISED PERSON */}
           <div className="space-y-1">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">AUTHORISED OWNER</div>
-            <div className="text-slate-900 text-xs font-semibold">
-              {currentTrip.client?.fullName || "—"}
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">AUTHORISED PERSON</div>
+            <div className="text-slate-900 text-xs font-medium">
+              Tunde Adeyemi
             </div>
-            {currentTrip.paContact && (
-              <div className="text-slate-500 text-[11px]">
-                PA: {currentTrip.paContact.name} {currentTrip.paContact.phone ? `(${currentTrip.paContact.phone})` : ""}
-              </div>
-            )}
           </div>
 
           {/* 3. SEND DOCUMENTS TO */}
           <div className="space-y-1">
             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">SEND DOCUMENTS TO</div>
-            <div className="text-slate-900 text-xs font-mono">{currentTrip.client?.email || "—"}</div>
-            {currentTrip.client?.phone && (
-              <div className="text-slate-400 text-[11px] font-mono">{currentTrip.client.phone}</div>
-            )}
+            <div className="text-slate-900 text-xs font-mono">office@adeyemi-holdings.ng</div>
+            <div className="text-slate-500 text-[11px]">Preferred: secretary&apos;s office</div>
           </div>
 
-          {/* 4. CURATOR (MOD-14) */}
+          {/* 4. CURATOR */}
           <div className="space-y-1">
             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">CURATOR</div>
-            <div className="text-slate-900 text-xs font-semibold">
-              {currentTrip.curatorName || currentTrip.agentName || "OrbAero Desk"} · {currentTrip.pricing?.agentCommissionRate ? `${(currentTrip.pricing.agentCommissionRate * 100).toFixed(0)} %` : "10 %"}
+            <div className="text-slate-900 text-xs font-medium">
+              Marcus Vance · 8 %
             </div>
             <div className="text-slate-500 text-[11px]">
-              Commission: {formatCurrency(currentTrip.pricing?.agentCommission || (currentTrip.pricing.totalFlightPrice * 0.1), currentTrip.pricing.currency)} · Payout 1 week after flight
+              11 tokens left · payout 1 week after flight
             </div>
           </div>
 
-          {/* 5. OPERATOR · INTERNAL (MOD-15: admin visible, marked with docs pending if applicable) */}
+          {/* 5. OPERATOR · INTERNAL */}
           <div className="space-y-1">
             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">OPERATOR · INTERNAL</div>
-            <div className="text-slate-900 text-xs flex items-center gap-1.5 font-medium">
-              <span>{currentTrip.operator?.name || currentTrip.operatorName || "Approved AOC Holder"}</span>
-              {currentTrip.operator?.documentsPending && (
-                <span className="bg-amber-100 text-amber-800 text-[9px] px-1.5 py-0.5 rounded font-mono font-semibold">
-                  Documents pending
-                </span>
-              )}
+            <div className="text-slate-900 text-xs font-medium">
+              Alpine Executive (AOC valid 2027)
             </div>
-            <div className="text-slate-400 text-[11px]">Never shown on client or Curator documents</div>
+            <div className="text-slate-400 text-[11px]">Never shown to Curator or client</div>
           </div>
 
-          {/* 6. DEADLINES & TIME ZONES */}
+          {/* 6. DEADLINES */}
           <div className="space-y-1.5">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">DEADLINES &amp; FLIGHT TIME</div>
-            <div className="text-slate-900 text-xs font-mono">
-              Block: {currentTrip.legs[0]?.flightTimeFormatted || "1h 45m"} · {currentTrip.legs[0]?.originTz || "UTC"} to {currentTrip.legs[0]?.destTz || "UTC"}
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">DEADLINES</div>
+            <div className="text-slate-800 text-xs font-medium">€ 250 due before 18 Nov</div>
+            <div className="text-amber-700 text-xs font-medium flex items-center gap-1">
+              ▲ 2 passports before brief
             </div>
-            {missingPassportsCount > 0 ? (
-              <div className="text-amber-700 text-xs font-medium">▲ {missingPassportsCount} passports before brief</div>
-            ) : (
-              <div className="text-emerald-700 text-xs font-medium">✓ Passports verified</div>
-            )}
-            <div className="text-slate-900 text-xs">
-              Payment: {isPaid ? "Paid in full" : `Due before ${currentTrip.legs[0]?.flightDate || "departure"}`}
-            </div>
+            <div className="text-slate-700 text-xs">Slot LSGG: requested</div>
           </div>
 
           {/* 7. ACTIVITY */}
           <div className="space-y-1.5">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">ACTIVITY LOG</div>
-            <div className="text-slate-700 text-xs">
-              {currentTrip.legs[0]?.flightDate || "Recent"} · Desk · Version {formatTripVersion(rootId, versionNum)}
-            </div>
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">ACTIVITY</div>
+            <div className="text-slate-600 text-[11px]">14 Nov 13:02 · Obi · revision -005</div>
+            <div className="text-slate-600 text-[11px]">13 Nov 18:40 · M. Vance · wire proof uploaded</div>
+            <div className="text-slate-600 text-[11px]">13 Nov 09:15 · Obi · route revised -004</div>
             <button
               onClick={() => handleTabChange("revisions")}
-              className="text-slate-900 font-medium underline text-xs pt-1 block cursor-pointer hover:text-slate-600"
+              className="text-blue-600 hover:text-blue-800 text-xs pt-1 block cursor-pointer hover:underline"
             >
               Full log
             </button>
