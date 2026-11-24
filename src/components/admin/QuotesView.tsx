@@ -58,181 +58,10 @@ interface QuoteItemData {
     summary: string;
     price: string;
   }>;
+  bookingRef?: Booking;
 }
 
-const INITIAL_QUOTES: QuoteItemData[] = [
-  {
-    id: "QUO-RB3310",
-    rootId: "TRI-RB3310",
-    quoteCode: "QUO - RB3310 -002",
-    versionsCount: 2,
-    flightDate: "19 Nov",
-    flightTimeStr: "14:15 LT",
-    originIcao: "LFPB",
-    destIcao: "LIML",
-    routeTitle: "Paris Le Bourget → Milan Linate",
-    tripTypeLabel: "One-way",
-    account: "Okafor Capital",
-    authorisedPerson: "N. Okafor (authorised)",
-    curator: "M. Vance",
-    curatorMarginPct: 8,
-    aircraftCategory: "Light",
-    aircraftModel: "Phenom 300",
-    aircraftYear: "2019",
-    aircraftFeatures: "Light · lav enclosed",
-    pax: 3,
-    clientPrice: "€ 14,900.00",
-    clientPriceNum: 14900,
-    expiresIn: "3 h",
-    status: "open",
-    operatorCost: "€ 12,542.00",
-    companyMargin: "€ 1,254.00",
-    companyMarginLabel: "Company margin 10 % · tier € 10k–35k",
-    curatorMarkup: "€ 1,104.00",
-    servicesText: "Limousine at LIML",
-    luggagePetsText: "3 suitcases · none",
-    versions: [
-      { verNum: "-002", summary: "Time 12:00 → 14:15", price: "€ 14,900" },
-      { verNum: "-001", summary: "Created from request", price: "€ 14,900" }
-    ]
-  },
-  {
-    id: "QUO-KD2201",
-    rootId: "TRI-KD2201",
-    quoteCode: "QUO - KD2201 -003",
-    versionsCount: 3,
-    flightDate: "21 Nov",
-    flightTimeStr: "10:00 LT",
-    originIcao: "EGGW",
-    destIcao: "LFMN",
-    routeTitle: "London Luton → Nice Côte d'Azur",
-    tripTypeLabel: "One-way",
-    account: "Sterling Equities",
-    authorisedPerson: "A. Sterling",
-    curator: "C. Laurent",
-    curatorMarginPct: 8,
-    aircraftCategory: "Light",
-    aircraftModel: "CJ3+",
-    aircraftYear: "2021",
-    aircraftFeatures: "Light · 7 seats",
-    pax: 3,
-    clientPrice: "€ 6,930.00",
-    clientPriceNum: 6930,
-    expiresIn: "6 h",
-    status: "curator_confirmed",
-    operatorCost: "€ 5,800.00",
-    companyMargin: "€ 620.00",
-    companyMarginLabel: "Company margin 10 % · tier < € 10k",
-    curatorMarkup: "€ 510.00",
-    servicesText: "None requested",
-    luggagePetsText: "3 bags · none",
-    versions: [
-      { verNum: "-003", summary: "Curator confirmed aircraft", price: "€ 6,930" },
-      { verNum: "-002", summary: "Alternative tail proposed", price: "€ 7,200" },
-      { verNum: "-001", summary: "Initial dispatch", price: "€ 7,500" }
-    ]
-  },
-  {
-    id: "QUO-MX5521",
-    rootId: "TRI-MX5521",
-    quoteCode: "QUO - MX5521 -001",
-    versionsCount: 1,
-    flightDate: "24 Nov",
-    flightTimeStr: "08:30 LT",
-    originIcao: "LFPB",
-    destIcao: "DNAA",
-    routeTitle: "Paris Le Bourget ⇄ Abuja",
-    tripTypeLabel: "Round trip · 2 legs",
-    account: "Bello Group",
-    authorisedPerson: "I. Bello",
-    curator: "C. Laurent",
-    curatorMarginPct: 10,
-    aircraftCategory: "Super mid",
-    aircraftModel: "Challenger 350",
-    aircraftYear: "2020",
-    aircraftFeatures: "Super mid · stand-up cabin",
-    pax: 5,
-    clientPrice: "€ 59,111.94",
-    clientPriceNum: 59111.94,
-    expiresIn: "2 d",
-    status: "open",
-    operatorCost: "€ 50,200.00",
-    companyMargin: "€ 4,728.95",
-    companyMarginLabel: "Company margin 8 % · tier > € 35k",
-    curatorMarkup: "€ 4,182.99",
-    servicesText: "Limousine on arrival DNAA",
-    luggagePetsText: "6 suitcases · none",
-    versions: [
-      { verNum: "-001", summary: "Sourcing completed · 4 offers", price: "€ 59,111.94" }
-    ]
-  },
-  {
-    id: "QUO-GH2290",
-    rootId: "TRI-GH2290",
-    quoteCode: "QUO - GH2290 -001",
-    versionsCount: 1,
-    flightDate: "28 Nov",
-    flightTimeStr: "11:00 LT",
-    originIcao: "DGAA",
-    destIcao: "OMDB",
-    routeTitle: "Accra Kotoka → Dubai Al Maktoum",
-    tripTypeLabel: "One-way",
-    account: "Mensah Ltd",
-    authorisedPerson: "K. Mensah",
-    curator: "A. Okafor",
-    curatorMarginPct: 8,
-    aircraftCategory: "Midsize",
-    aircraftModel: "any",
-    pax: 4,
-    clientPrice: "—",
-    clientPriceNum: 0,
-    expiresIn: "—",
-    status: "draft",
-    operatorCost: "Awaiting offers",
-    companyMargin: "—",
-    companyMarginLabel: "Company margin 10 %",
-    curatorMarkup: "—",
-    servicesText: "Dubai VIP Lounge",
-    luggagePetsText: "4 suitcases",
-    versions: [
-      { verNum: "-001", summary: "Request received", price: "—" }
-    ]
-  },
-  {
-    id: "QUO-LA0917",
-    rootId: "TRI-LA0917",
-    quoteCode: "QUO - LA0917 -001",
-    versionsCount: 1,
-    flightDate: "02 Dec",
-    flightTimeStr: "09:00 LT",
-    originIcao: "DNMM",
-    destIcao: "KTEB",
-    routeTitle: "Lagos → Teterboro → Lagos",
-    tripTypeLabel: "Multi-leg · 3 legs",
-    account: "Adeyemi Holdings",
-    authorisedPerson: "T. Adeyemi",
-    curator: "T. Bello",
-    curatorMarginPct: 10,
-    aircraftCategory: "Heavy",
-    aircraftModel: "G550",
-    aircraftYear: "2018",
-    aircraftFeatures: "Ultra long range · 14 seats",
-    pax: 6,
-    clientPrice: "€ 182,400.00",
-    clientPriceNum: 182400,
-    expiresIn: "4 d",
-    status: "open",
-    operatorCost: "€ 156,000.00",
-    companyMargin: "€ 14,592.00",
-    companyMarginLabel: "Company margin 8 % · tier > € 35k",
-    curatorMarkup: "€ 11,808.00",
-    servicesText: "Transatlantic Oceanic Clearance",
-    luggagePetsText: "8 suitcases · 200 kg",
-    versions: [
-      { verNum: "-001", summary: "Initial transatlantic quote", price: "€ 182,400.00" }
-    ]
-  }
-];
+// Baseline mock data removed per request - dynamic quotes only
 
 export default function QuotesView() {
   const router = useRouter();
@@ -244,58 +73,107 @@ export default function QuotesView() {
   const [sortOption, setSortOption] = useState<"newest" | "price">("newest");
 
   // Selected quote for right preview rail
-  const [selectedQuoteId, setSelectedQuoteId] = useState<string>("QUO-RB3310");
+  const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(null);
 
-  // Combine baseline quotes with any unbooked dynamic bookings from context
-  const allQuotes = useMemo(() => {
-    const list = [...INITIAL_QUOTES];
-    const existingIds = new Set(list.map((q) => q.id.toLowerCase()));
+  // Group unbooked quotes by root trip ID and get latest iteration dynamically
+  const allQuotes: QuoteItemData[] = useMemo(() => {
+    const unbookedTrips = bookings.filter((b) => {
+      const isBooked = Boolean(
+        b.isBooked ||
+        b.isContractSigned ||
+        ["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(b.status)
+      );
+      return !isBooked;
+    });
 
-    bookings.forEach((b) => {
-      if (b.isBooked || b.isContractSigned) return;
+    const getQuoteGroupRoot = (b: Booking): string => {
       const feToken = extractFeToken(b.tripId || b.tripNumber || b.quoteReference || b.id);
-      const rootId = feToken ? `TRI-${feToken}` : (b.tripId || b.tripNumber || b.id);
-      const quoteCode = `QUO - ${feToken || "QTE"} -00${b.quoteVersion || 1}`;
-      if (existingIds.has(quoteCode.toLowerCase())) return;
+      if (feToken) return `TRI-${feToken}`;
+      if (b.tripNumber && !b.tripNumber.toUpperCase().startsWith("QTE-")) return b.tripNumber;
+      if (b.tripId) return b.tripId;
+      return b.id;
+    };
 
-      const leg = b.legs[0];
-      const price = b.pricing?.totalFlightPrice || 14000;
+    const rootMap = new Map<string, Booking[]>();
+    unbookedTrips.forEach((b) => {
+      const root = getQuoteGroupRoot(b);
+      const list = rootMap.get(root) || [];
+      list.push(b);
+      rootMap.set(root, list);
+    });
+
+    const list: QuoteItemData[] = [];
+    rootMap.forEach((versions, rootId) => {
+      const sorted = [...versions].sort((a, b) => (a.quoteVersion || 1) - (b.quoteVersion || 1));
+      const latest = sorted[sorted.length - 1];
+      const leg = latest.legs[0];
+      const feToken = extractFeToken(latest.tripId || latest.tripNumber || latest.quoteReference || latest.id) || rootId.replace(/^TRI-/, "");
+      const vNum = latest.quoteVersion || versions.length || 1;
+      const vNumStr = `-${String(vNum).padStart(3, "0")}`;
+      const quoteCode = latest.quoteId || `QUO - ${feToken} ${vNumStr}`;
+
+      const clientPriceNum = latest.pricing?.totalFlightPrice || 0;
+      const clientPrice = clientPriceNum > 0 ? formatCurrency(clientPriceNum, latest.pricing?.currency || "EUR") : "—";
+
+      const operatorCostNum = latest.pricing?.operatorCost || clientPriceNum * 0.84;
+      const companyMarginNum = latest.pricing?.companyMargin || clientPriceNum * 0.10;
+      const curatorMarkupNum = latest.pricing?.agentCommission || clientPriceNum * 0.08;
+
+      const versionsList = sorted.slice().reverse().map((v) => {
+        const verStr = `-${String(v.quoteVersion || 1).padStart(3, "0")}`;
+        const pNum = v.pricing?.totalFlightPrice || 0;
+        return {
+          verNum: verStr,
+          summary: (v.quoteVersion || 1) > 1 ? `Revision ${verStr}` : "Created from request",
+          price: pNum > 0 ? formatCurrency(pNum, v.pricing?.currency || "EUR") : "—"
+        };
+      });
+
+      const tripTypeLabel = latest.tripType === "round_trip"
+        ? `Round trip · ${latest.legs.length} legs`
+        : latest.tripType === "multi_leg"
+        ? `Multi-leg · ${latest.legs.length} legs`
+        : "One-way";
 
       list.push({
-        id: b.id,
+        id: latest.id,
         rootId,
         quoteCode,
-        versionsCount: b.quoteVersion || 1,
-        flightDate: leg?.flightDate || "Upcoming",
-        flightTimeStr: `${leg?.departureTimeLocal || "10:00"} LT`,
-        originIcao: leg?.origin?.icao || "LFPB",
-        destIcao: leg?.destination?.icao || "LIML",
-        routeTitle: `${leg?.origin?.city || leg?.origin?.icao || "Paris"} → ${leg?.destination?.city || leg?.destination?.icao || "Geneva"}`,
-        tripTypeLabel: b.tripType === "round_trip" ? "Round trip" : "One-way",
-        account: b.client?.companyName || b.client?.fullName || "Private Client",
-        authorisedPerson: b.client?.fullName || "Authorised Client",
-        curator: b.agentName ? b.agentName.split(" ")[0] : "Desk",
+        versionsCount: versions.length,
+        flightDate: leg?.flightDate || "—",
+        flightTimeStr: leg?.departureTimeLocal ? `${leg.departureTimeLocal} LT` : "—",
+        originIcao: leg?.origin?.icao || "—",
+        destIcao: leg?.destination?.icao || "—",
+        routeTitle: `${leg?.origin?.city || leg?.origin?.icao || "Origin"} → ${leg?.destination?.city || leg?.destination?.icao || "Destination"}`,
+        tripTypeLabel,
+        account: latest.client?.companyName || latest.client?.fullName || "—",
+        authorisedPerson: latest.client?.fullName ? `${latest.client.fullName} (authorised)` : "—",
+        curator: latest.agentName || "M. Vance",
         curatorMarginPct: 8,
-        aircraftCategory: b.aircraft?.categoryLabel || "Light",
-        aircraftModel: b.aircraft?.name || "Jet",
-        aircraftYear: "2020",
-        aircraftFeatures: "Executive configuration",
-        pax: leg?.paxCount || 4,
-        clientPrice: formatCurrency(price, b.pricing?.currency || "EUR"),
-        clientPriceNum: price,
-        expiresIn: "2 d",
-        status: "open",
-        operatorCost: formatCurrency(price * 0.85, "EUR"),
-        companyMargin: formatCurrency(price * 0.08, "EUR"),
-        companyMarginLabel: "Company margin 8 %",
-        curatorMarkup: formatCurrency(price * 0.07, "EUR"),
-        servicesText: "Standard handling",
-        luggagePetsText: "Standard luggage",
-        versions: [
-          { verNum: `-00${b.quoteVersion || 1}`, summary: "Latest quote iteration", price: formatCurrency(price, "EUR") }
-        ]
+        aircraftCategory: latest.aircraft?.categoryLabel || latest.aircraft?.category || "Light",
+        aircraftModel: latest.aircraft?.name || (latest.aircraft as any)?.model || "—",
+        aircraftYear: "2021",
+        aircraftFeatures: `${latest.aircraft?.categoryLabel || "Light"} · lav enclosed`,
+        pax: leg?.paxCount || leg?.passengers?.length || 1,
+        clientPrice,
+        clientPriceNum,
+        expiresIn: latest.quoteExpirationDate || "3 h",
+        status: (latest.quoteStatus as any) || (latest.status === "draft" ? "draft" : "open"),
+        operatorCost: clientPriceNum > 0 ? formatCurrency(operatorCostNum, latest.pricing?.currency || "EUR") : "Awaiting sourcing",
+        companyMargin: clientPriceNum > 0 ? formatCurrency(companyMarginNum, latest.pricing?.currency || "EUR") : "—",
+        companyMarginLabel: "Company margin 10 % · tier € 10k–35k",
+        curatorMarkup: clientPriceNum > 0 ? formatCurrency(curatorMarkupNum, latest.pricing?.currency || "EUR") : "—",
+        servicesText: (latest as any).cateringNotes || (latest as any).groundTransportNotes || latest.specialRequests || "None requested",
+        luggagePetsText: (latest as any).luggageNotes ? `${(latest as any).luggageNotes} · ${(latest as any).petNotes || "none"}` : "Standard luggage · none",
+        versions: versionsList,
+        bookingRef: latest
       });
-      existingIds.add(quoteCode.toLowerCase());
+    });
+
+    list.sort((a, b) => {
+      const dateA = a.bookingRef?.createdAt ? new Date(a.bookingRef.createdAt).getTime() : 0;
+      const dateB = b.bookingRef?.createdAt ? new Date(b.bookingRef.createdAt).getTime() : 0;
+      return dateB - dateA;
     });
 
     return list;
@@ -304,23 +182,27 @@ export default function QuotesView() {
   // Counts for pills
   const counts = useMemo(() => {
     return {
-      open: 9,
-      expiring_today: 2,
-      curator_confirmed: 1,
-      draft: 1,
-      expired: 0,
-      declined: 0
+      open: allQuotes.filter((q) => q.status === "open").length,
+      expiring_today: allQuotes.filter((q) => q.status === "expiring_today" || (q.expiresIn && (q.expiresIn.toLowerCase().includes("today") || q.expiresIn.toLowerCase().includes("h")))).length,
+      curator_confirmed: allQuotes.filter((q) => q.status === "curator_confirmed" || q.bookingRef?.agentConfirmedPendingSuperAdmin).length,
+      draft: allQuotes.filter((q) => q.status === "draft").length,
+      expired: allQuotes.filter((q) => q.status === "expired").length,
+      declined: allQuotes.filter((q) => q.status === "declined").length
     };
-  }, []);
+  }, [allQuotes]);
 
   // Filtered quotes
   const filteredQuotes = useMemo(() => {
-    return allQuotes.filter((q) => {
+    const res = allQuotes.filter((q) => {
       if (activeFilter === "expiring_today" && q.status !== "expiring_today") {
-        // Allow demo view
+        return false;
       } else if (activeFilter === "curator_confirmed" && q.status !== "curator_confirmed") {
         return false;
       } else if (activeFilter === "draft" && q.status !== "draft") {
+        return false;
+      } else if (activeFilter === "expired" && q.status !== "expired") {
+        return false;
+      } else if (activeFilter === "declined" && q.status !== "declined") {
         return false;
       }
 
@@ -342,12 +224,23 @@ export default function QuotesView() {
 
       return true;
     });
-  }, [allQuotes, activeFilter, curatorFilter, searchQuery]);
+
+    if (sortOption === "price") {
+      res.sort((a, b) => b.clientPriceNum - a.clientPriceNum);
+    }
+
+    return res;
+  }, [allQuotes, activeFilter, curatorFilter, searchQuery, sortOption]);
 
   // Currently selected quote object
   const selectedQuote = useMemo(() => {
-    return allQuotes.find((q) => q.id === selectedQuoteId) || allQuotes[0];
-  }, [allQuotes, selectedQuoteId]);
+    if (filteredQuotes.length === 0) return null;
+    if (selectedQuoteId) {
+      const found = filteredQuotes.find((q) => q.id === selectedQuoteId);
+      if (found) return found;
+    }
+    return filteredQuotes[0];
+  }, [filteredQuotes, selectedQuoteId]);
 
   return (
     <div className="w-full space-y-5 pb-12">
@@ -513,7 +406,7 @@ export default function QuotesView() {
                     <tr
                       key={quote.id}
                       onClick={() => setSelectedQuoteId(quote.id)}
-                      onDoubleClick={() => router.push(`/trips/${quote.rootId}/pricing`)}
+                      onDoubleClick={() => router.push(`/quotes/${encodeURIComponent(quote.id)}`)}
                       className={`cursor-pointer transition-colors ${
                         isSelected
                           ? "bg-sky-50/70 border-l-2 border-l-blue-600"
@@ -522,9 +415,9 @@ export default function QuotesView() {
                     >
                       {/* Quote Code */}
                       <td className="py-3 px-3.5 whitespace-nowrap">
-                        <span className="font-mono font-bold text-slate-900 block">
+                        <Link href={`/quotes/${encodeURIComponent(quote.id)}`} className="font-mono font-bold text-slate-900 block hover:text-blue-600 hover:underline">
                           {quote.quoteCode}
-                        </span>
+                        </Link>
                         <span className="text-[11px] text-slate-400 font-mono">
                           {quote.versionsCount} {quote.versionsCount === 1 ? "version" : "versions"}
                         </span>
@@ -614,7 +507,7 @@ export default function QuotesView() {
                   {selectedQuote.quoteCode}
                 </span>
                 <Link
-                  href={`/trips/${selectedQuote.rootId}/pricing`}
+                  href={`/quotes/${encodeURIComponent(selectedQuote.id)}`}
                   className="text-xs text-slate-600 hover:text-slate-900 font-medium inline-flex items-center gap-0.5 transition-colors"
                 >
                   <span>Open quote</span>
@@ -718,7 +611,7 @@ export default function QuotesView() {
               <button
                 type="button"
                 onClick={() => {
-                  const bookingObj = bookings.find((b) => b.id === selectedQuote.id) || {
+                  const bookingObj = selectedQuote.bookingRef || bookings.find((b) => b.id === selectedQuote.id) || {
                     id: selectedQuote.id,
                     tripNumber: selectedQuote.rootId,
                     quoteId: selectedQuote.quoteCode,
@@ -743,7 +636,7 @@ export default function QuotesView() {
 
               <button
                 type="button"
-                onClick={() => router.push(`/trips/${selectedQuote.rootId}/pricing`)}
+                onClick={() => router.push(`/quotes/new?reviseQuote=${encodeURIComponent(selectedQuote.id)}`)}
                 className="flex-1 bg-white border border-slate-200 text-slate-800 hover:bg-slate-50 py-1.5 px-3 rounded-lg text-xs font-medium shadow-2xs transition-colors text-center"
               >
                 Revise
@@ -752,7 +645,7 @@ export default function QuotesView() {
               <button
                 type="button"
                 onClick={async () => {
-                  const bookingObj = bookings.find((b) => b.id === selectedQuote.id);
+                  const bookingObj = selectedQuote.bookingRef || bookings.find((b) => b.id === selectedQuote.id);
                   if (bookingObj) {
                     await convertQuoteToBooked(bookingObj.id, bookingObj);
                   }

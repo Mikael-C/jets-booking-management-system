@@ -50,148 +50,8 @@ interface BookingRowData {
   createdAt: string;
 }
 
-// Baseline mock data matching Image 5
-const INITIAL_BOOKINGS_ROWS: BookingRowData[] = [
-  {
-    id: "TRI-NK1188",
-    rootId: "TRI-NK1188",
-    tripCode: "TRI - NK1188 -004",
-    versionsCount: 4,
-    departureDate: "Tue 17 Nov",
-    departureTimeStr: "09:30 LT · in 3 d",
-    route: "LFMN → DNAA",
-    account: "Bello Group",
-    curator: "T. Bello",
-    aircraftCategory: "Heavy",
-    aircraftModel: "G450",
-    tailNumber: "5N-XXX",
-    pax: 6,
-    price: "€ 98,400.00",
-    paymentStatus: "paid",
-    paymentLabel: "Paid",
-    readiness: {
-      paxStatus: "ok",
-      paxLabel: "Pax ✓",
-      slotStatus: "alert",
-      slotLabel: "▲ Slot",
-      permitStatus: "ok",
-      permitLabel: "Permit ✓"
-    },
-    section: "this_week",
-    status: "confirmed",
-    createdAt: "2026-11-14T10:00:00Z"
-  },
-  {
-    id: "TRI-FE4578",
-    rootId: "TRI-FE4578",
-    tripCode: "TRI - FE4578 -005",
-    versionsCount: 5,
-    departureDate: "Fri 20 Nov",
-    departureTimeStr: "10:00 LT · in 6 d",
-    route: "LEIB → LSGG",
-    account: "Adeyemi Holdings",
-    curator: "M. Vance",
-    aircraftCategory: "Light",
-    aircraftModel: "CJ3+",
-    tailNumber: "tail TBA",
-    pax: 4,
-    price: "€ 8,250.00",
-    paymentStatus: "partially_paid",
-    paymentLabel: "€ 250 open",
-    readiness: {
-      paxStatus: "alert" as any,
-      paxLabel: "▲ 2 passports",
-      slotStatus: "none",
-      slotLabel: "Slot -",
-      permitStatus: "none",
-      permitLabel: "Permit -"
-    },
-    section: "this_week",
-    status: "confirmed",
-    createdAt: "2026-11-13T12:00:00Z"
-  },
-  {
-    id: "TRI-TB7710",
-    rootId: "TRI-TB7710",
-    tripCode: "TRI - TB7710 -002",
-    versionsCount: 2,
-    departureDate: "Thu 03 Dec",
-    departureTimeStr: "13:00 LT",
-    route: "DNAA → FAOR → DNAA",
-    account: "Nwosu Energy",
-    curator: "A. Okafor",
-    aircraftCategory: "Super mid",
-    aircraftModel: "Challenger 350",
-    tailNumber: "tail TBA",
-    pax: 7,
-    price: "€ 54,800.00",
-    paymentStatus: "awaiting_wire",
-    paymentLabel: "Awaiting wire",
-    readiness: {
-      paxStatus: "fraction",
-      paxLabel: "Pax 4/7",
-      slotStatus: "none",
-      permitStatus: "none"
-    },
-    section: "later",
-    status: "confirmed",
-    createdAt: "2026-11-12T09:00:00Z"
-  },
-  {
-    id: "TRI-WS0193",
-    rootId: "TRI-WS0193",
-    tripCode: "TRI - WS0193 -001",
-    versionsCount: 1,
-    departureDate: "Sat 19 Dec",
-    departureTimeStr: "17:00 LT",
-    route: "EGLF → DNMM",
-    account: "Adeyemi Holdings",
-    curator: "M. Vance",
-    aircraftCategory: "Heavy",
-    aircraftModel: "Global 6000",
-    tailNumber: "tail TBA",
-    pax: 8,
-    price: "€ 142,000.00",
-    paymentStatus: "awaiting_wire",
-    paymentLabel: "Awaiting wire",
-    readiness: {
-      paxStatus: "fraction",
-      paxLabel: "Pax 0/8",
-      slotStatus: "none",
-      permitStatus: "none"
-    },
-    section: "later",
-    status: "confirmed",
-    createdAt: "2026-11-11T14:00:00Z"
-  },
-  {
-    id: "TRI-OD3304",
-    rootId: "TRI-OD3304",
-    tripCode: "TRI - OD3304 -003",
-    versionsCount: 3,
-    departureDate: "Tue 29 Dec",
-    departureTimeStr: "08:00 LT",
-    route: "LSGG → DNMM",
-    account: "Okafor Capital",
-    curator: "C. Laurent",
-    aircraftCategory: "Heavy",
-    aircraftModel: "Falcon 7X",
-    tailNumber: "tail TBA",
-    pax: 6,
-    price: "€ 118,500.00",
-    paymentStatus: "paid",
-    paymentLabel: "Paid",
-    readiness: {
-      paxStatus: "ok",
-      paxLabel: "Pax ✓",
-      slotStatus: "none",
-      permitStatus: "none"
-    },
-    section: "later",
-    status: "confirmed",
-    createdAt: "2026-11-10T11:00:00Z"
-  }
-];
+// Baseline mock data removed per request - purely dynamic from aviationContext
+
 
 export default function BookingsView() {
   const router = useRouter();
@@ -201,50 +61,90 @@ export default function BookingsView() {
   const [searchQuery, setSearchQuery] = useState("");
   const [sortOption, setSortOption] = useState<"newest" | "departure">("newest");
 
-  // Merge live dynamic bookings into rows if created
+  // Dynamically derive booked rows from aviation context (R-013: signed contract / booked only)
   const combinedRows = useMemo(() => {
-    const list: BookingRowData[] = [...INITIAL_BOOKINGS_ROWS];
-    const existingIds = new Set(list.map((r) => r.rootId.toLowerCase()));
+    const bookedTrips = bookings.filter((b) => {
+      const isSignedOrBooked = Boolean(
+        b.isBooked ||
+        b.isContractSigned ||
+        ["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(b.status)
+      );
+      return isSignedOrBooked;
+    });
 
-    // Collect bookings from aviation context that have contracts or booked
-    bookings.forEach((b) => {
+    const rootMap = new Map<string, Booking[]>();
+    bookedTrips.forEach((b) => {
       const feToken = extractFeToken(b.tripId || b.tripNumber || b.id);
       const rootId = feToken ? `TRI-${feToken}` : (b.tripId || b.tripNumber || b.id);
-      if (existingIds.has(rootId.toLowerCase())) return;
+      const list = rootMap.get(rootId) || [];
+      list.push(b);
+      rootMap.set(rootId, list);
+    });
 
-      const leg = b.legs[0];
-      const isPaid = b.paymentStatus === "fully_paid";
-      const totalPax = leg?.paxCount || (b as any).paxCount || 4;
+    const list: BookingRowData[] = [];
+    rootMap.forEach((versions, rootId) => {
+      const sorted = [...versions].sort((a, b) => (a.quoteVersion || 1) - (b.quoteVersion || 1));
+      const latest = sorted[sorted.length - 1];
+      const leg = latest.legs[0];
+      const isPaid = latest.paymentStatus === "fully_paid";
+      const isPartiallyPaid = (latest.paymentStatus as string) === "deposit_paid" || (latest.paymentStatus as string) === "partially_paid";
+      const totalPax = leg?.paxCount || leg?.passengers?.length || 4;
       const missingPax = leg?.passengers?.filter((p) => !p.passportNumber || p.passportNumber.length < 5).length || 0;
 
+      const feToken = extractFeToken(latest.tripId || latest.tripNumber || latest.id) || rootId.replace(/^TRI-/, "");
+      const vNum = latest.quoteVersion || versions.length || 1;
+      const tripCode = `TRI - ${feToken} -${String(vNum).padStart(3, "0")}`;
+
+      let paymentStatus: "paid" | "partially_paid" | "awaiting_wire" | "unpaid" = "unpaid";
+      let paymentLabel = "Unpaid";
+      if (isPaid) {
+        paymentStatus = "paid";
+        paymentLabel = "Paid";
+      } else if (isPartiallyPaid) {
+        paymentStatus = "partially_paid";
+        paymentLabel = "Partially paid";
+      } else if ((latest.paymentStatus as string) === "awaiting_wire" || (latest.paymentStatus as string) === "invoice_sent") {
+        paymentStatus = "awaiting_wire";
+        paymentLabel = "Awaiting wire";
+      }
+
+      // Check if departure date falls within 7 days
+      let isThisWeek = true;
+      if (leg?.flightDate) {
+        const d = new Date(leg.flightDate);
+        if (!isNaN(d.getTime())) {
+          const diffDays = (d.getTime() - Date.now()) / (1000 * 60 * 60 * 24);
+          isThisWeek = diffDays >= -1 && diffDays <= 7;
+        }
+      }
+
       list.push({
-        id: b.id,
+        id: latest.id,
         rootId,
-        tripCode: `${rootId} -00${b.quoteVersion || 1}`,
-        versionsCount: b.quoteVersion || 1,
+        tripCode,
+        versionsCount: versions.length,
         departureDate: leg?.flightDate || "Upcoming",
-        departureTimeStr: `${leg?.departureTimeLocal || "10:00"} LT`,
-        route: `${leg?.origin?.icao || "LEIB"} → ${leg?.destination?.icao || "LSGG"}`,
-        account: b.client?.companyName || b.client?.fullName || "Private Client",
-        curator: b.agentName ? b.agentName.split(" ")[0] : "Desk",
-        aircraftCategory: b.aircraft?.categoryLabel || "Midsize",
-        aircraftModel: b.aircraft?.name || "Jet",
-        tailNumber: leg?.aircraftRegistration || b.aircraft?.registration || "tail TBA",
+        departureTimeStr: leg?.departureTimeLocal ? `${leg.departureTimeLocal} LT` : "—",
+        route: leg?.origin?.icao && leg?.destination?.icao ? `${leg.origin.icao} → ${leg.destination.icao}` : "—",
+        account: latest.client?.companyName || latest.client?.fullName || "—",
+        curator: latest.agentName || "M. Vance",
+        aircraftCategory: latest.aircraft?.categoryLabel || latest.aircraft?.category || "Light",
+        aircraftModel: latest.aircraft?.name || (latest.aircraft as any)?.model || "—",
+        tailNumber: leg?.aircraftRegistration || latest.aircraft?.registration || "tail TBA",
         pax: totalPax,
-        price: formatCurrency(b.pricing?.totalFlightPrice || 10000, b.pricing?.currency || "EUR"),
-        paymentStatus: isPaid ? "paid" : "awaiting_wire",
-        paymentLabel: isPaid ? "Paid" : "Awaiting wire",
+        price: formatCurrency(latest.pricing?.totalFlightPrice || 0, latest.pricing?.currency || "EUR"),
+        paymentStatus,
+        paymentLabel,
         readiness: {
           paxStatus: missingPax > 0 ? "fraction" : "ok",
           paxLabel: missingPax > 0 ? `Pax ${totalPax - missingPax}/${totalPax}` : "Pax ✓",
           slotStatus: "none",
           permitStatus: "none"
         },
-        section: "later",
-        status: b.status as any || "confirmed",
-        createdAt: b.createdAt || new Date().toISOString()
+        section: isThisWeek ? "this_week" : "later",
+        status: (latest.status as any) || "confirmed",
+        createdAt: latest.createdAt || new Date().toISOString()
       });
-      existingIds.add(rootId.toLowerCase());
     });
 
     return list;
@@ -254,11 +154,11 @@ export default function BookingsView() {
   const counts = useMemo(() => {
     return {
       upcoming: combinedRows.filter((r) => r.status !== "cancelled" && r.status !== "flown").length,
-      flying_this_week: combinedRows.filter((r) => r.section === "this_week").length,
+      flying_this_week: combinedRows.filter((r) => r.section === "this_week" && r.status !== "cancelled" && r.status !== "flown").length,
       unpaid: combinedRows.filter((r) => r.paymentStatus !== "paid").length,
       missing_data: combinedRows.filter((r) => r.readiness.paxStatus !== "ok" || r.readiness.slotStatus === "alert").length,
-      flown_to_close: 2,
-      cancelled: 0
+      flown_to_close: combinedRows.filter((r) => r.status === "flown").length,
+      cancelled: combinedRows.filter((r) => r.status === "cancelled").length
     };
   }, [combinedRows]);
 

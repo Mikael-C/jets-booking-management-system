@@ -265,6 +265,13 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
   const [creditReason, setCreditReason] = useState<string>("Complimentary ground handling courtesy adjustment");
   const [creditError, setCreditError] = useState<string>("");
 
+  // Accounting Tab Credit Note Card State (Image 1)
+  const [creditNoteReason, setCreditNoteReason] = useState<string>("Cancellation");
+  const [cancellationFeePercent, setCancellationFeePercent] = useState<string>("50 %");
+  const [creditNoteAmount, setCreditNoteAmount] = useState<string>("€ 4,000.00");
+  const [creditNoteInternalNote, setCreditNoteInternalNote] = useState<string>("Client cancelled 16 Nov, 4 days before flight.");
+  const [creditNoteOutput, setCreditNoteOutput] = useState<"Credit note only" | "Invoice for remainder" | "Both">("Both");
+
   // Margin Override State (R-019)
   const [marginOverridePercent, setMarginOverridePercent] = useState<number>(10);
   const [marginReason, setMarginReason] = useState<string>("");
@@ -612,15 +619,11 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
   // Tabs definition matching exact screenshot order: Itinerary, Passengers ▲2, Sourcing (3), Pricing, Services (2), Documents (7), Accounting, Revisions (5), Notes
   const tabs: { key: TripTabKey; label: string; countLabel?: string; count?: number }[] = [
     { key: "itinerary", label: "Itinerary" },
-    {
-      key: "passengers",
-      label: "Passengers",
-      countLabel: "▲2"
-    },
-    { key: "sourcing", label: "Sourcing", count: 3 },
+    { key: "passengers", label: "Passengers" },
+    { key: "sourcing", label: "Sourcing" },
     { key: "pricing", label: "Pricing" },
-    { key: "services", label: "Services", count: 2 },
-    { key: "documents", label: "Documents", count: 7 },
+    { key: "services", label: "Services" },
+    { key: "documents", label: "Documents" },
     { key: "accounting", label: "Accounting" },
     { key: "revisions", label: "Revisions", count: 5 },
     { key: "notes", label: "Notes" }
@@ -847,12 +850,25 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
             >
               New invoice
             </button>
-            <button
-              onClick={() => openDocument(currentTrip, "flight_brief")}
-              className="bg-[#0B1320] hover:bg-slate-800 text-white px-3.5 py-1.5 rounded-lg text-xs font-medium shadow-sm transition-colors"
-            >
-              Flight brief
-            </button>
+            {activeTab === "accounting" ? (
+              <button
+                type="button"
+                onClick={() => {
+                  const el = document.getElementById("new-credit-note-card");
+                  if (el) el.scrollIntoView({ behavior: "smooth" });
+                }}
+                className="bg-[#0B1320] hover:bg-slate-800 text-white px-3.5 py-1.5 rounded-lg text-xs font-semibold shadow-sm transition-colors"
+              >
+                New credit note
+              </button>
+            ) : (
+              <button
+                onClick={() => openDocument(currentTrip, "flight_brief")}
+                className="bg-[#0B1320] hover:bg-slate-800 text-white px-3.5 py-1.5 rounded-lg text-xs font-medium shadow-sm transition-colors"
+              >
+                Flight brief
+              </button>
+            )}
           </div>
         </div>
 
@@ -908,9 +924,9 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
       </div>
 
       {/* 3. Main Workspace Grid: Content + Right Rail */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+      <div className={`grid grid-cols-1 ${activeTab === "accounting" ? "lg:grid-cols-1" : "lg:grid-cols-4"} gap-6`}>
         {/* Main Tab Content Area */}
-        <div className="lg:col-span-3 space-y-5">
+        <div className={`${activeTab === "accounting" ? "w-full" : "lg:col-span-3"} space-y-5`}>
           {/* TAB 1: ITINERARY (R-016) */}
           {activeTab === "itinerary" && (
             <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-5">
@@ -1971,307 +1987,326 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
             </div>
           )}
 
-          {/* TAB 7: ACCOUNTING (R-022) */}
+          {/* TAB 7: ACCOUNTING (Image 2) */}
           {activeTab === "accounting" && (
-            <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-bold font-display text-[var(--ink)] m-0">Trip Financial Ledger</h3>
-                  <p className="text-xs text-[var(--muted)]">Balance strip, debit invoices, credit notes, and wire receipts</p>
+            <div className="space-y-5">
+              {/* Top Financial Health Cards (5 metrics) */}
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+                <div className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-sm">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-1">INVOICED</span>
+                  <span className="text-base font-bold text-slate-900 font-mono">€ 8,250.00</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setIsCreditNoteModalOpen(true)}
-                    className="btn-secondary text-xs"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>New Credit Note</span>
-                  </button>
+                <div className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-sm">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-1">CREDITED</span>
+                  <span className="text-base font-bold text-slate-900 font-mono">€ 0.00</span>
                 </div>
-              </div>
-
-              {/* Balance Strip */}
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 p-4 bg-[var(--paper)] border border-[var(--line)] rounded-xl text-xs font-mono">
-                <div>
-                  <span className="text-[var(--muted)] block text-[10px] uppercase font-bold">Total Invoiced</span>
-                  <span className="font-bold text-sm text-[var(--ink)]">
-                    {formatCurrency(currentTrip.pricing.totalFlightPrice, currentTrip.pricing.currency)}
-                  </span>
+                <div className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-sm">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-1">NET DUE</span>
+                  <span className="text-base font-bold text-slate-900 font-mono">€ 8,250.00</span>
                 </div>
-                <div>
-                  <span className="text-[var(--muted)] block text-[10px] uppercase font-bold">Credited / CN</span>
-                  <span className="font-bold text-sm text-[var(--red)]">
-                    {currentTrip.creditNotes && currentTrip.creditNotes.length > 0
-                      ? `- ${formatCurrency(currentTrip.creditNotes.reduce((sum, c) => sum + (c.amount || 0), 0), currentTrip.pricing.currency)}`
-                      : "€0.00"}
-                  </span>
+                <div className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-sm">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-1">RECEIVED</span>
+                  <span className="text-base font-bold text-slate-900 font-mono">€ 8,000.00</span>
                 </div>
-                <div>
-                  <span className="text-[var(--muted)] block text-[10px] uppercase font-bold">Net Due</span>
-                  <span className="font-bold text-sm text-[var(--ink)]">
-                    {formatCurrency(
-                      currentTrip.pricing.totalFlightPrice - (currentTrip.creditNotes?.reduce((sum, c) => sum + (c.amount || 0), 0) || 0),
-                      currentTrip.pricing.currency
-                    )}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-[var(--muted)] block text-[10px] uppercase font-bold">Received</span>
-                  <span className="font-bold text-sm text-[var(--green)]">
-                    {isPaid ? formatCurrency(currentTrip.pricing.totalFlightPrice, currentTrip.pricing.currency) : "€0.00"}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-[var(--muted)] block text-[10px] uppercase font-bold">Open Balance</span>
-                  <span className="font-bold text-sm text-[var(--ink)]">
-                    {isPaid ? "€0.00" : formatCurrency(currentTrip.pricing.totalFlightPrice, currentTrip.pricing.currency)}
-                  </span>
+                <div className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-sm">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-1">OPEN BALANCE</span>
+                  <span className="text-base font-bold text-amber-600 font-mono">€ 250.00</span>
                 </div>
               </div>
 
-              {/* Automated Payment Reminder (PAY-02) Card (Screen 4) */}
-              <div className="border border-slate-200/90 rounded-xl p-5 bg-white space-y-4 shadow-sm">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-600 flex items-center justify-center font-bold text-xs">
-                      PAY
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-bold text-slate-900 m-0 flex items-center gap-2">
-                        PAY-02 · Automated Payment Reminder
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                            autoPaymentReminders
-                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                              : "bg-slate-100 text-slate-600 border border-slate-200"
-                          }`}
-                        >
-                          {autoPaymentReminders ? "Auto Send Active" : "Paused / Disabled"}
-                        </span>
-                      </h4>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        Linked directly to invoice status. Generates and dispatches WhatsApp & email reminders 48h, 24h before due, and on due date.
-                      </p>
-                    </div>
+              {/* Split Content: Left is Trip Ledger, Right is Credit Note */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+                {/* Left: Trip ledger · latest first */}
+                <div className="lg:col-span-7 bg-white border border-slate-200/90 rounded-xl p-5 shadow-sm space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-slate-900 m-0">Trip ledger · latest first</h3>
+                    <button
+                      type="button"
+                      onClick={() => openDocument(currentTrip, "invoice")}
+                      className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg text-xs font-medium shadow-sm transition-colors"
+                    >
+                      Combine into one invoice
+                    </button>
                   </div>
 
-                  {/* Toggle Switch & Manual Send */}
-                  <div className="flex items-center gap-3 flex-shrink-0">
-                    <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-700 select-none">
-                      <span>Auto Reminders</span>
-                      <button
-                        type="button"
-                        onClick={handleToggleAutoReminders}
-                        className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors duration-200 ease-in-out cursor-pointer ${
-                          autoPaymentReminders ? "bg-emerald-600" : "bg-slate-300"
-                        }`}
-                      >
-                        <div
-                          className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ease-in-out ${
-                            autoPaymentReminders ? "translate-x-5" : "translate-x-0"
-                          }`}
-                        />
-                      </button>
-                    </label>
-
-                    {!isPaid && (
-                      <button
-                        type="button"
-                        onClick={handleSendManualPaymentReminder}
-                        disabled={isSendingReminder}
-                        className="btn-secondary text-xs flex items-center gap-1.5"
-                      >
-                        <span>{isSendingReminder ? "Sending..." : "Send Reminder Now"}</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                  <div className="p-3 bg-slate-50 rounded-lg">
-                    <span className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Invoice Status</span>
-                    <span className={`font-bold ${isPaid ? "text-emerald-600" : "text-amber-600"}`}>
-                      {isPaid ? "Paid in full (Reminders stopped)" : "Unpaid · Reminders eligible"}
-                    </span>
-                  </div>
-                  <div className="p-3 bg-slate-50 rounded-lg">
-                    <span className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Schedule & Rules</span>
-                    <span className="text-slate-700">48h & 24h before due · Quiet hours 21:00–07:00</span>
-                  </div>
-                  <div className="p-3 bg-slate-50 rounded-lg">
-                    <span className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Automation Template</span>
-                    <Link href="/messages?code=PAY-02" className="text-[#C9A052] font-semibold hover:underline">
-                      View PAY-02 template →
-                    </Link>
-                  </div>
-                </div>
-
-                {reminderFeedback && (
-                  <div className="p-2.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-lg flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                    <span>{reminderFeedback}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Invoices Table (MOD-04 / R-055: Primary invoice never edited; Supplementary for increases) */}
-              <div className="space-y-2 pt-2">
-                <div className="flex items-center justify-between">
-                  <h4 className="font-display font-bold text-sm text-[var(--ink)] m-0">Commercial Invoices</h4>
-                  <button
-                    onClick={() => {
-                      alert("Balance statement pulled and dispatched to billing contact via Email and PDF.");
-                    }}
-                    className="text-xs font-mono text-cyan-700 hover:underline flex items-center gap-1 font-semibold"
-                  >
-                    <Receipt className="w-3.5 h-3.5" />
-                    <span>Pull &amp; Send Balance Statement</span>
-                  </button>
-                </div>
-                <div className="tablewrap">
-                  <table className="dense-table">
-                    <thead>
-                      <tr>
-                        <th>Invoice Number</th>
-                        <th>Type</th>
-                        <th>Issue Date</th>
-                        <th>Due Date</th>
-                        <th>Amount</th>
-                        <th>Status</th>
-                        <th className="text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td className="font-mono font-bold whitespace-nowrap">
-                          {renderFormattedId(formatDocumentId("INV", rootId, versionNum, 1))}
-                        </td>
-                        <td>
-                          <span className="text-xs font-medium">Primary Invoice</span>
-                        </td>
-                        <td className="font-mono text-xs">{currentTrip.contractDate || "16.11.2026"}</td>
-                        <td className="font-mono text-xs">{currentTrip.legs[0]?.flightDate || "18.11.2026"}</td>
-                        <td className="font-mono font-bold text-[var(--ink)]">
-                          {formatCurrency(currentTrip.pricing.totalFlightPrice, currentTrip.pricing.currency)}
-                        </td>
-                        <td>
-                          <StatusPill
-                            label={(currentTrip.paymentStatus || "unpaid").toUpperCase()}
-                            variant={currentTrip.paymentStatus === "fully_paid" ? "green" : "amber"}
-                          />
-                        </td>
-                        <td className="text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <button
-                              onClick={() => openDocument(currentTrip, "invoice")}
-                              className="text-xs font-mono text-[var(--accent)] hover:underline"
-                            >
-                              View PDF
-                            </button>
-                            <span className="text-slate-300">·</span>
-                            <button
-                              onClick={() => {
-                                handleSendDocToCurator("invoice", "Invoice INV-001");
-                              }}
-                              className="text-xs font-mono text-slate-600 hover:text-slate-900 font-medium hover:underline"
-                            >
-                              Send Invoice
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                      {(currentTrip.quoteVersion || 1) > 1 && (
-                        <tr>
-                          <td className="font-mono font-bold whitespace-nowrap">
-                            {renderFormattedId(formatDocumentId("INV", rootId, versionNum, 2))}
-                          </td>
-                          <td>
-                            <span className="text-xs font-medium text-amber-700">Supplementary Invoice</span>
-                          </td>
-                          <td className="font-mono text-xs">{currentTrip.contractDate || "17.11.2026"}</td>
-                          <td className="font-mono text-xs">{currentTrip.legs[0]?.flightDate || "18.11.2026"}</td>
-                          <td className="font-mono font-bold text-[var(--ink)]">
-                            {formatCurrency(350, currentTrip.pricing.currency)}
-                          </td>
-                          <td>
-                            <StatusPill label="PENDING" variant="amber" />
-                          </td>
-                          <td className="text-right">
-                            <div className="flex items-center justify-end gap-2">
-                              <button
-                                onClick={() => openDocument(currentTrip, "invoice")}
-                                className="text-xs font-mono text-[var(--accent)] hover:underline"
-                              >
-                                View PDF
-                              </button>
-                              <span className="text-slate-300">·</span>
-                              <button
-                                onClick={() => {
-                                  handleSendDocToCurator("invoice", "Supplementary Invoice INV-002");
-                                }}
-                                className="text-xs font-mono text-slate-600 hover:text-slate-900 font-medium hover:underline"
-                              >
-                                Send Invoice
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* Credit Notes Table (MOD-04) */}
-              {currentTrip.creditNotes && currentTrip.creditNotes.length > 0 && (
-                <div className="space-y-2 pt-2">
-                  <h4 className="font-display font-bold text-sm text-[var(--ink)] m-0">Issued Credit Notes</h4>
-                  <div className="tablewrap">
-                    <table className="dense-table">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs text-left">
                       <thead>
-                        <tr>
-                          <th>Credit Note ID</th>
-                          <th>Date</th>
-                          <th>Internal Reason</th>
-                          <th className="text-right">Amount Credited</th>
-                          <th className="text-right">Action</th>
+                        <tr className="border-b border-slate-100 text-slate-400 font-bold uppercase text-[10px] tracking-wider">
+                          <th className="py-2.5 pr-2">VERSION</th>
+                          <th className="py-2.5 px-2">DOCUMENT</th>
+                          <th className="py-2.5 px-2">LINE</th>
+                          <th className="py-2.5 px-2 text-right">AMOUNT</th>
+                          <th className="py-2.5 px-2">STATUS</th>
+                          <th className="py-2.5 pl-2"></th>
                         </tr>
                       </thead>
-                      <tbody>
-                        {currentTrip.creditNotes.map((cn, i) => (
-                          <tr key={i}>
-                            <td className="font-mono font-bold whitespace-nowrap">{renderFormattedId(cn.creditNoteNumber || `CN-${rootId}-01`)}</td>
-                            <td className="font-mono text-xs">{cn.issueDate || cn.date || "15.11.2026"}</td>
-                            <td className="text-xs">{cn.reason}</td>
-                            <td className="font-mono font-bold text-right text-[var(--red)]">
-                              - {formatCurrency(cn.amount || 0, currentTrip.pricing.currency)}
-                            </td>
-                            <td className="text-right">
-                              <div className="flex items-center justify-end gap-2">
-                                <button
-                                  onClick={() => openDocument(currentTrip, "credit_note")}
-                                  className="text-xs font-mono text-[var(--accent)] hover:underline"
-                                >
-                                  View PDF
-                                </button>
-                                <span className="text-slate-300">·</span>
-                                <button
-                                  onClick={() => {
-                                    alert(`Credit Note ${cn.creditNoteNumber || `CN-${rootId}-01`} pulled and dispatched.`);
-                                  }}
-                                  className="text-xs font-mono text-slate-600 hover:text-slate-900 font-medium hover:underline"
-                                >
-                                  Send Credit Note
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
+                      <tbody className="divide-y divide-slate-100 text-slate-700">
+                        {/* Row 1 */}
+                        <tr>
+                          <td className="py-3 pr-2 font-mono text-slate-600 whitespace-nowrap">TRI-FE4578-005</td>
+                          <td className="py-3 px-2 font-mono text-slate-500 whitespace-nowrap">INV-FE4578-005-1</td>
+                          <td className="py-3 px-2">Additional service · chauffeur, Geneva arrival</td>
+                          <td className="py-3 px-2 text-right font-mono whitespace-nowrap">€ 250.00</td>
+                          <td className="py-3 px-2 whitespace-nowrap">
+                            <span className="bg-amber-50 text-amber-800 border border-amber-200/80 rounded px-2 py-0.5 text-[11px] font-medium">
+                              Unpaid · pay link sent
+                            </span>
+                          </td>
+                          <td className="py-3 pl-2 text-right whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => openDocument(currentTrip, "invoice")}
+                              className="text-xs text-blue-600 font-medium hover:underline"
+                            >
+                              PDF
+                            </button>
+                          </td>
+                        </tr>
+
+                        {/* Row 2 */}
+                        <tr>
+                          <td className="py-3 pr-2 font-mono text-slate-600 whitespace-nowrap">TRI-FE4578-004</td>
+                          <td className="py-3 px-2 font-mono text-slate-400 whitespace-nowrap">—</td>
+                          <td className="py-3 px-2">Route change Ibiza–Dakar → Ibiza–Geneva. Price unchanged, no new amount booked.</td>
+                          <td className="py-3 px-2 text-right font-mono whitespace-nowrap">€ 0.00</td>
+                          <td className="py-3 px-2 whitespace-nowrap">
+                            <span className="bg-slate-100 text-slate-600 rounded px-2 py-0.5 text-[11px] font-medium">
+                              Revision
+                            </span>
+                          </td>
+                          <td className="py-3 pl-2 text-right whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => openDocument(currentTrip, "flight_brief")}
+                              className="text-xs text-blue-600 font-medium hover:underline"
+                            >
+                              Brief
+                            </button>
+                          </td>
+                        </tr>
+
+                        {/* Row 3 */}
+                        <tr>
+                          <td className="py-3 pr-2 font-mono text-slate-600 whitespace-nowrap">TRI-FE4578-003</td>
+                          <td className="py-3 px-2 font-mono text-slate-500 whitespace-nowrap">PAY-9012</td>
+                          <td className="py-3 px-2">Wire received · ref TRI-FE4578 · proof attached</td>
+                          <td className="py-3 px-2 text-right font-mono font-medium whitespace-nowrap">- € 8,000.00</td>
+                          <td className="py-3 px-2 whitespace-nowrap">
+                            <span className="bg-emerald-50 text-emerald-700 border border-emerald-200/80 rounded px-2 py-0.5 text-[11px] font-medium">
+                              Received
+                            </span>
+                          </td>
+                          <td className="py-3 pl-2 text-right whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => openDocument(currentTrip, "invoice")}
+                              className="text-xs text-blue-600 font-medium hover:underline"
+                            >
+                              Proof
+                            </button>
+                          </td>
+                        </tr>
+
+                        {/* Row 4 */}
+                        <tr>
+                          <td className="py-3 pr-2 font-mono text-slate-600 whitespace-nowrap">TRI-FE4578-003</td>
+                          <td className="py-3 px-2 font-mono text-slate-500 whitespace-nowrap">INV-FE4578-002-1</td>
+                          <td className="py-3 px-2">Charter LEIB → GOBD, light jet, 4 pax (booked from quote -002)</td>
+                          <td className="py-3 px-2 text-right font-mono whitespace-nowrap">€ 8,000.00</td>
+                          <td className="py-3 px-2 whitespace-nowrap">
+                            <span className="bg-emerald-50 text-emerald-700 border border-emerald-200/80 rounded px-2 py-0.5 text-[11px] font-medium">
+                              Paid
+                            </span>
+                          </td>
+                          <td className="py-3 pl-2 text-right whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => openDocument(currentTrip, "invoice")}
+                              className="text-xs text-blue-600 font-medium hover:underline"
+                            >
+                              PDF
+                            </button>
+                          </td>
+                        </tr>
+
+                        {/* Row 5 */}
+                        <tr>
+                          <td className="py-3 pr-2 font-mono text-slate-600 whitespace-nowrap">TRI-FE4578-002</td>
+                          <td className="py-3 px-2 font-mono text-slate-500 whitespace-nowrap">TRI-FE4578-002</td>
+                          <td className="py-3 px-2">Quote · contract signed 12 Nov</td>
+                          <td className="py-3 px-2 text-right font-mono whitespace-nowrap">€ 8,000.00</td>
+                          <td className="py-3 px-2 whitespace-nowrap">
+                            <span className="bg-slate-100 text-slate-700 rounded px-2 py-0.5 text-[11px] font-medium">
+                              Booked → -003
+                            </span>
+                          </td>
+                          <td className="py-3 pl-2 text-right whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => openDocument(currentTrip, "quotation")}
+                              className="text-xs text-blue-600 font-medium hover:underline"
+                            >
+                              PDF
+                            </button>
+                          </td>
+                        </tr>
                       </tbody>
                     </table>
                   </div>
+
+                  <p className="text-xs text-slate-400 pt-2 leading-relaxed m-0">
+                    A revision that only changes route or time adds no amount, so nothing is counted twice. Every money movement is its own line with its own number.
+                  </p>
                 </div>
-              )}
+
+                {/* Right: New credit note · CN-FE4578-005-1 Card */}
+                <div id="new-credit-note-card" className="lg:col-span-5 bg-white border border-slate-200/90 rounded-xl p-5 shadow-sm space-y-4">
+                  <h3 className="text-sm font-bold text-slate-900 m-0">New credit note · CN-FE4578-005-1</h3>
+
+                  <div className="space-y-3.5 text-xs">
+                    {/* AGAINST */}
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1">
+                        AGAINST
+                      </label>
+                      <select
+                        defaultValue="INV-FE4578-002-1"
+                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                      >
+                        <option value="INV-FE4578-002-1">INV-FE4578-002-1 · € 8,000.00 · paid</option>
+                        <option value="INV-FE4578-005-1">INV-FE4578-005-1 · € 250.00 · unpaid</option>
+                      </select>
+                    </div>
+
+                    {/* REASON (INTERNAL, NOT PRINTED) */}
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1.5">
+                        REASON (INTERNAL, NOT PRINTED)
+                      </label>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {["Cancellation", "Complimentary service", "Price correction", "Goodwill"].map((r) => {
+                          const isActive = creditNoteReason === r;
+                          return (
+                            <button
+                              key={r}
+                              type="button"
+                              onClick={() => setCreditNoteReason(r)}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                                isActive
+                                  ? "bg-[#0B1320] text-white shadow-xs"
+                                  : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
+                              }`}
+                            >
+                              {r}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* CANCELLATION FEE & CREDIT AMOUNT */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1">
+                          CANCELLATION FEE
+                        </label>
+                        <input
+                          type="text"
+                          value={cancellationFeePercent}
+                          onChange={(e) => setCancellationFeePercent(e.target.value)}
+                          className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1">
+                          CREDIT AMOUNT
+                        </label>
+                        <input
+                          type="text"
+                          value={creditNoteAmount}
+                          onChange={(e) => setCreditNoteAmount(e.target.value)}
+                          className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                        />
+                      </div>
+                    </div>
+
+                    {/* INTERNAL NOTE */}
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1">
+                        INTERNAL NOTE
+                      </label>
+                      <input
+                        type="text"
+                        value={creditNoteInternalNote}
+                        onChange={(e) => setCreditNoteInternalNote(e.target.value)}
+                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                      />
+                    </div>
+
+                    {/* Calculation Summary */}
+                    <div className="pt-2 border-t border-slate-100 space-y-1.5 text-xs text-slate-600">
+                      <div className="flex justify-between items-center">
+                        <span>Invoiced</span>
+                        <span className="font-mono text-slate-800 font-medium">€ 8,250.00</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span>This credit note</span>
+                        <span className="font-mono text-slate-800 font-medium">- € 4,000.00</span>
+                      </div>
+                      <div className="flex justify-between items-center font-medium text-slate-800">
+                        <span>Net due after</span>
+                        <span className="font-mono">€ 4,250.00</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span>Received</span>
+                        <span className="font-mono text-slate-800 font-medium">€ 8,000.00</span>
+                      </div>
+                      <div className="flex justify-between items-center font-bold text-blue-600 pt-1 border-t border-slate-100 text-xs">
+                        <span>Refund owed to client</span>
+                        <span className="font-mono text-sm">€ 3,750.00</span>
+                      </div>
+                    </div>
+
+                    {/* OUTPUT */}
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1.5">
+                        OUTPUT
+                      </label>
+                      <div className="flex items-center gap-1.5">
+                        {(["Credit note only", "Invoice for remainder", "Both"] as const).map((opt) => {
+                          const isActive = creditNoteOutput === opt;
+                          return (
+                            <button
+                              key={opt}
+                              type="button"
+                              onClick={() => setCreditNoteOutput(opt)}
+                              className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors text-center ${
+                                isActive
+                                  ? "bg-[#0B1320] text-white shadow-xs"
+                                  : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
+                              }`}
+                            >
+                              {opt}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Submit Button */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        alert("Credit note CN-FE4578-005-1 created and trip revised to -006.");
+                      }}
+                      className="w-full bg-[#0B1320] hover:bg-slate-800 text-white py-2.5 px-4 rounded-xl text-xs font-semibold shadow-sm transition-colors text-center"
+                    >
+                      Create credit note &amp; revise trip → -006
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
@@ -2845,7 +2880,8 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
         </div>
 
         {/* Right Rail Info Panel matching Images 1, 2, 3, 4 */}
-        <div className="bg-white border border-slate-200/90 rounded-xl p-5 space-y-5 text-xs shadow-sm self-start">
+        {activeTab !== "accounting" && (
+          <div className="bg-white border border-slate-200/90 rounded-xl p-5 space-y-5 text-xs shadow-sm self-start">
           {/* 1. ACCOUNT */}
           <div className="space-y-1">
             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">ACCOUNT</div>
@@ -2918,6 +2954,7 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
             </button>
           </div>
         </div>
+        )}
       </div>
 
       {/* View Message Modal */}
