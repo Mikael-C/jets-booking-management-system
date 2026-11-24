@@ -284,6 +284,8 @@ const bookingSchema = new mongoose.Schema(
     sameManifestAllLegs: { type: Boolean, default: true },
     // Quote builder step 03 · each pet travelling (name, species, breed, documents)
     pets: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    // Services tab · every service on the trip (from the quote or added on the booking page)
+    tripServices: { type: [mongoose.Schema.Types.Mixed], default: undefined },
     // Overview & board
     createdByEmail: { type: String, default: '', index: true },
     assignedToEmail: { type: String, default: '' },

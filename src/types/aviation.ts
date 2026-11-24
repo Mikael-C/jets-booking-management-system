@@ -375,6 +375,38 @@ export interface TripPet {
   notes?: string;
 }
 
+export type TripServiceType = "limousine" | "helicopter" | "catering" | "custom";
+
+/** A service on the trip (booking page · Services tab), from the quote or added afterwards. */
+export interface TripServiceItem {
+  id: string;
+  type: TripServiceType;
+  title?: string; // custom services, de-icing, carbon offset…
+  legNumber?: number; // 0 or undefined = all legs
+  timing?: "arrival" | "departure" | "both";
+  airport?: string; // ICAO the timing refers to
+  location?: string; // drop-off / pick-up address
+  from?: string; // helicopter
+  to?: string; // helicopter
+  vehicle?: string; // limousine
+  helicopterType?: string;
+  menu?: string; // catering
+  dietary?: string; // catering
+  passengers?: number;
+  luggage?: string;
+  instructions?: string;
+  clientPrice: number;
+  supplierCost: number;
+  included?: boolean; // e.g. catering included in the charter price
+  status: "requested" | "requested_operator" | "confirmed" | "cancelled";
+  source: "quote" | "added";
+  billing: "in_quote" | "not_billed" | "credit_note";
+  creditNoteNumber?: string;
+  cancelCreditNoteNumber?: string;
+  addedAt: string;
+  addedBy?: string;
+}
+
 export interface ItineraryActivityEntry {
   id: string;
   at: string; // ISO timestamp
@@ -713,6 +745,8 @@ export interface Booking {
   }>;
   // Quote builder step 03 · each pet on the trip (shown on the Passengers tab)
   pets?: TripPet[];
+  // Services tab · every service on the trip (from the quote or added later)
+  tripServices?: TripServiceItem[];
   // Trip page · itinerary activity, briefs and manifest settings
   itineraryActivity?: ItineraryActivityEntry[];
   lastBriefIssuedAt?: string;

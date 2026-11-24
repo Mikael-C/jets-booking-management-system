@@ -22,7 +22,12 @@ const quoteEditableFields = [
   'paymentMethodChoice', 'cardFeePercentage', 'cardFeeAmount',
   'totalWithCardFee', 'adminMarginType', 'adminMarginValue',
   'agentMarginType', 'agentMarginValue', 'manualServices', 'sourcingOptions',
-  'avInodeTripId', 'notes', 'internalNotes', 'tripActionAudit'
+  'avInodeTripId', 'notes', 'internalNotes', 'tripActionAudit',
+  // Quote builder & trip page data that must survive booking the quote
+  'pets', 'petDetails', 'tripServices', 'groundTransportation', 'helicopterTransfer',
+  'authorisedOwnerId', 'authorisedOwnerName', 'assistantContactId', 'sendDocsTo', 'signsAgreement',
+  'legOperators', 'operatorPendingApproval', 'passengerFeeItems', 'itineraryActivity',
+  'lastBriefIssuedAt', 'lastBriefLegs', 'sameManifestAllLegs', 'creditNotes', 'revisionAdjustments'
 ];
 
 const applyQuoteEdits = (booking, updates) => {

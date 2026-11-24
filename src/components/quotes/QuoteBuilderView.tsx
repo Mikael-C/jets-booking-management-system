@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAviation } from "@/lib/aviationContext";
-import { Booking, FlightLeg, TripType, Aircraft, OperatorRecord } from "@/types/aviation";
+import { Booking, FlightLeg, TripType, Aircraft, OperatorRecord, TripServiceItem } from "@/types/aviation";
 import { generateTripRootId, formatTripVersion, extractFeToken, pad3, getLinkedIds } from "@/lib/idGenerator";
 import { formatCurrency } from "@/lib/pricingCalculator";
 import { fleetData } from "@/data/fleet";
@@ -1971,6 +1971,136 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
       });
     });
 
+    // Services as cards for the booking's Services tab (same lines and prices as the quote)
+    const nowIso = new Date().toISOString();
+    const svcBase = {
+      supplierCost: 0,
+      source: "quote" as const,
+      billing: "in_quote" as const,
+      addedAt: nowIso
+    };
+    const tripServices: TripServiceItem[] = [];
+    if (hasGroundTransport) {
+      displayLegs.forEach((leg, lIdx) => {
+        const legKey = `leg-${lIdx + 1}`;
+        const g = groundTransfers[legKey];
+        if (!groundLegsEnabled[legKey] || !g) return;
+        if (g.arrivalRequired) {
+          tripServices.push({
+            ...svcBase,
+            id: `q-ground-arr-${legKey}`,
+            type: "limousine",
+            legNumber: lIdx + 1,
+            timing: "arrival",
+            airport: leg.destination?.icao,
+            location: g.arrivalDropoff,
+            vehicle: g.arrivalVehicle,
+            passengers: g.passengers,
+            instructions: g.specialRequests,
+            clientPrice: g.arrivalPrice || 0,
+            status: "requested"
+          });
+        }
+        if (g.departureRequired) {
+          tripServices.push({
+            ...svcBase,
+            id: `q-ground-dep-${legKey}`,
+            type: "limousine",
+            legNumber: lIdx + 1,
+            timing: "departure",
+            airport: leg.origin?.icao,
+            location: g.departurePickup,
+            vehicle: g.departureVehicle,
+            passengers: g.passengers,
+            instructions: g.specialRequests,
+            clientPrice: g.departurePrice || 0,
+            status: "requested"
+          });
+        }
+      });
+    } else if (serviceOptions.limousine) {
+      tripServices.push({
+        ...svcBase,
+        id: "q-limo",
+        type: "limousine",
+        legNumber: 1,
+        timing: "arrival",
+        airport: destAirport?.icao,
+        location: "",
+        vehicle: "SUV",
+        passengers: paxCount,
+        clientPrice: limousinePrice,
+        status: "requested"
+      });
+    }
+    if (hasHeliTransfer) {
+      displayLegs.forEach((leg, lIdx) => {
+        const legKey = `leg-${lIdx + 1}`;
+        const h = heliTransfers[legKey];
+        if (!heliLegsEnabled[legKey] || !h) return;
+        const isDeparture = h.transferType === "departure";
+        tripServices.push({
+          ...svcBase,
+          id: `q-heli-${legKey}`,
+          type: "helicopter",
+          legNumber: lIdx + 1,
+          timing: h.transferType,
+          airport: isDeparture ? leg.origin?.icao : leg.destination?.icao,
+          from: isDeparture ? h.departurePickup || "" : h.arrivalAirport || h.depArrLocation || leg.destination?.icao || "",
+          to: isDeparture ? h.departureAirport || leg.origin?.icao || "" : h.arrivalDestination || h.destination || "",
+          helicopterType: h.prefType,
+          passengers: h.passengers,
+          luggage: h.luggageDetails,
+          instructions: h.specialRequests,
+          clientPrice: h.clientPrice || 0,
+          status: "requested"
+        });
+      });
+    } else if (serviceOptions.helicopter) {
+      tripServices.push({
+        ...svcBase,
+        id: "q-heli",
+        type: "helicopter",
+        legNumber: 1,
+        timing: "arrival",
+        airport: destAirport?.icao,
+        from: destAirport?.icao || "",
+        to: "",
+        passengers: paxCount,
+        clientPrice: helicopterPrice,
+        status: "requested"
+      });
+    }
+    if (serviceOptions.catering) {
+      tripServices.push({
+        ...svcBase,
+        id: "q-catering",
+        type: "catering",
+        legNumber: displayLegs.length > 1 ? 0 : 1,
+        menu: "VIP menu 1",
+        dietary: "",
+        included: cateringPrice === 0,
+        clientPrice: cateringPrice,
+        status: "requested_operator"
+      });
+    }
+    if (serviceOptions.deicing) {
+      tripServices.push({ ...svcBase, id: "q-deicing", type: "custom", title: "De-icing protection", instructions: "Holdover protection package", clientPrice: deicingPrice, status: "requested" });
+    }
+    if (serviceOptions.carbonOffset) {
+      tripServices.push({ ...svcBase, id: "q-carbon", type: "custom", title: "Carbon offset", instructions: "Gold Standard certified climate credit", clientPrice: carbonOffsetPrice, status: "requested" });
+    }
+    customServices.forEach((cs) => {
+      tripServices.push({ ...svcBase, id: `q-${cs.id}`, type: "custom", title: cs.name, instructions: cs.details, clientPrice: cs.price, status: "requested" });
+    });
+
+    // A revision keeps the services added on the booking page after the quote (already billed separately)
+    (sourceTrip?.tripServices || [])
+      .filter((ts) => ts.source === "added")
+      .forEach((ts) => {
+        if (!tripServices.some((x) => x.id === ts.id)) tripServices.push(ts);
+      });
+
     const linked = getLinkedIds(rootId, nextVersionNum);
     const newBooking: Booking = {
       id: isBookingRevision
@@ -2081,6 +2211,8 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
       operatorPendingApproval: legOperators.some(
         (lo) => lo.operatorStatus && lo.operatorStatus !== "approved" && lo.operatorStatus !== "approved_with_conditions"
       ),
+      // 05: services move to the booking's Services tab
+      tripServices,
       // 03: pets travel with the trip and show on the booking's Passengers tab
       pets: hasPets
         ? pets.map((p) => ({

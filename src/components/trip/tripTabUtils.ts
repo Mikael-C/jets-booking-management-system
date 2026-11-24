@@ -432,3 +432,98 @@ export function countMissingPassports(trip: Booking, contacts: any[]): number {
   if (!firstLeg) return 0;
   return (firstLeg.passengers || []).map((p, i) => resolvePassenger(p, contacts, i)).filter((p) => !p.documentNumber).length;
 }
+
+// ---------- services ----------
+
+/**
+ * Services for trips saved before the Services tab kept its own list: rebuilt from the quote's
+ * service lines (manualServices) and service flags. Saved as tripServices on the first change.
+ */
+export function deriveTripServices(trip: Booking): import("@/types/aviation").TripServiceItem[] {
+  const out: import("@/types/aviation").TripServiceItem[] = [];
+  const at = trip.createdAt || new Date().toISOString();
+  const legs = trip.legs || [];
+  const legNo = (text: string) => {
+    const m = text.match(/leg[-\s]*(\d+)/i);
+    return m ? parseInt(m[1], 10) : undefined;
+  };
+  const vehiclePax = (details: string) => {
+    const m = details.match(/\(([^,()]+),\s*(\d+)\s*pax\)/i);
+    return m ? { vehicle: m[1].trim(), passengers: parseInt(m[2], 10) } : { vehicle: "", passengers: undefined };
+  };
+  (trip.manualServices || []).forEach((s: any, i: number) => {
+    const id = String(s.id || `svc-${i}`);
+    const name = String(s.name || "");
+    const details = String(s.details || s.description || "");
+    const price = Number(s.price ?? s.amount ?? 0) || 0;
+    const base = {
+      id: `q-${id}`,
+      clientPrice: price,
+      supplierCost: 0,
+      status: "requested" as const,
+      source: "quote" as const,
+      billing: "in_quote" as const,
+      addedAt: at
+    };
+    const lower = `${id} ${name}`.toLowerCase();
+    if (lower.includes("ground") || lower.includes("limo") || lower.includes("limousine")) {
+      const arrival = lower.includes("arr") || lower.includes("arrival");
+      const n = legNo(`${id} ${name}`) || 1;
+      const vp = vehiclePax(details);
+      const leg = legs[n - 1];
+      const location = arrival ? details.split("→")[1]?.split("(")[0]?.trim() : details.split("→")[0]?.trim();
+      out.push({
+        ...base,
+        type: "limousine",
+        legNumber: n,
+        timing: arrival ? "arrival" : "departure",
+        airport: arrival ? leg?.destination?.icao : leg?.origin?.icao,
+        location: location || "",
+        vehicle: vp.vehicle,
+        passengers: vp.passengers
+      });
+    } else if (lower.includes("heli")) {
+      const n = legNo(`${id} ${name}`);
+      const vp = vehiclePax(details);
+      const timing = /both/i.test(name) ? "both" : /departure/i.test(name) ? "departure" : "arrival";
+      const [from, rest] = details.split("→");
+      out.push({
+        ...base,
+        type: "helicopter",
+        legNumber: n,
+        timing,
+        from: (from || "").trim(),
+        to: (rest || "").split("(")[0].trim(),
+        helicopterType: vp.vehicle,
+        passengers: vp.passengers
+      });
+    } else if (lower.includes("catering")) {
+      out.push({
+        ...base,
+        type: "catering",
+        legNumber: /both legs|all legs/i.test(details) ? 0 : legNo(details),
+        menu: details.replace(/\s*\(included\)\s*/i, "").split("·")[0].trim() || "VIP menu",
+        included: price === 0,
+        status: "requested_operator"
+      });
+    } else {
+      out.push({ ...base, type: "custom", title: name || "Service", instructions: details, legNumber: legNo(name) });
+    }
+  });
+  if (!out.some((s) => s.type === "catering") && trip.services?.vipCateringDetails) {
+    out.push({
+      id: "q-catering",
+      type: "catering",
+      legNumber: 0,
+      menu: trip.services.vipCateringDetails,
+      included: true,
+      clientPrice: 0,
+      supplierCost: 0,
+      status: "requested_operator",
+      source: "quote",
+      billing: "in_quote",
+      addedAt: at
+    });
+  }
+  return out;
+}

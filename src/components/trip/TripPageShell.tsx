@@ -15,8 +15,9 @@ import { api } from "@/lib/api";
 import TripItineraryTab from "./TripItineraryTab";
 import TripPassengersTab from "./TripPassengersTab";
 import TripSourcingTab from "./TripSourcingTab";
+import TripServicesTab from "./TripServicesTab";
 import TripInfoRail, { ItineraryNotesRail } from "./TripInfoRail";
-import { countMissingPassports, tripRouteLabel } from "./tripTabUtils";
+import { countMissingPassports, deriveTripServices, tripRouteLabel } from "./tripTabUtils";
 import {
   Plane,
   Clock,
@@ -634,6 +635,7 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
       ? 1
       : 0);
   const actorName = (currentUser?.name || "Admin").split(" ")[0];
+  const tripServicesCount = (currentTrip.tripServices ?? deriveTripServices(currentTrip)).filter((x) => x.status !== "cancelled").length;
   const briefNumber = `FB-${normalizedId || "TRIP"}-${String(versionNum).padStart(3, "0")}`;
   const saveTrip = (updates: Partial<Booking>) => {
     // Keep the activity log to a sensible size
@@ -658,7 +660,7 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
     { key: "passengers", label: "Passengers", countLabel: tripMissingPassports > 0 ? `▲${tripMissingPassports}` : undefined },
     { key: "sourcing", label: "Sourcing", count: tripSourcingCount > 0 ? tripSourcingCount : undefined },
     { key: "pricing", label: "Pricing" },
-    { key: "services", label: "Services" },
+    { key: "services", label: "Services", count: tripServicesCount > 0 ? tripServicesCount : undefined },
     { key: "documents", label: "Documents" },
     { key: "accounting", label: "Accounting" },
     { key: "revisions", label: "Revisions", count: 5 },
@@ -1180,181 +1182,13 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
 
           {/* TAB 5: SERVICES (R-020) */}
           {activeTab === "services" && (
-            <div className="space-y-4">
-              {/* Action Buttons */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => setIsAddServiceModalOpen(true)}
-                  className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg text-xs font-medium shadow-sm transition-colors"
-                >
-                  + VIP limousine
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsAddServiceModalOpen(true)}
-                  className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg text-xs font-medium shadow-sm transition-colors"
-                >
-                  + Helicopter transfer
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsAddServiceModalOpen(true)}
-                  className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg text-xs font-medium shadow-sm transition-colors"
-                >
-                  + Catering
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsAddServiceModalOpen(true)}
-                  className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg text-xs font-medium shadow-sm transition-colors"
-                >
-                  + Custom service
-                </button>
-              </div>
-
-              {/* Card 1: VIP limousine · leg 1 · on arrival LSGG */}
-              <div className="bg-white border border-slate-200/90 rounded-xl p-5 shadow-sm space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-bold text-slate-900 m-0">VIP limousine · leg 1 · on arrival LSGG</h3>
-                  <span className="bg-emerald-50 text-emerald-700 border border-emerald-200/70 text-[11px] font-medium px-2.5 py-0.5 rounded-full">
-                    Confirmed with supplier
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
-                  <div className="sm:col-span-1 lg:col-span-1">
-                    <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1">
-                      DROP-OFF
-                    </label>
-                    <input
-                      type="text"
-                      defaultValue="Hotel des Bergues, Geneva"
-                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1">
-                      VEHICLE
-                    </label>
-                    <select
-                      defaultValue="Luxury"
-                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                    >
-                      <option value="Luxury">Luxury</option>
-                      <option value="Premium Sedan">Premium Sedan</option>
-                      <option value="Executive Van">Executive Van</option>
-                      <option value="Armored SUV">Armored SUV</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1">
-                      PASSENGERS
-                    </label>
-                    <input
-                      type="text"
-                      defaultValue="4"
-                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1">
-                      CLIENT PRICE
-                    </label>
-                    <input
-                      type="text"
-                      defaultValue="€ 250.00"
-                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                    />
-                  </div>
-
-                  <div className="sm:col-span-2 lg:col-span-3">
-                    <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1">
-                      SPECIAL INSTRUCTIONS
-                    </label>
-                    <input
-                      type="text"
-                      defaultValue="Meet at aircraft, name board"
-                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                    />
-                  </div>
-
-                  <div className="sm:col-span-1 lg:col-span-1">
-                    <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1">
-                      SUPPLIER COST (ADMIN ONLY)
-                    </label>
-                    <input
-                      type="text"
-                      defaultValue="€ 180.00"
-                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                    />
-                  </div>
-                </div>
-
-                <div className="text-[11px] text-slate-400 pt-1">
-                  Added in revision -005 · invoiced as INV-FE4578-005-1
-                </div>
-              </div>
-
-              {/* Card 2: Catering · leg 1 */}
-              <div className="bg-white border border-slate-200/90 rounded-xl p-5 shadow-sm space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-bold text-slate-900 m-0">Catering · leg 1</h3>
-                  <span className="bg-slate-100 text-slate-700 border border-slate-200/70 text-[11px] font-medium px-2.5 py-0.5 rounded-full">
-                    Requested from operator
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
-                  <div>
-                    <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1">
-                      MENU
-                    </label>
-                    <select
-                      defaultValue="VIP menu 2 · light lunch"
-                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                    >
-                      <option value="VIP menu 2 · light lunch">VIP menu 2 · light lunch</option>
-                      <option value="Executive Cold Platter">Executive Cold Platter</option>
-                      <option value="Hot Gourmet Dinner">Hot Gourmet Dinner</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1">
-                      DIETARY NOTES
-                    </label>
-                    <input
-                      type="text"
-                      defaultValue="1 vegetarian"
-                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1">
-                      CLIENT PRICE
-                    </label>
-                    <input
-                      type="text"
-                      defaultValue="Included"
-                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Card 3: Helicopter transfer */}
-              <div className="bg-white border border-slate-200/90 rounded-xl p-5 shadow-sm space-y-2">
-                <h3 className="text-sm font-bold text-slate-900 m-0">Helicopter transfer</h3>
-                <p className="text-xs text-slate-400 leading-relaxed m-0">
-                  Not requested. When added: leg · on arrival / on departure / both · passengers · helicopter type · from and to · luggage · special requests · client price · supplier cost.
-                </p>
-              </div>
-            </div>
+            <TripServicesTab
+              trip={currentTrip}
+              onSave={saveTrip}
+              issueCreditNote={issueCreditNote}
+              onOpenCreditNote={(b) => openDocument(b, "credit_note")}
+              userName={actorName}
+            />
           )}
 
           {/* TAB 6: DOCUMENTS (R-021) */}

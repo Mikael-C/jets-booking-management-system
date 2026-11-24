@@ -511,6 +511,8 @@ export const normalizeBooking = (b: any): Booking => {
           });
 
       return {
+        // Keep every saved leg field (crew, brief contact, weapons, opening-hours override, edit marks…)
+        ...(leg || {}),
         legNumber: Number(leg?.legNumber || idx + 1),
         flightDate: String(leg?.flightDate || leg?.departureDate || "2026-10-22"),
         origin: originAirport,
@@ -594,6 +596,8 @@ export const normalizeBooking = (b: any): Booking => {
 
   // Resolve pricing
   const pricing: PricingBreakdown = {
+    // operatorCost, companyMargin, agentCommission… are kept as saved
+    ...(b?.pricing || {}),
     flightPrice: Number(b?.pricing?.flightPrice ?? b?.pricing?.baseCharterCost ?? 12500),
     airportFees: Number(b?.pricing?.airportFees ?? b?.pricing?.landingFees ?? 850),
     passengerFees: Number(b?.pricing?.passengerFees ?? 220),
@@ -610,6 +614,7 @@ export const normalizeBooking = (b: any): Booking => {
 
   // Resolve services
   const services: AdditionalServices = {
+    ...(b?.services || {}),
     limousineService: Boolean(b?.services?.limousineService),
     luxuryCarRental: Boolean(b?.services?.luxuryCarRental),
     helicopterService: Boolean(b?.services?.helicopterService),
@@ -650,6 +655,9 @@ export const normalizeBooking = (b: any): Booking => {
   }
 
   return {
+    // Keep every saved field the app knows about (pets, trip services, client roles, operators per leg,
+    // passenger fees, itinerary activity, briefs, manifest settings…); the fields below are normalised on top.
+    ...(b || {}),
     id,
     tripId,
     quoteId,
@@ -842,8 +850,10 @@ interface AviationContextType {
       cancellationFee?: number;
       complementaryDeductions?: number;
       complementaryDeduction?: number;
-    }
-  ) => void;
+    },
+    /** Other trip changes saved together with the credit note (e.g. trip services, pricing). */
+    extraUpdates?: Partial<Booking>
+  ) => { creditNoteNumber: string; booking: Booking | null };
 
   // Agent Quote confirmation & Super Admin Approval
   agentConfirmQuote: (bookingId: string) => void;
@@ -2730,8 +2740,9 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       cancellationFee?: number;
       complementaryDeductions?: number;
       complementaryDeduction?: number;
-    }
-  ) => {
+    },
+    extraUpdates?: Partial<Booking>
+  ): { creditNoteNumber: string; booking: Booking | null } => {
     const creditNoteNumber = `CR-${Math.floor(100000 + Math.random() * 900000)}`;
     const todayFormatted = new Date().toLocaleDateString("de-DE");
     const creditRecord = {
@@ -2744,35 +2755,39 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       ...note
     };
 
+    const source = bookings.find((b) => b.id === bookingId) || null;
     let targetBooking: Booking | null = null;
-    setBookings((prev) =>
-      prev.map((b) => {
-        if (b.id !== bookingId) return b;
-        const updatedAudit = [
-          {
-            id: `act-${Date.now()}`,
-            action: "CREDIT_NOTE_ISSUED",
-            details: `Official Credit Note ${creditNoteNumber} issued. Amount: €${creditRecord.amount.toLocaleString()}. Balance: Client owes €${note.clientOwes}, We owe €${note.weOweClient}, Net Balance: €${note.netBalance}.`,
-            timestamp: new Date().toLocaleString(),
-            author: currentUser?.name || "Finance Operations",
-            docType: "credit_note"
-          },
-          ...(b.tripActionAudit || [])
-        ];
-        const updated: Booking = {
-          ...b,
-          creditNotes: [creditRecord, ...(b.creditNotes || [])],
-          tripActionAudit: updatedAudit,
-          updatedAt: new Date().toISOString()
-        };
-        targetBooking = updated;
-        return updated;
-      })
-    );
-
-    if (targetBooking) {
-      if (selectedBookingForDetail?.id === bookingId) setSelectedBookingForDetail(targetBooking);
-      if (activeBooking?.id === bookingId) setActiveBooking(targetBooking);
+    if (source) {
+      const updatedAudit = [
+        {
+          id: `act-${Date.now()}`,
+          action: "CREDIT_NOTE_ISSUED",
+          details: `Official Credit Note ${creditNoteNumber} issued. Amount: €${creditRecord.amount.toLocaleString()}. Balance: Client owes €${note.clientOwes}, We owe €${note.weOweClient}, Net Balance: €${note.netBalance}.`,
+          timestamp: new Date().toLocaleString(),
+          author: currentUser?.name || "Finance Operations",
+          docType: "credit_note"
+        },
+        ...(source.tripActionAudit || [])
+      ];
+      targetBooking = {
+        ...source,
+        creditNotes: [creditRecord, ...(source.creditNotes || [])],
+        tripActionAudit: updatedAudit,
+        ...(extraUpdates || {}),
+        updatedAt: new Date().toISOString()
+      };
+      const next = targetBooking;
+      setBookings((prev) => prev.map((b) => (b.id === bookingId ? next : b)));
+      if (selectedBookingForDetail?.id === bookingId) setSelectedBookingForDetail(next);
+      if (activeBooking?.id === bookingId) setActiveBooking(next);
+      // Saved on the backend with the trip
+      api.bookings
+        .update(bookingId, {
+          creditNotes: next.creditNotes,
+          tripActionAudit: next.tripActionAudit,
+          ...(extraUpdates || {})
+        })
+        .catch((err) => console.log("Backend sync note:", err?.message));
     }
 
     addAuditEntry({
@@ -2783,6 +2798,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       entityId: creditNoteNumber,
       details: `Issued credit note ${creditNoteNumber} for booking ${bookingId}. Reason: "${note.reason}". Net balance: €${note.netBalance}`
     });
+    return { creditNoteNumber, booking: targetBooking };
   };
 
   const reviseQuote = async (quoteIdOrTripId: string, overrides?: Partial<Booking>): Promise<Booking> => {
