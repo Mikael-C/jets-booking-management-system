@@ -323,6 +323,29 @@ export const api = {
     revenueChart: (months = 6) => request<any[]>(`/dashboard/revenue-chart?months=${months}`),
     upcomingFlights: (days = 7) => request<any[]>(`/dashboard/upcoming-flights?days=${days}`),
     alerts: () => request<any[]>("/dashboard/alerts"),
+    getOverview: (params?: { timeframe?: string; assignee?: string }) => {
+      const q = params ? `?${new URLSearchParams(params).toString()}` : "";
+      return request<{ success: boolean; data: any }>(`/dashboard/overview${q}`);
+    },
+    getBoard: (params?: { curator?: string; needsAction?: boolean | string; departing7Days?: boolean | string }) => {
+      const q = params ? `?${new URLSearchParams(params as any).toString()}` : "";
+      return request<{ success: boolean; data: any }>(`/dashboard/board${q}`);
+    },
+    updateCardStage: (cardId: string, stage: string) =>
+      request<{ success: boolean; message: string; card?: any }>("/dashboard/board/card-stage", {
+        method: "PATCH",
+        body: JSON.stringify({ cardId, stage }),
+      }),
+    getFlights24h: (filter?: "today" | "next_24h") =>
+      request<{ success: boolean; data: { totalCount: number; items: any[] } }>(
+        `/dashboard/flights-24h${filter ? `?filter=${filter}` : ""}`
+      ),
+    getNeedsAction: (filter?: "everyone" | "mine") =>
+      request<{ success: boolean; data: { totalCount: number; items: any[] } }>(
+        `/dashboard/needs-action${filter ? `?filter=${filter}` : ""}`
+      ),
+    getFinancialHealth: () =>
+      request<{ success: boolean; data: any }>("/dashboard/financial-health"),
   },
 
   // Airports

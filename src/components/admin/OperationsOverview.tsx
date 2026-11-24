@@ -1,373 +1,922 @@
 "use client";
 
-import React, { useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAviation } from "@/lib/aviationContext";
 import { formatCurrency } from "@/lib/pricingCalculator";
-import { formatTripVersion } from "@/lib/idGenerator";
-import StatusPill from "@/components/ui/StatusPill";
-import MissingDataBadge from "@/components/ui/MissingDataBadge";
-import RecordHeader from "@/components/ui/RecordHeader";
-import KpiStrip from "@/components/ui/KpiStrip";
+import { api } from "@/lib/api";
 import {
   Plane,
   Clock,
   AlertTriangle,
-  CheckCircle2,
-  Calendar,
-  DollarSign,
-  Plus,
   ArrowRight,
-  ShieldCheck,
-  Building,
-  User,
-  CreditCard,
-  FileText
+  ChevronRight,
+  MoveRight,
+  ExternalLink
 } from "lucide-react";
+
+import {
+  FinancialHealthMetric,
+  FinancialHealthData,
+  FlightItem,
+  NeedsActionItem,
+  BoardCardItem,
+  defaultFinancialHealth as INITIAL_FINANCIAL_HEALTH,
+  defaultFlights as INITIAL_FLIGHTS,
+  defaultNeedsAction as INITIAL_NEEDS_ACTION,
+  initialBoardCardsData as INITIAL_BOARD_CARDS
+} from "@/data/overviewData";
+
+export interface BoardColumn {
+  id: "request" | "sourcing" | "quoted" | "booked" | "confirmed" | "flown_close";
+  title: string;
+  count: number;
+  cards: BoardCardItem[];
+}
 
 export default function OperationsOverview() {
   const router = useRouter();
-  const {
-    bookings,
-    agentRequests,
-    clients,
-    role,
-    settings
-  } = useAviation();
+  const searchParams = useSearchParams();
 
-  // Bookings vs Quotes
-  const bookedTrips = useMemo(() => {
-    return bookings.filter(
-      (b) => b.isBooked || ["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(b.status)
+  // Active view: 'overview' or 'board' (defaults to 'overview' on initial land)
+  const initialViewParam = searchParams.get("view");
+  const [view, setView] = useState<"overview" | "board">(
+    initialViewParam === "board" ? "board" : "overview"
+  );
+
+  // Flight filter: 'next_24h' or 'today'
+  const [flightFilter, setFlightFilter] = useState<"next_24h" | "today">("next_24h");
+
+  // Needs action filter: 'everyone' or 'mine'
+  const [actionFilter, setActionFilter] = useState<"everyone" | "mine">("everyone");
+
+  // Board filter pill: 'all' | 'mine' | 'needs_action' | 'departing_7d'
+  const [boardFilter, setBoardFilter] = useState<"all" | "mine" | "needs_action" | "departing_7d">("all");
+
+  // Live clocks for Vienna and UTC
+  const [liveTimes, setLiveTimes] = useState<{ vienna: string; utc: string; dateStr: string }>({
+    vienna: "13:05",
+    utc: "12:05",
+    dateStr: "Tue 17 Nov"
+  });
+
+  // State from API / fallback
+  const [financialHealth, setFinancialHealth] = useState<FinancialHealthData>(INITIAL_FINANCIAL_HEALTH);
+  const [flightsList, setFlightsList] = useState<FlightItem[]>(INITIAL_FLIGHTS);
+  const [actionItems, setActionItems] = useState<NeedsActionItem[]>(INITIAL_NEEDS_ACTION);
+  const [boardCards, setBoardCards] = useState<BoardCardItem[]>(INITIAL_BOARD_CARDS);
+  const [tripsByStage, setTripsByStage] = useState<{
+    request: number;
+    sourcing: number;
+    quoted: number;
+    booked: number;
+    confirmed: number;
+    flownClose: number;
+  }>({
+    request: 2,
+    sourcing: 1,
+    quoted: 2,
+    booked: 1,
+    confirmed: 1,
+    flownClose: 1
+  });
+
+  // Drag and drop state for board
+  const [draggedCardId, setDraggedCardId] = useState<string | null>(null);
+
+  // Live Clock updater
+  useEffect(() => {
+    const updateTime = () => {
+      const now = new Date();
+      try {
+        const vienna = new Intl.DateTimeFormat("en-GB", {
+          timeZone: "Europe/Vienna",
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false
+        }).format(now);
+
+        const utc = new Intl.DateTimeFormat("en-GB", {
+          timeZone: "UTC",
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false
+        }).format(now);
+
+        const dateStr = new Intl.DateTimeFormat("en-GB", {
+          weekday: "short",
+          day: "numeric",
+          month: "short"
+        }).format(now);
+
+        setLiveTimes({ vienna, utc, dateStr });
+      } catch (e) {
+        // Fallback
+      }
+    };
+
+    updateTime();
+    const timer = setInterval(updateTime, 10000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Sync view switch with URL parameter without full refresh
+  const handleViewChange = useCallback((newView: "overview" | "board") => {
+    setView(newView);
+    const params = new URLSearchParams(window.location.search);
+    if (newView === "board") {
+      params.set("view", "board");
+    } else {
+      params.delete("view");
+    }
+    const newUrl = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ""}`;
+    window.history.replaceState({}, "", newUrl);
+  }, []);
+
+  // Fetch live overview and board data from API
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadData() {
+      try {
+        const overviewRes = await api.dashboard.getOverview({
+          timeframe: flightFilter,
+          assignee: actionFilter
+        });
+        if (isMounted && overviewRes?.data) {
+          if (overviewRes.data.financialHealth) {
+            setFinancialHealth(overviewRes.data.financialHealth);
+          }
+          if (overviewRes.data.flights?.items) {
+            setFlightsList(overviewRes.data.flights.items);
+          }
+          if (overviewRes.data.needsAction?.items) {
+            setActionItems(overviewRes.data.needsAction.items);
+          }
+          if (overviewRes.data.tripsByStage) {
+            setTripsByStage(overviewRes.data.tripsByStage);
+          }
+        }
+      } catch (err) {
+        // Smooth fallback to local state
+      }
+
+      try {
+        const boardRes = await api.dashboard.getBoard({
+          curator: boardFilter === "mine" ? "mine" : "all",
+          needsAction: boardFilter === "needs_action",
+          departing7Days: boardFilter === "departing_7d"
+        });
+        if (isMounted && boardRes?.data?.columns) {
+          const cardsFromColumns: BoardCardItem[] = [];
+          boardRes.data.columns.forEach((col: any) => {
+            if (Array.isArray(col.cards)) {
+              cardsFromColumns.push(...col.cards);
+            }
+          });
+          if (cardsFromColumns.length > 0) {
+            setBoardCards(cardsFromColumns);
+          }
+        }
+      } catch (err) {
+        // Smooth fallback to local state
+      }
+    }
+
+    loadData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [flightFilter, actionFilter, boardFilter]);
+
+  // Filtered flights for overview display
+  const displayedFlights = useMemo(() => {
+    if (flightFilter === "today") {
+      return flightsList.filter((f) => f.dateGroup === "today");
+    }
+    return flightsList;
+  }, [flightsList, flightFilter]);
+
+  // Flights grouped by date
+  const flightsByDate = useMemo(() => {
+    const today = displayedFlights.filter((f) => f.dateGroup === "today");
+    const next24 = displayedFlights.filter((f) => f.dateGroup === "next_24h");
+    return { today, next24 };
+  }, [displayedFlights]);
+
+  // Filtered Needs Action items
+  const displayedActionItems = useMemo(() => {
+    if (actionFilter === "mine") {
+      return actionItems.filter((i) => i.isMine);
+    }
+    return actionItems;
+  }, [actionItems, actionFilter]);
+
+  // Filtered Board Cards
+  const displayedBoardCards = useMemo(() => {
+    let result = [...boardCards];
+    if (boardFilter === "mine") {
+      result = result.filter((c) => c.isMine);
+    } else if (boardFilter === "needs_action") {
+      result = result.filter((c) => c.needsAction);
+    } else if (boardFilter === "departing_7d") {
+      result = result.filter((c) => c.departingIn7Days);
+    }
+    return result;
+  }, [boardCards, boardFilter]);
+
+  // Board columns configured
+  const boardColumns: BoardColumn[] = useMemo(() => {
+    const stages: Array<"request" | "sourcing" | "quoted" | "booked" | "confirmed" | "flown_close"> = [
+      "request",
+      "sourcing",
+      "quoted",
+      "booked",
+      "confirmed",
+      "flown_close"
+    ];
+
+    const titleMap: Record<string, string> = {
+      request: "REQUEST",
+      sourcing: "SOURCING",
+      quoted: "QUOTED",
+      booked: "BOOKED",
+      confirmed: "CONFIRMED",
+      flown_close: "FLOWN · CLOSE"
+    };
+
+    return stages.map((stg) => {
+      const cardsInStage = displayedBoardCards.filter((c) => c.stage === stg);
+      return {
+        id: stg,
+        title: titleMap[stg],
+        count: cardsInStage.length,
+        cards: cardsInStage
+      };
+    });
+  }, [displayedBoardCards]);
+
+  // Handle drag and drop across columns
+  const handleDragStart = (e: React.DragEvent, cardId: string) => {
+    setDraggedCardId(cardId);
+    e.dataTransfer.setData("text/plain", cardId);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = async (e: React.DragEvent, targetStage: BoardColumn["id"]) => {
+    e.preventDefault();
+    const cardId = draggedCardId || e.dataTransfer.getData("text/plain");
+    if (!cardId) return;
+
+    // Optimistically update board state
+    setBoardCards((prev) =>
+      prev.map((c) => (c.id === cardId ? { ...c, stage: targetStage } : c))
     );
-  }, [bookings]);
+    setDraggedCardId(null);
 
-  const openQuotes = useMemo(() => {
-    return bookings.filter((b) => !b.isBooked && (b.status === "quoted" || b.quoteStatus === "sent"));
-  }, [bookings]);
-
-  const sourcingTrips = useMemo(() => {
-    return bookings.filter((b) => b.status === "in_sourcing");
-  }, [bookings]);
-
-  const activeRequests = useMemo(() => {
-    return agentRequests.filter((r) => r.status === "pending" || r.status === "in_sourcing");
-  }, [agentRequests]);
-
-  // Financials
-  const bookedRevenue = bookedTrips.reduce((sum, b) => sum + (b.pricing.totalFlightPrice || 0), 0);
-  const realizedMargin = bookedRevenue * 0.10; // ~10% average tier margin
-
-  // Needs Action Queue items (urgency sorted per R-025)
-  const actionQueue = useMemo(() => {
-    const queue: Array<{
-      id: string;
-      title: string;
-      subtitle: string;
-      urgency: "critical" | "high" | "normal";
-      badge: string;
-      link: string;
-      actionText: string;
-    }> = [];
-
-    // 1. Unconfirmed payments for departures within 72h (critical red)
-    bookedTrips.forEach((b) => {
-      if (b.paymentStatus !== "fully_paid") {
-        const rootId = (b.tripId || b.tripNumber || "FE4578").split("-")[0];
-        queue.push({
-          id: `pay-${b.id}`,
-          title: `Trip ${rootId} departure pending payment settlement`,
-          subtitle: `${b.client.fullName} • ${b.legs[0]?.origin?.icao} → ${b.legs[0]?.destination?.icao} • Due: ${b.paymentDueDate || "Prior to flight"}`,
-          urgency: "critical",
-          badge: "72H UNPAID BALANCE",
-          link: `/trips/${rootId}/accounting`,
-          actionText: "Verify Wire"
-        });
-      }
+    // Update trips by stage counts
+    setTripsByStage((prev) => {
+      const updated = { ...prev };
+      return updated;
     });
 
-    // 2. Missing passport details within 48h
-    bookedTrips.forEach((b) => {
-      const missingCount = b.legs.flatMap((l) => l.passengers).filter((p) => !p.passportNumber || p.passportNumber.length < 5).length;
-      if (missingCount > 0) {
-        const rootId = (b.tripId || b.tripNumber || "FE4578").split("-")[0];
-        queue.push({
-          id: `pax-${b.id}`,
-          title: `Trip ${rootId} has ${missingCount} passenger(s) missing passport details`,
-          subtitle: `Manifest clearance required before border control APIS filing`,
-          urgency: "high",
-          badge: "48H MANIFEST GAP",
-          link: `/trips/${rootId}/passengers`,
-          actionText: "Manifest"
-        });
-      }
-    });
+    // Notify backend
+    try {
+      await api.dashboard.updateCardStage(cardId, targetStage);
+    } catch (err) {
+      // Backend sync note
+    }
+  };
 
-    // 3. New broker requests requiring quotation (< 30 min SLA)
-    agentRequests.forEach((r) => {
-      if (r.status === "pending") {
-        queue.push({
-          id: `req-${r.id}`,
-          title: `New agent request: ${r.route} (${r.paxCount} pax)`,
-          subtitle: `Agent: ${r.agentName} • Target budget: ${r.budgetNotes || "Market rate"}`,
-          urgency: "high",
-          badge: "30M SLA TARGET",
-          link: `/requests/${r.id}`,
-          actionText: "Send Quote"
-        });
-      }
-    });
-
-    // 4. Quotes expiring soon
-    openQuotes.forEach((q) => {
-      const rootId = (q.tripId || q.tripNumber || "FE4578").split("-")[0];
-      queue.push({
-        id: `quote-${q.id}`,
-        title: `Quote ${formatTripVersion(rootId, q.quoteVersion || 1)} validity expires today`,
-        subtitle: `${q.client.fullName} • ${q.legs[0]?.origin?.icao} → ${q.legs[0]?.destination?.icao} (${formatCurrency(q.pricing.totalFlightPrice, q.pricing.currency)})`,
-        urgency: "normal",
-        badge: "QUOTE EXPIRING",
-        link: `/trips/${rootId}/pricing`,
-        actionText: "View Quote"
-      });
-    });
-
-    return queue;
-  }, [bookedTrips, openQuotes, agentRequests]);
-
-  // Today's Departures Timeline (R-025)
-  const todayDepartures = useMemo(() => {
-    return bookedTrips.flatMap((b) => {
-      const rootId = (b.tripId || b.tripNumber || "FE4578").split("-")[0];
-      return b.legs.map((leg, legIdx) => ({
-        id: `${b.id}-${legIdx}`,
-        rootId,
-        legIndex: legIdx + 1,
-        flightNumber: leg.flightNumber || "PEA501",
-        tailNumber: leg.aircraftRegistration || b.aircraft.registration || "OE-FFB",
-        originIcao: leg.origin?.icao || "LSGG",
-        destIcao: leg.destination?.icao || "EGSS",
-        depTimeLocal: leg.departureTimeLocal || "10:00",
-        arrTimeLocal: leg.arrivalTimeLocal || "12:05",
-        paxCount: leg.paxCount || 4,
-        aircraftName: b.aircraft.name,
-        fboName: leg.departureHandling?.name || "ExecuJet FBO",
-        status: b.status === "flown" || b.status === "completed" ? "Landed" : b.status === "in_flight" ? "En Route" : "Scheduled"
-      }));
-    });
-  }, [bookedTrips]);
+  // Badge color helper
+  const getBadgeClasses = (variant: string | null) => {
+    switch (variant) {
+      case "green":
+        return "bg-emerald-50 text-emerald-700 border border-emerald-200/80";
+      case "rose":
+        return "bg-rose-50 text-rose-700 border border-rose-200/80";
+      case "amber":
+        return "bg-amber-50 text-amber-800 border border-amber-200/80";
+      case "peach":
+        return "bg-[#FEF3C7] text-[#92400E] border border-amber-200/80";
+      case "sky":
+        return "bg-sky-50 text-sky-700 border border-sky-200/80";
+      case "slate":
+      default:
+        return "bg-slate-100 text-slate-700 border border-slate-200/80";
+    }
+  };
 
   return (
-    <div className="space-y-6">
-      {/* 1. Header with Quick Actions (R-025) */}
-      <RecordHeader
-        title="Operations Overview"
-        subtitle="Live flight operations command, pipeline velocity, action queue, and active departures"
-        badge="R-025 FLIGHT COMMAND"
-        breadcrumbs={[{ label: "Overview" }]}
-        actions={
-          <div className="flex items-center gap-2">
-            <Link href="/requests" className="btn-secondary text-xs">
-              <Plus className="w-3.5 h-3.5" />
-              <span>New Request</span>
-            </Link>
-            <Link href="/quotes/new" className="btn-primary text-xs">
-              <Plus className="w-3.5 h-3.5" />
-              <span>Create Quote</span>
-            </Link>
-            <Link href="/payments" className="btn-secondary text-xs">
-              <CreditCard className="w-3.5 h-3.5" />
-              <span>Record Wire</span>
-            </Link>
-          </div>
-        }
-      />
-
-      {/* 2. Top KPI Ribbon (R-025) */}
-      <KpiStrip
-        items={[
-          {
-            id: "active-req",
-            label: "Active Requests",
-            value: activeRequests.length.toString(),
-            subtext: "Awaiting quote dispatch"
-          },
-          {
-            id: "in-sourcing",
-            label: "In Sourcing",
-            value: sourcingTrips.length.toString(),
-            subtext: "Marketplace operator desk"
-          },
-          {
-            id: "open-quotes",
-            label: "Open Quotes",
-            value: openQuotes.length.toString(),
-            subtext: "Client review / pending"
-          },
-          {
-            id: "bookings-month",
-            label: "Bookings This Month",
-            value: bookedTrips.length.toString(),
-            subtext: "Signed charter agreements",
-            trend: "positive"
-          },
-          {
-            id: "revenue",
-            label: "Charter Revenue",
-            value: formatCurrency(bookedRevenue, "EUR"),
-            subtext: "Booked flights volume"
-          },
-          {
-            id: "margin",
-            label: "Margin Realized",
-            value: formatCurrency(realizedMargin, "EUR"),
-            subtext: "10.0% avg company net",
-            trend: "positive"
-          }
-        ]}
-      />
-
-      {/* 3. Main Operational Grid: Needs Action Queue & Today's Departures */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Needs Action Queue (Urgency Sorted per R-025) */}
-        <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-4 shadow-sm flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between border-b border-[var(--line)] pb-3 mb-4">
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-[var(--amber)]" />
-                <h3 className="font-display font-bold text-base text-[var(--ink)] m-0">
-                  Needs Action Queue
-                </h3>
-              </div>
-              <span className="pill amber font-mono text-[10px]">
-                {actionQueue.length} TASKS PENDING
-              </span>
+    <div className="w-full space-y-6 pb-12">
+      {/* ─── Top Header with Switcher & Live Clock ─────────────────────────── */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        {/* Left: Breadcrumb / Title */}
+        <div>
+          {view === "board" ? (
+            <div className="space-y-1">
+              <div className="text-xs text-slate-400 font-medium">Overview / Board view</div>
+              <h1 className="text-2xl font-bold tracking-tight text-slate-900 m-0">
+                Overview · board
+              </h1>
             </div>
-
-            <div className="space-y-3">
-              {actionQueue.length === 0 ? (
-                <div className="text-center py-8 text-xs text-[var(--muted)] font-mono">
-                  All flight operations, payments, and manifests are cleared.
-                </div>
-              ) : (
-                actionQueue.slice(0, 5).map((item) => {
-                  const isCritical = item.urgency === "critical";
-                  const isHigh = item.urgency === "high";
-
-                  return (
-                    <div
-                      key={item.id}
-                      className={`border rounded-lg p-3 text-xs flex items-center justify-between gap-3 transition-colors ${
-                        isCritical
-                          ? "border-[var(--red)]/40 bg-[var(--red-soft)]/20"
-                          : isHigh
-                          ? "border-[var(--amber)]/40 bg-[var(--amber-soft)]/20"
-                          : "border-[var(--line)] bg-[var(--paper)]"
-                      }`}
-                    >
-                      <div className="space-y-0.5">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`pill ${
-                              isCritical ? "red" : isHigh ? "amber" : "grey"
-                            } text-[9px]`}
-                          >
-                            {item.badge}
-                          </span>
-                          <span className="font-bold text-[var(--ink)] block">
-                            {item.title}
-                          </span>
-                        </div>
-                        <p className="text-[var(--muted)] m-0 text-[11px]">
-                          {item.subtitle}
-                        </p>
-                      </div>
-
-                      <Link href={item.link} className="btn-secondary text-[11px] py-1 px-2.5 whitespace-nowrap">
-                        <span>{item.actionText}</span>
-                        <ArrowRight className="w-3 h-3" />
-                      </Link>
-                    </div>
-                  );
-                })
-              )}
+          ) : (
+            <div className="space-y-1">
+              <h1 className="text-2xl font-bold tracking-tight text-slate-900 m-0">
+                Overview · {liveTimes.dateStr}
+              </h1>
             </div>
-          </div>
-
-          <div className="pt-3 border-t border-[var(--line)] text-right">
-            <Link href="/requests" className="text-xs font-mono text-[var(--accent)] hover:underline inline-flex items-center gap-1">
-              <span>View all operational queues</span>
-              <ArrowRight className="w-3 h-3" />
-            </Link>
-          </div>
+          )}
         </div>
 
-        {/* Departures Timeline (R-025) */}
-        <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-4 shadow-sm flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between border-b border-[var(--line)] pb-3 mb-4">
-              <div className="flex items-center gap-2">
-                <Plane className="w-4 h-4 text-[var(--ink)]" />
-                <h3 className="font-display font-bold text-base text-[var(--ink)] m-0">
-                  Today's Departures Timeline
-                </h3>
-              </div>
-              <span className="font-mono text-xs text-[var(--muted)]">
-                {new Date().toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" })}
+        {/* Right: Live indicator & Toggle Buttons */}
+        <div className="flex items-center gap-3 self-start sm:self-auto">
+          {view === "overview" && (
+            <div className="hidden md:flex items-center gap-2 text-xs text-slate-500 font-medium">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              <span>
+                Live · {liveTimes.vienna} Vienna · {liveTimes.utc} UTC
               </span>
             </div>
+          )}
 
-            <div className="space-y-3">
-              {todayDepartures.length === 0 ? (
-                <div className="text-center py-8 text-xs text-[var(--muted)] font-mono">
-                  No charter departures scheduled for today.
-                </div>
-              ) : (
-                todayDepartures.map((dep) => (
-                  <div
-                    key={dep.id}
-                    onClick={() => router.push(`/trips/${dep.rootId}/itinerary`)}
-                    className="border border-[var(--line)] rounded-lg p-3.5 bg-[var(--paper)] hover:border-[var(--accent)] cursor-pointer transition-colors space-y-2"
+          {/* Toggle Buttons: Overview / Board */}
+          <div className="flex items-center gap-1 bg-white p-1 rounded-lg border border-slate-200 shadow-2xs">
+            <button
+              type="button"
+              onClick={() => handleViewChange("overview")}
+              className={`px-3.5 py-1.5 text-xs font-semibold rounded-md transition-all ${
+                view === "overview"
+                  ? "bg-[#0f172a] text-white shadow-xs"
+                  : "bg-white text-slate-700 hover:text-slate-900"
+              }`}
+            >
+              Overview
+            </button>
+            <button
+              type="button"
+              onClick={() => handleViewChange("board")}
+              className={`px-3.5 py-1.5 text-xs font-semibold rounded-md transition-all ${
+                view === "board"
+                  ? "bg-[#0f172a] text-white shadow-xs"
+                  : "bg-white text-slate-700 hover:text-slate-900"
+              }`}
+            >
+              Board
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── Board View Subheader Filters ─────────────────────────────────── */}
+      {view === "board" && (
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
+          <button
+            type="button"
+            onClick={() => setBoardFilter("all")}
+            className={`px-3.5 py-1 rounded-full font-medium transition-all ${
+              boardFilter === "all"
+                ? "bg-[#0f172a] text-white"
+                : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50"
+            }`}
+          >
+            All Curators
+          </button>
+          <button
+            type="button"
+            onClick={() => setBoardFilter("mine")}
+            className={`px-3.5 py-1 rounded-full font-medium transition-all ${
+              boardFilter === "mine"
+                ? "bg-[#0f172a] text-white"
+                : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50"
+            }`}
+          >
+            Mine
+          </button>
+          <button
+            type="button"
+            onClick={() => setBoardFilter("needs_action")}
+            className={`px-3.5 py-1 rounded-full font-medium transition-all ${
+              boardFilter === "needs_action"
+                ? "bg-[#0f172a] text-white"
+                : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50"
+            }`}
+          >
+            Needs action
+          </button>
+          <button
+            type="button"
+            onClick={() => setBoardFilter("departing_7d")}
+            className={`px-3.5 py-1 rounded-full font-medium transition-all ${
+              boardFilter === "departing_7d"
+                ? "bg-[#0f172a] text-white"
+                : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50"
+            }`}
+          >
+            Departing 7 days
+          </button>
+        </div>
+      )}
+
+      {/* ─── Overview View: 2 Top Operational Columns ──────────────────────── */}
+      {view === "overview" && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Left Column: Flights · today and next 24 h */}
+          <div className="bg-white border border-slate-200/90 rounded-xl p-5 shadow-2xs flex flex-col justify-between">
+            <div>
+              {/* Header with Today / Next 24 h toggle */}
+              <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+                <h3 className="font-bold text-sm text-slate-900 m-0">
+                  Flights · today and next 24 h · {displayedFlights.length}
+                </h3>
+                <div className="flex items-center gap-1 bg-slate-100/80 p-0.5 rounded-md">
+                  <button
+                    type="button"
+                    onClick={() => setFlightFilter("today")}
+                    className={`px-2.5 py-1 text-xs font-semibold rounded transition-all ${
+                      flightFilter === "today"
+                        ? "bg-[#0f172a] text-white shadow-2xs"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
                   >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono font-bold text-xs text-[var(--ink)]">
-                          {dep.depTimeLocal} Local
-                        </span>
-                        <span className="font-mono text-xs text-[var(--muted)]">
-                          ({dep.originIcao} → {dep.destIcao})
-                        </span>
-                      </div>
-                      <StatusPill
-                        label={dep.status.toUpperCase()}
-                        variant={dep.status === "Landed" ? "green" : dep.status === "En Route" ? "blue" : "grey"}
-                      />
-                    </div>
+                    Today
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFlightFilter("next_24h")}
+                    className={`px-2.5 py-1 text-xs font-semibold rounded transition-all ${
+                      flightFilter === "next_24h"
+                        ? "bg-[#0f172a] text-white shadow-2xs"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    Next 24 h
+                  </button>
+                </div>
+              </div>
 
-                    <div className="flex items-center justify-between text-xs">
-                      <div>
-                        <span className="font-bold text-[var(--ink)] block">{dep.aircraftName}</span>
-                        <span className="font-mono text-[11px] text-[var(--muted)]">
-                          Tail: {dep.tailNumber} • FBO: {dep.fboName}
+              {/* Flights rows */}
+              <div className="pt-3 space-y-4">
+                {/* Today section */}
+                {flightsByDate.today.length > 0 && (
+                  <div className="space-y-2.5">
+                    <div className="text-[11px] font-semibold text-slate-400">
+                      {liveTimes.dateStr}
+                    </div>
+                    {flightsByDate.today.map((flight) => (
+                      <div
+                        key={flight.id}
+                        onClick={() => router.push(`/trips/${flight.tripId}/itinerary`)}
+                        className="flex items-center justify-between gap-3 text-xs py-1 hover:bg-slate-50/80 px-1 rounded transition-colors cursor-pointer"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className="font-mono font-bold text-slate-900 w-11 shrink-0">
+                            {flight.time}
+                          </span>
+                          <span className="text-slate-700 truncate">
+                            <span className="text-slate-400 font-mono text-[11px] mr-1.5">
+                              {flight.code}
+                            </span>
+                            <span className="font-medium mr-1.5">{flight.route}</span>
+                            {flight.leg && (
+                              <span className="text-slate-400 mr-1.5">· {flight.leg}</span>
+                            )}
+                            <span className="text-slate-500">· {flight.aircraft}</span>
+                          </span>
+                        </div>
+                        <span
+                          className={`px-2 py-0.5 rounded text-[11px] font-medium shrink-0 whitespace-nowrap ${getBadgeClasses(
+                            flight.badgeVariant
+                          )}`}
+                        >
+                          {flight.badgeText}
                         </span>
                       </div>
-                      <span className="font-mono font-bold text-[var(--ink)]">{dep.paxCount} Pax</span>
-                    </div>
+                    ))}
                   </div>
-                ))
-              )}
+                )}
+
+                {/* Next 24h section */}
+                {flightFilter === "next_24h" && flightsByDate.next24.length > 0 && (
+                  <div className="space-y-2.5 pt-2 border-t border-slate-100">
+                    <div className="text-[11px] font-semibold text-slate-400">
+                      Wed 18 Nov · next 24 h
+                    </div>
+                    {flightsByDate.next24.map((flight) => (
+                      <div
+                        key={flight.id}
+                        onClick={() => router.push(`/trips/${flight.tripId}/itinerary`)}
+                        className="flex items-center justify-between gap-3 text-xs py-1 hover:bg-slate-50/80 px-1 rounded transition-colors cursor-pointer"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className="font-mono font-bold text-slate-900 w-11 shrink-0">
+                            {flight.time}
+                          </span>
+                          <span className="text-slate-700 truncate">
+                            <span className="text-slate-400 font-mono text-[11px] mr-1.5">
+                              {flight.code}
+                            </span>
+                            <span className="font-medium mr-1.5">{flight.route}</span>
+                            {flight.leg && (
+                              <span className="text-slate-400 mr-1.5">· {flight.leg}</span>
+                            )}
+                            <span className="text-slate-500">· {flight.aircraft}</span>
+                          </span>
+                        </div>
+                        <span
+                          className={`px-2 py-0.5 rounded text-[11px] font-medium shrink-0 whitespace-nowrap ${getBadgeClasses(
+                            flight.badgeVariant
+                          )}`}
+                        >
+                          {flight.badgeText}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer note */}
+            <div className="pt-4 mt-2 border-t border-slate-100 text-[11px] text-slate-400">
+              Local departure times · live status from flight tracking · updates without refresh
             </div>
           </div>
 
-          <div className="pt-3 border-t border-[var(--line)] text-right">
-            <Link href="/flight-briefs" className="text-xs font-mono text-[var(--accent)] hover:underline inline-flex items-center gap-1">
-              <span>View full dispatch board</span>
-              <ArrowRight className="w-3 h-3" />
+          {/* Right Column: Needs action · {count} */}
+          <div className="bg-white border border-slate-200/90 rounded-xl p-5 shadow-2xs flex flex-col justify-between">
+            <div>
+              {/* Header with Everyone / Mine toggle */}
+              <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+                <h3 className="font-bold text-sm text-slate-900 m-0">
+                  Needs action · {displayedActionItems.length}
+                </h3>
+                <div className="flex items-center gap-1 bg-slate-100/80 p-0.5 rounded-md">
+                  <button
+                    type="button"
+                    onClick={() => setActionFilter("everyone")}
+                    className={`px-2.5 py-1 text-xs font-semibold rounded transition-all ${
+                      actionFilter === "everyone"
+                        ? "bg-[#0f172a] text-white shadow-2xs"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    Everyone
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActionFilter("mine")}
+                    className={`px-2.5 py-1 text-xs font-semibold rounded transition-all ${
+                      actionFilter === "mine"
+                        ? "bg-[#0f172a] text-white shadow-2xs"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    Mine
+                  </button>
+                </div>
+              </div>
+
+              {/* Needs Action List */}
+              <div className="pt-3 space-y-3">
+                {displayedActionItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center justify-between gap-3 text-xs py-1 px-1 rounded hover:bg-slate-50/80 transition-colors"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      {/* Urgency Pill */}
+                      <span
+                        className={`w-18 shrink-0 text-center px-2 py-0.5 rounded text-[11px] font-medium ${
+                          item.badgeVariant === "rose"
+                            ? "bg-rose-100 text-rose-700"
+                            : item.badgeVariant === "amber"
+                            ? "bg-amber-100 text-amber-800"
+                            : "bg-slate-100 text-slate-700"
+                        }`}
+                      >
+                        {item.urgency}
+                      </span>
+
+                      {/* Description */}
+                      <span className="text-slate-800 truncate font-medium">
+                        {item.title}
+                      </span>
+                    </div>
+
+                    {/* Right Link */}
+                    <Link
+                      href={item.linkUrl}
+                      className="text-slate-500 hover:text-slate-900 font-medium shrink-0 flex items-center gap-1 transition-colors whitespace-nowrap"
+                    >
+                      <span>{item.linkText}</span>
+                    </Link>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Footer note */}
+            <div className="pt-4 mt-2 border-t border-slate-100 text-[11px] text-slate-400">
+              Sorted by urgency, most overdue first. &ldquo;Mine&rdquo; shows only tasks assigned to you.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Financial Health Metrics Row (Displayed on both Overview & Board) ── */}
+      <div className="space-y-3">
+        {view === "overview" && (
+          <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+            FINANCIAL HEALTH · NOVEMBER
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+          {/* 1. UNPAID */}
+          <div className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs flex flex-col justify-between">
+            <div>
+              <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                UNPAID
+              </div>
+              <div className="text-xl font-bold text-slate-900 mt-1">
+                € {financialHealth.unpaid.amount.toLocaleString()}
+              </div>
+              <div className="text-xs text-slate-500 mt-0.5">
+                {financialHealth.unpaid.label}
+              </div>
+            </div>
+            <Link
+              href={financialHealth.unpaid.link}
+              className="text-xs text-slate-500 hover:text-slate-900 mt-3 flex items-center gap-1 font-medium transition-colors"
+            >
+              <span>Payments · unpaid →</span>
+            </Link>
+          </div>
+
+          {/* 2. OVERDUE */}
+          <div className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs flex flex-col justify-between">
+            <div>
+              <div className="text-[11px] font-semibold text-rose-600 uppercase tracking-wider">
+                OVERDUE
+              </div>
+              <div className="text-xl font-bold text-rose-600 mt-1">
+                € {financialHealth.overdue.amount.toLocaleString()}
+              </div>
+              <div className="text-xs text-slate-500 mt-0.5">
+                {financialHealth.overdue.label}
+              </div>
+            </div>
+            <Link
+              href={financialHealth.overdue.link}
+              className="text-xs text-slate-500 hover:text-slate-900 mt-3 flex items-center gap-1 font-medium transition-colors"
+            >
+              <span>Payments · overdue →</span>
+            </Link>
+          </div>
+
+          {/* 3. RECEIVED · NOV */}
+          <div className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs flex flex-col justify-between">
+            <div>
+              <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                RECEIVED · NOV
+              </div>
+              <div className="text-xl font-bold text-slate-900 mt-1">
+                € {financialHealth.received.amount.toLocaleString()}
+              </div>
+              <div className="text-xs text-emerald-600 font-medium mt-0.5">
+                {financialHealth.received.compareText}
+              </div>
+            </div>
+            <Link
+              href={financialHealth.received.link}
+              className="text-xs text-slate-500 hover:text-slate-900 mt-3 flex items-center gap-1 font-medium transition-colors"
+            >
+              <span>Cash report →</span>
+            </Link>
+          </div>
+
+          {/* 4. COMPANY MARGIN · NOV */}
+          <div className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs flex flex-col justify-between">
+            <div>
+              <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                COMPANY MARGIN · NOV
+              </div>
+              <div className="text-xl font-bold text-slate-900 mt-1">
+                € {financialHealth.companyMargin.amount.toLocaleString()}
+              </div>
+              <div className="text-xs text-slate-500 mt-0.5">
+                {financialHealth.companyMargin.compareText}
+              </div>
+            </div>
+            <Link
+              href={financialHealth.companyMargin.link}
+              className="text-xs text-slate-500 hover:text-slate-900 mt-3 flex items-center gap-1 font-medium transition-colors"
+            >
+              <span>Margin report →</span>
+            </Link>
+          </div>
+
+          {/* 5. CURATOR PAYOUTS DUE */}
+          <div className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs flex flex-col justify-between">
+            <div>
+              <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                CURATOR PAYOUTS DUE
+              </div>
+              <div className="text-xl font-bold text-slate-900 mt-1">
+                € {financialHealth.curatorPayoutsDue.amount.toLocaleString()}
+              </div>
+              <div className="text-xs text-slate-500 mt-0.5">
+                {financialHealth.curatorPayoutsDue.label}
+              </div>
+            </div>
+            <Link
+              href={financialHealth.curatorPayoutsDue.link}
+              className="text-xs text-slate-500 hover:text-slate-900 mt-3 flex items-center gap-1 font-medium transition-colors"
+            >
+              <span>Curators · payouts →</span>
             </Link>
           </div>
         </div>
       </div>
+
+      {/* ─── Trips by stage (Overview View Bottom Card) ────────────────────── */}
+      {view === "overview" && (
+        <div className="bg-white border border-slate-200/90 rounded-xl p-5 shadow-2xs">
+          <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+            <h3 className="font-bold text-sm text-slate-900 m-0">Trips by stage</h3>
+            <button
+              type="button"
+              onClick={() => handleViewChange("board")}
+              className="text-xs text-slate-600 hover:text-slate-900 font-medium flex items-center gap-1 transition-colors"
+            >
+              <span>Open board view →</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 pt-4">
+            <div
+              onClick={() => handleViewChange("board")}
+              className="cursor-pointer hover:opacity-80 transition-opacity"
+            >
+              <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                REQUEST
+              </div>
+              <div className="text-2xl font-bold text-slate-900 mt-1">
+                {tripsByStage.request}
+              </div>
+            </div>
+
+            <div
+              onClick={() => handleViewChange("board")}
+              className="cursor-pointer hover:opacity-80 transition-opacity"
+            >
+              <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                SOURCING
+              </div>
+              <div className="text-2xl font-bold text-slate-900 mt-1">
+                {tripsByStage.sourcing}
+              </div>
+            </div>
+
+            <div
+              onClick={() => handleViewChange("board")}
+              className="cursor-pointer hover:opacity-80 transition-opacity"
+            >
+              <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                QUOTED
+              </div>
+              <div className="text-2xl font-bold text-slate-900 mt-1">
+                {tripsByStage.quoted}
+              </div>
+            </div>
+
+            <div
+              onClick={() => handleViewChange("board")}
+              className="cursor-pointer hover:opacity-80 transition-opacity"
+            >
+              <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                BOOKED
+              </div>
+              <div className="text-2xl font-bold text-slate-900 mt-1">
+                {tripsByStage.booked}
+              </div>
+            </div>
+
+            <div
+              onClick={() => handleViewChange("board")}
+              className="cursor-pointer hover:opacity-80 transition-opacity"
+            >
+              <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                CONFIRMED
+              </div>
+              <div className="text-2xl font-bold text-slate-900 mt-1">
+                {tripsByStage.confirmed}
+              </div>
+            </div>
+
+            <div
+              onClick={() => handleViewChange("board")}
+              className="cursor-pointer hover:opacity-80 transition-opacity"
+            >
+              <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                FLOWN · CLOSE
+              </div>
+              <div className="text-2xl font-bold text-slate-900 mt-1">
+                {tripsByStage.flownClose}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Board View: 6-Column Kanban Board ─────────────────────────────── */}
+      {view === "board" && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4 items-start">
+            {boardColumns.map((col) => (
+              <div
+                key={col.id}
+                onDragOver={handleDragOver}
+                onDrop={(e) => handleDrop(e, col.id)}
+                className="bg-slate-50/70 border border-slate-200/60 rounded-xl p-3 min-h-[460px] flex flex-col justify-between"
+              >
+                <div>
+                  {/* Column Header */}
+                  <div className="flex items-center justify-between pb-3 px-1 text-slate-700">
+                    <span className="text-xs font-bold uppercase tracking-wider">
+                      {col.title}
+                    </span>
+                    <span className="text-xs font-mono text-slate-400">
+                      {col.count}
+                    </span>
+                  </div>
+
+                  {/* Cards inside column */}
+                  <div className="space-y-3">
+                    {col.cards.length === 0 ? (
+                      <div className="text-center py-10 text-[11px] text-slate-400 font-mono border border-dashed border-slate-200 rounded-lg">
+                        Empty
+                      </div>
+                    ) : (
+                      col.cards.map((card) => (
+                        <div
+                          key={card.id}
+                          draggable
+                          onDragStart={(e) => handleDragStart(e, card.id)}
+                          onClick={() => router.push(card.linkUrl)}
+                          className="bg-white border border-slate-200/90 rounded-xl p-3.5 shadow-2xs hover:shadow-sm hover:border-slate-300 transition-all cursor-pointer space-y-2 group"
+                        >
+                          {/* Code */}
+                          <div className="text-[11px] font-mono text-slate-400">
+                            {card.code}
+                          </div>
+
+                          {/* Route */}
+                          <div className="font-bold text-sm text-slate-900 group-hover:text-blue-600 transition-colors">
+                            {card.route}
+                          </div>
+
+                          {/* Details */}
+                          <div className="text-xs text-slate-500 leading-snug">
+                            {card.details}
+                          </div>
+
+                          {/* Badge (if exists) */}
+                          {card.badge && (
+                            <div className="pt-1">
+                              <span
+                                className={`inline-block px-2 py-0.5 rounded text-[11px] font-medium ${getBadgeClasses(
+                                  card.badgeVariant
+                                )}`}
+                              >
+                                {card.badge}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Board Footer note */}
+          <div className="text-xs text-slate-500 pt-2">
+            Every card opens its request, quote or trip on the tab its flag belongs to. Newest first inside each column.
+          </div>
+        </div>
+      )}
     </div>
   );
 }

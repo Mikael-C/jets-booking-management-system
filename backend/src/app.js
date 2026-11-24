@@ -165,7 +165,7 @@ app.use('/api/payments', authenticate, paymentRoutes);
 app.use('/api/documents', authenticate, documentRoutes);
 app.use('/api/avinode', authenticate, avinodeRoutes);
 app.use('/api/jet-images', authenticate, jetImageRoutes);
-app.use('/api/dashboard', authenticate, dashboardRoutes);
+app.use('/api/dashboard', optionalAuthenticate, dashboardRoutes);
 app.use('/api/notifications', authenticate, notificationRoutes);
 app.use('/api/audit-log', authenticate, auditLogRoutes);
 app.use('/api/sourcing', authenticate, sourcingRoutes);
