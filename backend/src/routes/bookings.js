@@ -388,9 +388,13 @@ router.post('/:id/revise', authorize('super_admin', 'admin', 'operations'), asyn
     return res.status(409).json({ success: false, message: 'Only the latest booking iteration can be revised' });
   }
 
+  // Quote and booking versions share one sequence (-001, -002, …)
   const nextRevision = Math.max(
     0,
-    ...siblings.map((item) => Number((item.bookingRevisionId || '').split('-').pop()) || 0)
+    ...siblings.map((item) => Math.max(
+      Number(item.quoteVersion) || 0,
+      Number((item.bookingRevisionId || '').split('-').pop()) || 0
+    ))
   ) + 1;
   const suffix = tripSuffix(original);
   const identifiers = await createBookingIdentifiers({
@@ -413,8 +417,13 @@ router.post('/:id/revise', authorize('super_admin', 'admin', 'operations'), asyn
   revisedData.quoteGroupId = original.quoteGroupId || identifiers.quoteGroupId;
   revisedData.quoteId = original.quoteId;
   revisedData.quoteReference = original.quoteReference;
-  revisedData.quoteVersion = original.quoteVersion;
+  revisedData.quoteVersion = nextRevision;
   revisedData.bookingRevisionId = identifiers.bookingRevisionId;
+  revisedData.revisedFromId = original.id || original._id.toString();
+  revisedData.revisionReason = req.body?.revisionReason || '';
+  revisedData.revisedByEmail = (req.user && req.user.email) || '';
+  revisedData.revisedByName = (req.user && (req.user.name || req.user.email)) || '';
+  revisedData.revisedAt = new Date().toISOString();
   revisedData.isCancelled = false;
   revisedData.cancellationReason = '';
   revisedData.supersededBy = '';
@@ -474,6 +483,12 @@ router.post('/:id/revise', authorize('super_admin', 'admin', 'operations'), asyn
   }
 
   const revised = await Booking.create(revisedData);
+  try {
+    original.supersededBy = revised.id || revised._id.toString();
+    await original.save();
+  } catch {
+    // the new version is saved; marking the old one is best effort
+  }
   await logBookingAction(req.user, 'booking_revised', revised, req);
 
   return res.status(201).json({ success: true, data: revised });

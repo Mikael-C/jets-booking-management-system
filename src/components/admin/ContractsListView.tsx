@@ -26,7 +26,7 @@ interface ContractRow {
 
 type Filter = "awaiting" | "signed" | "expired" | null;
 
-const thCls = "text-left text-[12px] font-semibold uppercase tracking-[0.08em] text-slate-500 px-4 py-3 whitespace-nowrap";
+const thCls = "text-left text-[11px] font-semibold uppercase tracking-wider text-gray-400 px-4 py-3.5 whitespace-nowrap";
 
 const STATUS = {
   awaiting: { text: "Awaiting signature", cls: "bg-amber-50 text-amber-800" },
@@ -93,8 +93,8 @@ export default function ContractsListView() {
       key={key}
       type="button"
       onClick={() => setFilter((f) => (f === key ? null : key))}
-      className={`px-4 py-2 rounded-full border text-[15px] transition-colors ${
-        filter === key ? "bg-[#0B1320] text-white border-[#0B1320]" : "bg-white text-slate-800 border-slate-200 hover:border-slate-400"
+      className={`px-3 py-1 rounded-full border text-xs font-semibold transition-colors ${
+        filter === key ? "bg-[#111827] text-white border-[#111827] shadow-sm" : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
       }`}
     >
       {label}
@@ -102,8 +102,8 @@ export default function ContractsListView() {
   );
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-[30px] font-bold text-slate-900 m-0">Contracts</h1>
+    <div className="space-y-5 max-w-6xl mx-auto pb-12">
+      <h1 className="text-2xl font-bold text-slate-900 tracking-tight m-0">Contracts</h1>
 
       <div className="flex flex-wrap items-center gap-2.5">
         <input
@@ -111,17 +111,17 @@ export default function ContractsListView() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search contract, trip, client..."
-          className="w-full sm:w-[340px] bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-[15px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-400"
+          className="w-full sm:w-64 bg-white border border-slate-200 rounded-lg px-3.5 py-1.5 text-xs shadow-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-400"
         />
         {pill("awaiting", `Awaiting signature ${awaitingCount}`)}
         {pill("signed", "Signed")}
         {pill("expired", "Expired unsigned")}
         <div className="ml-auto flex items-center gap-2">
-          <span className="text-[15px] text-slate-500">Sort</span>
+          <span className="text-xs text-slate-500">Sort</span>
           <select
             value={sort}
             onChange={(e) => setSort(e.target.value as typeof sort)}
-            className="bg-white border border-slate-200 rounded-lg px-3 py-2.5 text-[15px] text-slate-900 focus:outline-none"
+            className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-900 focus:outline-none"
           >
             <option value="newest">Newest first</option>
             <option value="oldest">Oldest first</option>
@@ -132,7 +132,7 @@ export default function ContractsListView() {
 
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-[15px]">
+          <table className="w-full text-xs">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
                 <th className={thCls}>Contract</th>
@@ -148,14 +148,14 @@ export default function ContractsListView() {
             <tbody className="divide-y divide-slate-100">
               {state === "loading" && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-slate-400 text-sm">
+                  <td colSpan={8} className="px-4 py-8 text-center text-slate-400 text-xs">
                     Loading contracts…
                   </td>
                 </tr>
               )}
               {state === "error" && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-sm text-rose-700">
+                  <td colSpan={8} className="px-4 py-8 text-center text-xs text-rose-700">
                     {errorText}{" "}
                     <button type="button" onClick={() => { setState("loading"); load(); }} className="underline">
                       Try again
@@ -165,7 +165,7 @@ export default function ContractsListView() {
               )}
               {state === "ready" && filtered.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-slate-400 text-sm">
+                  <td colSpan={8} className="px-4 py-8 text-center text-slate-400 text-xs">
                     No contracts match.
                   </td>
                 </tr>
@@ -193,7 +193,7 @@ export default function ContractsListView() {
                     <td className="px-4 py-3.5 text-slate-900 whitespace-nowrap">{signedLabel(r.signedAt, r.signedVia)}</td>
                     <td className="px-4 py-3.5 text-slate-900">{r.termsVersion}</td>
                     <td className="px-4 py-3.5">
-                      <span className={`text-[14px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${st.cls}`}>{st.text}</span>
+                      <span className={`text-[11px] font-medium px-2.5 py-0.5 rounded-full whitespace-nowrap ${st.cls}`}>{st.text}</span>
                     </td>
                   </tr>
                 );
@@ -201,7 +201,7 @@ export default function ContractsListView() {
             </tbody>
           </table>
         </div>
-        <p className="text-[15px] text-slate-500 px-6 py-4 m-0 border-t border-slate-100">
+        <p className="text-[11px] text-gray-400 leading-relaxed px-4 py-3.5 m-0 border-t border-slate-100">
           A signed contract is what turns a quote into a booking. Each contract stores the version of the terms it was issued with.
         </p>
       </div>

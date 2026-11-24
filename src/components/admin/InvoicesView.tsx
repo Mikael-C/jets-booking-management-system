@@ -41,7 +41,7 @@ const STATUS: Record<string, { label: string; cls: string }> = {
   void: { label: "Void", cls: "bg-slate-100 text-slate-500" }
 };
 
-const thCls = "text-left text-[12px] font-semibold uppercase tracking-[0.08em] text-slate-500 px-4 py-3 whitespace-nowrap";
+const thCls = "text-left text-[11px] font-semibold uppercase tracking-wider text-gray-400 px-4 py-3.5 whitespace-nowrap";
 
 export default function InvoicesView() {
   const { bookings, openDocument, role } = useAviation();
@@ -145,8 +145,8 @@ export default function InvoicesView() {
       key={key}
       type="button"
       onClick={() => setFilter(key)}
-      className={`px-4 py-2 rounded-full border text-[15px] transition-colors ${
-        filter === key ? "bg-[#0B1320] text-white border-[#0B1320]" : "bg-white text-slate-800 border-slate-200 hover:border-slate-400"
+      className={`px-3 py-1 rounded-full border text-xs font-semibold transition-colors ${
+        filter === key ? "bg-[#111827] text-white border-[#111827] shadow-sm" : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
       }`}
     >
       {label}
@@ -154,14 +154,14 @@ export default function InvoicesView() {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 max-w-6xl mx-auto pb-12">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-[30px] font-bold text-slate-900 m-0">Invoices &amp; credit notes</h1>
+        <h1 className="text-2xl font-bold text-slate-900 tracking-tight m-0">Invoices &amp; credit notes</h1>
         <button
           type="button"
           onClick={exportCsv}
           disabled={filtered.length === 0}
-          className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-900 px-4 py-2.5 rounded-lg text-[15px] font-semibold shadow-sm disabled:opacity-50"
+          className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-900 px-3.5 py-1.5 rounded-lg text-xs font-semibold shadow-sm disabled:opacity-50"
         >
           Export for accountant
         </button>
@@ -173,7 +173,7 @@ export default function InvoicesView() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search number, trip, client..."
-          className="w-full sm:w-[340px] bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-[15px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-400"
+          className="w-full sm:w-64 bg-white border border-slate-200 rounded-lg px-3.5 py-1.5 text-xs shadow-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-400"
         />
         {pill("all", "All")}
         {pill("invoices", "Invoices")}
@@ -182,11 +182,11 @@ export default function InvoicesView() {
         {pill("combined", "Combined")}
         {pill("this_month", "This month")}
         <div className="ml-auto flex items-center gap-2">
-          <span className="text-[15px] text-slate-500">Sort</span>
+          <span className="text-xs text-slate-500">Sort</span>
           <select
             value={sort}
             onChange={(e) => setSort(e.target.value as typeof sort)}
-            className="bg-white border border-slate-200 rounded-lg px-3 py-2.5 text-[15px] text-slate-900 focus:outline-none"
+            className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-900 focus:outline-none"
           >
             <option value="newest">Newest first</option>
             <option value="oldest">Oldest first</option>
@@ -196,7 +196,7 @@ export default function InvoicesView() {
       </div>
 
       {notice && (
-        <div className="flex flex-wrap items-center justify-between gap-3 bg-[#EEF4FD] border border-[#C9DBF5] rounded-lg px-4 py-2.5 text-sm text-slate-800">
+        <div className="flex flex-wrap items-center justify-between gap-3 bg-[#EEF4FD] border border-[#C9DBF5] rounded-lg px-4 py-2 text-xs text-slate-800">
           <span>
             {notice.text}
             {notice.url && (
@@ -216,7 +216,7 @@ export default function InvoicesView() {
 
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-[15px]">
+          <table className="w-full text-xs">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
                 <th className={thCls}>Number</th>
@@ -233,14 +233,14 @@ export default function InvoicesView() {
             <tbody className="divide-y divide-slate-100">
               {state === "loading" && (
                 <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-slate-400 text-sm">
+                  <td colSpan={9} className="px-4 py-8 text-center text-slate-400 text-xs">
                     Loading invoices and credit notes…
                   </td>
                 </tr>
               )}
               {state === "error" && (
                 <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-sm text-rose-700">
+                  <td colSpan={9} className="px-4 py-8 text-center text-xs text-rose-700">
                     {errorText}{" "}
                     <button type="button" onClick={() => { setState("loading"); load(); }} className="underline">
                       Try again
@@ -250,7 +250,7 @@ export default function InvoicesView() {
               )}
               {state === "ready" && filtered.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-slate-400 text-sm">
+                  <td colSpan={9} className="px-4 py-8 text-center text-slate-400 text-xs">
                     No documents match.
                   </td>
                 </tr>
@@ -274,7 +274,7 @@ export default function InvoicesView() {
                     <td className="px-4 py-3.5 text-slate-900 text-right whitespace-nowrap">{money(r.amount, r.currency)}</td>
                     <td className="px-4 py-3.5 text-slate-900">{/^(INV|CN)-/i.test(r.appliesTo) ? <DocId id={r.appliesTo} /> : r.appliesTo}</td>
                     <td className="px-4 py-3.5">
-                      <span className={`text-[13px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${st.cls}`}>{st.label}</span>
+                      <span className={`text-[11px] font-medium px-2.5 py-0.5 rounded-full whitespace-nowrap ${st.cls}`}>{st.label}</span>
                     </td>
                     <td className="px-4 py-3.5 whitespace-nowrap text-right">
                       <div className="flex items-center justify-end gap-3">
@@ -284,7 +284,7 @@ export default function InvoicesView() {
                             disabled={!payable || busy === r.id}
                             onClick={() => (r.paymentLink && payable ? copy(r.paymentLink).then((ok) => setNotice({ text: ok ? `Payment link copied · ${r.number}` : `Payment link · ${r.number}`, url: r.paymentLink })) : generateLink(r))}
                             title={payable ? "Create a link the client can pay with" : "Nothing left to pay on this invoice"}
-                            className="text-[13px] font-semibold text-[#1F5FAE] border border-[#C9DBF5] bg-[#F4F8FE] hover:bg-[#E6EEFA] px-2.5 py-1 rounded-md disabled:opacity-40 disabled:cursor-not-allowed"
+                            className="text-[11px] font-semibold text-[#1F5FAE] border border-[#C9DBF5] bg-[#F4F8FE] hover:bg-[#E6EEFA] px-2.5 py-1 rounded-md disabled:opacity-40 disabled:cursor-not-allowed"
                           >
                             {busy === r.id ? "Creating…" : r.paymentLink && payable ? "Copy pay link" : "Generate payment link"}
                           </button>
@@ -300,7 +300,7 @@ export default function InvoicesView() {
             </tbody>
           </table>
         </div>
-        <p className="text-[15px] text-slate-500 px-6 py-4 m-0 border-t border-slate-100">
+        <p className="text-[11px] text-gray-400 leading-relaxed px-4 py-3.5 m-0 border-t border-slate-100">
           Invoices and credit notes are created on the trip&apos;s Accounting tab, never here. This list is for finding and exporting them. The
           internal credit-note reason shows on hover for admins only.
         </p>

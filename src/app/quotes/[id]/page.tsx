@@ -9,6 +9,7 @@ import { Booking } from "@/types/aviation";
 import { formatCurrency } from "@/lib/pricingCalculator";
 import { renderFormattedId, formatDocumentId, extractFeToken } from "@/lib/idGenerator";
 import StatusPill from "@/components/ui/StatusPill";
+import { HeaderId } from "@/components/ui/DocId";
 import {
   FileText,
   Plane,
@@ -158,8 +159,8 @@ export default function QuoteDetailPage() {
                   VERSION {String(quote.quoteVersion || 1).padStart(3, "0")}
                 </span>
               </div>
-              <h1 className="text-2xl font-bold font-display text-[var(--ink)] m-0 flex items-center gap-2">
-                {renderFormattedId(quoteIdDisplay)}
+              <h1 className="text-2xl font-bold font-display text-[var(--ink)] m-0 flex items-baseline gap-2">
+                <HeaderId id={quoteIdDisplay} affix={0.52} />
               </h1>
             </div>
           </div>

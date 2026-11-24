@@ -4,6 +4,7 @@ import React, { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useAviation } from "@/lib/aviationContext";
 import { AgentRequest } from "@/types/aviation";
+import { HeaderId } from "@/components/ui/DocId";
 
 interface AgentRequestsQueueViewProps {
   selectedRequestId?: string;
@@ -16,9 +17,42 @@ export default function AgentRequestsQueueView({ selectedRequestId }: AgentReque
     accounts,
     addMessage,
     updateAgentRequestStatus,
-    openNewQuoteModal,
-    setActiveNav
+    setActiveNav,
+    settings,
+    refreshAgentRequests,
+    agentRequestsLoaded
   } = useAviation();
+
+  // Ticks every 30 s so "received" times and the overdue flag stay current
+  const [now, setNow] = useState(() => Date.now());
+  const [loadError, setLoadError] = useState<string | null>(null);
+  React.useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(t);
+  }, []);
+  React.useEffect(() => {
+    refreshAgentRequests()
+      .then(() => setLoadError(null))
+      .catch(() => setLoadError("The requests could not be loaded from the server."));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const overdueMinutes = Number(settings?.requestOverdueMinutes) || 30;
+  const minutesSince = (req: AgentRequest) => {
+    const t = new Date(req.createdAt).getTime();
+    return Number.isNaN(t) ? null : Math.max(0, Math.floor((now - t) / 60000));
+  };
+  const agoText = (mins: number) =>
+    mins < 60 ? `${mins} m` : mins < 60 * 24 ? `${Math.floor(mins / 60)} h` : `${Math.floor(mins / (60 * 24))} d`;
+  const isOverdue = (req: AgentRequest) => {
+    const m = minutesSince(req);
+    return req.status === "pending" && m !== null && m >= overdueMinutes;
+  };
+  const receivedAt = (req: AgentRequest) => {
+    const d = new Date(req.createdAt);
+    if (Number.isNaN(d.getTime())) return "";
+    return `${d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })} ${d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`;
+  };
 
   const [activeReqId, setActiveReqId] = useState<string | null>(selectedRequestId || null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -76,7 +110,10 @@ export default function AgentRequestsQueueView({ selectedRequestId }: AgentReque
 
   // Filtered requests list
   const filteredRequests = useMemo(() => {
-    return agentRequests.filter((req) => {
+    const byTime = (r: AgentRequest) => new Date(r.createdAt).getTime() || 0;
+    return [...agentRequests]
+      .sort((a, b) => (filterPill === "new" ? byTime(a) - byTime(b) : byTime(b) - byTime(a)))
+      .filter((req) => {
       // Filter pill
       if (filterPill === "new" && req.status !== "pending") return false;
       if (filterPill === "sourcing" && req.status !== "in_sourcing") return false;
@@ -139,21 +176,30 @@ export default function AgentRequestsQueueView({ selectedRequestId }: AgentReque
   };
 
   const getReceivedBadge = (req: AgentRequest) => {
-    if (req.isOverdue || req.receivedAgo?.includes("overdue")) {
+    const mins = minutesSince(req);
+    if (mins === null) return <span className="text-xs text-gray-400">—</span>;
+    const text = agoText(mins);
+    if (isOverdue(req)) {
       return (
         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#FEE2E2] text-[#DC2626] border border-[#FECACA]">
-          {req.receivedAgo || "40 m · overdue"}
+          {text} · overdue
         </span>
       );
     }
-    if (req.receivedAgo?.includes("m") && !req.receivedAgo?.includes("h")) {
+    if (req.status === "pending" && mins < 60) {
       return (
         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-[#FEF3C7] text-[#B45309] border border-[#FDE68A]">
-          {req.receivedAgo}
+          {text}
         </span>
       );
     }
-    return <span className="text-xs text-gray-700">{req.receivedAgo || "2 h"}</span>;
+    return <span className="text-xs text-gray-700">{text}</span>;
+  };
+
+  const offersCount = (req: AgentRequest) => (Array.isArray(req.sourcingOptions) ? req.sourcingOptions.length : 0);
+  const quotedRef = (req: AgentRequest) => {
+    const raw = req.quoteGroupId || req.tripId || "";
+    return raw ? raw.replace(/^(QUO|TRI)-/, "") : "";
   };
 
   const getStatusBadge = (req: AgentRequest) => {
@@ -167,21 +213,21 @@ export default function AgentRequestsQueueView({ selectedRequestId }: AgentReque
     if (req.status === "in_sourcing") {
       return (
         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-gray-100 text-gray-800">
-          {req.statusLabel || "Sourcing · 4 offers"}
+          Sourcing{offersCount(req) ? ` · ${offersCount(req)} offer${offersCount(req) === 1 ? "" : "s"}` : ""}
         </span>
       );
     }
     if (req.status === "completed") {
       return (
         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0]">
-          {req.statusLabel || "Quoted → RB3310"}
+          Quoted{quotedRef(req) ? ` → ${quotedRef(req)}` : ""}
         </span>
       );
     }
     if (req.status === "declined") {
       return (
         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-[#FEF2F2] text-[#DC2626] border border-[#FECACA]">
-          {req.statusLabel || "Declined · no aircraft"}
+          Declined
         </span>
       );
     }
@@ -196,9 +242,67 @@ export default function AgentRequestsQueueView({ selectedRequestId }: AgentReque
   // VIEW: DETAILS SCREEN (SCREEN 3)
   // ==========================================
   if (activeRequest) {
-    const isRoundTrip = activeRequest.tripType === "round_trip" || activeRequest.route.includes("⇄");
-    const leg1Str = activeRequest.leg1Text || `${activeRequest.originIcao || "LFPB"} → ${activeRequest.destIcao || "DNAA"} · ${activeRequest.flightDateFormatted || "24 Nov"} 08:30 LT ±2 h · ${activeRequest.paxCount} pax`;
-    const leg2Str = activeRequest.leg2Text || (isRoundTrip ? `${activeRequest.destIcao || "DNAA"} → ${activeRequest.originIcao || "LFPB"} · 30 Nov 16:00 LT · ${activeRequest.paxCount} pax` : null);
+    const isRoundTrip = activeRequest.tripType === "round_trip" || (activeRequest.route || "").includes("⇄");
+    const day = (v?: string) => {
+      if (!v) return "";
+      const d = new Date(v.length === 10 ? `${v}T12:00:00` : v);
+      return Number.isNaN(d.getTime()) ? v : d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+    };
+    const legText = (from?: string, to?: string, date?: string, time?: string) =>
+      [
+        `${from || "—"} → ${to || "—"}`,
+        [day(date), time ? `${time} LT` : "", activeRequest.isFlexibleTime ? "flexible" : ""].filter(Boolean).join(" "),
+        `${activeRequest.paxCount} pax`
+      ]
+        .filter(Boolean)
+        .join(" · ");
+    const leg1Str = legText(activeRequest.originIcao, activeRequest.destIcao, activeRequest.flightDate, activeRequest.departureTime);
+    const leg2Str = isRoundTrip
+      ? legText(activeRequest.destIcao, activeRequest.originIcao, activeRequest.returnFlightDate, undefined)
+      : null;
+    const extraLegs = (activeRequest.multiLegs || []).map((l) => legText(l.originIcao, l.destIcao, l.flightDate, l.departureTime));
+    const pet: any = activeRequest.petDetails || activeRequest.pets;
+    const petList: any[] = Array.isArray(pet) ? pet : pet && Object.keys(pet).length ? [pet] : [];
+    const petsText = petList.length
+      ? petList
+          .map((p) =>
+            [
+              p.petCount ? `${p.petCount}×` : "",
+              p.name || "",
+              p.breed || p.petType || p.type || "Pet",
+              p.totalWeightKg || p.petWeight || p.weightKg ? `(${p.totalWeightKg || p.petWeight || p.weightKg} kg)` : "",
+              p.notes ? `· ${p.notes}` : ""
+            ]
+              .filter(Boolean)
+              .join(" ")
+          )
+          .join(", ")
+      : activeRequest.hasPets
+        ? "Pets on board (details to follow)"
+        : "None";
+    const lug: any = activeRequest.luggage;
+    const luggageText =
+      activeRequest.luggageDetailsText ||
+      (lug && (lug.pieceCount || lug.totalWeightKg)
+        ? [lug.pieceCount ? `${lug.pieceCount} pieces` : "", lug.totalWeightKg ? `≈ ${lug.totalWeightKg} kg` : "", lug.specialLuggageDescription || ""].filter(Boolean).join(" · ")
+        : activeRequest.luggageCount
+          ? `${activeRequest.luggageCount} bags`
+          : "—");
+    const askOperator =
+      activeRequest.askOperatorText ||
+      [
+        activeRequest.deicingInsurance && activeRequest.deicingInsurance !== "none" ? "De-icing protection" : "",
+        activeRequest.carbonOffset && activeRequest.carbonOffset !== "none" ? "Carbon offset" : "",
+        activeRequest.cancellationInsurance ? "Cancellation insurance" : ""
+      ]
+        .filter(Boolean)
+        .join(", ") ||
+      "—";
+    const agentReqs = agentRequests.filter((r) => r.agentName === activeRequest.agentName);
+    const agentConversion = agentReqs.length
+      ? Math.round((agentReqs.filter((r) => r.status === "completed").length / agentReqs.length) * 100)
+      : 0;
+    const offers = offersCount(activeRequest);
 
     return (
       <div className="space-y-6 max-w-6xl mx-auto pb-12">
@@ -211,19 +315,22 @@ export default function AgentRequestsQueueView({ selectedRequestId }: AgentReque
             Requests
           </button>
           <span>/</span>
-          <span className="text-gray-800">{activeRequest.requestNumber || activeRequest.id}</span>
+          <span className="text-gray-800">
+            <HeaderId id={activeRequest.requestNumber || activeRequest.id} affix={0.72} />
+          </span>
         </div>
 
         {/* Header Row */}
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
-              {activeRequest.title || `${activeRequest.requestNumber || activeRequest.id} · Paris ⇄ Abuja`}
+              <HeaderId id={activeRequest.requestNumber || activeRequest.id} scale={0.62} affix={0.5} />{" "}
+              · {activeRequest.route}
             </h1>
             <p className="text-xs text-gray-500 mt-1">
-              From agent {activeRequest.agentName}{" "}
-              {activeRequest.agentCompany ? `(${activeRequest.agentCompany})` : "(Monaco Luxury Jet Brokers)"} · received{" "}
-              {activeRequest.flightDateFormatted || "14 Nov"} 11:20 · {activeRequest.tokensUsed ?? 1} token used
+              From agent {activeRequest.agentName}
+              {activeRequest.agentCompany ? ` (${activeRequest.agentCompany})` : ""} · received {receivedAt(activeRequest) || "—"} ·{" "}
+              {activeRequest.tokensUsed ?? 1} token{(activeRequest.tokensUsed ?? 1) === 1 ? "" : "s"} used
             </p>
           </div>
 
@@ -304,7 +411,16 @@ export default function AgentRequestsQueueView({ selectedRequestId }: AgentReque
                   <div className="font-medium text-gray-900">{leg1Str}</div>
                 </div>
 
-                {leg2Str ? (
+                {extraLegs.map((t, i) => (
+                  <div key={`xl-${i}`}>
+                    <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1">
+                      LEG {i + 2}
+                    </div>
+                    <div className="font-medium text-gray-900">{t}</div>
+                  </div>
+                ))}
+
+                {extraLegs.length > 0 ? null : leg2Str ? (
                   <div>
                     <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1">
                       LEG 2
@@ -326,7 +442,7 @@ export default function AgentRequestsQueueView({ selectedRequestId }: AgentReque
                     CATEGORY
                   </div>
                   <div className="font-medium text-gray-900">
-                    {activeRequest.categoryLabel || activeRequest.aircraftPreference || "Super midsize or heavy"}
+                    {activeRequest.categoryLabel || activeRequest.aircraftPreference || "Any"}
                   </div>
                 </div>
 
@@ -335,7 +451,7 @@ export default function AgentRequestsQueueView({ selectedRequestId }: AgentReque
                     LAVATORY
                   </div>
                   <div className="font-medium text-gray-900">
-                    {activeRequest.lavatoryPreference || "Enclosed, required"}
+                    {activeRequest.lavatoryPreference || "—"}
                   </div>
                 </div>
 
@@ -345,7 +461,7 @@ export default function AgentRequestsQueueView({ selectedRequestId }: AgentReque
                     LUGGAGE
                   </div>
                   <div className="font-medium text-gray-900">
-                    {activeRequest.luggageDetailsText || "6 large suitcases, 2 soft bags · ≈ 170 kg"}
+                    {luggageText}
                   </div>
                 </div>
 
@@ -354,14 +470,7 @@ export default function AgentRequestsQueueView({ selectedRequestId }: AgentReque
                     PETS
                   </div>
                   <div className="font-medium text-gray-900">
-                    {activeRequest.petDetails ? (
-                      <span>
-                        {activeRequest.petDetails.petCount || 1}x {activeRequest.petDetails.breed || activeRequest.petDetails.petType || "Pet"} ({activeRequest.petDetails.totalWeightKg || activeRequest.petDetails.petWeight || 8} kg)
-                        {activeRequest.petDetails.notes ? ` · ${activeRequest.petDetails.notes}` : ""}
-                      </span>
-                    ) : (
-                      activeRequest.petDetailsText || (activeRequest.hasPets ? "1 pet" : "None")
-                    )}
+                    {petsText}
                   </div>
                 </div>
 
@@ -398,7 +507,7 @@ export default function AgentRequestsQueueView({ selectedRequestId }: AgentReque
                     ASK OPERATOR
                   </div>
                   <div className="font-medium text-gray-900">
-                    {activeRequest.askOperatorText || "De-icing protection"}
+                    {askOperator}
                   </div>
                 </div>
 
@@ -408,7 +517,7 @@ export default function AgentRequestsQueueView({ selectedRequestId }: AgentReque
                     AGENT MARGIN
                   </div>
                   <div className="font-medium text-gray-900">
-                    {activeRequest.agentMarginPct || 10} %
+                    {activeRequest.agentMarginPct != null ? `${activeRequest.agentMarginPct} %` : "—"}
                   </div>
                 </div>
 
@@ -417,7 +526,7 @@ export default function AgentRequestsQueueView({ selectedRequestId }: AgentReque
                     PAYMENT
                   </div>
                   <div className="font-medium text-gray-900">
-                    {activeRequest.paymentMethodText || "Bank transfer"}
+                    {activeRequest.paymentMethodText || "—"}
                   </div>
                 </div>
               </div>
@@ -428,26 +537,8 @@ export default function AgentRequestsQueueView({ selectedRequestId }: AgentReque
               <h2 className="text-sm font-bold text-gray-900 mb-4">Messages with agent</h2>
 
               <div className="space-y-4 mb-4">
-                {/* Default/Initial Thread */}
                 {(!activeRequest.messages || activeRequest.messages.length === 0) ? (
-                  <>
-                    <div>
-                      <div className="text-[11px] text-gray-500 font-medium mb-1">
-                        C. Laurent · 11:20
-                      </div>
-                      <div className="bg-gray-100/80 rounded-lg p-3 text-xs text-gray-800 leading-relaxed max-w-xl">
-                        Client is flexible on the outbound by two hours. Stand-up cabin preferred.
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[11px] text-gray-500 font-medium mb-1">
-                        Obi · 11:42
-                      </div>
-                      <div className="bg-[#EAF2FA] border border-[#D5E5F5] rounded-lg p-3 text-xs text-gray-800 leading-relaxed max-w-xl">
-                        Sourcing now. First offers within the hour.
-                      </div>
-                    </div>
-                  </>
+                  <p className="text-xs text-gray-400">No messages on this request yet.</p>
                 ) : (
                   activeRequest.messages.map((msg) => (
                     <div key={msg.id}>
@@ -499,10 +590,10 @@ export default function AgentRequestsQueueView({ selectedRequestId }: AgentReque
                   STATUS
                 </div>
                 <div className="text-xs font-semibold text-gray-900">
-                  {activeRequest.status === "in_sourcing" ? "Sourcing" : activeRequest.status}
+                  {{ pending: "New", in_sourcing: "Sourcing", processing: "Processing", completed: "Quoted", declined: "Declined" }[activeRequest.status as string] || activeRequest.status}
                 </div>
                 <div className="text-[11px] text-gray-500 mt-0.5">
-                  {activeRequest.offersLoggedText || "4 operator offers logged"}
+                  {offers ? `${offers} operator offer${offers === 1 ? "" : "s"} logged` : "No operator offers logged yet"}
                 </div>
               </div>
 
@@ -515,7 +606,7 @@ export default function AgentRequestsQueueView({ selectedRequestId }: AgentReque
                   {activeRequest.agentName}
                 </div>
                 <div className="text-[11px] text-gray-500 mt-0.5">
-                  Conversion {activeRequest.agentConversionRate || "31 %"} · {activeRequest.agentTokensRemaining ?? 8} tokens left
+                  Conversion {agentConversion} % · {agentReqs.length} request{agentReqs.length === 1 ? "" : "s"}
                 </div>
               </div>
 
@@ -535,17 +626,17 @@ export default function AgentRequestsQueueView({ selectedRequestId }: AgentReque
                     }}
                     className="hover:underline text-blue-600"
                   >
-                    {activeRequest.companyName || (linkedAccount ? linkedAccount.name : activeRequest.clientName || "Corporate Account")}
+                    {activeRequest.companyName || (linkedAccount ? linkedAccount.name : activeRequest.clientName || "—")}
                   </button>
                 </div>
                 <div className="text-[11px] text-gray-500 mt-0.5">
-                  {linkedAccount?.accountNumber || `ACC-${activeRequest.id.replace(/[^0-9]/g, "") || "30877"}`} · {activeRequest.accountEarlierTrips ?? linkedAccount?.totalBookings ?? 0} earlier trips
+                  {linkedAccount?.accountNumber || "No account linked"} · {activeRequest.accountEarlierTrips ?? linkedAccount?.totalBookings ?? 0} earlier trips
                 </div>
               </div>
             </div>
 
             <p className="text-[11px] text-gray-400 px-1 leading-relaxed">
-              &ldquo;Create quote&rdquo; opens the New quote builder pre-filled with everything above and creates trip {activeRequest.tripId || activeRequest.createdTripId || "TRI-FE001"}.
+              &ldquo;Create quote&rdquo; opens the New quote builder pre-filled with everything above and creates trip {activeRequest.tripId || activeRequest.createdTripId || (activeRequest.requestNumber || "").replace(/^REQ-/, "TRI-")}.
             </p>
           </div>
         </div>
@@ -710,7 +801,7 @@ export default function AgentRequestsQueueView({ selectedRequestId }: AgentReque
                     {req.paxCount}
                   </td>
                   <td className="py-3.5 px-4 text-gray-700">
-                    {req.categoryLabel || req.aircraftPreference || "Light"}
+                    {req.categoryLabel || req.aircraftPreference || "Any"}
                   </td>
                   <td className="py-3.5 px-4 text-gray-700">
                     {req.tokensUsed ?? 1}
@@ -735,7 +826,11 @@ export default function AgentRequestsQueueView({ selectedRequestId }: AgentReque
               {filteredRequests.length === 0 && (
                 <tr>
                   <td colSpan={10} className="py-8 text-center text-xs text-gray-400">
-                    No requests found matching your filter criteria.
+                    {loadError
+                      ? loadError
+                      : !agentRequestsLoaded && agentRequests.length === 0
+                        ? "Loading requests…"
+                        : "No requests found matching your filter criteria."}
                   </td>
                 </tr>
               )}
@@ -745,7 +840,7 @@ export default function AgentRequestsQueueView({ selectedRequestId }: AgentReque
 
         {/* Footer Note */}
         <div className="py-3.5 px-4 border-t border-gray-100 text-[11px] text-gray-400 leading-relaxed bg-white">
-          Oldest new request first. A request becomes overdue after 30 minutes without action (set in Settings). Opening it shows the request page, and &ldquo;Create quote&rdquo; turns it into a trip.
+          Oldest new request first. A request becomes overdue after {overdueMinutes} minutes without action (set in Settings). Opening it shows the request page, and &ldquo;Create quote&rdquo; turns it into a trip.
         </div>
       </div>
     </div>

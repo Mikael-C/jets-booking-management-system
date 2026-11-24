@@ -17,6 +17,8 @@ import TripPassengersTab from "./TripPassengersTab";
 import TripSourcingTab from "./TripSourcingTab";
 import TripServicesTab from "./TripServicesTab";
 import TripAccountingTab from "./TripAccountingTab";
+import TripRevisionsTab from "./TripRevisionsTab";
+import { HeaderId } from "@/components/ui/DocId";
 import TripInfoRail, { ItineraryNotesRail } from "./TripInfoRail";
 import { countMissingPassports, deriveTripServices, tripRouteLabel } from "./tripTabUtils";
 import {
@@ -293,8 +295,6 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
   // Version Compare Diff Tool State (R-023)
   const [compareVersionA, setCompareVersionA] = useState<number>(1);
   const [compareVersionB, setCompareVersionB] = useState<number>(2);
-  const [diffFrom, setDiffFrom] = useState<string>("-003");
-  const [diffTo, setDiffTo] = useState<string>("-005");
   const [newInternalNote, setNewInternalNote] = useState<string>("");
   const [internalNotesList, setInternalNotesList] = useState<{ meta: string; text: string }[]>([
     {
@@ -443,6 +443,22 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
     return undefined;
   }, [tripVersions, bookings, tripId, normalizedId]);
 
+  // Revisions: the real number of versions, from the backend
+  const [revisionInfo, setRevisionInfo] = useState<{ count: number; latest: number | null } | null>(null);
+  useEffect(() => {
+    if (!currentTrip?.id) return;
+    let alive = true;
+    api.registry
+      .revisions(currentTrip.id)
+      .then((res) => {
+        if (alive && res?.data) setRevisionInfo({ count: Number(res.data.count) || 0, latest: res.data.latestVersion ?? null });
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [currentTrip?.id, currentTrip?.quoteVersion]);
+
   if (!currentTrip) {
     return (
       <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-10 text-center space-y-3">
@@ -485,6 +501,19 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
   const rootId = tripNumberDisplay;
   const versionNum = currentTrip.quoteVersion || 1;
   const versionBadge = formatTripVersion(rootId, versionNum);
+  // Header: trip code and the latest version number (from the Revisions data when loaded)
+  const tripToken =
+    (String(currentTrip.tripId || currentTrip.tripNumber || rootId).match(/([A-Z]{2}\d{3,6})/i)?.[1] || normalizedId || "TRIP").toUpperCase();
+  const latestVersionLabel = String(Math.max(revisionInfo?.latest || 0, versionNum)).padStart(3, "0");
+  const headerOwner = (currentTrip as any).authorisedOwnerName || currentTrip.legs?.[0]?.passengers?.[0]?.fullName || "";
+  const headerPax =
+    (currentTrip as any).passengers?.length || currentTrip.legs?.[0]?.passengers?.length || (currentTrip as any).passengerCount || 0;
+  const headerDay = (() => {
+    const first = currentTrip.legs?.find((l: any) => !l.isCancelled) || currentTrip.legs?.[0];
+    if (!first?.flightDate) return "";
+    const d = new Date(`${String(first.flightDate).slice(0, 10)}T12:00:00`);
+    return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+  })();
 
   // Active Pipeline Stage
   const [activePipelineStage, setActivePipelineStage] = useState<string>("paid");
@@ -665,7 +694,7 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
     { key: "services", label: "Services", count: tripServicesCount > 0 ? tripServicesCount : undefined },
     { key: "documents", label: "Documents" },
     { key: "accounting", label: "Accounting" },
-    { key: "revisions", label: "Revisions", count: 5 },
+    { key: "revisions", label: "Revisions", count: (revisionInfo?.count ?? tripVersions.length) || undefined },
     { key: "notes", label: "Notes" }
   ];
 
@@ -841,7 +870,9 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
         <div className="flex items-center gap-1.5 text-xs text-slate-500 font-normal mb-1.5">
           <Link href="/bookings" className="hover:text-slate-800 transition-colors">Bookings</Link>
           <span>/</span>
-          <span className="text-slate-500">{rootId.startsWith("TRI-") ? rootId : `TRI-${rootId}`}</span>
+          <span className="text-slate-500">
+            <HeaderId id={`TRI-${tripToken}`} affix={0.72} />
+          </span>
           <span>/</span>
           <span className="text-slate-500 font-normal capitalize">
             {activeTab === "flight_watch" ? "Flight watch" : activeTab === "revisions" ? "Revisions" : activeTab}
@@ -851,25 +882,28 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
         {/* Title & Actions Row */}
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-              <span>{rootId.startsWith("TRI-") ? rootId : `TRI-${rootId}`}</span>
+            <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex flex-wrap items-baseline gap-x-2">
+              <HeaderId id={`TRI-${tripToken}-${latestVersionLabel}`} scale={0.62} affix={0.5} />
               <span>·</span>
               <span>{tripRouteLabel(currentTrip) || "Route to be confirmed"}</span>
             </h1>
             <p className="text-xs text-slate-500 mt-1 flex items-center flex-wrap gap-1.5 font-normal">
-              <span>{currentTrip.client?.companyName || "Adeyemi Holdings Ltd"}</span>
-              <span>·</span>
-              <span>{currentTrip.legs[0]?.passengers?.[0]?.fullName || "T. Adeyemi"} (authorised)</span>
-              <span>·</span>
-              <span>Curator {currentTrip.agentName ? currentTrip.agentName.replace(" (London Broker)", "") : "M. Vance"}</span>
-              <span>·</span>
-              <span>Fri 20 Nov</span>
-              <span>·</span>
-              <span>{currentTrip.aircraft?.categoryLabel || "Light"}</span>
-              <span>·</span>
-              <span>{currentTrip.legs[0]?.passengers?.length || 4} pax</span>
-              <span>·</span>
-              <span>latest version -005</span>
+              {[
+                currentTrip.client?.companyName || currentTrip.client?.fullName,
+                headerOwner ? `${headerOwner} (authorised)` : "",
+                currentTrip.agentName ? `Curator ${currentTrip.agentName.replace(" (London Broker)", "")}` : "",
+                headerDay,
+                currentTrip.aircraft?.categoryLabel || (currentTrip.aircraft as any)?.category || "",
+                headerPax ? `${headerPax} pax` : "",
+                `latest version -${latestVersionLabel}`
+              ]
+                .filter(Boolean)
+                .map((part, i) => (
+                  <React.Fragment key={i}>
+                    {i > 0 && <span>·</span>}
+                    <span>{part}</span>
+                  </React.Fragment>
+                ))}
             </p>
           </div>
 
@@ -1725,189 +1759,19 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
             </div>
           )}
 
-          {/* TAB 8: REVISIONS (R-023 / MOD-03) */}
+          {/* TAB 8: REVISIONS (R-023 / MOD-03) · every version from the backend */}
           {activeTab === "revisions" && (
-            <div className="space-y-5">
-              {/* Table Card */}
-              <div className="bg-white border border-slate-200/90 rounded-xl p-5 shadow-sm space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-bold text-slate-900 m-0">Revisions · latest first</h3>
-                  <span className="text-xs text-slate-400">Quote and booking versions share one sequence</span>
-                </div>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs text-left">
-                    <thead>
-                      <tr className="border-b border-slate-100 text-slate-400 font-bold uppercase text-[10px] tracking-wider">
-                        <th className="py-2.5 pr-3">VERSION</th>
-                        <th className="py-2.5 px-3">TYPE</th>
-                        <th className="py-2.5 px-3">WHAT CHANGED</th>
-                        <th className="py-2.5 px-3">REASON</th>
-                        <th className="py-2.5 px-3 text-right">AMOUNT CHANGE</th>
-                        <th className="py-2.5 px-3">STATE</th>
-                        <th className="py-2.5 px-3">BY · WHEN</th>
-                        <th className="py-2.5 pl-3">GENERATE</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 text-slate-700">
-                      {/* Row 1: -005 */}
-                      <tr>
-                        <td className="py-3 pr-3 font-mono font-bold text-slate-900 whitespace-nowrap">-005</td>
-                        <td className="py-3 px-3 whitespace-nowrap">Booking</td>
-                        <td className="py-3 px-3">Chauffeur added on arrival LSGG</td>
-                        <td className="py-3 px-3 whitespace-nowrap">Client request</td>
-                        <td className="py-3 px-3 text-right font-mono whitespace-nowrap">+ € 250.00</td>
-                        <td className="py-3 px-3 whitespace-nowrap">
-                          <span className="text-emerald-600 font-medium text-xs">Current</span>
-                        </td>
-                        <td className="py-3 px-3 whitespace-nowrap text-slate-600">Obi · 14 Nov</td>
-                        <td className="py-3 pl-3 whitespace-nowrap">
-                          <div className="flex items-center gap-2 text-xs text-blue-600 font-medium">
-                            <button onClick={() => openDocument(currentTrip, "quotation")} className="hover:underline">Quote</button>
-                            <button onClick={() => openDocument(currentTrip, "invoice")} className="hover:underline">Invoice</button>
-                            <button onClick={() => setIsCreditNoteModalOpen(true)} className="hover:underline">Credit note</button>
-                            <button onClick={() => openDocument(currentTrip, "flight_brief")} className="hover:underline">Brief</button>
-                          </div>
-                        </td>
-                      </tr>
-
-                      {/* Row 2: -004 */}
-                      <tr>
-                        <td className="py-3 pr-3 font-mono font-bold text-slate-900 whitespace-nowrap">-004</td>
-                        <td className="py-3 px-3 whitespace-nowrap">Booking</td>
-                        <td className="py-3 px-3">Route LEIB → GOBD changed to LEIB → LSGG</td>
-                        <td className="py-3 px-3 whitespace-nowrap">Client request</td>
-                        <td className="py-3 px-3 text-right font-mono whitespace-nowrap">€ 0.00</td>
-                        <td className="py-3 px-3 whitespace-nowrap">
-                          <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-[11px]">Superseded</span>
-                        </td>
-                        <td className="py-3 px-3 whitespace-nowrap text-slate-600">Obi · 13 Nov</td>
-                        <td className="py-3 pl-3 whitespace-nowrap">
-                          <button onClick={() => openDocument(currentTrip, "flight_brief")} className="text-xs text-blue-600 font-medium hover:underline">
-                            Brief PDF
-                          </button>
-                        </td>
-                      </tr>
-
-                      {/* Row 3: -003 */}
-                      <tr>
-                        <td className="py-3 pr-3 font-mono font-bold text-slate-900 whitespace-nowrap">-003</td>
-                        <td className="py-3 px-3 whitespace-nowrap">Booking</td>
-                        <td className="py-3 px-3">Booked from -002 · contract CA-FE4578-002 signed</td>
-                        <td className="py-3 px-3 whitespace-nowrap text-slate-400">—</td>
-                        <td className="py-3 px-3 text-right font-mono whitespace-nowrap">€ 8,000.00</td>
-                        <td className="py-3 px-3 whitespace-nowrap">
-                          <span className="bg-rose-50 text-rose-600 border border-rose-100 px-2 py-0.5 rounded text-[11px]">
-                            Cancelled route
-                          </span>
-                        </td>
-                        <td className="py-3 px-3 whitespace-nowrap text-slate-600">Obi · 12 Nov</td>
-                        <td className="py-3 pl-3 whitespace-nowrap">
-                          <div className="flex items-center gap-2 text-xs text-blue-600 font-medium">
-                            <button onClick={() => openDocument(currentTrip, "invoice")} className="hover:underline">Invoice PDF</button>
-                            <button onClick={() => openDocument(currentTrip, "flight_brief")} className="hover:underline">Brief PDF</button>
-                          </div>
-                        </td>
-                      </tr>
-
-                      {/* Row 4: -002 */}
-                      <tr>
-                        <td className="py-3 pr-3 font-mono font-bold text-slate-900 whitespace-nowrap">-002</td>
-                        <td className="py-3 px-3 whitespace-nowrap">Quote</td>
-                        <td className="py-3 px-3">Departure 12:00 → 10:00</td>
-                        <td className="py-3 px-3 whitespace-nowrap">Client request</td>
-                        <td className="py-3 px-3 text-right font-mono whitespace-nowrap">€ 0.00</td>
-                        <td className="py-3 px-3 whitespace-nowrap">
-                          <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded text-[11px]">
-                            Booked → -003
-                          </span>
-                        </td>
-                        <td className="py-3 px-3 whitespace-nowrap text-slate-600">Obi · 11 Nov</td>
-                        <td className="py-3 pl-3 whitespace-nowrap">
-                          <button onClick={() => openDocument(currentTrip, "quotation")} className="text-xs text-blue-600 font-medium hover:underline">
-                            Quote PDF
-                          </button>
-                        </td>
-                      </tr>
-
-                      {/* Row 5: -001 */}
-                      <tr>
-                        <td className="py-3 pr-3 font-mono font-bold text-slate-900 whitespace-nowrap">-001</td>
-                        <td className="py-3 px-3 whitespace-nowrap">Quote</td>
-                        <td className="py-3 px-3">Created from request REQ-FE4578 (M. Vance)</td>
-                        <td className="py-3 px-3 whitespace-nowrap text-slate-400">—</td>
-                        <td className="py-3 px-3 text-right font-mono whitespace-nowrap">€ 8,000.00</td>
-                        <td className="py-3 px-3 whitespace-nowrap">
-                          <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-[11px]">
-                            Superseded
-                          </span>
-                        </td>
-                        <td className="py-3 px-3 whitespace-nowrap text-slate-600">Obi · 10 Nov</td>
-                        <td className="py-3 pl-3 whitespace-nowrap">
-                          <button onClick={() => openDocument(currentTrip, "quotation")} className="text-xs text-blue-600 font-medium hover:underline">
-                            Quote PDF
-                          </button>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-
-                <p className="text-xs text-slate-400 pt-2 leading-relaxed m-0">
-                  Revise always opens the full form with the latest details. Saving with &quot;Complete Booking&quot; creates the next number, saves it and brings you back here (R-008). Old versions can&apos;t be revised again, but every document they produced can still be printed.
-                </p>
-              </div>
-
-              {/* Compare Versions Card */}
-              <div className="bg-white border border-slate-200/90 rounded-xl p-5 shadow-sm space-y-4">
-                <h3 className="text-sm font-bold text-slate-900 m-0">Compare versions</h3>
-
-                <div className="flex items-center gap-3 flex-wrap text-xs">
-                  <div className="flex items-center gap-1.5">
-                    <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">FROM</label>
-                    <select
-                      value={diffFrom}
-                      onChange={(e) => setDiffFrom(e.target.value)}
-                      className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-800"
-                    >
-                      <option value="-001">-001</option>
-                      <option value="-002">-002</option>
-                      <option value="-003">-003</option>
-                      <option value="-004">-004</option>
-                      <option value="-005">-005</option>
-                    </select>
-                  </div>
-
-                  <div className="flex items-center gap-1.5">
-                    <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">TO</label>
-                    <select
-                      value={diffTo}
-                      onChange={(e) => setDiffTo(e.target.value)}
-                      className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-800"
-                    >
-                      <option value="-001">-001</option>
-                      <option value="-002">-002</option>
-                      <option value="-003">-003</option>
-                      <option value="-004">-004</option>
-                      <option value="-005">-005</option>
-                    </select>
-                  </div>
-
-                  <button
-                    onClick={() => {}}
-                    className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg text-xs font-medium shadow-sm transition-colors"
-                  >
-                    Show differences
-                  </button>
-                </div>
-
-                <div className="bg-slate-50/70 border border-slate-100 rounded-lg p-3 text-xs text-slate-700 space-y-1">
-                  <div>Route: LEIB → GOBD → LEIB → LSGG</div>
-                  <div>Services: + Chauffeur on arrival (€ 250.00)</div>
-                  <div>Charter price: unchanged (€ 8,000.00)</div>
-                </div>
-              </div>
-            </div>
+            <TripRevisionsTab
+              trip={currentTrip}
+              bookings={bookings}
+              normalize={normalizeBooking}
+              openDocument={(b, type) => openDocument(b, type)}
+              onCreditNote={() => {
+                handleTabChange("accounting");
+                setTimeout(() => document.getElementById("new-credit-note-card")?.scrollIntoView({ behavior: "smooth" }), 400);
+              }}
+              onLoaded={(count, latest) => setRevisionInfo({ count, latest })}
+            />
           )}
 
           {/* TAB 9: NOTES (R-024) */}

@@ -725,9 +725,54 @@ export const normalizeBooking = (b: any): Booking => {
   };
 };
 
+const REQUEST_CATEGORY_LABELS: Record<string, string> = {
+  light: "Light",
+  midsize: "Midsize",
+  "super-midsize": "Super Mid",
+  large: "Heavy",
+  "ultra-long-range": "Ultra long range",
+  any: "Any"
+};
+
+/** Demo requests that used to ship with the app; never shown, the list comes from the backend. */
+const SEEDED_REQUEST_IDS = new Set(initialAgentRequests.map((r) => r.id));
+
+const formatRequestDay = (value: any): string | undefined => {
+  if (!value) return undefined;
+  const d = new Date(String(value).length === 10 ? `${value}T12:00:00` : value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+};
+
+const normalizeRequestMessage = (m: any, i: number): RequestMessage => {
+  const role = m?.senderRole || "agent";
+  const ts = m?.timestamp;
+  const d = ts ? new Date(ts) : null;
+  return {
+    id: String(m?.id || m?._id || `msg-${i}`),
+    senderName: m?.senderName || m?.sender || "—",
+    senderRole: role,
+    content: m?.content ?? m?.message ?? "",
+    timestamp: d && !Number.isNaN(d.getTime()) ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : String(ts || ""),
+    isFromAdmin: typeof m?.isFromAdmin === "boolean" ? m.isFromAdmin : role !== "agent"
+  };
+};
+
 const normalizeAgentRequest = (request: any): AgentRequest => ({
   ...request,
-  id: String(request?.id || request?._id || ""),
+  id: String(request?.id || request?.requestNumber || request?._id || ""),
+  // Display helpers are derived from the saved request, never typed in
+  receivedAgo: undefined,
+  isOverdue: undefined,
+  statusLabel: undefined,
+  flightDateFormatted: formatRequestDay(request?.flightDate),
+  categoryLabel:
+    request?.categoryLabel ||
+    (request?.aircraftCategory && request.aircraftCategory !== "any" ? REQUEST_CATEGORY_LABELS[request.aircraftCategory] : undefined) ||
+    request?.preferredAircraft ||
+    undefined,
+  tokensUsed: typeof request?.tokensUsed === "number" ? request.tokensUsed : 1,
+  messages: Array.isArray(request?.messages) ? request.messages.map(normalizeRequestMessage) : [],
   returnFlightDate: request?.returnFlightDate || request?.returnDate || undefined,
   aircraftPreference: request?.aircraftPreference || request?.preferredAircraft || undefined,
   specialRequests: request?.specialRequests || request?.notes || undefined,
@@ -803,6 +848,8 @@ interface AviationContextType {
   // Agent Requests
   agentRequests: AgentRequest[];
   refreshAgentRequests: () => Promise<AgentRequest[]>;
+  /** True once the request list has been loaded from the backend. */
+  agentRequestsLoaded: boolean;
   addAgentRequest: (reqData: Omit<AgentRequest, "id" | "createdAt" | "status">) => Promise<AgentRequest>;
   updateAgentRequestStatus: (reqId: string, status: RequestStatus, bookingId?: string, adminNotes?: string) => void;
   updateAgentRequestAvinodeId: (reqId: string, avInodeId: string) => void;
@@ -957,7 +1004,9 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
   const [accounts, setAccounts] = useState<AccountRecord[]>(initialAccounts);
   const [contacts, setContacts] = useState<ContactRecord[]>(initialContacts);
   const [bookingToRevise, setBookingToRevise] = useState<Booking | null>(null);
-  const [agentRequests, setAgentRequests] = useState<AgentRequest[]>(initialAgentRequests);
+  // Requests come from the backend only (the cached copy below is just shown until the backend answers)
+  const [agentRequests, setAgentRequests] = useState<AgentRequest[]>([]);
+  const [agentRequestsLoaded, setAgentRequestsLoaded] = useState(false);
   const [operators, setOperators] = useState<OperatorRecord[]>(initialOperators);
   const [auditLog, setAuditLog] = useState<AuditLogEntry[]>(initialAuditLog);
   const [notifications, setNotifications] = useState<Notification[]>(initialNotifications);
@@ -1088,12 +1137,12 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
         try {
           const parsed = JSON.parse(savedRequests);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            const hasNew = parsed.some((r: any) => r.id === "RQ-0431");
-            if (hasNew) {
-              setAgentRequests(parsed);
-            } else {
-              setAgentRequests([...initialAgentRequests, ...parsed.filter((p: any) => !initialAgentRequests.some((i) => i.id === p.id))]);
-            }
+            // Only requests that came from the backend; the old built-in demo requests are dropped
+            setAgentRequests(
+              parsed
+                .filter((r: any) => r && r.id && !SEEDED_REQUEST_IDS.has(r.id) && (r._id || r.createdAt))
+                .map(normalizeAgentRequest)
+            );
           }
         } catch {}
       }
@@ -1249,6 +1298,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
         .then((res) => {
           if (Array.isArray(res?.data)) {
             setAgentRequests(res.data.map(normalizeAgentRequest));
+            setAgentRequestsLoaded(true);
           }
         })
         .catch(() => {});
@@ -2175,12 +2225,24 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       if (!Array.isArray(response?.data)) throw new Error("Backend returned an invalid agent request list.");
       const normalized = response.data.map(normalizeAgentRequest);
       setAgentRequests(normalized);
+      setAgentRequestsLoaded(true);
       return normalized;
     } catch (error) {
       console.warn("Backend agent requests fetch notice:", error);
       return agentRequests;
     }
   };
+
+  // Load the requests from the backend as soon as someone is signed in, then keep them fresh
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    refreshAgentRequests().catch(() => {});
+    const interval = setInterval(() => {
+      refreshAgentRequests().catch(() => {});
+    }, 60000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, currentUser?.email]);
 
   const addAgentRequest = async (
     reqData: Omit<AgentRequest, "id" | "createdAt" | "status">
@@ -3642,7 +3704,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
   const resetToDefaultData = () => {
     setBookings(initialBookings);
     setClients(initialClients);
-    setAgentRequests(initialAgentRequests);
+    setAgentRequests([]);
     setOperators(initialOperators);
     setAuditLog(initialAuditLog);
     setNotifications(initialNotifications);
@@ -3686,6 +3748,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
         setSelectedBookingForDetail,
         refreshBookings,
         refreshAgentRequests,
+        agentRequestsLoaded,
         isBookingsLoading,
         bookingsSource,
         searchQuery,

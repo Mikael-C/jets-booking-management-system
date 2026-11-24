@@ -356,6 +356,16 @@ export const api = {
     flightBriefs: () => request<{ success: boolean; data: any[] }>("/registry/flight-briefs"),
     ledger: (bookingId: string) =>
       request<{ success: boolean; data: any }>(`/registry/trips/${encodeURIComponent(bookingId)}/ledger`),
+    /** Revisions tab: every quote and booking version of the trip; from/to compare two versions. */
+    revisions: (bookingId: string, from?: number, to?: number) => {
+      const q = new URLSearchParams();
+      if (from) q.set("from", String(from));
+      if (to) q.set("to", String(to));
+      const qs = q.toString();
+      return request<{ success: boolean; data: any }>(
+        `/registry/trips/${encodeURIComponent(bookingId)}/revisions${qs ? `?${qs}` : ""}`
+      );
+    },
     createInvoice: (bookingId: string, data: { amount: number; purpose?: string; line?: string; kind?: string }) =>
       request<{ success: boolean; data: any }>(`/registry/trips/${encodeURIComponent(bookingId)}/invoices`, {
         method: "POST",

@@ -43,10 +43,10 @@ interface Kpis {
 
 type Filter = "open" | "proof" | "paid" | "overdue" | "card" | "bank";
 
-const thCls = "text-left text-[12px] font-semibold uppercase tracking-[0.08em] text-slate-500 px-4 py-3 whitespace-nowrap";
+const thCls = "text-left text-[11px] font-semibold uppercase tracking-wider text-gray-400 px-4 py-3.5 whitespace-nowrap";
 const labelCls = "block text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 mb-1.5";
 const inputCls =
-  "w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-500";
+  "w-full bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-500";
 
 const statusPill = (r: PayRow) => {
   if (r.status === "paid") return { text: "Paid", cls: "bg-emerald-50 text-emerald-700" };
@@ -202,8 +202,8 @@ export default function PaymentsView() {
       key={key}
       type="button"
       onClick={() => setFilter(key)}
-      className={`px-4 py-2 rounded-full border text-[15px] transition-colors ${
-        filter === key ? "bg-[#0B1320] text-white border-[#0B1320]" : "bg-white text-slate-800 border-slate-200 hover:border-slate-400"
+      className={`px-3 py-1 rounded-full border text-xs font-semibold transition-colors ${
+        filter === key ? "bg-[#111827] text-white border-[#111827] shadow-sm" : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
       }`}
     >
       {label}
@@ -211,30 +211,30 @@ export default function PaymentsView() {
   );
 
   const kpiCell = (title: string, value: string, sub: React.ReactNode, tone = "text-slate-500") => (
-    <div className="px-6 py-5 border-slate-200 [&:not(:last-child)]:border-r">
-      <div className="text-[12px] font-semibold uppercase tracking-[0.08em] text-slate-500">{title}</div>
-      <div className="text-[30px] font-bold text-slate-900 mt-1 leading-tight">{value}</div>
-      <div className={`text-[14px] mt-0.5 ${tone}`}>{sub}</div>
+    <div className="px-5 py-4 border-slate-200 [&:not(:last-child)]:border-r">
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">{title}</div>
+      <div className="text-xl font-bold text-slate-900 mt-1 leading-tight">{value}</div>
+      <div className={`text-[11px] mt-0.5 ${tone}`}>{sub}</div>
     </div>
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 max-w-6xl mx-auto pb-12">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-[30px] font-bold text-slate-900 m-0">Payments</h1>
+        <h1 className="text-2xl font-bold text-slate-900 tracking-tight m-0">Payments</h1>
         <div className="flex items-center gap-2.5">
           <button
             type="button"
             onClick={() => openRecord()}
             disabled={openRows.length === 0}
-            className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-900 px-4 py-2.5 rounded-lg text-[15px] font-semibold shadow-sm disabled:opacity-50"
+            className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-900 px-3.5 py-1.5 rounded-lg text-xs font-semibold shadow-sm disabled:opacity-50"
           >
             Record payment
           </button>
           <button
             type="button"
             onClick={exportCsv}
-            className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-900 px-4 py-2.5 rounded-lg text-[15px] font-semibold shadow-sm"
+            className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-900 px-3.5 py-1.5 rounded-lg text-xs font-semibold shadow-sm"
           >
             Export
           </button>
@@ -269,7 +269,7 @@ export default function PaymentsView() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search trip, invoice, client..."
-          className="w-full sm:w-[340px] bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-[15px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-400"
+          className="w-full sm:w-64 bg-white border border-slate-200 rounded-lg px-3.5 py-1.5 text-xs shadow-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-400"
         />
         {pill("open", `Open ${counts.open}`)}
         {pill("proof", `Proof uploaded ${counts.proof}`)}
@@ -278,11 +278,11 @@ export default function PaymentsView() {
         {pill("card", "Card")}
         {pill("bank", "Bank transfer")}
         <div className="ml-auto flex items-center gap-2">
-          <span className="text-[15px] text-slate-500">Sort</span>
+          <span className="text-xs text-slate-500">Sort</span>
           <select
             value={sort}
             onChange={(e) => setSort(e.target.value as typeof sort)}
-            className="bg-white border border-slate-200 rounded-lg px-3 py-2.5 text-[15px] text-slate-900 focus:outline-none"
+            className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-900 focus:outline-none"
           >
             <option value="newest">Newest first</option>
             <option value="oldest">Oldest first</option>
@@ -292,7 +292,7 @@ export default function PaymentsView() {
       </div>
 
       {notice && (
-        <div className="flex items-center justify-between gap-3 bg-[#EEF4FD] border border-[#C9DBF5] rounded-lg px-4 py-2.5 text-sm text-slate-800">
+        <div className="flex items-center justify-between gap-3 bg-[#EEF4FD] border border-[#C9DBF5] rounded-lg px-4 py-2 text-xs text-slate-800">
           <span>{notice}</span>
           <button type="button" onClick={() => setNotice(null)} className="text-slate-500 hover:text-slate-800 text-xs">
             Close
@@ -303,8 +303,8 @@ export default function PaymentsView() {
       {isRecordOpen && (
         <form onSubmit={submitRecord} className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-[17px] font-bold text-slate-900 m-0">Record payment</h3>
-            <button type="button" onClick={() => setIsRecordOpen(false)} className="text-sm text-slate-500 hover:text-slate-800">
+            <h3 className="text-xs font-bold text-slate-900 m-0">Record payment</h3>
+            <button type="button" onClick={() => setIsRecordOpen(false)} className="text-xs text-slate-500 hover:text-slate-800">
               Close
             </button>
           </div>
@@ -346,9 +346,9 @@ export default function PaymentsView() {
               <input value={form.reference} onChange={(e) => setForm({ ...form, reference: e.target.value })} placeholder="Optional" className={inputCls} />
             </div>
           </div>
-          {formError && <p className="text-sm text-rose-700 m-0">{formError}</p>}
+          {formError && <p className="text-xs text-rose-700 m-0">{formError}</p>}
           <div className="flex justify-end">
-            <button type="submit" disabled={busy === "record"} className="bg-[#0B1320] hover:bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-50">
+            <button type="submit" disabled={busy === "record"} className="bg-[#0B1320] hover:bg-slate-800 text-white px-3.5 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-50">
               {busy === "record" ? "Saving…" : "Save payment"}
             </button>
           </div>
@@ -357,7 +357,7 @@ export default function PaymentsView() {
 
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-[15px]">
+          <table className="w-full text-xs">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
                 <th className={thCls}>Status</th>
@@ -375,14 +375,14 @@ export default function PaymentsView() {
             <tbody className="divide-y divide-slate-100">
               {state === "loading" && (
                 <tr>
-                  <td colSpan={10} className="px-4 py-8 text-center text-slate-400 text-sm">
+                  <td colSpan={10} className="px-4 py-8 text-center text-slate-400 text-xs">
                     Loading payments…
                   </td>
                 </tr>
               )}
               {state === "error" && (
                 <tr>
-                  <td colSpan={10} className="px-4 py-8 text-center text-sm text-rose-700">
+                  <td colSpan={10} className="px-4 py-8 text-center text-xs text-rose-700">
                     {errorText}{" "}
                     <button type="button" onClick={() => { setState("loading"); load(); }} className="underline">
                       Try again
@@ -392,7 +392,7 @@ export default function PaymentsView() {
               )}
               {state === "ready" && filtered.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="px-4 py-8 text-center text-slate-400 text-sm">
+                  <td colSpan={10} className="px-4 py-8 text-center text-slate-400 text-xs">
                     Nothing here.
                   </td>
                 </tr>
@@ -402,13 +402,13 @@ export default function PaymentsView() {
                 return (
                   <tr key={r.id} className="align-top hover:bg-slate-50/60">
                     <td className="px-4 py-3.5">
-                      <span className={`text-[14px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${st.cls}`}>{st.text}</span>
+                      <span className={`text-[11px] font-medium px-2.5 py-0.5 rounded-full whitespace-nowrap ${st.cls}`}>{st.text}</span>
                     </td>
                     <td className="px-4 py-3.5">
                       <Link href={`/trips/${r.tripToken}/accounting`} className="hover:underline">
                         <DocId id={r.trip} />
                       </Link>
-                      <div className="text-[14px] text-slate-500">{flightLabel(r.departure)}</div>
+                      <div className="text-[11px] text-slate-500">{flightLabel(r.departure)}</div>
                     </td>
                     <td className="px-4 py-3.5">
                       <DocId id={r.invoice} />
@@ -438,7 +438,7 @@ export default function PaymentsView() {
                           <button type="button" disabled={busy === r.id} onClick={() => remind(r)} className="font-semibold text-[#1F5FAE] hover:underline disabled:opacity-50">
                             {busy === r.id ? "Sending…" : "Remind"}
                           </button>
-                          <button type="button" onClick={() => openRecord(r)} className="text-[13px] text-slate-500 hover:text-slate-800 hover:underline">
+                          <button type="button" onClick={() => openRecord(r)} className="text-[11px] text-slate-500 hover:text-slate-800 hover:underline">
                             Record
                           </button>
                         </span>
@@ -455,7 +455,7 @@ export default function PaymentsView() {
             </tbody>
           </table>
         </div>
-        <p className="text-[15px] text-slate-500 px-6 py-4 m-0 border-t border-slate-100">
+        <p className="text-[11px] text-gray-400 leading-relaxed px-4 py-3.5 m-0 border-t border-slate-100">
           Amber = waiting for money or for you to confirm a wire. Green = received (card payments turn green automatically). Two or three days
           before a flight with money still open, the admin and the linked Curator are notified.
         </p>

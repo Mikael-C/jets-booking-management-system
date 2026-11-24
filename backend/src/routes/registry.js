@@ -5,6 +5,7 @@
  *   GET  /api/registry/contracts                charter agreements (Contracts page)
  *   GET  /api/registry/flight-briefs            flight briefs (Flight briefs page)
  *   GET  /api/registry/trips/:id/ledger         one trip's Accounting tab
+ *   GET  /api/registry/trips/:id/revisions      one trip's Revisions tab (?from=&to= compares two versions)
  *   POST /api/registry/trips/:id/invoices       new invoice
  *   POST /api/registry/trips/:id/combine        combine open invoices into one
  *   POST /api/registry/trips/:id/credit-notes   new credit note (optionally with an invoice for the remainder)
@@ -22,6 +23,14 @@ const Booking = require('../models/Booking');
 const Contact = require('../models/Contact');
 const { createAuditEntry } = require('../services/auditService');
 const ledger = require('../services/ledgerService');
+const revisions = require('../services/revisionService');
+
+let User = null;
+try {
+  User = require('../models/User');
+} catch {
+  User = null;
+}
 
 let sendEmail = null;
 try {
@@ -363,6 +372,37 @@ async function saveAndRespond(doc, res) {
   await doc.save();
   res.json({ success: true, data: await ledgerResponse(doc) });
 }
+
+router.get('/trips/:id/revisions', async (req, res) => {
+  const doc = await findBooking(req.params.id);
+  if (!doc) return res.status(404).json({ success: false, message: 'Trip not found' });
+  const or = [];
+  if (doc.tripId) or.push({ tripId: doc.tripId });
+  if (doc.quoteGroupId) or.push({ quoteGroupId: doc.quoteGroupId });
+  const versions = or.length
+    ? await Booking.find({ isDeleted: { $ne: true }, $or: or }).lean()
+    : [doc.toObject()];
+  if (!versions.some((v) => String(v._id) === String(doc._id))) versions.push(doc.toObject());
+
+  // Who made each version: names from the user list
+  const names = new Map();
+  const emails = [...new Set(versions.map((v) => v.revisedByEmail || v.createdByEmail).filter(Boolean))];
+  if (User && emails.length) {
+    try {
+      const users = await User.find({ email: { $in: emails } }).select('email name firstName lastName').lean();
+      users.forEach((u) => names.set(u.email, u.name || [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email));
+    } catch {
+      // names are a nicety
+    }
+  }
+
+  const result = revisions.buildRevisions(versions, names);
+  const rowsAsc = [...result.rows].reverse();
+  const from = req.query.from ? Number(req.query.from) : rowsAsc.length > 1 ? rowsAsc[rowsAsc.length - 2].version : rowsAsc[0] && rowsAsc[0].version;
+  const to = req.query.to ? Number(req.query.to) : result.latestVersion;
+  const compare = from && to ? revisions.compareVersions(versions, from, to) : { from, to, lines: [] };
+  res.json({ success: true, data: { ...result, count: result.rows.length, compare } });
+});
 
 router.get('/trips/:id/ledger', async (req, res) => {
   const doc = await loadTrip(req, res);

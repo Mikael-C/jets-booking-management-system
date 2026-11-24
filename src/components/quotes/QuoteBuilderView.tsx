@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
+import { HeaderId } from "@/components/ui/DocId";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAviation } from "@/lib/aviationContext";
 import { Booking, FlightLeg, TripType, Aircraft, OperatorRecord, TripServiceItem } from "@/types/aviation";
@@ -211,17 +212,8 @@ const rankAircraftForQuery = (aircraft: Aircraft, rawQuery: string): number => {
 };
 
 function IdMark({ id, large = false }: { id?: string; large?: boolean }) {
-  if (!id) return null;
-  const match = id.match(/^([A-Za-z]+-)([A-Za-z0-9]+?)(-\d{2,3})?$/);
-  if (!match) return <span className="font-semibold">{id}</span>;
-  const [, prefix, root, suffix] = match;
-  return (
-    <span className="inline-flex items-baseline whitespace-nowrap">
-      <span className={`${large ? "text-[17px]" : "text-[10px]"} font-semibold uppercase tracking-wide opacity-80`}>{prefix}</span>
-      <span className="font-bold">{root}</span>
-      {suffix && <span className={`${large ? "text-[17px]" : "text-[11px]"} font-semibold opacity-80`}>{suffix}</span>}
-    </span>
-  );
+  // Same style as every heading: small prefix and version, bold trip code
+  return <HeaderId id={id} affix={large ? 0.52 : 0.72} />;
 }
 
 function StepNote({ title, children }: { title: string; children: React.ReactNode }) {
@@ -2350,7 +2342,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
         {/* Header Row */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
-            New quote · {tripDisplayId} · Aircraft photos
+            New quote · <HeaderId id={tripDisplayId} affix={0.52} /> · Aircraft photos
           </h1>
 
           <div className="flex items-center gap-2">
