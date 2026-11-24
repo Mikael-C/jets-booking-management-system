@@ -30,6 +30,8 @@ const airportRoutes = require('./routes/airports');
 const jetImageRoutes = require('./routes/jetImages');
 const dashboardRoutes = require('./routes/dashboard');
 const accountPreferenceRoutes = require('./routes/accountPreferences');
+const registryRoutes = require('./routes/registry');
+const publicPayRoutes = require('./routes/publicPay');
 const notificationRoutes = require('./routes/notifications');
 const auditLogRoutes = require('./routes/auditLog');
 const sourcingRoutes = require('./routes/sourcing');
@@ -168,6 +170,9 @@ app.use('/api/avinode', authenticate, avinodeRoutes);
 app.use('/api/jet-images', authenticate, jetImageRoutes);
 app.use('/api/dashboard', optionalAuthenticate, dashboardRoutes);
 app.use('/api/account-preferences', authenticate, accountPreferenceRoutes);
+app.use('/api/registry', authenticate, registryRoutes);
+// Public: the client's payment link (no login)
+app.use('/api/pay', publicPayRoutes);
 app.use('/api/notifications', authenticate, notificationRoutes);
 app.use('/api/audit-log', authenticate, auditLogRoutes);
 app.use('/api/sourcing', authenticate, sourcingRoutes);

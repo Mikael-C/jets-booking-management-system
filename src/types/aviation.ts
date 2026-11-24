@@ -400,7 +400,8 @@ export interface TripServiceItem {
   included?: boolean; // e.g. catering included in the charter price
   status: "requested" | "requested_operator" | "confirmed" | "cancelled";
   source: "quote" | "added";
-  billing: "in_quote" | "not_billed" | "credit_note";
+  billing: "in_quote" | "not_billed" | "invoiced" | "credit_note";
+  invoiceNumber?: string; // invoice the added service was billed on
   creditNoteNumber?: string;
   cancelCreditNoteNumber?: string;
   addedAt: string;

@@ -2,26 +2,15 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { Booking, TripServiceItem, TripServiceType } from "@/types/aviation";
+import { api } from "@/lib/api";
+import { invoiceDocBooking, creditNoteDocBooking } from "@/lib/financeDocs";
 import { deriveTripServices, formatDay, formatMoney, makeActivity } from "./tripTabUtils";
 
 interface TripServicesTabProps {
   trip: Booking;
   onSave: (updates: Partial<Booking>) => void;
-  /** Issues a credit note on the trip (saved with the trip) and returns the updated booking. */
-  issueCreditNote: (
-    bookingId: string,
-    note: {
-      amount?: number;
-      reason: string;
-      clientOwes: number;
-      weOweClient: number;
-      netBalance: number;
-      originalTotal?: number;
-      newTotal?: number;
-    },
-    extraUpdates?: Partial<Booking>
-  ) => { creditNoteNumber: string; booking: Booking | null };
-  onOpenCreditNote: (booking: Booking) => void;
+  /** Opens an invoice or credit-note document. */
+  onOpenDocument: (booking: Booking, type: "invoice" | "credit_note") => void;
   userName: string;
 }
 
@@ -42,7 +31,7 @@ const STATUS: Record<TripServiceItem["status"], { label: string; cls: string }> 
 
 const parseMoney = (v: string) => Math.max(0, parseFloat(String(v).replace(/[^0-9.]/g, "")) || 0);
 
-export default function TripServicesTab({ trip, onSave, issueCreditNote, onOpenCreditNote, userName }: TripServicesTabProps) {
+export default function TripServicesTab({ trip, onSave, onOpenDocument, userName }: TripServicesTabProps) {
   const legs = trip.legs || [];
   const currency = trip.pricing?.currency || "EUR";
   const saved: TripServiceItem[] = useMemo(() => trip.tripServices ?? deriveTripServices(trip), [trip]);
@@ -50,6 +39,7 @@ export default function TripServicesTab({ trip, onSave, issueCreditNote, onOpenC
   const [priceDrafts, setPriceDrafts] = useState<Record<string, { client?: string; supplier?: string }>>({});
   const [toast, setToast] = useState<string | null>(null);
   const [confirmCancel, setConfirmCancel] = useState<string | null>(null);
+  const [working, setWorking] = useState<string | null>(null);
 
   useEffect(() => {
     setItems(saved);
@@ -136,10 +126,10 @@ export default function TripServicesTab({ trip, onSave, issueCreditNote, onOpenC
       item = { ...base, title: "Custom service", instructions: "" };
     }
     persist([item, ...items], `${titleFor(item)} added`);
-    flash("Service added. Fill in the details, then generate the credit note for the client.");
+    flash("Service added. Fill in the details and the client price, then bill it.");
   };
 
-  // ---------- credit notes ----------
+  // ---------- billing (invoices and credit notes live in the trip ledger on the backend) ----------
   const totals = () => {
     const total = Number(trip.pricing?.totalFlightPrice) || 0;
     const services = Number(trip.pricing?.additionalServicesTotal) || 0;
@@ -147,39 +137,41 @@ export default function TripServicesTab({ trip, onSave, issueCreditNote, onOpenC
     return { total, services, subtotal };
   };
 
-  const generateCreditNoteForAdded = (s: TripServiceItem) => {
+  const billAddedService = async (s: TripServiceItem) => {
     const price = s.included ? 0 : Number(s.clientPrice) || 0;
     if (price <= 0) {
-      flash("Set a client price first (or the service is included, so there is nothing to bill).");
+      flash("Set a client price first (an included service has nothing to bill).");
       return;
     }
-    const { total, services, subtotal } = totals();
     const label = titleFor(s);
-    const res = issueCreditNote(
-      trip.id,
-      {
+    setWorking(s.id);
+    try {
+      const res = await api.registry.createInvoice(trip.id, {
         amount: price,
-        reason: `Added service · ${label}`,
-        clientOwes: price,
-        weOweClient: 0,
-        netBalance: price,
-        originalTotal: total,
-        newTotal: total + price
-      },
-      {
+        purpose: "Additional service",
+        line: `Additional service · ${label}`,
+        kind: "additional"
+      });
+      const inv = [...(res.data?.invoices || [])].reverse().find((i: any) => i.line === `Additional service · ${label}`);
+      const number = inv?.number || "";
+      const { total, services, subtotal } = totals();
+      const next = items.map((x) => (x.id === s.id ? { ...x, billing: "invoiced" as const, invoiceNumber: number } : x));
+      persist(next, `${label} billed on invoice ${number} · ${formatMoney(price, currency)}`, {
         pricing: { ...trip.pricing, additionalServicesTotal: services + price, subtotal: subtotal + price, totalFlightPrice: total + price },
         manualServices: [
           ...(trip.manualServices || []),
           { id: `svc-line-${s.id}`, name: label, price, details: [s.location, s.vehicle, s.menu, s.instructions].filter(Boolean).join(" · ") }
         ]
-      }
-    );
-    const next = items.map((x) => (x.id === s.id ? { ...x, billing: "credit_note" as const, creditNoteNumber: res.creditNoteNumber } : x));
-    persist(next, `Credit note ${res.creditNoteNumber} for ${label} · ${formatMoney(price, currency)}`);
-    if (res.booking) onOpenCreditNote(res.booking);
+      });
+      if (number) onOpenDocument(invoiceDocBooking(trip, { number, amount: price }), "invoice");
+    } catch (err: any) {
+      flash(err?.message || "The invoice could not be created. Try again.");
+    } finally {
+      setWorking(null);
+    }
   };
 
-  const cancelService = (s: TripServiceItem) => {
+  const cancelService = async (s: TripServiceItem) => {
     setConfirmCancel(null);
     const label = titleFor(s);
     // Not billed yet: simply remove it
@@ -188,37 +180,61 @@ export default function TripServicesTab({ trip, onSave, issueCreditNote, onOpenC
       return;
     }
     const price = s.included ? 0 : Number(s.clientPrice) || 0;
+    const { total, services, subtotal } = totals();
+    const lowerPricing: Partial<Booking> =
+      price > 0
+        ? {
+            pricing: {
+              ...trip.pricing,
+              additionalServicesTotal: Math.max(0, services - price),
+              subtotal: Math.max(0, subtotal - price),
+              totalFlightPrice: Math.max(0, total - price)
+            }
+          }
+        : {};
     if (price <= 0) {
       persist(items.map((x) => (x.id === s.id ? { ...x, status: "cancelled" as const } : x)), `${label} cancelled`);
       return;
     }
-    // Billed (in the quote or by credit note): credit the client back
-    const { total, services, subtotal } = totals();
-    const res = issueCreditNote(
-      trip.id,
-      {
-        amount: price,
-        reason: `Cancelled service · ${label}`,
-        clientOwes: 0,
-        weOweClient: price,
-        netBalance: -price,
-        originalTotal: total,
-        newTotal: Math.max(0, total - price)
-      },
-      {
-        pricing: {
-          ...trip.pricing,
-          additionalServicesTotal: Math.max(0, services - price),
-          subtotal: Math.max(0, subtotal - price),
-          totalFlightPrice: Math.max(0, total - price)
-        }
+    setWorking(s.id);
+    try {
+      // Credit the client against the invoice the service was billed on (or the charter invoice for quote services)
+      const ledger = (await api.registry.ledger(trip.id)).data;
+      const invoices: any[] = ledger?.invoices || [];
+      const againstInv =
+        invoices.find((i) => i.number === s.invoiceNumber && !["combined", "void"].includes(i.status)) ||
+        invoices.find((i) => i.combinedFrom?.includes?.(s.invoiceNumber)) ||
+        invoices.find((i) => i.kind === "charter" && !["combined", "void"].includes(i.status)) ||
+        invoices.find((i) => !["combined", "void"].includes(i.status) && i.amount - i.credited >= price);
+      if (!againstInv) {
+        // The trip is not invoiced yet (still a quote): the price simply comes off the total
+        persist(items.map((x) => (x.id === s.id ? { ...x, status: "cancelled" as const } : x)), `${label} cancelled`, lowerPricing);
+        return;
       }
-    );
-    const next = items.map((x) =>
-      x.id === s.id ? { ...x, status: "cancelled" as const, cancelCreditNoteNumber: res.creditNoteNumber } : x
-    );
-    persist(next, `${label} cancelled · credit note ${res.creditNoteNumber} · ${formatMoney(price, currency)} back to the client`);
-    if (res.booking) onOpenCreditNote(res.booking);
+      const res = await api.registry.createCreditNote(trip.id, {
+        against: againstInv.number,
+        reasonCategory: "Cancellation",
+        amount: Math.min(price, Math.max(0, againstInv.amount - againstInv.credited)),
+        internalNote: `Service cancelled · ${label}`,
+        output: "credit_only"
+      });
+      const note = (res.data?.creditNotes || []).find((n: any) => n.internalNote === `Service cancelled · ${label}`);
+      persist(
+        items.map((x) => (x.id === s.id ? { ...x, status: "cancelled" as const, cancelCreditNoteNumber: note?.number } : x)),
+        `${label} cancelled · credit note ${note?.number || ""} · ${formatMoney(price, currency)} back to the client`,
+        lowerPricing
+      );
+      if (note) {
+        onOpenDocument(
+          creditNoteDocBooking(trip, { number: note.number, amount: note.amount, against: note.against, reasonCategory: note.reasonCategory, issuedAt: note.issuedAt }),
+          "credit_note"
+        );
+      }
+    } catch (err: any) {
+      flash(err?.message || "The credit note could not be created. Try again.");
+    } finally {
+      setWorking(null);
+    }
   };
 
   const commitPrice = (s: TripServiceItem, which: "client" | "supplier") => {
@@ -305,6 +321,7 @@ export default function TripServicesTab({ trip, onSave, issueCreditNote, onOpenC
     if (s.source === "quote") parts.push(`From the quote${trip.quoteId ? ` ${trip.quoteId}` : ""} · included in the quoted total`);
     else parts.push(`Added ${formatDay(s.addedAt)}${s.addedBy ? ` by ${s.addedBy}` : ""}`);
     if (s.billing === "not_billed" && s.status !== "cancelled") parts.push("not billed yet");
+    if (s.invoiceNumber) parts.push(`invoiced as ${s.invoiceNumber}`);
     if (s.creditNoteNumber) parts.push(`credit note ${s.creditNoteNumber}`);
     if (s.cancelCreditNoteNumber) parts.push(`cancelled · credit note ${s.cancelCreditNoteNumber}`);
     return parts.join(" · ");
@@ -520,12 +537,14 @@ export default function TripServicesTab({ trip, onSave, issueCreditNote, onOpenC
               {s.billing === "not_billed" && (
                 <button
                   type="button"
-                  onClick={() => generateCreditNoteForAdded(s)}
-                  className="bg-[#0B1320] hover:bg-slate-800 text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm"
+                  disabled={working === s.id}
+                  onClick={() => billAddedService(s)}
+                  className="bg-[#0B1320] hover:bg-slate-800 text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm disabled:opacity-50"
                 >
-                  Generate credit note
+                  {working === s.id ? "Creating…" : "Bill the client (invoice)"}
                 </button>
               )}
+              {s.billing === "invoiced" && <span className="text-[11px] font-medium text-emerald-700">✓ Billed on {s.invoiceNumber}</span>}
               {s.billing === "credit_note" && (
                 <span className="text-[11px] font-medium text-emerald-700">✓ Billed on credit note {s.creditNoteNumber}</span>
               )}
@@ -536,7 +555,7 @@ export default function TripServicesTab({ trip, onSave, issueCreditNote, onOpenC
                       ? "Remove this service?"
                       : `Cancel and credit ${formatMoney(s.included ? 0 : s.clientPrice, currency)} back?`}
                   </span>
-                  <button type="button" onClick={() => cancelService(s)} className="font-semibold text-rose-700 hover:underline">
+                  <button type="button" disabled={working === s.id} onClick={() => cancelService(s)} className="font-semibold text-rose-700 hover:underline disabled:opacity-50">
                     Yes
                   </button>
                   <button type="button" onClick={() => setConfirmCancel(null)} className="font-semibold text-slate-600 hover:underline">
@@ -585,7 +604,7 @@ export default function TripServicesTab({ trip, onSave, issueCreditNote, onOpenC
 
       {active.length === 0 && (
         <div className="bg-white border border-slate-200/90 rounded-xl p-5 shadow-sm text-xs text-slate-500">
-          No services on this trip yet. Add one with the buttons above; it is billed to the client with a credit note.
+          No services on this trip yet. Add one with the buttons above; it is billed to the client on its own invoice.
         </div>
       )}
       {active.map(renderCard)}

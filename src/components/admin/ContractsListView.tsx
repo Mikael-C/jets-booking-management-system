@@ -1,228 +1,209 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useAviation } from "@/lib/aviationContext";
-import { formatCurrency } from "@/lib/pricingCalculator";
-import { formatDocumentId, formatTripVersion } from "@/lib/idGenerator";
-import StatusPill from "@/components/ui/StatusPill";
-import RecordHeader from "@/components/ui/RecordHeader";
-import KpiStrip from "@/components/ui/KpiStrip";
-import {
-  Search,
-  Eye,
-  FileText,
-  CheckCircle2,
-  Clock,
-  Download,
-  ScrollText
-} from "lucide-react";
+import { useAviation, normalizeBooking } from "@/lib/aviationContext";
+import { api } from "@/lib/api";
+import DocId from "@/components/ui/DocId";
+import { loadBooking, money, shortDay } from "@/lib/financeDocs";
+
+interface ContractRow {
+  id: string;
+  bookingId: string;
+  contract: string;
+  tripVersion: string;
+  tripToken: string;
+  client: string;
+  value: number;
+  currency: string;
+  sentAt: string | null;
+  sentVia: string;
+  signedAt: string | null;
+  signedVia: string;
+  termsVersion: string;
+  status: "awaiting" | "signed" | "expired";
+}
+
+type Filter = "awaiting" | "signed" | "expired" | null;
+
+const thCls = "text-left text-[12px] font-semibold uppercase tracking-[0.08em] text-slate-500 px-4 py-3 whitespace-nowrap";
+
+const STATUS = {
+  awaiting: { text: "Awaiting signature", cls: "bg-amber-50 text-amber-800" },
+  signed: { text: "Signed → booked", cls: "bg-emerald-50 text-emerald-700" },
+  expired: { text: "Expired unsigned", cls: "bg-rose-50 text-rose-700" }
+};
+
+const signedLabel = (iso: string | null, via: string) => {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  const text = isNaN(d.getTime())
+    ? String(iso)
+    : `${d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}${d.getUTCHours() || d.getUTCMinutes() ? ` ${d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}` : ""}`;
+  return via ? `${text} · ${via}` : text;
+};
 
 export default function ContractsListView() {
-  const router = useRouter();
-  const { bookings, openDocument, settings } = useAviation();
-  const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "signed" | "pending">("all");
+  const { bookings, openDocument } = useAviation();
+  const [rows, setRows] = useState<ContractRow[]>([]);
+  const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+  const [errorText, setErrorText] = useState("");
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<Filter>(null);
+  const [sort, setSort] = useState<"newest" | "oldest" | "value">("newest");
 
-  const activeTerms = settings?.termsVersions?.find((t) => t.isActive) || settings?.termsVersions?.[0];
-  const termsVersion = activeTerms ? `${activeTerms.version} (${activeTerms.effectiveDate})` : "v2.4 (01.10.2026)";
+  const load = useCallback(async () => {
+    try {
+      const res = await api.registry.contracts();
+      setRows(Array.isArray(res?.data) ? res.data : []);
+      setState("ready");
+    } catch (err: any) {
+      setErrorText(err?.message || "The server could not be reached.");
+      setState("error");
+    }
+  }, []);
 
-  const contracts = useMemo(() => {
-    return bookings.map((b) => {
-      const rootId = (b.tripId || b.tripNumber || "FE4578").split("-")[0];
-      const versionNum = b.quoteVersion || 1;
-      const contractId = formatDocumentId("C", rootId, versionNum);
-      const isSigned = Boolean(b.isContractSigned || b.isBooked || ["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(b.status));
+  useEffect(() => {
+    load();
+  }, [load]);
 
-      return {
-        id: b.id,
-        contractId,
-        rootId,
-        versionBadge: formatTripVersion(rootId, versionNum),
-        accountNumber: b.accountNumber || "ACC-10294",
-        clientName: b.client.companyName || b.client.fullName,
-        signatory: b.contractSignedBy || b.client.fullName,
-        date: b.contractDate || "12.11.2026",
-        isSigned,
-        termsVersion,
-        amount: b.pricing.totalFlightPrice,
-        currency: b.pricing.currency || "EUR",
-        booking: b
-      };
+  const awaitingCount = rows.filter((r) => r.status === "awaiting").length;
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const list = rows.filter((r) => {
+      if (filter && r.status !== filter) return false;
+      if (!q) return true;
+      return [r.contract, r.tripVersion, r.client].some((x) => x.toLowerCase().includes(q));
     });
-  }, [bookings, termsVersion]);
-
-  const filteredContracts = useMemo(() => {
-    return contracts.filter((c) => {
-      if (statusFilter === "signed" && !c.isSigned) return false;
-      if (statusFilter === "pending" && c.isSigned) return false;
-
-      if (searchQuery.trim() !== "") {
-        const q = searchQuery.toLowerCase().trim();
-        const matchId = c.contractId.toLowerCase().includes(q);
-        const matchTrip = c.rootId.toLowerCase().includes(q);
-        const matchClient = c.clientName.toLowerCase().includes(q);
-        const matchAcc = c.accountNumber.toLowerCase().includes(q);
-        const matchSigner = c.signatory.toLowerCase().includes(q);
-        if (!matchId && !matchTrip && !matchClient && !matchAcc && !matchSigner) return false;
-      }
-
-      return true;
+    return [...list].sort((a, b) => {
+      if (sort === "value") return b.value - a.value;
+      const diff = new Date(b.sentAt || 0).getTime() - new Date(a.sentAt || 0).getTime();
+      return sort === "newest" ? diff : -diff;
     });
-  }, [contracts, statusFilter, searchQuery]);
+  }, [rows, query, filter, sort]);
 
-  const signedCount = contracts.filter((c) => c.isSigned).length;
-  const pendingCount = contracts.filter((c) => !c.isSigned).length;
-  const totalValue = contracts.reduce((sum, c) => sum + c.amount, 0);
+  const openContract = async (r: ContractRow) => {
+    const booking = await loadBooking(bookings, r.bookingId, normalizeBooking);
+    if (booking) openDocument(booking, "charter_agreement");
+  };
+
+  const pill = (key: Exclude<Filter, null>, label: string) => (
+    <button
+      key={key}
+      type="button"
+      onClick={() => setFilter((f) => (f === key ? null : key))}
+      className={`px-4 py-2 rounded-full border text-[15px] transition-colors ${
+        filter === key ? "bg-[#0B1320] text-white border-[#0B1320]" : "bg-white text-slate-800 border-slate-200 hover:border-slate-400"
+      }`}
+    >
+      {label}
+    </button>
+  );
 
   return (
-    <div className="space-y-4">
-      {/* 1. Header */}
-      <RecordHeader
-        title="Charter Contracts"
-        subtitle="Master charter agreements and electronic signature status across all clients"
-        badge="R-036 CONTRACTS REPOSITORY"
-        breadcrumbs={[{ label: "Overview", href: "/overview" }, { label: "Contracts" }]}
-      />
+    <div className="space-y-6">
+      <h1 className="text-[30px] font-bold text-slate-900 m-0">Contracts</h1>
 
-      {/* 2. KPI Strip */}
-      <KpiStrip
-        items={[
-          {
-            id: "signed",
-            label: "Executed Contracts",
-            value: signedCount.toString(),
-            subtext: "Signed & legally binding agreements",
-            trend: "positive"
-          },
-          {
-            id: "pending",
-            label: "Pending Signature",
-            value: pendingCount.toString(),
-            subtext: "Sent for client authorization",
-            trend: "warning"
-          },
-          {
-            id: "value",
-            label: "Contracted Value",
-            value: formatCurrency(totalValue, "EUR"),
-            subtext: "Total charter volume under contract"
-          },
-          {
-            id: "terms",
-            label: "Standard Terms",
-            value: termsVersion.split(" ")[0] || "v2.4",
-            subtext: "Current settings terms"
-          }
-        ]}
-      />
-
-      {/* 3. Search and Filters */}
-      <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-3 flex flex-col sm:flex-row items-center justify-between gap-3">
-        <div className="relative w-full sm:w-80">
-          <Search className="w-4 h-4 text-[var(--muted)] absolute left-3 top-2.5" />
-          <input
-            type="text"
-            placeholder="Search Contract ID, Account, Client, Signer..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-[var(--paper)] border border-[var(--line)] rounded-lg pl-9 pr-3 py-1.5 text-xs text-[var(--ink)] placeholder-[var(--muted)] focus:outline-none focus:border-[var(--ink)]"
-          />
-        </div>
-
-        <div className="flex items-center gap-1.5">
-          {(["all", "signed", "pending"] as const).map((s) => (
-            <button
-              key={s}
-              onClick={() => setStatusFilter(s)}
-              className={`px-3 py-1.5 text-xs font-display uppercase tracking-wider font-bold rounded-lg transition-all ${
-                statusFilter === s
-                  ? "bg-[var(--ink)] text-[var(--card)]"
-                  : "bg-[var(--paper)] text-[var(--muted)] hover:text-[var(--ink)]"
-              }`}
-            >
-              {s === "all" ? "All Contracts" : s === "signed" ? "Signed" : "Pending Signature"}
-            </button>
-          ))}
+      <div className="flex flex-wrap items-center gap-2.5">
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search contract, trip, client..."
+          className="w-full sm:w-[340px] bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-[15px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-400"
+        />
+        {pill("awaiting", `Awaiting signature ${awaitingCount}`)}
+        {pill("signed", "Signed")}
+        {pill("expired", "Expired unsigned")}
+        <div className="ml-auto flex items-center gap-2">
+          <span className="text-[15px] text-slate-500">Sort</span>
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value as typeof sort)}
+            className="bg-white border border-slate-200 rounded-lg px-3 py-2.5 text-[15px] text-slate-900 focus:outline-none"
+          >
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="value">Highest value</option>
+          </select>
         </div>
       </div>
 
-      {/* 4. Dense Table */}
-      <div className="tablewrap">
-        <table className="dense-table">
-          <thead>
-            <tr>
-              <th>Contract ID</th>
-              <th>Version</th>
-              <th>Trip ID</th>
-              <th>Client Account</th>
-              <th>Signatory</th>
-              <th>Issue Date</th>
-              <th>Terms Version</th>
-              <th className="text-right">Value</th>
-              <th>Status</th>
-              <th className="text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredContracts.length === 0 ? (
+      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-[15px]">
+            <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
-                <td colSpan={10} className="py-8 text-center text-xs text-[var(--muted)] font-mono">
-                  No contract records match your filter criteria.
-                </td>
+                <th className={thCls}>Contract</th>
+                <th className={thCls}>Trip · version</th>
+                <th className={thCls}>Client</th>
+                <th className={`${thCls} text-right`}>Value</th>
+                <th className={thCls}>Sent</th>
+                <th className={thCls}>Signed</th>
+                <th className={thCls}>Terms version</th>
+                <th className={thCls}>Status</th>
               </tr>
-            ) : (
-              filteredContracts.map((c) => (
-                <tr
-                  key={c.id}
-                  onClick={() => router.push(`/trips/${c.rootId}/documents`)}
-                  className="cursor-pointer hover:bg-[var(--paper)] transition-colors"
-                >
-                  <td className="font-mono font-bold text-xs text-[var(--ink)]">
-                    {c.contractId}
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {state === "loading" && (
+                <tr>
+                  <td colSpan={8} className="px-4 py-8 text-center text-slate-400 text-sm">
+                    Loading contracts…
                   </td>
-                  <td className="font-mono text-xs">{c.versionBadge}</td>
-                  <td className="font-mono font-bold text-xs">
-                    <Link
-                      href={`/trips/${c.rootId}/documents`}
-                      onClick={(e) => e.stopPropagation()}
-                      className="hover:underline text-[var(--accent)]"
-                    >
-                      {c.rootId}
-                    </Link>
-                  </td>
-                  <td>
-                    <span className="font-bold text-xs text-[var(--ink)] block">{c.clientName}</span>
-                    <span className="font-mono text-[11px] text-[var(--muted)]">{c.accountNumber}</span>
-                  </td>
-                  <td className="text-xs text-[var(--ink)]">{c.signatory}</td>
-                  <td className="font-mono text-xs">{c.date}</td>
-                  <td className="font-mono text-xs text-[var(--muted)]">{c.termsVersion}</td>
-                  <td className="font-mono font-bold text-xs text-right text-[var(--ink)]">
-                    {formatCurrency(c.amount, c.currency)}
-                  </td>
-                  <td>
-                    <StatusPill
-                      label={c.isSigned ? "SIGNED" : "PENDING SIGNATURE"}
-                      variant={c.isSigned ? "green" : "amber"}
-                    />
-                  </td>
-                  <td className="text-right" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      onClick={() => openDocument(c.booking, "charter_agreement")}
-                      className="btn-secondary text-[11px] py-1 px-2"
-                      title="View PDF Document"
-                    >
-                      <Eye className="w-3 h-3" />
-                      <span>PDF</span>
+                </tr>
+              )}
+              {state === "error" && (
+                <tr>
+                  <td colSpan={8} className="px-4 py-8 text-center text-sm text-rose-700">
+                    {errorText}{" "}
+                    <button type="button" onClick={() => { setState("loading"); load(); }} className="underline">
+                      Try again
                     </button>
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              )}
+              {state === "ready" && filtered.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="px-4 py-8 text-center text-slate-400 text-sm">
+                    No contracts match.
+                  </td>
+                </tr>
+              )}
+              {filtered.map((r) => {
+                const st = STATUS[r.status];
+                return (
+                  <tr key={r.id} className="hover:bg-slate-50/60">
+                    <td className="px-4 py-3.5">
+                      <button type="button" onClick={() => openContract(r)} className="hover:underline" title="Open the charter agreement">
+                        <DocId id={r.contract} />
+                      </button>
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <Link href={`/trips/${r.tripToken}/documents`} className="hover:underline">
+                        <DocId id={r.tripVersion} />
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3.5 text-slate-900">{r.client}</td>
+                    <td className="px-4 py-3.5 text-slate-900 text-right whitespace-nowrap">{money(r.value, r.currency)}</td>
+                    <td className="px-4 py-3.5 text-slate-900 whitespace-nowrap">
+                      {shortDay(r.sentAt)}
+                      {r.status !== "signed" && r.sentVia ? ` · ${r.sentVia}` : ""}
+                    </td>
+                    <td className="px-4 py-3.5 text-slate-900 whitespace-nowrap">{signedLabel(r.signedAt, r.signedVia)}</td>
+                    <td className="px-4 py-3.5 text-slate-900">{r.termsVersion}</td>
+                    <td className="px-4 py-3.5">
+                      <span className={`text-[14px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${st.cls}`}>{st.text}</span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-[15px] text-slate-500 px-6 py-4 m-0 border-t border-slate-100">
+          A signed contract is what turns a quote into a booking. Each contract stores the version of the terms it was issued with.
+        </p>
       </div>
     </div>
   );

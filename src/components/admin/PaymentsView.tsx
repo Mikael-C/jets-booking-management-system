@@ -1,837 +1,465 @@
 "use client";
 
-import React, { useState } from "react";
-import NextLink from "next/link";
-import { useAviation } from "@/lib/aviationContext";
-import { Booking } from "@/types/aviation";
-import { formatCurrency } from "@/lib/pricingCalculator";
-import {
-  CreditCard,
-  CheckCircle2,
-  Clock,
-  AlertTriangle,
-  Search,
-  FileText,
-  DollarSign,
-  Landmark,
-  ArrowUpRight,
-  Filter,
-  X,
-  Calendar,
-  Send,
-  Building,
-  Link,
-  Copy,
-  Check
-} from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { api } from "@/lib/api";
+import DocId from "@/components/ui/DocId";
+import { downloadCsv, money, shortDay } from "@/lib/financeDocs";
+
+interface PayRow {
+  id: string;
+  kind: "payment" | "invoice";
+  bookingId: string;
+  paymentId?: string;
+  status: "paid" | "proof_uploaded" | "awaiting" | "overdue";
+  trip: string;
+  tripToken: string;
+  departure: string | null;
+  client: string;
+  clientEmail?: string;
+  invoice: string;
+  purpose: string;
+  amount: number;
+  currency: string;
+  due: string | null;
+  method: string;
+  methodKey: "card" | "bank_transfer";
+  proofName: string;
+  proofUrl: string;
+  paymentLink?: string;
+  date: string | null;
+}
+
+interface Kpis {
+  received: number;
+  receivedCount: number;
+  month: string;
+  awaiting: number;
+  awaitingTrips: number;
+  overdue: number;
+  soonUnpaidCount: number;
+  soonUnpaidFirst: { trip: string; amount: number; currency: string } | null;
+}
+
+type Filter = "open" | "proof" | "paid" | "overdue" | "card" | "bank";
+
+const thCls = "text-left text-[12px] font-semibold uppercase tracking-[0.08em] text-slate-500 px-4 py-3 whitespace-nowrap";
+const labelCls = "block text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 mb-1.5";
+const inputCls =
+  "w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-500";
+
+const statusPill = (r: PayRow) => {
+  if (r.status === "paid") return { text: "Paid", cls: "bg-emerald-50 text-emerald-700" };
+  if (r.status === "proof_uploaded") return { text: "Proof uploaded · confirm", cls: "bg-amber-50 text-amber-800" };
+  if (r.status === "overdue") return { text: "Overdue", cls: "bg-rose-50 text-rose-700" };
+  return { text: r.methodKey === "card" ? "Awaiting card" : "Awaiting wire", cls: "bg-amber-50 text-amber-800" };
+};
+
+const flightLabel = (iso: string | null) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const days = Math.ceil((d.getTime() - Date.now()) / 86400000);
+  const base = d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+  return days >= 0 && days <= 7 ? `${base} · in ${days} d` : base;
+};
 
 export default function PaymentsView() {
-  const {
-    bookings,
-    updateBookingPaymentStatus,
-    openDocument,
-    addAuditEntry,
-    currentUser,
-    role
-  } = useAviation();
+  const [rows, setRows] = useState<PayRow[]>([]);
+  const [kpis, setKpis] = useState<Kpis | null>(null);
+  const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+  const [errorText, setErrorText] = useState("");
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<Filter>("open");
+  const [sort, setSort] = useState<"newest" | "oldest" | "due">("newest");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [isRecordOpen, setIsRecordOpen] = useState(false);
+  const [form, setForm] = useState({ rowId: "", amount: "", method: "bank_transfer" as "bank_transfer" | "card", reference: "", date: new Date().toISOString().slice(0, 10) });
+  const [formError, setFormError] = useState("");
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [mainTab, setMainTab] = useState<"invoices" | "credit_notes">("invoices");
-  const [showSegmentedFees, setShowSegmentedFees] = useState(true);
-  const [selectedBookingForPayment, setSelectedBookingForPayment] = useState<Booking | null>(null);
+  const load = useCallback(async () => {
+    try {
+      const res = await api.registry.payments();
+      setRows(Array.isArray(res?.data?.rows) ? res.data.rows : []);
+      setKpis(res?.data?.kpis || null);
+      setState("ready");
+    } catch (err: any) {
+      setErrorText(err?.message || "The server could not be reached.");
+      setState("error");
+    }
+  }, []);
 
-  // Payment Link Generator State
-  const [selectedBookingForLink, setSelectedBookingForLink] = useState<Booking | null>(null);
-  const [linkAmount, setLinkAmount] = useState<number>(0);
-  const [linkReason, setLinkReason] = useState<string>("Charter Flight Settlement");
-  const [linkCopied, setLinkCopied] = useState(false);
-  const [linkPaymentMethod, setLinkPaymentMethod] = useState<"wire" | "card" | "escrow">("card");
+  useEffect(() => {
+    load();
+  }, [load]);
 
-  // Payment Recording Modal State
-  const [paymentAmount, setPaymentAmount] = useState<number>(0);
-  const [paymentMethod, setPaymentMethod] = useState<string>("Bank Wire Transfer");
-  const [paymentRef, setPaymentRef] = useState<string>("");
-  const [paymentReason, setPaymentReason] = useState<string>("Charter Flight Settlement");
-  const [paymentDate, setPaymentDate] = useState<string>(
-    new Date().toISOString().split("T")[0]
+  const counts = useMemo(
+    () => ({
+      open: rows.filter((r) => r.status !== "paid").length,
+      proof: rows.filter((r) => r.status === "proof_uploaded").length
+    }),
+    [rows]
   );
-  const [paymentType, setPaymentType] = useState<"fully_paid" | "deposit_paid">("fully_paid");
 
-  const canEdit = role === "super_admin" || role === "admin" || role === "finance";
-
-  // KPIs
-  const totalReceived = bookings
-    .filter((b) => b.paymentStatus === "fully_paid")
-    .reduce((sum, b) => sum + (b.pricing.totalFlightPrice || 0), 0);
-
-  const pendingAmount = bookings
-    .filter((b) => b.paymentStatus === "unpaid" || b.paymentStatus === "deposit_paid")
-    .reduce((sum, b) => sum + (b.pricing.totalFlightPrice || 0), 0);
-
-  const depositsReceived = bookings.filter((b) => b.paymentStatus === "deposit_paid").length;
-
-  const overdueCount = bookings.filter((b) => {
-    if (b.paymentStatus === "fully_paid") return false;
-    if (!b.paymentDueDate) return false;
-    // Check if overdue
-    const parts = b.paymentDueDate.split(".");
-    if (parts.length === 3) {
-      const dueDate = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`).getTime();
-      return dueDate < Date.now();
-    }
-    return false;
-  }).length;
-
-  // Filter bookings
-  const filteredBookings = bookings.filter((b) => {
-    const matchesSearch =
-      b.tripNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (b.invoiceNumber || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-      b.client.fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (b.client.companyName || "").toLowerCase().includes(searchQuery.toLowerCase());
-
-    const matchesStatus =
-      statusFilter === "all" ||
-      (statusFilter === "fully_paid" && b.paymentStatus === "fully_paid") ||
-      (statusFilter === "deposit_paid" && b.paymentStatus === "deposit_paid") ||
-      (statusFilter === "unpaid" && (b.paymentStatus === "unpaid" || !b.paymentStatus)) ||
-      (statusFilter === "overdue" && b.paymentStatus !== "fully_paid" && overdueCount > 0);
-
-    return matchesSearch && matchesStatus;
-  });
-
-  const handleOpenPaymentModal = (b: Booking) => {
-    setSelectedBookingForPayment(b);
-    setPaymentAmount(b.pricing.totalFlightPrice || 15000);
-    setPaymentRef(`WIRE-${Math.floor(100000 + Math.random() * 900000)}`);
-    setPaymentReason(b.paymentReason || "Charter Flight Settlement");
-    setPaymentType("fully_paid");
-  };
-
-  const handleOpenPaymentLink = (b: Booking) => {
-    setSelectedBookingForLink(b);
-    setLinkAmount(b.pricing.totalFlightPrice || 15000);
-    setLinkReason(b.paymentReason || "Charter Flight Settlement");
-    setLinkPaymentMethod(b.paymentMethodChoice || "card");
-    setLinkCopied(false);
-  };
-
-  const handleCopyPaymentLink = (url: string) => {
-    navigator.clipboard?.writeText(url);
-    setLinkCopied(true);
-    setTimeout(() => setLinkCopied(false), 3000);
-  };
-
-  const handleRecordPaymentSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedBookingForPayment) return;
-
-    updateBookingPaymentStatus(selectedBookingForPayment.id, paymentType, paymentReason);
-    addAuditEntry({
-      userEmail: currentUser?.email || "finance@orbelo.com",
-      userName: currentUser?.name || "Finance Operations",
-      action: "PAYMENT_RECORDED",
-      entityType: "Payment",
-      entityId: selectedBookingForPayment.invoiceNumber || selectedBookingForPayment.tripNumber,
-      details: `Recorded ${paymentType === "fully_paid" ? "full payment" : "deposit"} of ${formatCurrency(paymentAmount, selectedBookingForPayment.pricing.currency || "EUR")} for Reason: "${paymentReason}" via ${paymentMethod} (Ref: ${paymentRef}) for ${selectedBookingForPayment.client.fullName}`
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    let list = rows.filter((r) => {
+      if (filter === "open" && r.status === "paid") return false;
+      if (filter === "proof" && r.status !== "proof_uploaded") return false;
+      if (filter === "paid" && r.status !== "paid") return false;
+      if (filter === "overdue" && r.status !== "overdue") return false;
+      if (filter === "card" && r.methodKey !== "card") return false;
+      if (filter === "bank" && r.methodKey !== "bank_transfer") return false;
+      if (!q) return true;
+      return [r.trip, r.invoice, r.client, r.purpose].some((x) => String(x || "").toLowerCase().includes(q));
     });
+    list = [...list].sort((a, b) => {
+      if (sort === "due") return new Date(a.due || "2999-01-01").getTime() - new Date(b.due || "2999-01-01").getTime();
+      const diff = new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime();
+      return sort === "newest" ? diff : -diff;
+    });
+    // Things to do first: proof to confirm, then overdue, then awaiting, then paid
+    const rank = { proof_uploaded: 0, overdue: 1, awaiting: 2, paid: 3 } as const;
+    if (filter === "open") list.sort((a, b) => rank[a.status] - rank[b.status]);
+    return list;
+  }, [rows, query, filter, sort]);
 
-    setSelectedBookingForPayment(null);
-  };
-
-  const getStatusBadge = (status?: Booking["paymentStatus"]) => {
-    switch (status) {
-      case "fully_paid":
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-            FULLY PAID
-          </span>
-        );
-      case "deposit_paid":
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold bg-amber-100 text-amber-900 border border-amber-300">
-            <Clock className="w-3 h-3 text-amber-600" />
-            DEPOSIT PAID
-          </span>
-        );
-      case "refunded":
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold bg-purple-100 text-purple-800 border border-purple-300">
-            REFUNDED
-          </span>
-        );
-      case "overdue":
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold bg-red-100 text-red-800 border border-red-300">
-            <AlertTriangle className="w-3 h-3 text-red-600" />
-            OVERDUE
-          </span>
-        );
-      default:
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold bg-blue-100 text-blue-800 border border-blue-300">
-            <Clock className="w-3 h-3 text-blue-600" />
-            UNPAID
-          </span>
-        );
+  const confirm = async (r: PayRow) => {
+    if (!r.paymentId) return;
+    setBusy(r.id);
+    try {
+      await api.registry.confirmPayment(r.bookingId, r.paymentId);
+      setNotice(`Payment on ${r.invoice} confirmed as received.`);
+      await load();
+    } catch (err: any) {
+      setNotice(err?.message || "Could not confirm the payment.");
+    } finally {
+      setBusy(null);
     }
   };
+
+  const remind = async (r: PayRow) => {
+    setBusy(r.id);
+    try {
+      const res = await api.registry.remind(r.bookingId, r.invoice);
+      setNotice(res.data.emailed ? `Reminder for ${r.invoice} emailed to ${res.data.to}.` : `Reminder for ${r.invoice} logged. No email was sent (no client email or mail not set up).`);
+    } catch (err: any) {
+      setNotice(err?.message || "Could not send the reminder.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const openRows = rows.filter((r) => r.kind === "invoice");
+
+  const openRecord = (row?: PayRow) => {
+    const target = row || openRows[0];
+    setForm({
+      rowId: target?.id || "",
+      amount: target ? String(target.amount) : "",
+      method: "bank_transfer",
+      reference: "",
+      date: new Date().toISOString().slice(0, 10)
+    });
+    setFormError("");
+    setIsRecordOpen(true);
+  };
+
+  const submitRecord = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const target = openRows.find((r) => r.id === form.rowId);
+    const amount = parseFloat(form.amount.replace(/[^0-9.]/g, ""));
+    if (!target) return setFormError("Pick the invoice the payment is for.");
+    if (!(amount > 0)) return setFormError("Type the amount received.");
+    setBusy("record");
+    try {
+      await api.registry.recordPayment(target.bookingId, {
+        invoiceNumber: target.invoice,
+        amount,
+        method: form.method,
+        reference: form.reference,
+        receivedAt: new Date(`${form.date}T12:00:00Z`).toISOString()
+      });
+      setIsRecordOpen(false);
+      setNotice(`Payment of ${money(amount, target.currency)} recorded on ${target.invoice}.`);
+      await load();
+    } catch (err: any) {
+      setFormError(err?.message || "Could not record the payment.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const exportCsv = () =>
+    downloadCsv(`payments-${new Date().toISOString().slice(0, 10)}.csv`, [
+      ["Status", "Trip", "Flight", "Invoice", "Client", "Purpose", "Amount", "Currency", "Due", "Method", "Proof"],
+      ...filtered.map((r) => [statusPill(r).text, r.trip, r.departure ? r.departure.slice(0, 10) : "", r.invoice, r.client, r.purpose, r.amount.toFixed(2), r.currency, r.due ? r.due.slice(0, 10) : "", r.method, r.proofName])
+    ]);
+
+  const pill = (key: Filter, label: string) => (
+    <button
+      key={key}
+      type="button"
+      onClick={() => setFilter(key)}
+      className={`px-4 py-2 rounded-full border text-[15px] transition-colors ${
+        filter === key ? "bg-[#0B1320] text-white border-[#0B1320]" : "bg-white text-slate-800 border-slate-200 hover:border-slate-400"
+      }`}
+    >
+      {label}
+    </button>
+  );
+
+  const kpiCell = (title: string, value: string, sub: React.ReactNode, tone = "text-slate-500") => (
+    <div className="px-6 py-5 border-slate-200 [&:not(:last-child)]:border-r">
+      <div className="text-[12px] font-semibold uppercase tracking-[0.08em] text-slate-500">{title}</div>
+      <div className="text-[30px] font-bold text-slate-900 mt-1 leading-tight">{value}</div>
+      <div className={`text-[14px] mt-0.5 ${tone}`}>{sub}</div>
+    </div>
+  );
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-12">
-      {/* View Header */}
-      <div className="bg-white border border-[#E0DAD0] rounded-2xl p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-[#C9A052]/15 text-[#9A7A35] border border-[#C9A052]/30">
-              FINANCE & SETTLEMENT ENGINE
-            </span>
-            <span className="text-xs text-[#0F1420]/60">Invoices, Escrow & Wire Reconciliation</span>
-          </div>
-          <h2 className="text-xl font-black text-[#0F1420] tracking-tight">
-            Payments & Invoice Management
-          </h2>
-          <p className="text-xs text-[#0F1420]/65 mt-0.5">
-            Monitor client wire remittances, credit card authorizations, escrow releases, payment due dates, and official VAT invoice generation.
-          </p>
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-[30px] font-bold text-slate-900 m-0">Payments</h1>
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => openRecord()}
+            disabled={openRows.length === 0}
+            className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-900 px-4 py-2.5 rounded-lg text-[15px] font-semibold shadow-sm disabled:opacity-50"
+          >
+            Record payment
+          </button>
+          <button
+            type="button"
+            onClick={exportCsv}
+            className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-900 px-4 py-2.5 rounded-lg text-[15px] font-semibold shadow-sm"
+          >
+            Export
+          </button>
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-white border border-[#E0DAD0] rounded-xl p-4 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-mono font-bold uppercase text-emerald-800">
-              Total Settled (Paid)
-            </span>
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-          </div>
-          <p className="text-2xl font-black font-mono text-emerald-700 mt-2">
-            {formatCurrency(totalReceived, "EUR")}
-          </p>
-          <span className="text-[11px] text-gray-500">Collected in escrow/bank</span>
-        </div>
-
-        <div className="bg-white border border-[#E0DAD0] rounded-xl p-4 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-mono font-bold uppercase text-[#0F1420]/70">
-              Pending Receivable
-            </span>
-            <Clock className="w-4 h-4 text-[#C9A052]" />
-          </div>
-          <p className="text-2xl font-black font-mono text-[#0F1420] mt-2">
-            {formatCurrency(pendingAmount, "EUR")}
-          </p>
-          <span className="text-[11px] text-gray-500">Awaiting client wire</span>
-        </div>
-
-        <div className="bg-white border border-[#E0DAD0] rounded-xl p-4 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-mono font-bold uppercase text-amber-800">
-              Deposits Held
-            </span>
-            <Landmark className="w-4 h-4 text-amber-600" />
-          </div>
-          <p className="text-2xl font-black font-mono text-amber-700 mt-2">
-            {depositsReceived} Trips
-          </p>
-          <span className="text-[11px] text-gray-500">Secured via card/wire</span>
-        </div>
-
-        <div className="bg-white border border-[#E0DAD0] rounded-xl p-4 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-mono font-bold uppercase text-red-800">
-              Overdue Invoices
-            </span>
-            <AlertTriangle className="w-4 h-4 text-red-600" />
-          </div>
-          <p className="text-2xl font-black font-mono text-red-700 mt-2">
-            {overdueCount}
-          </p>
-          <span className="text-[11px] text-gray-500">Past contract due date</span>
-        </div>
-      </div>
-
-      {/* View Switcher: Invoices & Wires Ledger vs Credit Notes & Settlements */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#E0DAD0] pb-2">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setMainTab("invoices")}
-            className={`px-4 py-2 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer ${
-              mainTab === "invoices"
-                ? "bg-[#0F1420] text-[#C9A052] shadow-sm"
-                : "bg-white text-gray-600 hover:text-[#0F1420] border border-[#E0DAD0]"
-            }`}
-          >
-            Invoices & Settlements Ledger
-          </button>
-          <button
-            onClick={() => setMainTab("credit_notes")}
-            className={`px-4 py-2 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer ${
-              mainTab === "credit_notes"
-                ? "bg-[#0F1420] text-[#C9A052] shadow-sm"
-                : "bg-white text-gray-600 hover:text-[#0F1420] border border-[#E0DAD0]"
-            }`}
-          >
-            Credit Notes & Balance Pull-Out ({bookings.reduce((sum, b) => sum + (b.creditNotes?.length || 0), 0)})
-          </button>
-        </div>
-
-        {mainTab === "invoices" && (
-          <button
-            onClick={() => setShowSegmentedFees(!showSegmentedFees)}
-            className={`text-xs font-mono px-3 py-1.5 rounded-lg border font-bold transition-colors cursor-pointer ${
-              showSegmentedFees
-                ? "bg-[#C9A052]/20 border-[#C9A052] text-[#9A7A35]"
-                : "bg-white border-[#E0DAD0] text-gray-600 hover:text-[#0F1420]"
-            }`}
-          >
-            {showSegmentedFees ? "Hide Segmented Fees" : "Show Segmented Fees"}
-          </button>
+      <div className="bg-white border border-slate-200 rounded-xl grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+        {kpiCell(
+          `Received · ${kpis?.month || new Date().toLocaleDateString("en-GB", { month: "short" }).toUpperCase()}`,
+          money(kpis?.received || 0).replace(/\.00$/, ""),
+          `${kpis?.receivedCount || 0} payment${kpis?.receivedCount === 1 ? "" : "s"}`
         )}
-      </div>
-
-      {/* Filter and Search Bar */}
-      <div className="bg-white border border-[#E0DAD0] rounded-xl p-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
-        <div className="relative w-full sm:w-80">
-          <Search className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
-          <input
-            type="text"
-            placeholder={mainTab === "invoices" ? "Search invoice #, trip #, or client name..." : "Search credit note #, trip #, or client..."}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-lg pl-9 pr-3 py-1.5 text-xs text-[#0F1420] placeholder-gray-400 focus:outline-none focus:border-[#C9A052]"
-          />
-        </div>
-
-        {mainTab === "invoices" && (
-          <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto">
-            {[
-              { id: "all", label: "All Invoices" },
-              { id: "fully_paid", label: "Fully Paid" },
-              { id: "deposit_paid", label: "Deposit Paid" },
-              { id: "unpaid", label: "Unpaid" }
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setStatusFilter(tab.id)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-colors whitespace-nowrap ${
-                  statusFilter === tab.id
-                    ? "bg-[#0F1420] text-[#C9A052]"
-                    : "bg-[#F5F2EC] text-[#0F1420]/70 hover:bg-[#EAE6DE]"
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Bookings & Payments Table OR Credit Notes Register */}
-      <div className="bg-white border border-[#E0DAD0] rounded-2xl shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          {mainTab === "credit_notes" ? (
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="bg-[#F5F2EC] border-b border-[#E0DAD0] text-[#0F1420]/80 font-mono text-[10px] uppercase tracking-wider">
-                  <th className="py-3 px-4">Credit Note # & Date</th>
-                  <th className="py-3 px-4">Trip # & Client</th>
-                  <th className="py-3 px-4">Original Invoiced</th>
-                  <th className="py-3 px-4">Revised Charter Total</th>
-                  <th className="py-3 px-4">Cancellation Fee</th>
-                  <th className="py-3 px-4">Comp Services</th>
-                  <th className="py-3 px-4">Net Settlement Balance</th>
-                  <th className="py-3 px-4">Reason / Justification</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#E0DAD0]/60">
-                {bookings.flatMap((b) => (b.creditNotes || []).map((cn) => ({ ...cn, booking: b }))).length === 0 ? (
-                  <tr>
-                    <td colSpan={9} className="py-8 text-center text-xs text-gray-500 font-mono">
-                      No credit note adjustments or balance disputes issued yet.
-                    </td>
-                  </tr>
-                ) : (
-                  bookings
-                    .flatMap((b) => (b.creditNotes || []).map((cn) => ({ ...cn, booking: b })))
-                    .filter(
-                      (item) =>
-                        !searchQuery.trim() ||
-                        (item.creditNoteNumber || item.number || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-                        item.booking.tripNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                        item.booking.client.fullName.toLowerCase().includes(searchQuery.toLowerCase())
-                    )
-                    .map((item) => (
-                      <tr key={item.id} className="hover:bg-[#FDFCFA] transition-colors">
-                        <td className="py-3.5 px-4">
-                          <span className="font-mono font-bold text-red-900">{item.creditNoteNumber || item.number}</span>
-                          <p className="text-[10px] text-gray-500 font-mono">{item.issueDate || item.date}</p>
-                        </td>
-                        <td className="py-3.5 px-4">
-                          <div className="font-bold text-[#0F1420]">{item.booking.client.fullName}</div>
-                          <NextLink
-                            href={`/trips/${(item.booking.tripId || item.booking.tripNumber || item.booking.id).split("-")[0]}/accounting`}
-                            className="text-[10px] text-[#C9A052] hover:underline font-mono font-bold block"
-                          >
-                            Trip: {item.booking.tripNumber} →
-                          </NextLink>
-                        </td>
-                        <td className="py-3.5 px-4 font-mono text-[#0F1420] font-bold">
-                          {formatCurrency(item.originalTotal ?? item.amount, item.booking.pricing.currency || "EUR")}
-                        </td>
-                        <td className="py-3.5 px-4 font-mono text-[#0F1420] font-extrabold">
-                          {formatCurrency(item.newTotal ?? item.amount, item.booking.pricing.currency || "EUR")}
-                          <span className="block text-[9px] text-gray-400 font-normal">Active Route Only</span>
-                        </td>
-                        <td className="py-3.5 px-4 font-mono text-red-700">
-                          {item.cancellationFee ? `€${item.cancellationFee.toLocaleString()}` : "€0"}
-                        </td>
-                        <td className="py-3.5 px-4 font-mono text-emerald-700">
-                          {item.complementaryDeduction ? `€${item.complementaryDeduction.toLocaleString()}` : "€0"}
-                        </td>
-                        <td className="py-3.5 px-4 font-mono">
-                          {item.weOweClient && item.weOweClient > 0 ? (
-                            <span className="px-2 py-1 rounded bg-emerald-100 text-emerald-900 font-bold border border-emerald-300 block text-center">
-                              We Owe: {formatCurrency(item.weOweClient, item.booking.pricing.currency)}
-                            </span>
-                          ) : item.clientOwes && item.clientOwes > 0 ? (
-                            <span className="px-2 py-1 rounded bg-amber-100 text-amber-900 font-bold border border-amber-300 block text-center">
-                              Client Owes: {formatCurrency(item.clientOwes, item.booking.pricing.currency)}
-                            </span>
-                          ) : (
-                            <span className="text-gray-400">Parity €0</span>
-                          )}
-                        </td>
-                        <td className="py-3.5 px-4 text-gray-700 max-w-xs truncate" title={item.reason}>
-                          {item.reason}
-                        </td>
-                        <td className="py-3.5 px-4 text-right">
-                          <button
-                            onClick={() => openDocument(item.booking, "credit_note")}
-                            className="px-2.5 py-1.5 rounded-lg bg-[#0F1420] hover:bg-[#1A2338] text-[#C9A052] font-mono font-bold text-[11px] transition-colors cursor-pointer"
-                          >
-                            View PDF
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                )}
-              </tbody>
-            </table>
+        {kpiCell("Awaiting", money(kpis?.awaiting || 0).replace(/\.00$/, ""), `${kpis?.awaitingTrips || 0} trip${kpis?.awaitingTrips === 1 ? "" : "s"}`, "text-amber-700")}
+        {kpiCell("Overdue", money(kpis?.overdue || 0).replace(/\.00$/, ""), "", "text-rose-700")}
+        {kpiCell(
+          "Flies within 3 days, unpaid",
+          String(kpis?.soonUnpaidCount || 0),
+          kpis?.soonUnpaidFirst ? (
+            <span className="inline-flex items-baseline gap-1">
+              <DocId id={kpis.soonUnpaidFirst.trip} className="[&>span]:!text-amber-700" /> · {money(kpis.soonUnpaidFirst.amount, kpis.soonUnpaidFirst.currency).replace(/\.00$/, "")}
+            </span>
           ) : (
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="bg-[#F5F2EC] border-b border-[#E0DAD0] text-[#0F1420]/80 font-mono text-[10px] uppercase tracking-wider">
-                <th className="py-3 px-4">Trip # & Flight Date</th>
-                <th className="py-3 px-4">Invoice #</th>
-                <th className="py-3 px-4">Client & Company</th>
-                <th className="py-3 px-4">Payment Purpose / Reason</th>
-                <th className="py-3 px-4">Charter Total</th>
-                <th className="py-3 px-4">Payment Due Date</th>
-                <th className="py-3 px-4">Payment Status</th>
-                <th className="py-3 px-4 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#E0DAD0]/60">
-              {filteredBookings.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="py-8 text-center text-xs text-gray-500 font-mono">
-                    No payment records match the filter criteria.
-                  </td>
-                </tr>
-              ) : (
-                filteredBookings.map((b) => (
-                  <tr key={b.id} className="hover:bg-[#FDFCFA] transition-colors">
-                    {/* Trip # & Flight Date */}
-                    <td className="py-3.5 px-4">
-                      <NextLink
-                        href={`/trips/${(b.tripId || b.tripNumber || "FE4578").split("-")[0]}/accounting`}
-                        className="font-mono font-bold text-[#0F1420] hover:text-[#C9A052] hover:underline"
-                      >
-                        {b.tripNumber}
-                      </NextLink>
-                      <p className="text-[11px] text-gray-500">
-                        {b.legs[0]?.origin.icao} → {b.legs[0]?.destination.icao} ({b.legs[0]?.flightDate})
-                      </p>
-                    </td>
+            ""
+          ),
+          "text-amber-700"
+        )}
+      </div>
 
-                    {/* Invoice # */}
-                    <td className="py-3.5 px-4 font-mono font-bold text-[#9A7A35]">
-                      {b.invoiceNumber || "INV-PENDING"}
-                    </td>
-
-                    {/* Client & Company */}
-                    <td className="py-3.5 px-4">
-                      <div className="font-bold text-[#0F1420]">{b.client.fullName}</div>
-                      {b.client.companyName && (
-                        <p className="text-[11px] text-gray-500">{b.client.companyName}</p>
-                      )}
-                    </td>
-
-                    {/* Payment Purpose / Reason */}
-                    <td className="py-3.5 px-4">
-                      <span className="font-mono text-[11px] text-[#0F1420] font-semibold bg-[#F5F2EC] px-2 py-0.5 rounded border border-[#E0DAD0] inline-block">
-                        {b.paymentReason || "Charter Flight Settlement"}
-                      </span>
-                    </td>
-
-                    {/* Charter Total */}
-                    <td className="py-3.5 px-4 font-mono font-black text-sm text-[#0F1420]">
-                      {formatCurrency(b.pricing.totalFlightPrice, b.pricing.currency || "EUR")}
-                      {showSegmentedFees && (
-                        <div className="text-[10px] text-gray-500 font-normal space-y-0.5 mt-1 pt-1 border-t border-[#E0DAD0]/60">
-                          <div>Base: {formatCurrency(b.pricing.flightPrice, b.pricing.currency || "EUR")}</div>
-                          <div>Taxes: {formatCurrency(b.pricing.airportFees + b.pricing.passengerFees, b.pricing.currency || "EUR")}</div>
-                          <div>VIP/Extras: {formatCurrency(b.pricing.additionalServicesTotal, b.pricing.currency || "EUR")}</div>
-                        </div>
-                      )}
-                    </td>
-
-                    {/* Payment Due Date */}
-                    <td className="py-3.5 px-4 font-mono text-gray-700">
-                      {b.paymentDueDate || "Upon Booking"}
-                    </td>
-
-                    {/* Payment Status */}
-                    <td className="py-3.5 px-4">
-                      {getStatusBadge(b.paymentStatus)}
-                    </td>
-
-                    {/* Actions */}
-                    <td className="py-3.5 px-4 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          onClick={() => handleOpenPaymentLink(b)}
-                          className="px-2.5 py-1.5 rounded-lg bg-[#C9A052]/15 hover:bg-[#C9A052]/30 text-[#9A7A35] font-mono font-bold text-[11px] transition-colors border border-[#C9A052]/40 flex items-center gap-1 shadow-sm"
-                          title="Generate client payment link"
-                        >
-                          <Link className="w-3.5 h-3.5 text-[#C9A052]" />
-                          <span>Pay Link</span>
-                        </button>
-
-                        <button
-                          onClick={() => openDocument(b, "invoice")}
-                          className="px-2.5 py-1.5 rounded-lg bg-[#F5F2EC] hover:bg-[#EAE6DE] text-[#0F1420] font-mono font-bold text-[11px] transition-colors border border-[#E0DAD0] flex items-center gap-1"
-                          title="View official VAT invoice document"
-                        >
-                          <FileText className="w-3.5 h-3.5 text-[#C9A052]" />
-                          <span>Invoice</span>
-                        </button>
-
-                        {canEdit && b.paymentStatus !== "fully_paid" && (
-                          <button
-                            onClick={() => handleOpenPaymentModal(b)}
-                            className="px-2.5 py-1.5 rounded-lg bg-[#0F1420] hover:bg-[#1A2338] text-white font-mono font-bold text-[11px] transition-colors flex items-center gap-1 shadow-sm"
-                          >
-                            <CreditCard className="w-3.5 h-3.5 text-[#C9A052]" />
-                            <span>Record</span>
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-          )}
+      <div className="flex flex-wrap items-center gap-2.5">
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search trip, invoice, client..."
+          className="w-full sm:w-[340px] bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-[15px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-400"
+        />
+        {pill("open", `Open ${counts.open}`)}
+        {pill("proof", `Proof uploaded ${counts.proof}`)}
+        {pill("paid", "Paid")}
+        {pill("overdue", "Overdue")}
+        {pill("card", "Card")}
+        {pill("bank", "Bank transfer")}
+        <div className="ml-auto flex items-center gap-2">
+          <span className="text-[15px] text-slate-500">Sort</span>
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value as typeof sort)}
+            className="bg-white border border-slate-200 rounded-lg px-3 py-2.5 text-[15px] text-slate-900 focus:outline-none"
+          >
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="due">Due soonest</option>
+          </select>
         </div>
       </div>
 
-      {/* Record Payment Modal */}
-      {selectedBookingForPayment && (
-        <div className="fixed inset-0 z-50 bg-[#0F1420]/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full border border-[#E0DAD0] shadow-2xl overflow-hidden">
-            <div className="p-5 bg-[#0F1420] text-white flex items-center justify-between">
-              <div>
-                <span className="text-[10px] font-mono font-bold text-[#C9A052] uppercase">
-                  RECORD WIRE OR CARD SETTLEMENT
-                </span>
-                <h3 className="text-base font-bold text-white mt-0.5">
-                  Trip {selectedBookingForPayment.tripNumber} ({selectedBookingForPayment.client.fullName})
-                </h3>
-              </div>
-              <button
-                onClick={() => setSelectedBookingForPayment(null)}
-                className="p-1.5 rounded-lg bg-white/10 text-white"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleRecordPaymentSubmit} className="p-6 space-y-4 text-xs">
-              <div className="p-3 bg-[#F5F2EC] rounded-xl border border-[#E0DAD0] flex items-center justify-between font-mono">
-                <span className="text-[#0F1420]/70">Total Invoice Amount:</span>
-                <span className="text-base font-black text-[#0F1420]">
-                  {formatCurrency(selectedBookingForPayment.pricing.totalFlightPrice, selectedBookingForPayment.pricing.currency || "EUR")}
-                </span>
-              </div>
-
-              {/* Settlement Type & Reason */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                    Settlement Type
-                  </label>
-                  <select
-                    value={paymentType}
-                    onChange={(e) => setPaymentType(e.target.value as any)}
-                    className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-lg px-3 py-2 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                  >
-                    <option value="fully_paid">100% Full Payment Received</option>
-                    <option value="deposit_paid">Partial Deposit Received (25%)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                    Payment Reason / Purpose
-                  </label>
-                  <select
-                    value={paymentReason}
-                    onChange={(e) => setPaymentReason(e.target.value)}
-                    className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-lg px-3 py-2 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                  >
-                    <option value="Charter Flight Settlement">Charter Flight Settlement</option>
-                    <option value="Booking Confirmation Deposit (25%)">Booking Confirmation Deposit (25%)</option>
-                    <option value="De-icing Fluid & Airport Tariff">De-icing Fluid & Airport Tariff</option>
-                    <option value="VIP Ground Limousine & Helicopter">VIP Ground Limousine & Helicopter</option>
-                    <option value="In-Flight Catering & Special Handling">In-Flight Catering & Special Handling</option>
-                    <option value="Extended Aircraft Parking & Hangarage">Extended Aircraft Parking & Hangarage</option>
-                    <option value="Owner Approval Repositioning Surcharge">Owner Approval Repositioning Surcharge</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                    Amount Received
-                  </label>
-                  <input
-                    type="number"
-                    value={paymentAmount}
-                    onChange={(e) => setPaymentAmount(Number(e.target.value))}
-                    className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-lg px-3 py-1.5 font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                    Receipt Date
-                  </label>
-                  <input
-                    type="date"
-                    value={paymentDate}
-                    onChange={(e) => setPaymentDate(e.target.value)}
-                    className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-lg px-3 py-1.5 font-mono text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                    Payment Method
-                  </label>
-                  <select
-                    value={paymentMethod}
-                    onChange={(e) => setPaymentMethod(e.target.value)}
-                    className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-lg px-3 py-2 font-mono text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                  >
-                    <option value="Bank Wire Transfer">Bank Wire (SEPA/SWIFT)</option>
-                    <option value="Corporate Credit Card">Corporate Credit Card (Amex)</option>
-                    <option value="Aviation Escrow">Aviation Escrow Deposit</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                    Bank Reference / Transaction #
-                  </label>
-                  <input
-                    type="text"
-                    value={paymentRef}
-                    onChange={(e) => setPaymentRef(e.target.value)}
-                    placeholder="e.g. WIRE-849201"
-                    className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-lg px-3 py-1.5 font-mono text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                  />
-                </div>
-              </div>
-
-              <div className="pt-3 flex items-center justify-end gap-3 border-t border-[#E0DAD0]">
-                <button
-                  type="button"
-                  onClick={() => setSelectedBookingForPayment(null)}
-                  className="px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-[#0F1420] font-mono font-bold"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420] font-mono font-black shadow-md flex items-center gap-1.5"
-                >
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>Confirm Settlement</span>
-                </button>
-              </div>
-            </form>
-          </div>
+      {notice && (
+        <div className="flex items-center justify-between gap-3 bg-[#EEF4FD] border border-[#C9DBF5] rounded-lg px-4 py-2.5 text-sm text-slate-800">
+          <span>{notice}</span>
+          <button type="button" onClick={() => setNotice(null)} className="text-slate-500 hover:text-slate-800 text-xs">
+            Close
+          </button>
         </div>
       )}
 
-      {/* Generate Client Payment Link Modal */}
-      {selectedBookingForLink && (() => {
-        const currency = selectedBookingForLink.pricing.currency || "EUR";
-        const cardFeeAmount = linkPaymentMethod === "card" ? Math.round(linkAmount * 0.035) : 0;
-        const totalPayable = linkAmount + cardFeeAmount;
-        const generatedUrl = `https://pay.orbelo.com/checkout/${selectedBookingForLink.id}?ref=${selectedBookingForLink.invoiceNumber || selectedBookingForLink.tripNumber}&amt=${totalPayable}&cur=${currency}&method=${linkPaymentMethod}&purpose=${encodeURIComponent(linkReason)}`;
-
-        return (
-          <div className="fixed inset-0 z-50 bg-[#0F1420]/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-            <div className="bg-white rounded-2xl max-w-xl w-full border border-[#E0DAD0] shadow-2xl overflow-hidden text-xs">
-              
-              {/* Header */}
-              <div className="p-5 bg-[#0F1420] text-white flex items-center justify-between">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <Link className="w-4 h-4 text-[#C9A052]" />
-                    <span className="text-[10px] font-mono font-bold text-[#C9A052] uppercase tracking-wider">
-                      CLIENT PAYMENT LINK GENERATOR
-                    </span>
-                  </div>
-                  <h3 className="text-base font-bold text-white mt-0.5">
-                    {selectedBookingForLink.client.fullName} • Trip #{selectedBookingForLink.tripNumber}
-                  </h3>
-                </div>
-                <button
-                  onClick={() => setSelectedBookingForLink(null)}
-                  className="p-1.5 rounded-lg bg-white/10 text-white hover:bg-white/20"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              {/* Body */}
-              <div className="p-6 space-y-4">
-                
-                {/* Reason / Purpose */}
-                <div>
-                  <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                    Payment Reason / Purpose
-                  </label>
-                  <select
-                    value={linkReason}
-                    onChange={(e) => setLinkReason(e.target.value)}
-                    className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                  >
-                    <option value="Charter Flight Settlement">Charter Flight Settlement (100% Full Balance)</option>
-                    <option value="Flight Reservation Deposit (25%)">Flight Reservation Deposit (25%)</option>
-                    <option value="De-icing Protection Insurance">De-icing Protection Insurance</option>
-                    <option value="VIP Limousine & Tarmac Helicopter Transfer">VIP Limousine & Tarmac Helicopter Transfer</option>
-                    <option value="Bespoke In-Flight Catering Surcharge">Bespoke In-Flight Catering Surcharge</option>
-                    <option value="Post-Flight Incidental Charges & Extended Hangarage">Post-Flight Incidental Charges & Extended Hangarage</option>
-                  </select>
-                </div>
-
-                {/* Amount and Payment Method */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                      Charge Amount ({currency})
-                    </label>
-                    <input
-                      type="number"
-                      value={linkAmount}
-                      onChange={(e) => setLinkAmount(Number(e.target.value))}
-                      className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-mono font-black text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                      Settlement Gateway
-                    </label>
-                    <select
-                      value={linkPaymentMethod}
-                      onChange={(e) => setLinkPaymentMethod(e.target.value as any)}
-                      className="w-full bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-mono font-bold text-[#0F1420] focus:outline-none focus:border-[#C9A052]"
-                    >
-                      <option value="card">Credit Card (+3.5% Card Processing Fee)</option>
-                      <option value="wire">SEPA / SWIFT Wire Transfer (0% Fee)</option>
-                      <option value="escrow">Aviation Escrow Trust Account (0% Fee)</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Calculation Summary */}
-                <div className="p-3.5 bg-[#F5F2EC] rounded-xl border border-[#E0DAD0] space-y-1.5 font-mono text-xs">
-                  <div className="flex justify-between text-gray-600">
-                    <span>Base Charter Charge:</span>
-                    <span>{formatCurrency(linkAmount, currency)}</span>
-                  </div>
-                  {linkPaymentMethod === "card" && (
-                    <div className="flex justify-between text-[#9A7A35] font-semibold">
-                      <span>Card Processing Fee (+3.5%):</span>
-                      <span>+{formatCurrency(cardFeeAmount, currency)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between text-sm font-black text-[#0F1420] pt-1 border-t border-[#E0DAD0]">
-                    <span>Total Client Payment:</span>
-                    <span>{formatCurrency(totalPayable, currency)}</span>
-                  </div>
-                </div>
-
-                {/* Generated Link Box */}
-                <div>
-                  <label className="block text-[10px] font-mono font-bold uppercase text-[#0F1420]/70 mb-1">
-                    Generated Direct Checkout URL
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      readOnly
-                      value={generatedUrl}
-                      className="flex-1 bg-[#F5F2EC] border border-[#E0DAD0] rounded-xl px-3 py-2 text-xs font-mono text-[#0F1420] select-all outline-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleCopyPaymentLink(generatedUrl)}
-                      className={`px-4 py-2 rounded-xl font-bold font-mono text-xs flex items-center gap-1.5 transition-all shadow-sm ${
-                        linkCopied
-                          ? "bg-emerald-600 text-white"
-                          : "bg-[#C9A052] hover:bg-[#B88F42] text-[#0F1420]"
-                      }`}
-                    >
-                      {linkCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                      <span>{linkCopied ? "Copied!" : "Copy Link"}</span>
-                    </button>
-                  </div>
-                </div>
-
-                <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-900 text-[11px] leading-relaxed">
-                  🔒 Payment links expire 72 hours after generation. Transactions are secured via 256-bit SSL encryption and routed directly to Orbelo's escrow or card merchant account.
-                </div>
-              </div>
-
-              {/* Footer */}
-              <div className="p-4 bg-gray-50 border-t border-[#E0DAD0] flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setSelectedBookingForLink(null)}
-                  className="px-4 py-2 rounded-xl bg-gray-200 hover:bg-gray-300 text-[#0F1420] font-bold"
-                >
-                  Close
-                </button>
-              </div>
+      {isRecordOpen && (
+        <form onSubmit={submitRecord} className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-[17px] font-bold text-slate-900 m-0">Record payment</h3>
+            <button type="button" onClick={() => setIsRecordOpen(false)} className="text-sm text-slate-500 hover:text-slate-800">
+              Close
+            </button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+            <div className="md:col-span-2">
+              <label className={labelCls}>Invoice</label>
+              <select
+                value={form.rowId}
+                onChange={(e) => {
+                  const r = openRows.find((x) => x.id === e.target.value);
+                  setForm({ ...form, rowId: e.target.value, amount: r ? String(r.amount) : form.amount });
+                }}
+                className={inputCls}
+              >
+                {openRows.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.invoice} · {r.client} · {money(r.amount, r.currency)} open
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>Amount received</label>
+              <input inputMode="decimal" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>Method</label>
+              <select value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value as typeof form.method })} className={inputCls}>
+                <option value="bank_transfer">Bank transfer</option>
+                <option value="card">Card</option>
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>Received on</label>
+              <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className={inputCls} />
+            </div>
+            <div className="md:col-span-5">
+              <label className={labelCls}>Bank reference</label>
+              <input value={form.reference} onChange={(e) => setForm({ ...form, reference: e.target.value })} placeholder="Optional" className={inputCls} />
             </div>
           </div>
-        );
-      })()}
+          {formError && <p className="text-sm text-rose-700 m-0">{formError}</p>}
+          <div className="flex justify-end">
+            <button type="submit" disabled={busy === "record"} className="bg-[#0B1320] hover:bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-50">
+              {busy === "record" ? "Saving…" : "Save payment"}
+            </button>
+          </div>
+        </form>
+      )}
+
+      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-[15px]">
+            <thead className="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th className={thCls}>Status</th>
+                <th className={thCls}>Trip · flight</th>
+                <th className={thCls}>Invoice</th>
+                <th className={thCls}>Client</th>
+                <th className={thCls}>Purpose</th>
+                <th className={`${thCls} text-right`}>Amount</th>
+                <th className={thCls}>Due</th>
+                <th className={thCls}>Method</th>
+                <th className={thCls}>Proof</th>
+                <th className={thCls}></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {state === "loading" && (
+                <tr>
+                  <td colSpan={10} className="px-4 py-8 text-center text-slate-400 text-sm">
+                    Loading payments…
+                  </td>
+                </tr>
+              )}
+              {state === "error" && (
+                <tr>
+                  <td colSpan={10} className="px-4 py-8 text-center text-sm text-rose-700">
+                    {errorText}{" "}
+                    <button type="button" onClick={() => { setState("loading"); load(); }} className="underline">
+                      Try again
+                    </button>
+                  </td>
+                </tr>
+              )}
+              {state === "ready" && filtered.length === 0 && (
+                <tr>
+                  <td colSpan={10} className="px-4 py-8 text-center text-slate-400 text-sm">
+                    Nothing here.
+                  </td>
+                </tr>
+              )}
+              {filtered.map((r) => {
+                const st = statusPill(r);
+                return (
+                  <tr key={r.id} className="align-top hover:bg-slate-50/60">
+                    <td className="px-4 py-3.5">
+                      <span className={`text-[14px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${st.cls}`}>{st.text}</span>
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <Link href={`/trips/${r.tripToken}/accounting`} className="hover:underline">
+                        <DocId id={r.trip} />
+                      </Link>
+                      <div className="text-[14px] text-slate-500">{flightLabel(r.departure)}</div>
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <DocId id={r.invoice} />
+                    </td>
+                    <td className="px-4 py-3.5 text-slate-900">{r.client}</td>
+                    <td className="px-4 py-3.5 text-slate-900">{r.purpose}</td>
+                    <td className="px-4 py-3.5 text-slate-900 text-right whitespace-nowrap">{money(r.amount, r.currency)}</td>
+                    <td className="px-4 py-3.5 text-slate-900 whitespace-nowrap">{shortDay(r.due)}</td>
+                    <td className="px-4 py-3.5 text-slate-900 whitespace-nowrap">{r.method}</td>
+                    <td className="px-4 py-3.5">
+                      {r.proofUrl ? (
+                        <a href={r.proofUrl} download={r.proofName || "proof"} target="_blank" rel="noopener noreferrer" className="text-[#1F5FAE] underline underline-offset-2">
+                          {r.proofName || "proof"}
+                        </a>
+                      ) : (
+                        <span className="text-slate-700">{r.proofName || "—"}</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3.5 whitespace-nowrap text-right">
+                      {r.status === "proof_uploaded" && (
+                        <button type="button" disabled={busy === r.id} onClick={() => confirm(r)} className="font-semibold text-[#1F5FAE] hover:underline disabled:opacity-50">
+                          {busy === r.id ? "Saving…" : "Confirm received"}
+                        </button>
+                      )}
+                      {(r.status === "awaiting" || r.status === "overdue") && (
+                        <span className="inline-flex items-center gap-3">
+                          <button type="button" disabled={busy === r.id} onClick={() => remind(r)} className="font-semibold text-[#1F5FAE] hover:underline disabled:opacity-50">
+                            {busy === r.id ? "Sending…" : "Remind"}
+                          </button>
+                          <button type="button" onClick={() => openRecord(r)} className="text-[13px] text-slate-500 hover:text-slate-800 hover:underline">
+                            Record
+                          </button>
+                        </span>
+                      )}
+                      {r.status === "paid" && (
+                        <Link href={`/trips/${r.tripToken}/accounting`} className="text-[#1F5FAE] underline underline-offset-2">
+                          Open
+                        </Link>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-[15px] text-slate-500 px-6 py-4 m-0 border-t border-slate-100">
+          Amber = waiting for money or for you to confirm a wire. Green = received (card payments turn green automatically). Two or three days
+          before a flight with money still open, the admin and the linked Curator are notified.
+        </p>
+      </div>
     </div>
   );
 }

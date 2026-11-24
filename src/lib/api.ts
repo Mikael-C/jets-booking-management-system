@@ -348,6 +348,65 @@ export const api = {
       request<{ success: boolean; data: any }>("/dashboard/financial-health"),
   },
 
+  // Invoices, credit notes, payments, contracts and flight briefs across trips (backend /api/registry)
+  registry: {
+    invoices: () => request<{ success: boolean; data: any[] }>("/registry/invoices"),
+    payments: () => request<{ success: boolean; data: { rows: any[]; kpis: any } }>("/registry/payments"),
+    contracts: () => request<{ success: boolean; data: any[] }>("/registry/contracts"),
+    flightBriefs: () => request<{ success: boolean; data: any[] }>("/registry/flight-briefs"),
+    ledger: (bookingId: string) =>
+      request<{ success: boolean; data: any }>(`/registry/trips/${encodeURIComponent(bookingId)}/ledger`),
+    createInvoice: (bookingId: string, data: { amount: number; purpose?: string; line?: string; kind?: string }) =>
+      request<{ success: boolean; data: any }>(`/registry/trips/${encodeURIComponent(bookingId)}/invoices`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    combine: (bookingId: string) =>
+      request<{ success: boolean; data: any }>(`/registry/trips/${encodeURIComponent(bookingId)}/combine`, { method: "POST" }),
+    createCreditNote: (
+      bookingId: string,
+      data: { against: string; reasonCategory: string; cancellationFeePct?: number; amount: number; internalNote?: string; output?: string }
+    ) =>
+      request<{ success: boolean; data: any }>(`/registry/trips/${encodeURIComponent(bookingId)}/credit-notes`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    recordPayment: (
+      bookingId: string,
+      data: { invoiceNumber?: string; amount: number; method: "bank_transfer" | "card"; reference?: string; receivedAt?: string; status?: string; proofName?: string; proofUrl?: string }
+    ) =>
+      request<{ success: boolean; data: any }>(`/registry/trips/${encodeURIComponent(bookingId)}/payments`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    confirmPayment: (bookingId: string, paymentId: string) =>
+      request<{ success: boolean; data: any }>(
+        `/registry/trips/${encodeURIComponent(bookingId)}/payments/${encodeURIComponent(paymentId)}/confirm`,
+        { method: "POST" }
+      ),
+    paymentLink: (bookingId: string, invoiceNumber: string, origin?: string) =>
+      request<{ success: boolean; data: { url: string; provider: string; checkoutUrl: string; amount: number; currency: string; invoiceNumber: string } }>(
+        `/registry/trips/${encodeURIComponent(bookingId)}/invoices/${encodeURIComponent(invoiceNumber)}/payment-link`,
+        { method: "POST", body: JSON.stringify({ origin }) }
+      ),
+    remind: (bookingId: string, invoiceNumber: string) =>
+      request<{ success: boolean; data: { emailed: boolean; to: string } }>(
+        `/registry/trips/${encodeURIComponent(bookingId)}/invoices/${encodeURIComponent(invoiceNumber)}/remind`,
+        { method: "POST" }
+      ),
+  },
+
+  // Public payment link page (no login)
+  pay: {
+    get: (token: string) => request<{ success: boolean; data: any }>(`/pay/${encodeURIComponent(token)}`),
+    proof: (token: string, data: { payerName?: string; reference?: string; proofName?: string; proofUrl?: string; amount?: number }) =>
+      request<{ success: boolean; data: any }>(`/pay/${encodeURIComponent(token)}/proof`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    check: (token: string) => request<{ success: boolean; data: any }>(`/pay/${encodeURIComponent(token)}/check`, { method: "POST" }),
+  },
+
   // Per-account defaults remembered by the quote builder (step 01)
   accountPreferences: {
     list: () => request<{ success: boolean; data: any[] }>("/account-preferences"),

@@ -1,441 +1,309 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useAviation } from "@/lib/aviationContext";
+import { useAviation, normalizeBooking } from "@/lib/aviationContext";
 import { api } from "@/lib/api";
-import { formatCurrency } from "@/lib/pricingCalculator";
-import { formatDocumentId } from "@/lib/idGenerator";
-import StatusPill from "@/components/ui/StatusPill";
-import RecordHeader from "@/components/ui/RecordHeader";
-import KpiStrip from "@/components/ui/KpiStrip";
-import {
-  Search,
-  Download,
-  Printer,
-  Eye,
-  FileText,
-  AlertTriangle,
-  Receipt,
-  Calendar,
-  DollarSign,
-  Send,
-  CheckCircle2
-} from "lucide-react";
+import DocId from "@/components/ui/DocId";
+import { creditNoteDocBooking, downloadCsv, invoiceDocBooking, loadBooking, money, shortDay } from "@/lib/financeDocs";
+
+interface DocRow {
+  id: string;
+  bookingId: string;
+  number: string;
+  type: string;
+  kind: "invoice" | "credit_note";
+  trip: string;
+  tripToken: string;
+  client: string;
+  date: string | null;
+  amount: number;
+  open: number;
+  currency: string;
+  appliesTo: string;
+  status: string;
+  combined: boolean;
+  paymentLink?: string;
+  internalNote?: string;
+}
+
+type Filter = "all" | "invoices" | "credit_notes" | "unpaid" | "combined" | "this_month";
+
+const STATUS: Record<string, { label: string; cls: string }> = {
+  issued: { label: "Issued", cls: "bg-slate-100 text-slate-700" },
+  credited: { label: "Credited", cls: "bg-emerald-50 text-emerald-700" },
+  paid: { label: "Paid", cls: "bg-emerald-50 text-emerald-700" },
+  unpaid: { label: "Unpaid", cls: "bg-amber-50 text-amber-800" },
+  part_paid: { label: "Part paid", cls: "bg-amber-50 text-amber-800" },
+  proof_uploaded: { label: "Proof uploaded", cls: "bg-amber-50 text-amber-800" },
+  overdue: { label: "Overdue", cls: "bg-rose-50 text-rose-700" },
+  combined: { label: "Combined", cls: "bg-slate-100 text-slate-600" },
+  void: { label: "Void", cls: "bg-slate-100 text-slate-500" }
+};
+
+const thCls = "text-left text-[12px] font-semibold uppercase tracking-[0.08em] text-slate-500 px-4 py-3 whitespace-nowrap";
 
 export default function InvoicesView() {
-  const router = useRouter();
-  const { bookings, openDocument } = useAviation();
-  const [searchQuery, setSearchQuery] = useState("");
-  const [typeFilter, setTypeFilter] = useState<"all" | "invoices" | "credit_notes">("all");
-  const [statusFilter, setStatusFilter] = useState<"all" | "paid" | "unpaid" | "overdue">("all");
-  const [invoiceRemindersState, setInvoiceRemindersState] = useState<Record<string, boolean>>({});
-  const [actionNotice, setActionNotice] = useState<string | null>(null);
+  const { bookings, openDocument, role } = useAviation();
+  const [rows, setRows] = useState<DocRow[]>([]);
+  const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+  const [errorText, setErrorText] = useState("");
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<Filter>("all");
+  const [sort, setSort] = useState<"newest" | "oldest" | "amount">("newest");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ text: string; url?: string } | null>(null);
 
-  const toggleInvoiceReminder = async (e: React.MouseEvent, docId: string) => {
-    e.stopPropagation();
-    const current = invoiceRemindersState[docId] !== false;
-    const nextVal = !current;
-    setInvoiceRemindersState((prev) => ({ ...prev, [docId]: nextVal }));
+  const load = useCallback(async () => {
     try {
-      await api.invoices.toggleAutoReminders(docId, nextVal);
-      setActionNotice(`Auto reminders ${nextVal ? "resumed" : "paused"} for ${docId}`);
-      setTimeout(() => setActionNotice(null), 3000);
-    } catch {
-      setActionNotice(`Auto reminders ${nextVal ? "resumed" : "paused"} for ${docId}`);
-      setTimeout(() => setActionNotice(null), 3000);
+      const res = await api.registry.invoices();
+      setRows(Array.isArray(res?.data) ? res.data : []);
+      setState("ready");
+    } catch (err: any) {
+      setErrorText(err?.message || "The server could not be reached.");
+      setState("error");
     }
-  };
+  }, []);
 
-  const sendInvoiceReminderNow = async (e: React.MouseEvent, docId: string) => {
-    e.stopPropagation();
-    try {
-      await api.invoices.sendPaymentReminder(docId);
-      setActionNotice(`PAY-02 payment reminder sent for ${docId}`);
-      setTimeout(() => setActionNotice(null), 3500);
-    } catch {
-      setActionNotice(`PAY-02 payment reminder sent for ${docId}`);
-      setTimeout(() => setActionNotice(null), 3500);
-    }
-  };
+  useEffect(() => {
+    load();
+  }, [load]);
 
-  // Build unified items array (Invoices + Credit Notes)
-  const items = useMemo(() => {
-    const list: {
-      id: string;
-      docId: string;
-      type: "invoice" | "credit_note";
-      tripId: string;
-      rootId: string;
-      accountNumber: string;
-      clientName: string;
-      issueDate: string;
-      dueDate?: string;
-      amount: number;
-      currency: string;
-      status: "paid" | "unpaid" | "partially_paid" | "credited" | "overdue";
-      booking: any;
-      creditNoteObj?: any;
-    }[] = [];
+  const isAdmin = role === "admin" || role === "super_admin" || role === "finance";
 
-    bookings.forEach((b) => {
-      const rootId = (b.tripId || b.tripNumber || "FE4578").split("-")[0];
-      const versionNum = b.quoteVersion || 1;
-      const invNumber = b.invoiceNumber || formatDocumentId("INV", rootId, versionNum, 1);
-
-      // Add invoice if booked or quoted
-      const isPaid = b.paymentStatus === "fully_paid";
-      list.push({
-        id: `inv-${b.id}`,
-        docId: invNumber,
-        type: "invoice",
-        tripId: b.tripNumber || rootId,
-        rootId,
-        accountNumber: b.accountNumber || "ACC-10294",
-        clientName: b.client.companyName || b.client.fullName,
-        issueDate: b.contractDate || "12.11.2026",
-        dueDate: b.paymentDueDate || "18.11.2026",
-        amount: b.pricing.totalFlightPrice,
-        currency: b.pricing.currency || "EUR",
-        status: isPaid ? "paid" : "unpaid",
-        booking: b
-      });
-
-      // Add credit notes if any exist
-      if (b.creditNotes && b.creditNotes.length > 0) {
-        b.creditNotes.forEach((cn, idx) => {
-          list.push({
-            id: `cn-${b.id}-${idx}`,
-            docId: cn.creditNoteNumber || formatDocumentId("CN", rootId, versionNum, idx + 1),
-            type: "credit_note",
-            tripId: b.tripNumber || rootId,
-            rootId,
-            accountNumber: b.accountNumber || "ACC-10294",
-            clientName: b.client.companyName || b.client.fullName,
-            issueDate: cn.issueDate || cn.date || b.contractDate || "15.11.2026",
-            dueDate: "Immediate",
-            amount: -Math.abs(cn.amount || 250),
-            currency: b.pricing.currency || "EUR",
-            status: "credited",
-            booking: b,
-            creditNoteObj: cn
-          });
-        });
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const now = new Date();
+    let list = rows.filter((r) => {
+      if (filter === "invoices" && r.kind !== "invoice") return false;
+      if (filter === "credit_notes" && r.kind !== "credit_note") return false;
+      if (filter === "unpaid" && !(r.kind === "invoice" && ["unpaid", "overdue", "part_paid", "proof_uploaded"].includes(r.status))) return false;
+      if (filter === "combined" && !r.combined) return false;
+      if (filter === "this_month") {
+        const d = r.date ? new Date(r.date) : null;
+        if (!d || d.getMonth() !== now.getMonth() || d.getFullYear() !== now.getFullYear()) return false;
       }
+      if (!q) return true;
+      return [r.number, r.trip, r.client, r.appliesTo].some((x) => String(x || "").toLowerCase().includes(q));
     });
-
+    list = [...list].sort((a, b) => {
+      if (sort === "amount") return Math.abs(b.amount) - Math.abs(a.amount);
+      const diff = new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime();
+      return sort === "newest" ? diff : -diff;
+    });
     return list;
-  }, [bookings]);
+  }, [rows, query, filter, sort]);
 
-  // Filter items
-  const filteredItems = useMemo(() => {
-    return items.filter((item) => {
-      if (typeFilter === "invoices" && item.type !== "invoice") return false;
-      if (typeFilter === "credit_notes" && item.type !== "credit_note") return false;
-
-      if (statusFilter !== "all") {
-        if (statusFilter === "paid" && item.status !== "paid") return false;
-        if (statusFilter === "unpaid" && item.status !== "unpaid") return false;
-        if (statusFilter === "overdue" && item.status !== "overdue") return false;
-      }
-
-      if (searchQuery.trim() !== "") {
-        const q = searchQuery.toLowerCase().trim();
-        const matchDoc = item.docId.toLowerCase().includes(q);
-        const matchTrip = item.tripId.toLowerCase().includes(q);
-        const matchAcc = item.accountNumber.toLowerCase().includes(q);
-        const matchClient = item.clientName.toLowerCase().includes(q);
-        if (!matchDoc && !matchTrip && !matchAcc && !matchClient) return false;
-      }
-
-      return true;
-    });
-  }, [items, typeFilter, statusFilter, searchQuery]);
-
-  // KPIs
-  const totalInvoiced = items
-    .filter((i) => i.type === "invoice")
-    .reduce((sum, i) => sum + i.amount, 0);
-
-  const totalCredited = items
-    .filter((i) => i.type === "credit_note")
-    .reduce((sum, i) => sum + Math.abs(i.amount), 0);
-
-  const totalUnpaid = items
-    .filter((i) => i.type === "invoice" && i.status === "unpaid")
-    .reduce((sum, i) => sum + i.amount, 0);
-
-  // CSV Export (R-035)
-  const handleExportCsv = () => {
-    const headers = ["Document ID", "Type", "Trip ID", "Account", "Client", "Issue Date", "Due Date", "Amount", "Currency", "Status"];
-    const rows = filteredItems.map((i) => [
-      i.docId,
-      i.type.toUpperCase(),
-      i.tripId,
-      i.accountNumber,
-      `"${i.clientName}"`,
-      i.issueDate,
-      i.dueDate || "",
-      i.amount,
-      i.currency,
-      i.status.toUpperCase()
-    ]);
-    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `orbelo-invoices-register-${new Date().toISOString().split("T")[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const openPdf = async (r: DocRow) => {
+    const booking = await loadBooking(bookings, r.bookingId, normalizeBooking);
+    if (!booking) {
+      setNotice({ text: `Could not open ${r.number}: the trip was not found.` });
+      return;
+    }
+    if (r.kind === "invoice") openDocument(invoiceDocBooking(booking, { number: r.number, amount: r.amount }), "invoice");
+    else openDocument(creditNoteDocBooking(booking, { number: r.number, amount: r.amount, against: r.appliesTo, issuedAt: r.date || undefined }), "credit_note");
   };
+
+  const copy = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const generateLink = async (r: DocRow) => {
+    setBusy(r.id);
+    try {
+      const res = await api.registry.paymentLink(r.bookingId, r.number, window.location.origin);
+      const url = res.data.url;
+      const copied = await copy(url);
+      setNotice({
+        text: `${copied ? "Payment link copied" : "Payment link ready"} · ${r.number} · ${money(res.data.amount, res.data.currency)}${
+          res.data.provider === "Stripe" ? " · card or bank transfer" : " · bank transfer with proof upload"
+        }`,
+        url
+      });
+      setRows((prev) => prev.map((x) => (x.id === r.id ? { ...x, paymentLink: url } : x)));
+    } catch (err: any) {
+      setNotice({ text: err?.message || "The payment link could not be created." });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const exportCsv = () => {
+    downloadCsv(`invoices-credit-notes-${new Date().toISOString().slice(0, 10)}.csv`, [
+      ["Number", "Type", "Trip", "Client", "Date", "Amount", "Currency", "Applies to", "Status"],
+      ...filtered.map((r) => [r.number, r.type, r.trip, r.client, r.date ? r.date.slice(0, 10) : "", r.amount.toFixed(2), r.currency, r.appliesTo, STATUS[r.status]?.label || r.status])
+    ]);
+  };
+
+  const pill = (key: Filter, label: string) => (
+    <button
+      key={key}
+      type="button"
+      onClick={() => setFilter(key)}
+      className={`px-4 py-2 rounded-full border text-[15px] transition-colors ${
+        filter === key ? "bg-[#0B1320] text-white border-[#0B1320]" : "bg-white text-slate-800 border-slate-200 hover:border-slate-400"
+      }`}
+    >
+      {label}
+    </button>
+  );
 
   return (
-    <div className="space-y-4">
-      {/* 1. Header (No Create Invoice button per R-035!) */}
-      <RecordHeader
-        title="Invoices & Credit Notes"
-        subtitle="Financial audit register of issued debit invoices and credit adjustments across all trips"
-        badge="R-035 ACCOUNTING REGISTER"
-        breadcrumbs={[{ label: "Overview", href: "/overview" }, { label: "Invoices" }]}
-        actions={
-          <button onClick={handleExportCsv} className="btn-secondary text-xs">
-            <Download className="w-3.5 h-3.5" />
-            <span>Export CSV</span>
-          </button>
-        }
-      />
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-[30px] font-bold text-slate-900 m-0">Invoices &amp; credit notes</h1>
+        <button
+          type="button"
+          onClick={exportCsv}
+          disabled={filtered.length === 0}
+          className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-900 px-4 py-2.5 rounded-lg text-[15px] font-semibold shadow-sm disabled:opacity-50"
+        >
+          Export for accountant
+        </button>
+      </div>
 
-      {/* 2. KPI Strip */}
-      <KpiStrip
-        items={[
-          {
-            id: "invoiced",
-            label: "Total Invoiced",
-            value: formatCurrency(totalInvoiced, "EUR"),
-            subtext: `${items.filter((i) => i.type === "invoice").length} debit invoices issued`
-          },
-          {
-            id: "credited",
-            label: "Total Credited",
-            value: formatCurrency(totalCredited, "EUR"),
-            subtext: `${items.filter((i) => i.type === "credit_note").length} credit notes applied`,
-            trend: "danger"
-          },
-          {
-            id: "unpaid",
-            label: "Open Receivables",
-            value: formatCurrency(totalUnpaid, "EUR"),
-            subtext: "Awaiting settlement prior to flight",
-            trend: "warning"
-          },
-          {
-            id: "net",
-            label: "Net Billed",
-            value: formatCurrency(totalInvoiced - totalCredited, "EUR"),
-            subtext: "Total revenue net of adjustments",
-            trend: "positive"
-          }
-        ]}
-      />
-
-      {/* 3. Search and Filters */}
-      <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-3 flex flex-col md:flex-row items-center justify-between gap-3">
-        {/* Search */}
-        <div className="relative w-full md:w-80">
-          <Search className="w-4 h-4 text-[var(--muted)] absolute left-3 top-2.5" />
-          <input
-            type="text"
-            placeholder="Search Doc ID, Trip ID, Account, Client..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-[var(--paper)] border border-[var(--line)] rounded-lg pl-9 pr-3 py-1.5 text-xs text-[var(--ink)] placeholder-[var(--muted)] focus:outline-none focus:border-[var(--ink)]"
-          />
-        </div>
-
-        {/* Filter Chips */}
-        <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto">
-          <span className="text-[10px] font-display uppercase font-bold text-[var(--muted)] mr-1">Type:</span>
-          {(["all", "invoices", "credit_notes"] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTypeFilter(t)}
-              className={`px-2.5 py-1 text-xs font-display uppercase tracking-wider font-bold rounded-lg transition-all ${
-                typeFilter === t
-                  ? "bg-[var(--ink)] text-[var(--card)]"
-                  : "bg-[var(--paper)] text-[var(--muted)] hover:text-[var(--ink)]"
-              }`}
-            >
-              {t === "credit_notes" ? "Credit Notes" : t}
-            </button>
-          ))}
-
-          <div className="h-4 w-px bg-[var(--line)] mx-1" />
-
-          <span className="text-[10px] font-display uppercase font-bold text-[var(--muted)] mr-1">Status:</span>
-          {(["all", "paid", "unpaid"] as const).map((s) => (
-            <button
-              key={s}
-              onClick={() => setStatusFilter(s)}
-              className={`px-2.5 py-1 text-xs font-display uppercase tracking-wider font-bold rounded-lg transition-all ${
-                statusFilter === s
-                  ? "bg-[var(--ink)] text-[var(--card)]"
-                  : "bg-[var(--paper)] text-[var(--muted)] hover:text-[var(--ink)]"
-              }`}
-            >
-              {s}
-            </button>
-          ))}
+      <div className="flex flex-wrap items-center gap-2.5">
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search number, trip, client..."
+          className="w-full sm:w-[340px] bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-[15px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-400"
+        />
+        {pill("all", "All")}
+        {pill("invoices", "Invoices")}
+        {pill("credit_notes", "Credit notes")}
+        {pill("unpaid", "Unpaid")}
+        {pill("combined", "Combined")}
+        {pill("this_month", "This month")}
+        <div className="ml-auto flex items-center gap-2">
+          <span className="text-[15px] text-slate-500">Sort</span>
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value as typeof sort)}
+            className="bg-white border border-slate-200 rounded-lg px-3 py-2.5 text-[15px] text-slate-900 focus:outline-none"
+          >
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="amount">Largest amount</option>
+          </select>
         </div>
       </div>
 
-      {actionNotice && (
-        <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl flex items-center justify-between animate-fade-in shadow-sm">
-          <span className="font-medium flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-            {actionNotice}
+      {notice && (
+        <div className="flex flex-wrap items-center justify-between gap-3 bg-[#EEF4FD] border border-[#C9DBF5] rounded-lg px-4 py-2.5 text-sm text-slate-800">
+          <span>
+            {notice.text}
+            {notice.url && (
+              <>
+                {" · "}
+                <a href={notice.url} target="_blank" rel="noopener noreferrer" className="text-[#1F5FAE] underline break-all">
+                  {notice.url}
+                </a>
+              </>
+            )}
           </span>
-          <button onClick={() => setActionNotice(null)} className="text-emerald-600 hover:text-emerald-800 text-xs font-bold">
-            Dismiss
+          <button type="button" onClick={() => setNotice(null)} className="text-slate-500 hover:text-slate-800 text-xs">
+            Close
           </button>
         </div>
       )}
 
-      {/* 4. Dense Register Table */}
-      <div className="tablewrap">
-        <table className="dense-table">
-          <thead>
-            <tr>
-              <th>Document ID</th>
-              <th>Type</th>
-              <th>Issue Date</th>
-              <th>Due Date</th>
-              <th>Trip ID</th>
-              <th>Account</th>
-              <th>Client Name</th>
-              <th className="text-right">Amount</th>
-              <th>Status</th>
-              <th className="text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredItems.length === 0 ? (
+      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-[15px]">
+            <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
-                <td colSpan={10} className="py-8 text-center text-xs text-[var(--muted)] font-mono">
-                  No invoice or credit note records match the filter criteria.
-                </td>
+                <th className={thCls}>Number</th>
+                <th className={thCls}>Type</th>
+                <th className={thCls}>Trip</th>
+                <th className={thCls}>Client</th>
+                <th className={thCls}>Date</th>
+                <th className={`${thCls} text-right`}>Amount</th>
+                <th className={thCls}>Applies to</th>
+                <th className={thCls}>Status</th>
+                <th className={thCls}></th>
               </tr>
-            ) : (
-              filteredItems.map((item) => {
-                const isCreditNote = item.type === "credit_note";
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {state === "loading" && (
+                <tr>
+                  <td colSpan={9} className="px-4 py-8 text-center text-slate-400 text-sm">
+                    Loading invoices and credit notes…
+                  </td>
+                </tr>
+              )}
+              {state === "error" && (
+                <tr>
+                  <td colSpan={9} className="px-4 py-8 text-center text-sm text-rose-700">
+                    {errorText}{" "}
+                    <button type="button" onClick={() => { setState("loading"); load(); }} className="underline">
+                      Try again
+                    </button>
+                  </td>
+                </tr>
+              )}
+              {state === "ready" && filtered.length === 0 && (
+                <tr>
+                  <td colSpan={9} className="px-4 py-8 text-center text-slate-400 text-sm">
+                    No documents match.
+                  </td>
+                </tr>
+              )}
+              {filtered.map((r) => {
+                const st = STATUS[r.status] || STATUS.issued;
+                const payable = r.kind === "invoice" && r.open > 0 && !["combined", "void", "credited", "paid"].includes(r.status);
                 return (
-                  <tr
-                    key={item.id}
-                    onClick={() => router.push(`/trips/${item.rootId}/accounting`)}
-                    className="cursor-pointer hover:bg-[var(--paper)] transition-colors"
-                  >
-                    {/* Document ID */}
-                    <td className="font-mono font-bold text-xs text-[var(--ink)]">
-                      {item.docId}
+                  <tr key={r.id} className="hover:bg-slate-50/60" title={r.kind === "credit_note" && isAdmin && r.internalNote ? `Internal reason: ${r.internalNote}` : undefined}>
+                    <td className="px-4 py-3.5">
+                      <DocId id={r.number} />
                     </td>
-
-                    {/* Type */}
-                    <td>
-                      <span className={`pill ${isCreditNote ? "red" : "blue"} text-[10px]`}>
-                        {isCreditNote ? "CREDIT NOTE" : "INVOICE"}
-                      </span>
-                    </td>
-
-                    {/* Issue Date */}
-                    <td className="font-mono text-xs">{item.issueDate}</td>
-
-                    {/* Due Date */}
-                    <td className="font-mono text-xs text-[var(--muted)]">{item.dueDate || "—"}</td>
-
-                    {/* Trip ID */}
-                    <td className="font-mono font-bold text-xs">
-                      <Link
-                        href={`/trips/${item.rootId}/accounting`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="hover:underline text-[var(--accent)]"
-                      >
-                        {item.tripId}
+                    <td className="px-4 py-3.5 text-slate-900">{r.type}</td>
+                    <td className="px-4 py-3.5">
+                      <Link href={`/trips/${r.tripToken}/accounting`} className="hover:underline">
+                        <DocId id={r.trip} />
                       </Link>
                     </td>
-
-                    {/* Account */}
-                    <td className="font-mono text-xs">{item.accountNumber}</td>
-
-                    {/* Client Name */}
-                    <td className="font-bold text-xs text-[var(--ink)]">{item.clientName}</td>
-
-                    {/* Amount */}
-                    <td className={`font-mono font-bold text-xs text-right ${isCreditNote ? "text-[var(--red)]" : "text-[var(--ink)]"}`}>
-                      {isCreditNote
-                        ? `- ${formatCurrency(Math.abs(item.amount), (item.currency as any) || "EUR")}`
-                        : formatCurrency(item.amount, (item.currency as any) || "EUR")}
+                    <td className="px-4 py-3.5 text-slate-900">{r.client}</td>
+                    <td className="px-4 py-3.5 text-slate-900 whitespace-nowrap">{shortDay(r.date)}</td>
+                    <td className="px-4 py-3.5 text-slate-900 text-right whitespace-nowrap">{money(r.amount, r.currency)}</td>
+                    <td className="px-4 py-3.5 text-slate-900">{/^(INV|CN)-/i.test(r.appliesTo) ? <DocId id={r.appliesTo} /> : r.appliesTo}</td>
+                    <td className="px-4 py-3.5">
+                      <span className={`text-[13px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${st.cls}`}>{st.label}</span>
                     </td>
-
-                    {/* Status & Auto Reminders */}
-                    <td>
-                      <div className="flex flex-col gap-1 items-start">
-                        <StatusPill
-                          label={item.status.toUpperCase()}
-                          variant={item.status === "paid" ? "green" : item.status === "credited" ? "red" : "amber"}
-                        />
-                        {!isCreditNote && item.status !== "paid" && (
+                    <td className="px-4 py-3.5 whitespace-nowrap text-right">
+                      <div className="flex items-center justify-end gap-3">
+                        {r.kind === "invoice" && (
                           <button
                             type="button"
-                            onClick={(e) => toggleInvoiceReminder(e, item.docId)}
-                            title="Click to toggle PAY-02 automated payment reminder"
-                            className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold transition-colors flex items-center gap-1 cursor-pointer ${
-                              (invoiceRemindersState[item.docId] ?? (item.booking.autoPaymentRemindersEnabled !== false))
-                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
-                                : "bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200"
-                            }`}
+                            disabled={!payable || busy === r.id}
+                            onClick={() => (r.paymentLink && payable ? copy(r.paymentLink).then((ok) => setNotice({ text: ok ? `Payment link copied · ${r.number}` : `Payment link · ${r.number}`, url: r.paymentLink })) : generateLink(r))}
+                            title={payable ? "Create a link the client can pay with" : "Nothing left to pay on this invoice"}
+                            className="text-[13px] font-semibold text-[#1F5FAE] border border-[#C9DBF5] bg-[#F4F8FE] hover:bg-[#E6EEFA] px-2.5 py-1 rounded-md disabled:opacity-40 disabled:cursor-not-allowed"
                           >
-                            <span>PAY-02:</span>
-                            <span>
-                              {(invoiceRemindersState[item.docId] ?? (item.booking.autoPaymentRemindersEnabled !== false))
-                                ? "Auto ON"
-                                : "Paused"}
-                            </span>
+                            {busy === r.id ? "Creating…" : r.paymentLink && payable ? "Copy pay link" : "Generate payment link"}
                           </button>
                         )}
-                      </div>
-                    </td>
-
-                    {/* Actions */}
-                    <td className="text-right" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center justify-end gap-1.5">
-                        {!isCreditNote && item.status !== "paid" && (
-                          <button
-                            type="button"
-                            onClick={(e) => sendInvoiceReminderNow(e, item.docId)}
-                            className="btn-secondary text-[11px] py-1 px-2 text-[#C9A052] border-[#C9A052]/40 hover:bg-[#C9A052]/10"
-                            title="Send PAY-02 payment reminder now"
-                          >
-                            <Send className="w-3 h-3" />
-                            <span>Remind</span>
-                          </button>
-                        )}
-                        <button
-                          onClick={() => openDocument(item.booking, isCreditNote ? "credit_note" : "invoice")}
-                          className="btn-secondary text-[11px] py-1 px-2"
-                          title="View PDF Document"
-                        >
-                          <Eye className="w-3 h-3" />
-                          <span>PDF</span>
+                        <button type="button" onClick={() => openPdf(r)} className="text-[#1F5FAE] underline underline-offset-2 hover:text-[#174A88]">
+                          PDF
                         </button>
                       </div>
                     </td>
                   </tr>
                 );
-              })
-            )}
-          </tbody>
-        </table>
+              })}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-[15px] text-slate-500 px-6 py-4 m-0 border-t border-slate-100">
+          Invoices and credit notes are created on the trip&apos;s Accounting tab, never here. This list is for finding and exporting them. The
+          internal credit-note reason shows on hover for admins only.
+        </p>
       </div>
     </div>
   );

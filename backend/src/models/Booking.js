@@ -296,6 +296,11 @@ const bookingSchema = new mongoose.Schema(
     paidAt: { type: Date, default: null },
     amountReceived: { type: Number, default: 0 },
     curatorPayoutPaid: { type: Boolean, default: false },
+    // Money ledger (Accounting tab, Invoices & credit notes, Payments)
+    invoices: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    payments: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    termsVersion: { type: String, default: 'T&C v1.0' },
+    quoteSentAt: { type: Date, default: null },
     avInodeTripId: { type: String, default: '' },
     notes: { type: String, default: '' },
     internalNotes: { type: String, default: '' },

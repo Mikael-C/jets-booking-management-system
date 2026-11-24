@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useAviation } from "@/lib/aviationContext";
+import { useAviation, normalizeBooking } from "@/lib/aviationContext";
 import { Booking, FlightLeg, PricingBreakdown, PassengerManifestItem, SourcingOption } from "@/types/aviation";
 import { formatTripVersion, formatDocumentId, maskPassportNumber, formatTripId, renderFormattedId } from "@/lib/idGenerator";
 import { formatCurrency } from "@/lib/pricingCalculator";
@@ -16,6 +16,7 @@ import TripItineraryTab from "./TripItineraryTab";
 import TripPassengersTab from "./TripPassengersTab";
 import TripSourcingTab from "./TripSourcingTab";
 import TripServicesTab from "./TripServicesTab";
+import TripAccountingTab from "./TripAccountingTab";
 import TripInfoRail, { ItineraryNotesRail } from "./TripInfoRail";
 import { countMissingPassports, deriveTripServices, tripRouteLabel } from "./tripTabUtils";
 import {
@@ -241,7 +242,8 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
     operators,
     users,
     sendMessage,
-    saveBookingChanges
+    saveBookingChanges,
+    updateBooking
   } = useAviation();
 
   const [activeTab, setActiveTab] = useState<TripTabKey>(initialTab);
@@ -1185,8 +1187,7 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
             <TripServicesTab
               trip={currentTrip}
               onSave={saveTrip}
-              issueCreditNote={issueCreditNote}
-              onOpenCreditNote={(b) => openDocument(b, "credit_note")}
+              onOpenDocument={(b, type) => openDocument(b, type)}
               userName={actorName}
             />
           )}
@@ -1445,325 +1446,19 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
 
           {/* TAB 7: ACCOUNTING (Image 2) */}
           {activeTab === "accounting" && (
-            <div className="space-y-5">
-              {/* Top Financial Health Cards (5 metrics) */}
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
-                <div className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-sm">
-                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-1">INVOICED</span>
-                  <span className="text-base font-bold text-slate-900 font-mono">€ 8,250.00</span>
-                </div>
-                <div className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-sm">
-                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-1">CREDITED</span>
-                  <span className="text-base font-bold text-slate-900 font-mono">€ 0.00</span>
-                </div>
-                <div className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-sm">
-                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-1">NET DUE</span>
-                  <span className="text-base font-bold text-slate-900 font-mono">€ 8,250.00</span>
-                </div>
-                <div className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-sm">
-                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-1">RECEIVED</span>
-                  <span className="text-base font-bold text-slate-900 font-mono">€ 8,000.00</span>
-                </div>
-                <div className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-sm">
-                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-1">OPEN BALANCE</span>
-                  <span className="text-base font-bold text-amber-600 font-mono">€ 250.00</span>
-                </div>
-              </div>
-
-              {/* Split Content: Left is Trip Ledger, Right is Credit Note */}
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-                {/* Left: Trip ledger · latest first */}
-                <div className="lg:col-span-7 bg-white border border-slate-200/90 rounded-xl p-5 shadow-sm space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-bold text-slate-900 m-0">Trip ledger · latest first</h3>
-                    <button
-                      type="button"
-                      onClick={() => openDocument(currentTrip, "invoice")}
-                      className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg text-xs font-medium shadow-sm transition-colors"
-                    >
-                      Combine into one invoice
-                    </button>
-                  </div>
-
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs text-left">
-                      <thead>
-                        <tr className="border-b border-slate-100 text-slate-400 font-bold uppercase text-[10px] tracking-wider">
-                          <th className="py-2.5 pr-2">VERSION</th>
-                          <th className="py-2.5 px-2">DOCUMENT</th>
-                          <th className="py-2.5 px-2">LINE</th>
-                          <th className="py-2.5 px-2 text-right">AMOUNT</th>
-                          <th className="py-2.5 px-2">STATUS</th>
-                          <th className="py-2.5 pl-2"></th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 text-slate-700">
-                        {/* Row 1 */}
-                        <tr>
-                          <td className="py-3 pr-2 font-mono text-slate-600 whitespace-nowrap">TRI-FE4578-005</td>
-                          <td className="py-3 px-2 font-mono text-slate-500 whitespace-nowrap">INV-FE4578-005-1</td>
-                          <td className="py-3 px-2">Additional service · chauffeur, Geneva arrival</td>
-                          <td className="py-3 px-2 text-right font-mono whitespace-nowrap">€ 250.00</td>
-                          <td className="py-3 px-2 whitespace-nowrap">
-                            <span className="bg-amber-50 text-amber-800 border border-amber-200/80 rounded px-2 py-0.5 text-[11px] font-medium">
-                              Unpaid · pay link sent
-                            </span>
-                          </td>
-                          <td className="py-3 pl-2 text-right whitespace-nowrap">
-                            <button
-                              type="button"
-                              onClick={() => openDocument(currentTrip, "invoice")}
-                              className="text-xs text-blue-600 font-medium hover:underline"
-                            >
-                              PDF
-                            </button>
-                          </td>
-                        </tr>
-
-                        {/* Row 2 */}
-                        <tr>
-                          <td className="py-3 pr-2 font-mono text-slate-600 whitespace-nowrap">TRI-FE4578-004</td>
-                          <td className="py-3 px-2 font-mono text-slate-400 whitespace-nowrap">—</td>
-                          <td className="py-3 px-2">Route change Ibiza–Dakar → Ibiza–Geneva. Price unchanged, no new amount booked.</td>
-                          <td className="py-3 px-2 text-right font-mono whitespace-nowrap">€ 0.00</td>
-                          <td className="py-3 px-2 whitespace-nowrap">
-                            <span className="bg-slate-100 text-slate-600 rounded px-2 py-0.5 text-[11px] font-medium">
-                              Revision
-                            </span>
-                          </td>
-                          <td className="py-3 pl-2 text-right whitespace-nowrap">
-                            <button
-                              type="button"
-                              onClick={() => openDocument(currentTrip, "flight_brief")}
-                              className="text-xs text-blue-600 font-medium hover:underline"
-                            >
-                              Brief
-                            </button>
-                          </td>
-                        </tr>
-
-                        {/* Row 3 */}
-                        <tr>
-                          <td className="py-3 pr-2 font-mono text-slate-600 whitespace-nowrap">TRI-FE4578-003</td>
-                          <td className="py-3 px-2 font-mono text-slate-500 whitespace-nowrap">PAY-9012</td>
-                          <td className="py-3 px-2">Wire received · ref TRI-FE4578 · proof attached</td>
-                          <td className="py-3 px-2 text-right font-mono font-medium whitespace-nowrap">- € 8,000.00</td>
-                          <td className="py-3 px-2 whitespace-nowrap">
-                            <span className="bg-emerald-50 text-emerald-700 border border-emerald-200/80 rounded px-2 py-0.5 text-[11px] font-medium">
-                              Received
-                            </span>
-                          </td>
-                          <td className="py-3 pl-2 text-right whitespace-nowrap">
-                            <button
-                              type="button"
-                              onClick={() => openDocument(currentTrip, "invoice")}
-                              className="text-xs text-blue-600 font-medium hover:underline"
-                            >
-                              Proof
-                            </button>
-                          </td>
-                        </tr>
-
-                        {/* Row 4 */}
-                        <tr>
-                          <td className="py-3 pr-2 font-mono text-slate-600 whitespace-nowrap">TRI-FE4578-003</td>
-                          <td className="py-3 px-2 font-mono text-slate-500 whitespace-nowrap">INV-FE4578-002-1</td>
-                          <td className="py-3 px-2">Charter LEIB → GOBD, light jet, 4 pax (booked from quote -002)</td>
-                          <td className="py-3 px-2 text-right font-mono whitespace-nowrap">€ 8,000.00</td>
-                          <td className="py-3 px-2 whitespace-nowrap">
-                            <span className="bg-emerald-50 text-emerald-700 border border-emerald-200/80 rounded px-2 py-0.5 text-[11px] font-medium">
-                              Paid
-                            </span>
-                          </td>
-                          <td className="py-3 pl-2 text-right whitespace-nowrap">
-                            <button
-                              type="button"
-                              onClick={() => openDocument(currentTrip, "invoice")}
-                              className="text-xs text-blue-600 font-medium hover:underline"
-                            >
-                              PDF
-                            </button>
-                          </td>
-                        </tr>
-
-                        {/* Row 5 */}
-                        <tr>
-                          <td className="py-3 pr-2 font-mono text-slate-600 whitespace-nowrap">TRI-FE4578-002</td>
-                          <td className="py-3 px-2 font-mono text-slate-500 whitespace-nowrap">TRI-FE4578-002</td>
-                          <td className="py-3 px-2">Quote · contract signed 12 Nov</td>
-                          <td className="py-3 px-2 text-right font-mono whitespace-nowrap">€ 8,000.00</td>
-                          <td className="py-3 px-2 whitespace-nowrap">
-                            <span className="bg-slate-100 text-slate-700 rounded px-2 py-0.5 text-[11px] font-medium">
-                              Booked → -003
-                            </span>
-                          </td>
-                          <td className="py-3 pl-2 text-right whitespace-nowrap">
-                            <button
-                              type="button"
-                              onClick={() => openDocument(currentTrip, "quotation")}
-                              className="text-xs text-blue-600 font-medium hover:underline"
-                            >
-                              PDF
-                            </button>
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <p className="text-xs text-slate-400 pt-2 leading-relaxed m-0">
-                    A revision that only changes route or time adds no amount, so nothing is counted twice. Every money movement is its own line with its own number.
-                  </p>
-                </div>
-
-                {/* Right: New credit note · CN-FE4578-005-1 Card */}
-                <div id="new-credit-note-card" className="lg:col-span-5 bg-white border border-slate-200/90 rounded-xl p-5 shadow-sm space-y-4">
-                  <h3 className="text-sm font-bold text-slate-900 m-0">New credit note · CN-FE4578-005-1</h3>
-
-                  <div className="space-y-3.5 text-xs">
-                    {/* AGAINST */}
-                    <div>
-                      <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1">
-                        AGAINST
-                      </label>
-                      <select
-                        defaultValue="INV-FE4578-002-1"
-                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                      >
-                        <option value="INV-FE4578-002-1">INV-FE4578-002-1 · € 8,000.00 · paid</option>
-                        <option value="INV-FE4578-005-1">INV-FE4578-005-1 · € 250.00 · unpaid</option>
-                      </select>
-                    </div>
-
-                    {/* REASON (INTERNAL, NOT PRINTED) */}
-                    <div>
-                      <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1.5">
-                        REASON (INTERNAL, NOT PRINTED)
-                      </label>
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {["Cancellation", "Complimentary service", "Price correction", "Goodwill"].map((r) => {
-                          const isActive = creditNoteReason === r;
-                          return (
-                            <button
-                              key={r}
-                              type="button"
-                              onClick={() => setCreditNoteReason(r)}
-                              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                                isActive
-                                  ? "bg-[#0B1320] text-white shadow-xs"
-                                  : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
-                              }`}
-                            >
-                              {r}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* CANCELLATION FEE & CREDIT AMOUNT */}
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1">
-                          CANCELLATION FEE
-                        </label>
-                        <input
-                          type="text"
-                          value={cancellationFeePercent}
-                          onChange={(e) => setCancellationFeePercent(e.target.value)}
-                          className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1">
-                          CREDIT AMOUNT
-                        </label>
-                        <input
-                          type="text"
-                          value={creditNoteAmount}
-                          onChange={(e) => setCreditNoteAmount(e.target.value)}
-                          className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                        />
-                      </div>
-                    </div>
-
-                    {/* INTERNAL NOTE */}
-                    <div>
-                      <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1">
-                        INTERNAL NOTE
-                      </label>
-                      <input
-                        type="text"
-                        value={creditNoteInternalNote}
-                        onChange={(e) => setCreditNoteInternalNote(e.target.value)}
-                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                      />
-                    </div>
-
-                    {/* Calculation Summary */}
-                    <div className="pt-2 border-t border-slate-100 space-y-1.5 text-xs text-slate-600">
-                      <div className="flex justify-between items-center">
-                        <span>Invoiced</span>
-                        <span className="font-mono text-slate-800 font-medium">€ 8,250.00</span>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span>This credit note</span>
-                        <span className="font-mono text-slate-800 font-medium">- € 4,000.00</span>
-                      </div>
-                      <div className="flex justify-between items-center font-medium text-slate-800">
-                        <span>Net due after</span>
-                        <span className="font-mono">€ 4,250.00</span>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span>Received</span>
-                        <span className="font-mono text-slate-800 font-medium">€ 8,000.00</span>
-                      </div>
-                      <div className="flex justify-between items-center font-bold text-blue-600 pt-1 border-t border-slate-100 text-xs">
-                        <span>Refund owed to client</span>
-                        <span className="font-mono text-sm">€ 3,750.00</span>
-                      </div>
-                    </div>
-
-                    {/* OUTPUT */}
-                    <div>
-                      <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1.5">
-                        OUTPUT
-                      </label>
-                      <div className="flex items-center gap-1.5">
-                        {(["Credit note only", "Invoice for remainder", "Both"] as const).map((opt) => {
-                          const isActive = creditNoteOutput === opt;
-                          return (
-                            <button
-                              key={opt}
-                              type="button"
-                              onClick={() => setCreditNoteOutput(opt)}
-                              className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors text-center ${
-                                isActive
-                                  ? "bg-[#0B1320] text-white shadow-xs"
-                                  : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
-                              }`}
-                            >
-                              {opt}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* Submit Button */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        alert("Credit note CN-FE4578-005-1 created and trip revised to -006.");
-                      }}
-                      className="w-full bg-[#0B1320] hover:bg-slate-800 text-white py-2.5 px-4 rounded-xl text-xs font-semibold shadow-sm transition-colors text-center"
-                    >
-                      Create credit note &amp; revise trip → -006
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <TripAccountingTab
+              trip={currentTrip}
+              openDocument={(b, type) => openDocument(b, type)}
+              onChanged={() => {
+                // Payment status, amount received… are updated on the booking by the backend: refresh our copy
+                api.bookings
+                  .get(currentTrip.id)
+                  .then((res) => {
+                    if (res?.data) updateBooking(currentTrip.id, normalizeBooking(res.data));
+                  })
+                  .catch(() => undefined);
+              }}
+            />
           )}
 
           {/* TAB: MESSAGES (Image 2) */}
