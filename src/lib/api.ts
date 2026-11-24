@@ -348,6 +348,16 @@ export const api = {
       request<{ success: boolean; data: any }>("/dashboard/financial-health"),
   },
 
+  // Per-account defaults remembered by the quote builder (step 01)
+  accountPreferences: {
+    list: () => request<{ success: boolean; data: any[] }>("/account-preferences"),
+    save: (accountNumber: string, data: { accountId?: string; quoteDefaults: Record<string, any> }) =>
+      request<{ success: boolean; data: any }>(`/account-preferences/${encodeURIComponent(accountNumber)}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      }),
+  },
+
   // Airports
   airports: {
     search: (q: string) => request<any[]>(`/airports/search?q=${encodeURIComponent(q)}`),

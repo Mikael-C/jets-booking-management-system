@@ -109,31 +109,55 @@ export default function TripPassengersTab({ trip, contacts, onSave, userName }: 
 
   const authorisedName = (trip.authorisedOwnerName || trip.client?.fullName || "").toLowerCase();
 
-  // Pets travelling: pets on the passengers' contacts, or the trip's pet details
+  // Pets travelling: the pets entered on the quote (step 03) first, then pets on the passengers'
+  // contacts, then the trip's pet summary
   const pets = useMemo(() => {
-    if (!trip.petDetails?.hasPets) return [] as { id: string; line: string; weight?: number; doc?: string; complete: boolean }[];
+    type PetRow = { id: string; line: string; weight?: number; docLabel: string; doc?: string; complete: boolean };
+    const travelsShort = (t?: string) => {
+      const v = String(t || "").toLowerCase();
+      if (!v) return "";
+      if (v.includes("hold")) return "in hold";
+      if (v.includes("cabin")) return "in cabin";
+      return v;
+    };
+    const tripPets = trip.pets || [];
+    if (tripPets.length > 0) {
+      return tripPets.map<PetRow>((p) => ({
+        id: p.id,
+        line: [p.name, String(p.species || "").toLowerCase(), p.breed, travelsShort(p.travels)].filter(Boolean).join(" · "),
+        weight: p.weightKg,
+        docLabel: p.documents || "Pet passport",
+        doc: p.documentNumber || undefined,
+        complete: Boolean(p.documentNumber)
+      }));
+    }
+    if (!trip.petDetails?.hasPets) return [] as PetRow[];
     const fromContacts = manifest.flatMap(({ raw }) => {
       const c = findContactForPassenger(raw, contacts);
-      return (c?.pets || []).map((pet: any) => ({
-        id: `${c.id}-${pet.id}`,
-        line: [pet.petName, String(pet.petType || "").toLowerCase(), pet.breed, "in cabin"].filter(Boolean).join(" · "),
-        weight: pet.weightKg,
-        doc: pet.passportCertificateNumber,
-        complete: Boolean(pet.passportCertificateNumber)
-      }));
+      return (c?.pets || []).map(
+        (pet: any): PetRow => ({
+          id: `${c.id}-${pet.id}`,
+          line: [pet.petName, String(pet.petType || "").toLowerCase(), pet.breed, "in cabin"].filter(Boolean).join(" · "),
+          weight: pet.weightKg,
+          docLabel: "Pet passport",
+          doc: pet.passportCertificateNumber,
+          complete: Boolean(pet.passportCertificateNumber)
+        })
+      );
     });
     if (fromContacts.length > 0) return fromContacts.slice(0, Math.max(1, trip.petDetails.petCount || fromContacts.length));
     const p = trip.petDetails;
     return [
       {
         id: "trip-pet",
-        line: [p.petType || "Pet", p.breed, p.notes || "in cabin"].filter(Boolean).join(" · "),
+        line: [String(p.petType || "pet").toLowerCase(), p.breed, "in cabin"].filter(Boolean).join(" · "),
         weight: p.totalWeightKg || p.petWeight,
+        docLabel: "Pet passport",
         doc: undefined,
         complete: false
       }
     ];
-  }, [trip.petDetails, manifest, contacts]);
+  }, [trip.pets, trip.petDetails, manifest, contacts]);
 
   const searchResults = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -447,11 +471,14 @@ export default function TripPassengersTab({ trip, contacts, onSave, userName }: 
                   <td className="px-3 py-3">
                     {pet.doc ? (
                       <div className="text-slate-800 leading-tight">
-                        Pet passport
+                        {pet.docLabel}
                         <div className="font-mono text-[13px]">{maskDocument(pet.doc)}</div>
                       </div>
                     ) : (
-                      <span className="text-amber-700">▲ No document</span>
+                      <span className="text-amber-700">
+                        ▲ No document
+                        {pet.docLabel ? <span className="block text-[12px] text-slate-500">{pet.docLabel} expected</span> : null}
+                      </span>
                     )}
                   </td>
                   <td className="px-3 py-3 text-slate-800">—</td>
@@ -461,7 +488,7 @@ export default function TripPassengersTab({ trip, contacts, onSave, userName }: 
                       <span className="text-[12px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full">Complete</span>
                     ) : (
                       <span className="text-[12px] font-semibold text-amber-800 bg-[#FCEFD2] px-2.5 py-1 rounded-full whitespace-nowrap">
-                        ▲ Pet passport missing
+                        ▲ Document missing
                       </span>
                     )}
                   </td>

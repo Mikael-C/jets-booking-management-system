@@ -282,6 +282,18 @@ const bookingSchema = new mongoose.Schema(
     lastBriefIssuedAt: { type: String, default: '' },
     lastBriefLegs: { type: [Number], default: [] },
     sameManifestAllLegs: { type: Boolean, default: true },
+    // Quote builder step 03 · each pet travelling (name, species, breed, documents)
+    pets: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    // Overview & board
+    createdByEmail: { type: String, default: '', index: true },
+    assignedToEmail: { type: String, default: '' },
+    boardStage: { type: String, default: '' },
+    boardStageBase: { type: String, default: '' },
+    boardStageMovedBy: { type: String, default: '' },
+    boardStageMovedAt: { type: Date, default: null },
+    paidAt: { type: Date, default: null },
+    amountReceived: { type: Number, default: 0 },
+    curatorPayoutPaid: { type: Boolean, default: false },
     avInodeTripId: { type: String, default: '' },
     notes: { type: String, default: '' },
     internalNotes: { type: String, default: '' },
@@ -312,6 +324,16 @@ bookingSchema.index({ createdAt: -1 });
 bookingSchema.virtual('totalPax').get(function () {
   if (!this.legs || this.legs.length === 0) return 0;
   return Math.max(...this.legs.map((l) => l.paxCount || 1));
+});
+
+// Received date for the Overview's "Received this month"
+bookingSchema.pre('save', function setPaidAt(next) {
+  if (this.isModified('paymentStatus')) {
+    const paid = ['fully_paid', 'paid'].includes(String(this.paymentStatus || '').toLowerCase());
+    if (paid && !this.paidAt) this.paidAt = new Date();
+    if (!paid && String(this.paymentStatus || '').toLowerCase() === 'unpaid') this.paidAt = null;
+  }
+  next();
 });
 
 const Booking = mongoose.model('Booking', bookingSchema);

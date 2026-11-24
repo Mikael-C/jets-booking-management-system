@@ -1212,6 +1212,21 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
         })
         .catch((err) => console.warn("Backend contacts sync notice:", err?.message));
 
+      // Quote builder defaults saved per account on the backend
+      api.accountPreferences
+        .list()
+        .then((res) => {
+          const prefs = Array.isArray(res?.data) ? res.data : [];
+          if (prefs.length === 0) return;
+          setAccounts((prev) =>
+            prev.map((a) => {
+              const p = prefs.find((x: any) => x.accountNumber === a.accountNumber || (x.accountId && x.accountId === a.id));
+              return p?.quoteDefaults ? { ...a, quoteDefaults: { ...p.quoteDefaults } } : a;
+            })
+          );
+        })
+        .catch(() => {});
+
       api.operators.list({ limit: 100 })
         .then((res) => {
           if (res?.operators && res.operators.length > 0) {
@@ -2575,6 +2590,24 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       try { localStorage.setItem("orbelo_accounts_v2", JSON.stringify(next)); } catch {}
       return next;
     });
+    // Quote builder defaults are also kept on the backend, per account number
+    if (updates.quoteDefaults) {
+      const acc = accounts.find((a) => a.id === id);
+      const accountNumber = acc?.accountNumber || id;
+      const d = updates.quoteDefaults;
+      api.accountPreferences
+        .save(accountNumber, {
+          accountId: id,
+          quoteDefaults: {
+            authorisedOwnerId: d.authorisedOwnerId || "",
+            isHandledByPa: Boolean(d.isHandledByPa),
+            assistantContactId: d.assistantContactId || "",
+            ...(d.sendDocsTo ? { sendDocsTo: d.sendDocsTo } : {}),
+            ...(d.signsAgreement ? { signsAgreement: d.signsAgreement } : {})
+          }
+        })
+        .catch((err) => console.log("Backend sync note:", err?.message));
+    }
   };
 
   const deleteAccount = (id: string) => {

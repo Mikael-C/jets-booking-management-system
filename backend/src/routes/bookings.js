@@ -217,6 +217,8 @@ router.post('/', async (req, res) => {
       flightNumber: isBooked ? (leg.flightNumber || req.body.tripNumber || identifiers.tripNumber) : (leg.flightNumber || ''),
     })),
     checklist: req.body.checklist?.length ? req.body.checklist : [...DEFAULT_CHECKLIST],
+    // Used for "Mine" on the Overview and the board
+    createdByEmail: req.body.createdByEmail || req.user?.email || '',
   };
 
   // Auto-generate invoice number if not provided

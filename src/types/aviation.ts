@@ -363,6 +363,18 @@ export interface WeaponOnBoardRecord {
   clearances: WeaponClearanceLine[];
 }
 
+export interface TripPet {
+  id: string;
+  name: string;
+  species: string; // Dog, Cat, Bird, Falcon, Other
+  breed: string;
+  weightKg: number;
+  travels: string; // "In cabin, in carrier" | "In cabin, on leash" | "In hold"
+  documents: string; // e.g. "EU pet passport"
+  documentNumber?: string;
+  notes?: string;
+}
+
 export interface ItineraryActivityEntry {
   id: string;
   at: string; // ISO timestamp
@@ -699,6 +711,8 @@ export interface Booking {
     legs: number[]; // 1-based leg numbers
     lineAtCost: number;
   }>;
+  // Quote builder step 03 · each pet on the trip (shown on the Passengers tab)
+  pets?: TripPet[];
   // Trip page · itinerary activity, briefs and manifest settings
   itineraryActivity?: ItineraryActivityEntry[];
   lastBriefIssuedAt?: string;

@@ -17,6 +17,8 @@ const qualDocSchema = new mongoose.Schema({
 
 const operatorSchema = new mongoose.Schema(
   {
+    // Id used by the app (e.g. op-1732…) so quotes and trips that point at it still match after a reload
+    id: { type: String, default: '', index: true },
     legalName: { type: String, required: true, trim: true },
     tradingName: { type: String, default: '', trim: true },
     aocNumber: { type: String, default: '', index: true },

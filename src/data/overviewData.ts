@@ -4,12 +4,13 @@ export interface FinancialHealthMetric {
   label?: string;
   link: string;
   month?: string;
-  comparePct?: number;
+  comparePct?: number | null;
   compareText?: string;
   avgMarginPct?: number;
 }
 
 export interface FinancialHealthData {
+  monthLabel?: string; // e.g. "NOVEMBER", from the backend
   unpaid: FinancialHealthMetric;
   overdue: FinancialHealthMetric;
   received: FinancialHealthMetric;
@@ -35,7 +36,7 @@ export interface FlightItem {
 export interface NeedsActionItem {
   id: string;
   urgency: string;
-  badgeVariant: "rose" | "amber" | "blue";
+  badgeVariant: "rose" | "amber" | "blue" | "slate";
   title: string;
   code: string;
   linkText: string;
@@ -60,6 +61,15 @@ export interface BoardCardItem {
   linkUrl: string;
   order?: number;
 }
+
+/** Zeros shown until the backend answers (no demo figures). */
+export const emptyFinancialHealth: FinancialHealthData = {
+  unpaid: { amount: 0, count: 0, label: "—", link: "/payments?filter=unpaid" },
+  overdue: { amount: 0, count: 0, label: "—", link: "/payments?filter=overdue" },
+  received: { amount: 0, compareText: "—", link: "/payments" },
+  companyMargin: { amount: 0, compareText: "—", link: "/payments" },
+  curatorPayoutsDue: { amount: 0, count: 0, label: "—", link: "/curators" }
+};
 
 export const defaultFinancialHealth: FinancialHealthData = {
   unpaid: {

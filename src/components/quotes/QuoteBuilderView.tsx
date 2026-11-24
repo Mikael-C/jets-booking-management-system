@@ -57,13 +57,27 @@ export interface MultiLegItem {
 
 export interface PetItem {
   id: string;
+  name: string;
   species: string;
   breed: string;
   weightKg: number;
   travels: string;
   documents: string;
+  documentNumber?: string;
   notes: string;
 }
+
+const newPetRow = (): PetItem => ({
+  id: `pet-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+  name: "",
+  species: "Dog",
+  breed: "",
+  weightKg: 8,
+  travels: "In cabin, in carrier",
+  documents: "EU pet passport",
+  documentNumber: "",
+  notes: ""
+});
 
 const parseDateToIso = (dateStr?: string, fallback = "2026-11-24"): string => {
   if (!dateStr) return fallback;
@@ -565,31 +579,59 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
     return 6;
   });
   const [oversizeItems, setOversizeItems] = useState<string>("Golf bag ×1");
+  // Pets come from the trip being revised, then the Curator's request; a new quote starts with none
+  const initialPets = useMemo<PetItem[]>(() => {
+    const fromTrip: any[] = (sourceTrip as any)?.pets || [];
+    if (fromTrip.length > 0) {
+      return fromTrip.map((p: any, i: number) => ({
+        id: String(p.id || `pet-${i + 1}`),
+        name: String(p.name || p.petName || ""),
+        species: String(p.species || p.petType || "Dog"),
+        breed: String(p.breed || ""),
+        weightKg: Number(p.weightKg) || 0,
+        travels: String(p.travels || "In cabin, in carrier"),
+        documents: String(p.documents || "EU pet passport"),
+        documentNumber: String(p.documentNumber || p.passportCertificateNumber || ""),
+        notes: String(p.notes || "")
+      }));
+    }
+    const reqPets: any[] = Array.isArray((sourceRequest as any)?.petList) ? (sourceRequest as any).petList : [];
+    if (reqPets.length > 0) {
+      return reqPets.map((p: any, i: number) => ({
+        ...newPetRow(),
+        id: `pet-${i + 1}`,
+        name: String(p.name || p.petName || ""),
+        species: String(p.species || p.petType || "Dog"),
+        breed: String(p.breed || ""),
+        weightKg: Number(p.weightKg) || 0
+      }));
+    }
+    const summary: any = sourceRequest?.petDetails || sourceRequest?.pets || sourceTrip?.petDetails;
+    if (summary?.hasPets || (summary?.petCount || 0) > 0) {
+      const count = Math.max(1, Math.min(6, Number(summary.petCount) || 1));
+      const each = summary.totalWeightKg ? Math.round((summary.totalWeightKg / count) * 10) / 10 : summary.petWeight || 0;
+      return Array.from({ length: count }, (_, i) => ({
+        ...newPetRow(),
+        id: `pet-${i + 1}`,
+        species: String(summary.petType || "Dog"),
+        breed: String(summary.breed || ""),
+        weightKg: Number(each) || 0,
+        notes: i === 0 ? String(summary.notes || "") : ""
+      }));
+    }
+    return [];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [hasPets, setHasPets] = useState<boolean>(() => {
+    if ((sourceTrip as any)?.pets?.length) return true;
+    if (sourceTrip?.petDetails?.hasPets !== undefined) return Boolean(sourceTrip.petDetails.hasPets);
     if (sourceRequest?.hasPets !== undefined) return sourceRequest.hasPets;
     if (sourceRequest?.petDetailsText && !sourceRequest.petDetailsText.toLowerCase().includes("none")) return true;
-    return true;
+    return false;
   });
-  const [pets, setPets] = useState<PetItem[]>([
-    {
-      id: "pet-1",
-      species: "Dog",
-      breed: "French Bulldog",
-      weightKg: 11,
-      travels: "In cabin, in carrier",
-      documents: "EU pet passport",
-      notes: "Snub-nose"
-    },
-    {
-      id: "pet-2",
-      species: "Cat",
-      breed: "British Shorthair",
-      weightKg: 5,
-      travels: "In cabin, in carrier",
-      documents: "Health cert & rabies",
-      notes: "Quiet"
-    }
-  ]);
+  const [pets, setPets] = useState<PetItem[]>(() => initialPets);
+  const updatePet = (petId: string, patch: Partial<PetItem>) =>
+    setPets((prev) => prev.map((p) => (p.id === petId ? { ...p, ...patch } : p)));
 
   // Active Leg Photo Index for Multi-Leg Photo Picker
   const [activeLegForPhotoIndex, setActiveLegForPhotoIndex] = useState<number | null>(null);
@@ -2039,6 +2081,30 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
       operatorPendingApproval: legOperators.some(
         (lo) => lo.operatorStatus && lo.operatorStatus !== "approved" && lo.operatorStatus !== "approved_with_conditions"
       ),
+      // 03: pets travel with the trip and show on the booking's Passengers tab
+      pets: hasPets
+        ? pets.map((p) => ({
+            id: p.id,
+            name: p.name.trim(),
+            species: p.species,
+            breed: p.breed.trim(),
+            weightKg: p.weightKg,
+            travels: p.travels,
+            documents: p.documents,
+            documentNumber: (p.documentNumber || "").trim(),
+            notes: p.notes.trim()
+          }))
+        : [],
+      petDetails: hasPets && pets.length > 0
+        ? {
+            hasPets: true,
+            petCount: pets.length,
+            totalWeightKg: Math.round(pets.reduce((sum, p) => sum + (Number(p.weightKg) || 0), 0) * 10) / 10,
+            petType: Array.from(new Set(pets.map((p) => p.species))).join(", "),
+            breed: pets.map((p) => p.breed).filter(Boolean).join(", "),
+            notes: pets.map((p) => [p.name, p.travels].filter(Boolean).join(" · ")).join("; ")
+          }
+        : { hasPets: false, petCount: 0, totalWeightKg: 0 },
       passengerFeeItems:
         passengerFeesItemised && passengerFeesLineAtCost > 0
           ? [
@@ -2732,8 +2798,8 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-5 gap-y-4">
-              {/* LEFT · Client account search */}
-              <div className="relative" ref={accountDropdownRef}>
+              {/* LEFT · Client account search (self-start: the grid cell must not stretch, or the list opens far below the field) */}
+              <div className="relative self-start" ref={accountDropdownRef}>
                 <label className="block text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 mb-1.5">
                   Client account
                 </label>
@@ -3406,7 +3472,10 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                 <input
                   type="checkbox"
                   checked={hasPets}
-                  onChange={(e) => setHasPets(e.target.checked)}
+                  onChange={(e) => {
+                    setHasPets(e.target.checked);
+                    if (e.target.checked && pets.length === 0) setPets([newPetRow()]);
+                  }}
                   className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
                 />
                 <span className="font-semibold text-gray-900">Travelling with pets</span>
@@ -3428,11 +3497,13 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                       <thead>
                         <tr className="border-b border-gray-200 text-[10px] font-mono font-bold text-gray-500 uppercase">
                           <th className="pb-1.5 pr-2 w-6">#</th>
+                          <th className="pb-1.5 px-2">NAME</th>
                           <th className="pb-1.5 px-2">SPECIES</th>
                           <th className="pb-1.5 px-2">BREED</th>
                           <th className="pb-1.5 px-2 w-24">WEIGHT (KG)</th>
                           <th className="pb-1.5 px-2">TRAVELS</th>
                           <th className="pb-1.5 px-2">DOCUMENTS</th>
+                          <th className="pb-1.5 px-2">DOC NO.</th>
                           <th className="pb-1.5 px-2">NOTES</th>
                           <th className="pb-1.5 pl-2 text-right">ACTION</th>
                         </tr>
@@ -3442,12 +3513,19 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                           <tr key={pet.id} className="align-middle">
                             <td className="py-2 pr-2 font-mono font-bold text-gray-600">{idx + 1}</td>
                             <td className="py-2 px-2">
+                              <input
+                                type="text"
+                                value={pet.name || ""}
+                                onChange={(e) => updatePet(pet.id, { name: e.target.value })}
+                                placeholder="e.g. Toby"
+                                className="bg-white border border-gray-200 rounded px-2 py-1 text-xs w-24"
+                              />
+                            </td>
+                            <td className="py-2 px-2">
                               <select
                                 value={pet.species}
                                 onChange={(e) => {
-                                  const updated = [...pets];
-                                  updated[idx].species = e.target.value;
-                                  setPets(updated);
+                                  updatePet(pet.id, { species: e.target.value });
                                 }}
                                 className="bg-white border border-gray-200 rounded px-2 py-1 text-xs"
                               >
@@ -3463,9 +3541,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                                 type="text"
                                 value={pet.breed}
                                 onChange={(e) => {
-                                  const updated = [...pets];
-                                  updated[idx].breed = e.target.value;
-                                  setPets(updated);
+                                  updatePet(pet.id, { breed: e.target.value });
                                 }}
                                 placeholder="Breed..."
                                 className="bg-white border border-gray-200 rounded px-2 py-1 text-xs w-28"
@@ -3474,12 +3550,11 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                             <td className="py-2 px-2">
                               <input
                                 type="number"
-                                min={1}
+                                min={0}
+                                step={0.1}
                                 value={pet.weightKg}
                                 onChange={(e) => {
-                                  const updated = [...pets];
-                                  updated[idx].weightKg = parseFloat(e.target.value) || 1;
-                                  setPets(updated);
+                                  updatePet(pet.id, { weightKg: Math.max(0, parseFloat(e.target.value) || 0) });
                                 }}
                                 className="bg-white border border-gray-200 rounded px-2 py-1 text-xs w-16 font-mono"
                               />
@@ -3488,9 +3563,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                               <select
                                 value={pet.travels}
                                 onChange={(e) => {
-                                  const updated = [...pets];
-                                  updated[idx].travels = e.target.value;
-                                  setPets(updated);
+                                  updatePet(pet.id, { travels: e.target.value });
                                 }}
                                 className="bg-white border border-gray-200 rounded px-2 py-1 text-xs"
                               >
@@ -3503,9 +3576,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                               <select
                                 value={pet.documents}
                                 onChange={(e) => {
-                                  const updated = [...pets];
-                                  updated[idx].documents = e.target.value;
-                                  setPets(updated);
+                                  updatePet(pet.id, { documents: e.target.value });
                                 }}
                                 className="bg-white border border-gray-200 rounded px-2 py-1 text-xs"
                               >
@@ -3518,11 +3589,18 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                             <td className="py-2 px-2">
                               <input
                                 type="text"
+                                value={pet.documentNumber || ""}
+                                onChange={(e) => updatePet(pet.id, { documentNumber: e.target.value.toUpperCase() })}
+                                placeholder="e.g. ES-0098812"
+                                className="bg-white border border-gray-200 rounded px-2 py-1 text-xs w-28 font-mono"
+                              />
+                            </td>
+                            <td className="py-2 px-2">
+                              <input
+                                type="text"
                                 value={pet.notes}
                                 onChange={(e) => {
-                                  const updated = [...pets];
-                                  updated[idx].notes = e.target.value;
-                                  setPets(updated);
+                                  updatePet(pet.id, { notes: e.target.value });
                                 }}
                                 placeholder="e.g. Snub-nose"
                                 className="bg-white border border-gray-200 rounded px-2 py-1 text-xs w-24"
@@ -3547,18 +3625,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                     <button
                       type="button"
                       onClick={() =>
-                        setPets([
-                          ...pets,
-                          {
-                            id: `pet-${Date.now()}`,
-                            species: "Dog",
-                            breed: "",
-                            weightKg: 8,
-                            travels: "In cabin, in carrier",
-                            documents: "EU pet passport",
-                            notes: ""
-                          }
-                        ])
+                        setPets([...pets, newPetRow()])
                       }
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-gray-300 text-xs font-semibold text-gray-700 bg-white hover:bg-gray-50"
                     >

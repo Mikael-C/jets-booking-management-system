@@ -22,10 +22,7 @@ import {
   FlightItem,
   NeedsActionItem,
   BoardCardItem,
-  defaultFinancialHealth as INITIAL_FINANCIAL_HEALTH,
-  defaultFlights as INITIAL_FLIGHTS,
-  defaultNeedsAction as INITIAL_NEEDS_ACTION,
-  initialBoardCardsData as INITIAL_BOARD_CARDS
+  emptyFinancialHealth
 } from "@/data/overviewData";
 
 export interface BoardColumn {
@@ -62,10 +59,14 @@ export default function OperationsOverview() {
   });
 
   // State from API / fallback
-  const [financialHealth, setFinancialHealth] = useState<FinancialHealthData>(INITIAL_FINANCIAL_HEALTH);
-  const [flightsList, setFlightsList] = useState<FlightItem[]>(INITIAL_FLIGHTS);
-  const [actionItems, setActionItems] = useState<NeedsActionItem[]>(INITIAL_NEEDS_ACTION);
-  const [boardCards, setBoardCards] = useState<BoardCardItem[]>(INITIAL_BOARD_CARDS);
+  // Everything on this page comes from the backend (/api/dashboard/*); nothing is pre-filled
+  const [financialHealth, setFinancialHealth] = useState<FinancialHealthData>(emptyFinancialHealth);
+  const [flightsList, setFlightsList] = useState<FlightItem[]>([]);
+  const [actionItems, setActionItems] = useState<NeedsActionItem[]>([]);
+  const [boardCards, setBoardCards] = useState<BoardCardItem[]>([]);
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "offline">("loading");
+  const [reloadTick, setReloadTick] = useState(0);
+  const [moveError, setMoveError] = useState<string | null>(null);
   const [tripsByStage, setTripsByStage] = useState<{
     request: number;
     sourcing: number;
@@ -74,12 +75,12 @@ export default function OperationsOverview() {
     confirmed: number;
     flownClose: number;
   }>({
-    request: 2,
-    sourcing: 1,
-    quoted: 2,
-    booked: 1,
-    confirmed: 1,
-    flownClose: 1
+    request: 0,
+    sourcing: 0,
+    quoted: 0,
+    booked: 0,
+    confirmed: 0,
+    flownClose: 0
   });
 
   // Drag and drop state for board
@@ -134,32 +135,26 @@ export default function OperationsOverview() {
     window.history.replaceState({}, "", newUrl);
   }, []);
 
-  // Fetch live overview and board data from API
+  // Fetch live overview and board data from the backend; refreshes every minute without a page reload
   useEffect(() => {
     let isMounted = true;
 
     async function loadData() {
+      let ok = false;
       try {
         const overviewRes = await api.dashboard.getOverview({
           timeframe: flightFilter,
           assignee: actionFilter
         });
-        if (isMounted && overviewRes?.data) {
-          if (overviewRes.data.financialHealth) {
-            setFinancialHealth(overviewRes.data.financialHealth);
-          }
-          if (overviewRes.data.flights?.items) {
-            setFlightsList(overviewRes.data.flights.items);
-          }
-          if (overviewRes.data.needsAction?.items) {
-            setActionItems(overviewRes.data.needsAction.items);
-          }
-          if (overviewRes.data.tripsByStage) {
-            setTripsByStage(overviewRes.data.tripsByStage);
-          }
+        if (isMounted && overviewRes?.data && !(overviewRes as any).offline) {
+          ok = true;
+          setFinancialHealth(overviewRes.data.financialHealth || emptyFinancialHealth);
+          setFlightsList(overviewRes.data.flights?.items || []);
+          setActionItems(overviewRes.data.needsAction?.items || []);
+          if (overviewRes.data.tripsByStage) setTripsByStage(overviewRes.data.tripsByStage);
         }
-      } catch (err) {
-        // Smooth fallback to local state
+      } catch {
+        // shown as "offline" below
       }
 
       try {
@@ -168,28 +163,29 @@ export default function OperationsOverview() {
           needsAction: boardFilter === "needs_action",
           departing7Days: boardFilter === "departing_7d"
         });
-        if (isMounted && boardRes?.data?.columns) {
+        if (isMounted && boardRes?.data?.columns && !(boardRes as any).offline) {
+          ok = true;
           const cardsFromColumns: BoardCardItem[] = [];
           boardRes.data.columns.forEach((col: any) => {
-            if (Array.isArray(col.cards)) {
-              cardsFromColumns.push(...col.cards);
-            }
+            if (Array.isArray(col.cards)) cardsFromColumns.push(...col.cards);
           });
-          if (cardsFromColumns.length > 0) {
-            setBoardCards(cardsFromColumns);
-          }
+          setBoardCards(cardsFromColumns);
         }
-      } catch (err) {
-        // Smooth fallback to local state
+      } catch {
+        // shown as "offline" below
       }
+
+      if (isMounted) setLoadState(ok ? "ready" : "offline");
     }
 
     loadData();
+    const timer = setInterval(loadData, 60000);
 
     return () => {
       isMounted = false;
+      clearInterval(timer);
     };
-  }, [flightFilter, actionFilter, boardFilter]);
+  }, [flightFilter, actionFilter, boardFilter, reloadTick]);
 
   // Filtered flights for overview display
   const displayedFlights = useMemo(() => {
@@ -273,23 +269,30 @@ export default function OperationsOverview() {
     const cardId = draggedCardId || e.dataTransfer.getData("text/plain");
     if (!cardId) return;
 
-    // Optimistically update board state
-    setBoardCards((prev) =>
-      prev.map((c) => (c.id === cardId ? { ...c, stage: targetStage } : c))
-    );
+    const previous = boardCards;
+    const card = boardCards.find((c) => c.id === cardId);
     setDraggedCardId(null);
+    if (!card || card.stage === targetStage) return;
 
-    // Update trips by stage counts
-    setTripsByStage((prev) => {
-      const updated = { ...prev };
-      return updated;
-    });
+    // Optimistic move, then saved on the booking / request by the backend
+    setBoardCards((prev) => prev.map((c) => (c.id === cardId ? { ...c, stage: targetStage } : c)));
+    const key = (st: string) => (st === "flown_close" ? "flownClose" : st) as keyof typeof tripsByStage;
+    setTripsByStage((prev) => ({
+      ...prev,
+      [key(card.stage)]: Math.max(0, prev[key(card.stage)] - 1),
+      [key(targetStage)]: prev[key(targetStage)] + 1
+    }));
 
-    // Notify backend
     try {
       await api.dashboard.updateCardStage(cardId, targetStage);
-    } catch (err) {
-      // Backend sync note
+      setMoveError(null);
+      setReloadTick((t) => t + 1);
+    } catch (err: any) {
+      // Put the card back where it was
+      setBoardCards(previous);
+      setReloadTick((t) => t + 1);
+      setMoveError(err?.message || "The card could not be moved. Try again.");
+      setTimeout(() => setMoveError(null), 5000);
     }
   };
 
@@ -375,6 +378,26 @@ export default function OperationsOverview() {
           </div>
         </div>
       </div>
+
+      {/* Connection status · the page only shows live data */}
+      {loadState === "offline" && (
+        <div className="flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-lg px-4 py-2.5 text-xs">
+          <span>Can&apos;t reach the server, so the figures below may be out of date. It retries every minute.</span>
+          <button
+            type="button"
+            onClick={() => {
+              setLoadState("loading");
+              setReloadTick((t) => t + 1);
+            }}
+            className="font-semibold underline underline-offset-2"
+          >
+            Retry now
+          </button>
+        </div>
+      )}
+      {moveError && (
+        <div className="bg-rose-50 border border-rose-200 text-rose-800 rounded-lg px-4 py-2.5 text-xs">{moveError}</div>
+      )}
 
       {/* ─── Board View Subheader Filters ─────────────────────────────────── */}
       {view === "board" && (
@@ -465,6 +488,15 @@ export default function OperationsOverview() {
 
               {/* Flights rows */}
               <div className="pt-3 space-y-4">
+                {displayedFlights.length === 0 && (
+                  <div className="text-xs text-slate-400 py-6 text-center">
+                    {loadState === "loading"
+                      ? "Loading flights…"
+                      : flightFilter === "today"
+                      ? "No flights departing today."
+                      : "No flights departing in the next 24 h."}
+                  </div>
+                )}
                 {/* Today section */}
                 {flightsByDate.today.length > 0 && (
                   <div className="space-y-2.5">
@@ -508,7 +540,7 @@ export default function OperationsOverview() {
                 {flightFilter === "next_24h" && flightsByDate.next24.length > 0 && (
                   <div className="space-y-2.5 pt-2 border-t border-slate-100">
                     <div className="text-[11px] font-semibold text-slate-400">
-                      Wed 18 Nov · next 24 h
+                      {flightsByDate.next24[0]?.dateLabel || "Next 24 h"}
                     </div>
                     {flightsByDate.next24.map((flight) => (
                       <div
@@ -587,6 +619,15 @@ export default function OperationsOverview() {
 
               {/* Needs Action List */}
               <div className="pt-3 space-y-3">
+                {displayedActionItems.length === 0 && (
+                  <div className="text-xs text-slate-400 py-6 text-center">
+                    {loadState === "loading"
+                      ? "Loading…"
+                      : actionFilter === "mine"
+                      ? "Nothing assigned to you needs action."
+                      : "Nothing needs action right now."}
+                  </div>
+                )}
                 {displayedActionItems.map((item) => (
                   <div
                     key={item.id}
@@ -636,7 +677,7 @@ export default function OperationsOverview() {
       <div className="space-y-3">
         {view === "overview" && (
           <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-            FINANCIAL HEALTH · NOVEMBER
+            FINANCIAL HEALTH · {financialHealth.monthLabel || new Date().toLocaleDateString("en-GB", { month: "long" }).toUpperCase()}
           </div>
         )}
 
@@ -687,7 +728,7 @@ export default function OperationsOverview() {
           <div className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs flex flex-col justify-between">
             <div>
               <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                RECEIVED · NOV
+                RECEIVED · {financialHealth.received.month || new Date().toLocaleDateString("en-GB", { month: "short" }).toUpperCase()}
               </div>
               <div className="text-xl font-bold text-slate-900 mt-1">
                 € {financialHealth.received.amount.toLocaleString()}
@@ -708,7 +749,7 @@ export default function OperationsOverview() {
           <div className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs flex flex-col justify-between">
             <div>
               <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                COMPANY MARGIN · NOV
+                COMPANY MARGIN · {financialHealth.companyMargin.month || new Date().toLocaleDateString("en-GB", { month: "short" }).toUpperCase()}
               </div>
               <div className="text-xl font-bold text-slate-900 mt-1">
                 € {financialHealth.companyMargin.amount.toLocaleString()}

@@ -6,6 +6,11 @@ const { authorize } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
 const { createAuditEntry } = require('../services/auditService');
 const dayjs = require('dayjs');
+const mongoose = require('mongoose');
+
+// Operators are addressed by Mongo _id or by the app's own id (e.g. "op-1732…")
+const operatorFilter = (id) =>
+  mongoose.Types.ObjectId.isValid(id) ? { $or: [{ _id: id }, { id }] } : { id };
 
 const qualDocSchema = Joi.object({
   id: Joi.string().optional(),
@@ -18,6 +23,7 @@ const qualDocSchema = Joi.object({
 // Only the legal name is required: operators added from the quote builder (step 04a) are saved with
 // whatever the broker knows so far and status "pending" (Documents pending) until the nine checks are done.
 const operatorSchema = Joi.object({
+  id: Joi.string().allow('').optional(),
   legalName: Joi.string().trim().required(),
   tradingName: Joi.string().allow('').optional(),
   aocNumber: Joi.string().allow('').optional(),
@@ -89,7 +95,7 @@ router.get('/expiry-alerts', authorize('super_admin', 'admin', 'operations'), as
 
 // GET /api/operators/:id
 router.get('/:id', authorize('super_admin', 'admin', 'operations'), async (req, res) => {
-  const op = await Operator.findById(req.params.id);
+  const op = await Operator.findOne(operatorFilter(req.params.id));
   if (!op) return res.status(404).json({ message: 'Operator not found' });
   res.json(op);
 });
@@ -126,7 +132,7 @@ router.post('/', authorize('super_admin', 'admin'), validate(operatorSchema), as
 
 // PUT /api/operators/:id
 router.put('/:id', authorize('super_admin', 'admin'), validate(operatorSchema), async (req, res) => {
-  const op = await Operator.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+  const op = await Operator.findOneAndUpdate(operatorFilter(req.params.id), req.body, { new: true, runValidators: true });
   if (!op) return res.status(404).json({ message: 'Operator not found' });
 
   await createAuditEntry({ user: req.user,
@@ -142,7 +148,7 @@ router.patch('/:id/status', authorize('super_admin', 'admin'), async (req, res) 
   const validStatuses = ['pending', 'approved', 'approved_with_conditions', 'suspended', 'rejected'];
   if (!validStatuses.includes(status)) return res.status(400).json({ message: 'Invalid status' });
 
-  const op = await Operator.findByIdAndUpdate(req.params.id, { status, ...(notes && { notes }) }, { new: true });
+  const op = await Operator.findOneAndUpdate(operatorFilter(req.params.id), { status, ...(notes && { notes }) }, { new: true });
   if (!op) return res.status(404).json({ message: 'Operator not found' });
 
   await createAuditEntry({ user: req.user,
@@ -155,7 +161,7 @@ router.patch('/:id/status', authorize('super_admin', 'admin'), async (req, res) 
 // PATCH /api/operators/:id/checklist/:docId
 router.patch('/:id/checklist/:docId', authorize('super_admin', 'admin', 'operations'), async (req, res) => {
   const { status, notes, expiryDate } = req.body;
-  const op = await Operator.findById(req.params.id);
+  const op = await Operator.findOne(operatorFilter(req.params.id));
   if (!op) return res.status(404).json({ message: 'Operator not found' });
 
   const docIndex = op.qualificationChecklist.findIndex(d => d.id === req.params.docId);

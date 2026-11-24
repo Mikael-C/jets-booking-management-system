@@ -111,6 +111,9 @@ const agentRequestSchema = new mongoose.Schema(
     },
     isDeleted: { type: Boolean, default: false },
     deletedAt: { type: Date, default: null },
+    // Overview board: a column chosen by hand holds until the request itself moves on
+    boardStage: { type: String, default: '' },
+    boardStageBase: { type: String, default: '' },
     additionalLegs: [
       {
         originIcao: String,
