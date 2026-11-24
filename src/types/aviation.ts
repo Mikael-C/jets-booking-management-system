@@ -173,6 +173,12 @@ export interface PassengerManifestItem {
   isLeadPassenger?: boolean;
   specialRequests?: string;
   hasPet?: boolean;
+  // Trip page · Passengers tab (manifest picked from Contacts)
+  contactId?: string;
+  gender?: "M" | "F" | "X" | string;
+  weightKg?: number;
+  documentType?: string;
+  roleNote?: string; // e.g. "Authorised person", "security"
 }
 
 export interface PetDetails {
@@ -312,6 +318,58 @@ export interface FlightLeg {
   isCancelled?: boolean;
   cancellationReason?: string;
   cancelledAt?: string;
+  // Trip page · Itinerary tab (times, FBO, registration, crew and brief contact per leg)
+  originalDepartureTimeLocal?: string;
+  originalArrivalTimeLocal?: string;
+  originalFlightTimeFormatted?: string;
+  arrivalEdited?: boolean;
+  departureEdited?: boolean;
+  arrivalFboChanged?: boolean;
+  departureFboChanged?: boolean;
+  limoPickupFbo?: string; // FBO the arrival limousine pickup was last confirmed for
+  briefContact?: "crew_mobile" | "desk_24_7" | "none";
+  sameCrewAsPreviousLeg?: boolean;
+  openingHoursOverride?: OpeningHoursOverride;
+  weapons?: WeaponOnBoardRecord;
+}
+
+export interface OpeningHoursOverride {
+  confirmedBy: "airport" | "fbo" | "operator";
+  reference: string;
+  extensionCost: number;
+  addCostToTrip: boolean;
+  updateDirectory: boolean;
+  attachmentName?: string;
+  overriddenAt: string;
+  overriddenBy?: string;
+}
+
+export interface WeaponClearanceLine {
+  id: string;
+  label: string; // e.g. "Departure · Spain (LEIB)"
+  authority: string;
+  status: "cleared" | "pending" | "refused";
+  reference?: string;
+  documentName?: string;
+}
+
+export interface WeaponOnBoardRecord {
+  onBoard: boolean;
+  carriedByPassengerId?: string;
+  carriedByName?: string;
+  type?: string;
+  serialOrPermit?: string;
+  ammunition?: string;
+  clearances: WeaponClearanceLine[];
+}
+
+export interface ItineraryActivityEntry {
+  id: string;
+  at: string; // ISO timestamp
+  by: string;
+  text: string;
+  summary?: string; // short label used in "N changes since the last brief: …"
+  group?: "time_fbo" | "override" | "brief" | "manifest" | "sourcing" | "other";
 }
 
 export interface PricingBreakdown {
@@ -405,6 +463,18 @@ export interface SourcingOption {
   notes?: string;
   avInodeTripId?: string;
   createdAt: string;
+  // Trip page · Sourcing tab
+  operatorId?: string;
+  aircraftYear?: number | string;
+  refurbYear?: number | string;
+  availability?: "rechecked" | "available" | "not_checked" | "declined";
+  availabilityCheckedAt?: string;
+  safetyRating?: string;
+  photosCount?: number;
+  photoUrls?: string[];
+  receivedAt?: string;
+  isPreferred?: boolean;
+  selected?: boolean;
 }
 
 export interface RequestMessage {
@@ -606,6 +676,34 @@ export interface Booking {
       reason?: string;
     }>;
   };
+  // Quote builder · 01 client roles, 04a operators, 06 passenger fees
+  authorisedOwnerId?: string;
+  authorisedOwnerName?: string;
+  assistantContactId?: string;
+  sendDocsTo?: "owner" | "assistant" | "both";
+  signsAgreement?: "owner" | "assistant";
+  legOperators?: Array<{
+    legNumber: number;
+    operatorId: string;
+    operatorName: string;
+    operatorStatus?: string;
+    aircraftName?: string;
+    buyingPrice?: number;
+  }>;
+  operatorPendingApproval?: boolean;
+  passengerFeeItems?: Array<{
+    description: string;
+    amount: number;
+    charged: "pax" | "flat";
+    pax: number;
+    legs: number[]; // 1-based leg numbers
+    lineAtCost: number;
+  }>;
+  // Trip page · itinerary activity, briefs and manifest settings
+  itineraryActivity?: ItineraryActivityEntry[];
+  lastBriefIssuedAt?: string;
+  lastBriefLegs?: number[];
+  sameManifestAllLegs?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -831,6 +929,14 @@ export interface AccountRecord {
     stage: string;
     value: number;
   }>;
+  // Quote builder step 01 choices, saved as defaults for the next quote
+  quoteDefaults?: {
+    authorisedOwnerId?: string;
+    isHandledByPa?: boolean;
+    assistantContactId?: string;
+    sendDocsTo?: "owner" | "assistant" | "both";
+    signsAgreement?: "owner" | "assistant";
+  };
 }
 
 export interface PetRecord {

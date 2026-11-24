@@ -784,6 +784,8 @@ interface AviationContextType {
   closeNewQuoteModal: () => void;
   addBooking: (booking: Booking) => Promise<Booking>;
   updateBooking: (bookingId: string, updates: Partial<Booking>) => void;
+  /** Updates a booking here and saves the same changes to the backend. */
+  saveBookingChanges: (bookingId: string, updates: Partial<Booking>) => Promise<void>;
   updateBookingStatus: (bookingId: string, status: BookingStatus) => void;
   updateBookingPaymentStatus: (bookingId: string, paymentStatus: Booking["paymentStatus"], paymentReason?: string) => void;
   toggleChecklistItem: (bookingId: string, stepId: string) => void;
@@ -1875,6 +1877,16 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     }
     if (selectedBookingForDetail && selectedBookingForDetail.id === bookingId) {
       setSelectedBookingForDetail((prev) => (prev ? { ...prev, ...updates } : null));
+    }
+  };
+
+  const saveBookingChanges = async (bookingId: string, updates: Partial<Booking>) => {
+    updateBooking(bookingId, updates);
+    try {
+      await api.bookings.update(bookingId, updates);
+    } catch (err: any) {
+      // Offline or not on the backend yet: the change is kept locally (localStorage) and synced on the next save
+      console.log("Backend sync note:", err?.message || err);
     }
   };
 
@@ -3639,6 +3651,7 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
         closeNewQuoteModal,
         addBooking,
         updateBooking,
+        saveBookingChanges,
         updateBookingStatus,
         updateBookingPaymentStatus,
         toggleChecklistItem,

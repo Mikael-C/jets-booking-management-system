@@ -52,7 +52,7 @@ export default function AppShell({ children, navKey }: AppShellProps) {
       <Sidebar />
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 min-h-screen overflow-x-hidden bg-[#F8F9FA]">
+      <div className="flex-1 flex flex-col min-w-0 min-h-screen overflow-x-clip bg-[#F8F9FA]">
         <main className="flex-1 p-6 sm:p-8 max-w-7xl w-full mx-auto">
           {children}
         </main>

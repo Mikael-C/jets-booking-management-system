@@ -41,6 +41,20 @@ const flightLegSchema = new mongoose.Schema({
   notes: { type: String, default: '' },
   pets: { type: mongoose.Schema.Types.Mixed, default: null },
   luggage: { type: mongoose.Schema.Types.Mixed, default: null },
+  // Trip page · Itinerary tab
+  originalDepartureTimeLocal: { type: String, default: '' },
+  originalArrivalTimeLocal: { type: String, default: '' },
+  originalFlightTimeFormatted: { type: String, default: '' },
+  departureEdited: { type: Boolean, default: false },
+  arrivalEdited: { type: Boolean, default: false },
+  departureFboChanged: { type: Boolean, default: false },
+  arrivalFboChanged: { type: Boolean, default: false },
+  limoPickupFbo: { type: String, default: '' },
+  briefContact: { type: String, enum: ['crew_mobile', 'desk_24_7', 'none', ''], default: '' },
+  sameCrewAsPreviousLeg: { type: Boolean, default: undefined },
+  openingHoursOverride: { type: mongoose.Schema.Types.Mixed, default: null },
+  // Trip page · Passengers tab (weapons on board, per leg)
+  weapons: { type: mongoose.Schema.Types.Mixed, default: null },
 }, { _id: true, strict: false });
 
 const clientDetailsSchema = new mongoose.Schema({
@@ -164,6 +178,17 @@ const sourcingOptionSchema = new mongoose.Schema({
   avinodeId: { type: String, default: '' },
   avInodeTripId: { type: String, default: '' },
   selected: { type: Boolean, default: false },
+  // Trip page · Sourcing tab
+  operatorId: { type: String, default: '' },
+  aircraftYear: { type: mongoose.Schema.Types.Mixed, default: null },
+  refurbYear: { type: mongoose.Schema.Types.Mixed, default: null },
+  availability: { type: String, enum: ['rechecked', 'available', 'not_checked', 'declined'], default: 'not_checked' },
+  availabilityCheckedAt: { type: String, default: '' },
+  safetyRating: { type: String, default: '' },
+  photoUrls: { type: [String], default: [] },
+  photosCount: { type: Number, default: 0 },
+  receivedAt: { type: String, default: '' },
+  isPreferred: { type: Boolean, default: false },
 }, { _id: true, strict: false });
 
 const manualServiceSchema = new mongoose.Schema({
@@ -243,6 +268,20 @@ const bookingSchema = new mongoose.Schema(
     agentMarginValue: { type: Number, default: 0 },
     manualServices: { type: [manualServiceSchema], default: [] },
     sourcingOptions: { type: [sourcingOptionSchema], default: [] },
+    // Quote builder · step 01 (client roles), 04a (operators per leg), 06 (passenger fees)
+    authorisedOwnerId: { type: String, default: '' },
+    authorisedOwnerName: { type: String, default: '' },
+    assistantContactId: { type: String, default: '' },
+    sendDocsTo: { type: String, enum: ['owner', 'assistant', 'both', ''], default: '' },
+    signsAgreement: { type: String, enum: ['owner', 'assistant', ''], default: '' },
+    legOperators: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    operatorPendingApproval: { type: Boolean, default: false },
+    passengerFeeItems: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    // Trip page · itinerary activity, flight briefs and manifest settings
+    itineraryActivity: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    lastBriefIssuedAt: { type: String, default: '' },
+    lastBriefLegs: { type: [Number], default: [] },
+    sameManifestAllLegs: { type: Boolean, default: true },
     avInodeTripId: { type: String, default: '' },
     notes: { type: String, default: '' },
     internalNotes: { type: String, default: '' },

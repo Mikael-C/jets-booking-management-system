@@ -12,6 +12,11 @@ import StageStepper, { TripStage } from "@/components/ui/StageStepper";
 import StatusPill from "@/components/ui/StatusPill";
 import MissingDataBadge from "@/components/ui/MissingDataBadge";
 import { api } from "@/lib/api";
+import TripItineraryTab from "./TripItineraryTab";
+import TripPassengersTab from "./TripPassengersTab";
+import TripSourcingTab from "./TripSourcingTab";
+import TripInfoRail, { ItineraryNotesRail } from "./TripInfoRail";
+import { countMissingPassports, tripRouteLabel } from "./tripTabUtils";
 import {
   Plane,
   Clock,
@@ -230,7 +235,12 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
     issueCreditNote,
     contacts,
     addContact,
-    currentUser
+    currentUser,
+    accounts,
+    operators,
+    users,
+    sendMessage,
+    saveBookingChanges
   } = useAviation();
 
   const [activeTab, setActiveTab] = useState<TripTabKey>(initialTab);
@@ -616,11 +626,37 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
   const realMessagesCount = tripMessages.length;
   const realRevisionsCount = tripVersions.length;
 
+  const tripMissingPassports = countMissingPassports(currentTrip, contacts as any[]);
+  const tripSourcingCount =
+    (currentTrip.sourcingOptions || []).length +
+    (currentTrip.operator?.companyName &&
+    !(currentTrip.sourcingOptions || []).some((o) => o.operatorName === currentTrip.operator?.companyName)
+      ? 1
+      : 0);
+  const actorName = (currentUser?.name || "Admin").split(" ")[0];
+  const briefNumber = `FB-${normalizedId || "TRIP"}-${String(versionNum).padStart(3, "0")}`;
+  const saveTrip = (updates: Partial<Booking>) => {
+    // Keep the activity log to a sensible size
+    const capped = updates.itineraryActivity ? { ...updates, itineraryActivity: updates.itineraryActivity.slice(0, 300) } : updates;
+    saveBookingChanges(currentTrip.id, capped);
+  };
+  const sendBriefToCurator = (legNumbers: number[]) => {
+    if (!currentTrip.agentEmail && !currentTrip.agentName) return;
+    sendMessage({
+      channel: "broker_desk",
+      recipientEmail: currentTrip.agentEmail,
+      recipientName: currentTrip.agentName,
+      recipientRole: "agent",
+      content: `Flight brief ${briefNumber} for ${rootId} is ready (leg${legNumbers.length > 1 ? "s" : ""} ${legNumbers.join(", ")}).`,
+      tripNumber: rootId
+    }).catch(() => undefined);
+  };
+
   // Tabs definition matching exact screenshot order: Itinerary, Passengers ▲2, Sourcing (3), Pricing, Services (2), Documents (7), Accounting, Revisions (5), Notes
   const tabs: { key: TripTabKey; label: string; countLabel?: string; count?: number }[] = [
     { key: "itinerary", label: "Itinerary" },
-    { key: "passengers", label: "Passengers" },
-    { key: "sourcing", label: "Sourcing" },
+    { key: "passengers", label: "Passengers", countLabel: tripMissingPassports > 0 ? `▲${tripMissingPassports}` : undefined },
+    { key: "sourcing", label: "Sourcing", count: tripSourcingCount > 0 ? tripSourcingCount : undefined },
     { key: "pricing", label: "Pricing" },
     { key: "services", label: "Services" },
     { key: "documents", label: "Documents" },
@@ -814,11 +850,7 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
             <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
               <span>{rootId.startsWith("TRI-") ? rootId : `TRI-${rootId}`}</span>
               <span>·</span>
-              <span>
-                {currentTrip.legs[0]?.origin?.city || (currentTrip.legs[0]?.origin?.icao === "LEIB" ? "Ibiza" : currentTrip.legs[0]?.origin?.icao || "Ibiza")}
-                {" → "}
-                {currentTrip.legs[0]?.destination?.city || (currentTrip.legs[0]?.destination?.icao === "LSGG" ? "Geneva" : currentTrip.legs[0]?.destination?.icao || "Geneva")}
-              </span>
+              <span>{tripRouteLabel(currentTrip) || "Route to be confirmed"}</span>
             </h1>
             <p className="text-xs text-slate-500 mt-1 flex items-center flex-wrap gap-1.5 font-normal">
               <span>{currentTrip.client?.companyName || "Adeyemi Holdings Ltd"}</span>
@@ -863,7 +895,15 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
               </button>
             ) : (
               <button
-                onClick={() => openDocument(currentTrip, "flight_brief")}
+                onClick={() => {
+                  // The brief is generated on the Itinerary tab, no pop-up
+                  if (activeTab === "itinerary") {
+                    document.getElementById("generate-flight-brief")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  } else {
+                    setActiveTab("itinerary");
+                    router.push(`/trips/${rootId}/itinerary#generate-flight-brief`);
+                  }
+                }}
                 className="bg-[#0B1320] hover:bg-slate-800 text-white px-3.5 py-1.5 rounded-lg text-xs font-medium shadow-sm transition-colors"
               >
                 Flight brief
@@ -927,445 +967,27 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
       <div className={`grid grid-cols-1 ${activeTab === "accounting" ? "lg:grid-cols-1" : "lg:grid-cols-4"} gap-6`}>
         {/* Main Tab Content Area */}
         <div className={`${activeTab === "accounting" ? "w-full" : "lg:col-span-3"} space-y-5`}>
-          {/* TAB 1: ITINERARY (R-016) */}
+          {/* TAB 1: ITINERARY · times, FBO, registration, crew and brief contact per leg */}
           {activeTab === "itinerary" && (
-            <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-bold font-display text-[var(--ink)] m-0">Flight Itinerary & Schedule</h3>
-                  <p className="text-xs text-[var(--muted)]">Local times with UTC simultaneously, FBO ground handling facilities, and airport facts</p>
-                </div>
-                <span className="font-mono text-xs text-[var(--muted)]">
-                  Block Time: ~{currentTrip.legs[0]?.flightTimeFormatted || "1h 45m"}
-                </span>
-              </div>
-
-              {/* Legs Schedule Cards with UTC + Local times simultaneously (R-016) */}
-              <div className="space-y-4">
-                {currentTrip.legs.map((leg, idx) => {
-                  const depFbos = getAirportFbos(leg.origin?.icao || "LSGG");
-                  const arrFbos = getAirportFbos(leg.destination?.icao || "EGSS");
-                  const isFboMissing = !leg.departureHandling?.name || leg.departureHandling.name === "TBA";
-
-                  return (
-                    <div key={idx} className="border border-[var(--line)] rounded-xl p-4 bg-[var(--paper)] space-y-4">
-                      <div className="flex items-center justify-between border-b border-[var(--line)] pb-3">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono font-bold text-xs px-2 py-0.5 rounded bg-[var(--wf)] text-[var(--ink)]">
-                            LEG {String(idx + 1).padStart(2, "0")}
-                          </span>
-                          <span className="font-mono font-semibold text-xs text-[var(--ink)]">{leg.flightDate}</span>
-                        </div>
-                        <StatusPill label="ON SCHEDULE" variant="green" />
-                      </div>
-
-                      {/* Origin & Destination Stations */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {/* Origin Station */}
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-display uppercase font-bold text-[var(--muted)] tracking-wider">
-                              DEPARTURE STATION
-                            </span>
-                            <span className="pill grey text-[10px]">UTC+1</span>
-                          </div>
-                          <div className="flex items-baseline gap-2">
-                            <span className="font-mono font-black text-2xl text-[var(--ink)]">
-                              {leg.departureTimeLocal}
-                            </span>
-                            <span className="text-xs text-[var(--muted)] font-mono">
-                              ({leg.departureTimeUtc || "08:00 UTC"})
-                            </span>
-                          </div>
-                          <div>
-                            <span className="font-display font-bold text-sm text-[var(--ink)] block">
-                              {leg.origin?.name || "Geneva Airport"} ({leg.origin?.icao})
-                            </span>
-                            <span className="text-xs text-[var(--muted)] font-mono">
-                              FBO: {leg.departureHandling?.name || depFbos[0]?.name || "TAG Aviation Geneva"}
-                            </span>
-                          </div>
-                          {/* FBO Selector strictly filtered to this airport (R-016) */}
-                          <div className="pt-1">
-                            <label className="text-[10px] font-display uppercase font-bold text-[var(--muted)] block mb-1">
-                              FBO Facility (Airport Filtered):
-                            </label>
-                            <select
-                              value={leg.departureHandling?.name || depFbos[0]?.name}
-                              onChange={(e) => {
-                                const matchedFbo = depFbos.find((f) => f.name === e.target.value);
-                                if (matchedFbo) {
-                                  leg.departureHandling = {
-                                    name: matchedFbo.name,
-                                    airportCode: leg.origin?.icao || "LSGG",
-                                    address: matchedFbo.address,
-                                    phone: matchedFbo.phone,
-                                    email: matchedFbo.email
-                                  };
-                                }
-                              }}
-                              className="w-full bg-[var(--card)] border border-[var(--line)] rounded px-2.5 py-1.5 text-xs font-sans text-[var(--ink)]"
-                            >
-                              {depFbos.map((fbo) => (
-                                <option key={fbo.id} value={fbo.name}>
-                                  {fbo.name} ({fbo.vhfFrequency || "VHF Active"})
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        </div>
-
-                        {/* Destination Station */}
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-display uppercase font-bold text-[var(--muted)] tracking-wider">
-                              ARRIVAL STATION
-                            </span>
-                            <span className="pill grey text-[10px]">UTC+0</span>
-                          </div>
-                          <div className="flex items-baseline gap-2">
-                            <span className="font-mono font-black text-2xl text-[var(--ink)]">
-                              {leg.arrivalTimeLocal}
-                            </span>
-                            <span className="text-xs text-[var(--muted)] font-mono">
-                              ({leg.arrivalTimeUtc || "09:45 UTC"})
-                            </span>
-                          </div>
-                          <div>
-                            <span className="font-display font-bold text-sm text-[var(--ink)] block">
-                              {leg.destination?.name || "London Stansted"} ({leg.destination?.icao})
-                            </span>
-                            <span className="text-xs text-[var(--muted)] font-mono">
-                              FBO: {leg.arrivalHandling?.name || arrFbos[0]?.name || "Harrods Aviation"}
-                            </span>
-                          </div>
-                          {/* FBO Selector strictly filtered to destination */}
-                          <div className="pt-1">
-                            <label className="text-[10px] font-display uppercase font-bold text-[var(--muted)] block mb-1">
-                              FBO Facility (Airport Filtered):
-                            </label>
-                            <select
-                              value={leg.arrivalHandling?.name || arrFbos[0]?.name}
-                              onChange={(e) => {
-                                const matchedFbo = arrFbos.find((f) => f.name === e.target.value);
-                                if (matchedFbo) {
-                                  leg.arrivalHandling = {
-                                    name: matchedFbo.name,
-                                    airportCode: leg.destination?.icao || "EGSS",
-                                    address: matchedFbo.address,
-                                    phone: matchedFbo.phone,
-                                    email: matchedFbo.email
-                                  };
-                                }
-                              }}
-                              className="w-full bg-[var(--card)] border border-[var(--line)] rounded px-2.5 py-1.5 text-xs font-sans text-[var(--ink)]"
-                            >
-                              {arrFbos.map((fbo) => (
-                                <option key={fbo.id} value={fbo.name}>
-                                  {fbo.name} ({fbo.vhfFrequency || "VHF Active"})
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Airport Fact Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                <div className="border border-[var(--line)] rounded-lg p-4 bg-[var(--paper)] space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-display font-bold text-sm text-[var(--ink)]">
-                      {currentTrip.legs[0]?.origin?.icao || "LSGG"} — {currentTrip.legs[0]?.origin?.name || "Geneva Airport"}
-                    </span>
-                    <Link href={`/airports`} className="text-xs text-[var(--accent)] font-mono hover:underline">
-                      Station Profile →
-                    </Link>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 text-xs font-mono">
-                    <div>
-                      <span className="text-[var(--muted)] block text-[10px] uppercase font-bold">Runway:</span>
-                      <span>3,900 m (Cat III)</span>
-                    </div>
-                    <div>
-                      <span className="text-[var(--muted)] block text-[10px] uppercase font-bold">Hours:</span>
-                      <span>06:00 – 22:00 Local</span>
-                    </div>
-                    <div>
-                      <span className="text-[var(--muted)] block text-[10px] uppercase font-bold">Extension:</span>
-                      <span>Up to 23:30 (Surcharge €450)</span>
-                    </div>
-                    <div>
-                      <span className="text-[var(--muted)] block text-[10px] uppercase font-bold">Slot Req:</span>
-                      <span>Mandatory PPR</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="border border-[var(--line)] rounded-lg p-4 bg-[var(--paper)] space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-display font-bold text-sm text-[var(--ink)]">
-                      {currentTrip.legs[0]?.destination?.icao || "EGSS"} — {currentTrip.legs[0]?.destination?.name || "London Stansted"}
-                    </span>
-                    <Link href={`/airports`} className="text-xs text-[var(--accent)] font-mono hover:underline">
-                      Station Profile →
-                    </Link>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 text-xs font-mono">
-                    <div>
-                      <span className="text-[var(--muted)] block text-[10px] uppercase font-bold">Runway:</span>
-                      <span>3,048 m (Grooved Asphalt)</span>
-                    </div>
-                    <div>
-                      <span className="text-[var(--muted)] block text-[10px] uppercase font-bold">Hours:</span>
-                      <span>24/7 Unrestricted</span>
-                    </div>
-                    <div>
-                      <span className="text-[var(--muted)] block text-[10px] uppercase font-bold">Customs:</span>
-                      <span>24/7 Dedicated Border Force</span>
-                    </div>
-                    <div>
-                      <span className="text-[var(--muted)] block text-[10px] uppercase font-bold">Noise:</span>
-                      <span>QC2 Night Cap Applicable</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <TripItineraryTab
+              trip={currentTrip}
+              onSave={saveTrip}
+              onOpenBrief={(briefBooking) => openDocument(briefBooking, "flight_brief")}
+              onSendBriefToCurator={sendBriefToCurator}
+              userName={actorName}
+              companyName={settings?.company?.name?.split(" ")[0] || "Orbelo"}
+              briefNumber={briefNumber}
+            />
           )}
 
-          {/* TAB 2: PASSENGERS (R-017) */}
+          {/* TAB 2: PASSENGERS · manifest from Contacts, weapons on board, totals */}
           {activeTab === "passengers" && (
-            <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-bold font-display text-[var(--ink)] m-0">Passenger Manifest & Crew</h3>
-                  <p className="text-xs text-[var(--muted)]">Travelers linked directly from Contacts directory; masked passport numbers with authorized reveal</p>
-                </div>
-                <button
-                  onClick={() => setIsAddPaxModalOpen(true)}
-                  className="btn-primary text-xs"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Add from Contacts</span>
-                </button>
-              </div>
-
-              {missingPassportsCount > 0 && (
-                <div className="callout amber text-xs">
-                  <p className="font-bold">▲ Missing Travel Documents</p>
-                  <p>
-                    {missingPassportsCount} passenger(s) lack valid passport credentials. Updating the contact will automatically update this flight brief.
-                  </p>
-                </div>
-              )}
-
-              <div className="tablewrap">
-                <table className="dense-table">
-                  <thead>
-                    <tr>
-                      <th>Role</th>
-                      <th>Passenger Name</th>
-                      <th>Nationality</th>
-                      <th>Document (Masked)</th>
-                      <th>Expires</th>
-                      <th>Status</th>
-                      <th className="text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {currentTrip.legs[0]?.passengers.map((pax, idx) => {
-                      const hasDoc = Boolean(pax.passportNumber && pax.passportNumber.length >= 5);
-                      const isRevealed = Boolean(revealedPassports[pax.id || String(idx)]);
-
-                      return (
-                        <tr key={pax.id || idx}>
-                          <td>
-                            <span className={`pill ${idx === 0 || pax.isLeadPassenger ? "gold" : "grey"} text-[10px]`}>
-                              {idx === 0 || pax.isLeadPassenger ? "★ LEAD CHARTERER" : "GUEST"}
-                            </span>
-                          </td>
-                          <td className="font-bold text-[var(--ink)]">{pax.fullName}</td>
-                          <td className="font-mono text-xs">{pax.nationality || "British"}</td>
-                          <td className="font-mono text-xs">
-                            {hasDoc ? (
-                              isRevealed ? (
-                                <span className="font-bold text-[var(--ink)]">{pax.passportNumber}</span>
-                              ) : (
-                                <span>{maskPassportNumber(pax.passportNumber)}</span>
-                              )
-                            ) : (
-                              <span className="text-[var(--amber)]">▲ Not on file</span>
-                            )}
-                          </td>
-                          <td className="font-mono text-xs">
-                            {pax.passportExpiry || "2031-08-20"}
-                          </td>
-                          <td>
-                            <StatusPill
-                              label={hasDoc ? "VERIFIED" : "PENDING"}
-                              variant={hasDoc ? "green" : "amber"}
-                            />
-                          </td>
-                          <td className="text-right">
-                            {hasDoc && (
-                              <button
-                                onClick={() => togglePassportReveal(pax.id || String(idx))}
-                                className="btn-secondary text-[11px] py-1 px-2"
-                                title="Toggle reveal passport number"
-                              >
-                                {isRevealed ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-                                <span>{isRevealed ? "Hide" : "Reveal"}</span>
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Pets Section (R-017 & Screen 5) */}
-              <div className="pt-2 border-t border-[var(--line)]">
-                <div className="flex items-center justify-between mb-2">
-                  <h4 className="font-display font-bold text-sm text-[var(--ink)] m-0">Animals / Pets on Board</h4>
-                  <span className="text-xs text-[var(--muted)] font-mono">DEFRA / Pet Travel Scheme compliant</span>
-                </div>
-                {currentTrip.petDetails?.hasPets ? (
-                  <div className="border border-[var(--line)] rounded-lg p-3 bg-[var(--paper)] text-xs flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <span className="font-bold text-[var(--ink)]">
-                        {currentTrip.petDetails?.petCount || 1}x {currentTrip.petDetails?.breed || currentTrip.petDetails?.petType || "Dog"} ({currentTrip.petDetails?.totalWeightKg || currentTrip.petDetails?.petWeight || 8} kg)
-                      </span>
-                      <p className="text-[var(--muted)] font-mono text-[11px] m-0">
-                        {currentTrip.petDetails?.notes || "In-Cabin Carriage · Pet passport verified · Microchip compliant"}
-                      </p>
-                    </div>
-                    <span className="pill green">PET CLEARED</span>
-                  </div>
-                ) : (
-                  <div className="border border-[var(--line)] rounded-lg p-3 bg-[var(--paper)] text-xs flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <span className="font-bold text-[var(--ink)]">Toby (Yorkshire Terrier, 3.2 kg)</span>
-                      <p className="text-[var(--muted)] font-mono text-[11px] m-0">
-                        Pet Passport: GB84920412 · Microchip: 985141002948211 · In-Cabin Carriage
-                      </p>
-                    </div>
-                    <span className="pill green">PET CLEARED</span>
-                  </div>
-                )}
-              </div>
-            </div>
+            <TripPassengersTab trip={currentTrip} contacts={contacts as any[]} onSave={saveTrip} userName={actorName} />
           )}
 
-          {/* TAB 3: SOURCING (R-018) */}
+          {/* TAB 3: SOURCING · request for the marketplace and operator offers */}
           {activeTab === "sourcing" && (
-            <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-5">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-lg font-bold font-display text-[var(--ink)] m-0">Operator Sourcing Desk</h3>
-                  <p className="text-xs text-[var(--muted)]">Direct marketplace offers, verified AOC records, and Avinode integration</p>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => {
-                      const text = `TRIP REQUEST: ${currentTrip.legs[0]?.origin?.icao} - ${currentTrip.legs[0]?.destination?.icao} | DATE: ${currentTrip.legs[0]?.flightDate} | TIME: ${currentTrip.legs[0]?.departureTimeLocal} | PAX: ${currentTrip.legs[0]?.paxCount} | CAT: ${currentTrip.aircraft.categoryLabel}`;
-                      navigator.clipboard.writeText(text);
-                      setCopiedAvinode(true);
-                      setTimeout(() => setCopiedAvinode(false), 2000);
-                    }}
-                    className="btn-secondary text-xs"
-                  >
-                    {copiedAvinode ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copiedAvinode ? "Copied!" : "Copy for Avinode"}</span>
-                  </button>
-
-                  <button
-                    onClick={() => setIsLogOfferModalOpen(true)}
-                    className="btn-primary text-xs"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Log Operator Offer</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Sourced Offers Table */}
-              <div className="tablewrap">
-                <table className="dense-table">
-                  <thead>
-                    <tr>
-                      <th>Operator</th>
-                      <th>Aircraft & Tail</th>
-                      <th>YOM</th>
-                      <th>Capacity</th>
-                      <th>AOC Status</th>
-                      <th className="text-right">Net Cost</th>
-                      <th>Validity</th>
-                      <th className="text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {/* Selected verified operator offer from booking */}
-                    <tr>
-                      <td>
-                        <span className="font-bold text-[var(--ink)] block">
-                          {currentTrip.operator?.companyName || currentTrip.operator?.name || (currentTrip.operator as any)?.tradingName || "Contracted Air Carrier"}
-                        </span>
-                        <span className="text-[11px] font-mono text-[var(--muted)]">
-                          AOC: {(currentTrip.operator as any)?.aocNumber || currentTrip.operator?.commercialRegistry || "AT.AOC.024"}
-                        </span>
-                      </td>
-                      <td>
-                        <span className="font-semibold block text-[var(--ink)]">
-                          {currentTrip.aircraft?.name || (currentTrip.aircraft as any)?.model || "Pilatus PC-12 NGX"}
-                        </span>
-                        <span className="font-mono text-xs text-[var(--muted)]">
-                          {currentTrip.aircraft?.registration || (currentTrip.aircraft as any)?.tailNumber || "OE-FFB"}
-                        </span>
-                      </td>
-                      <td className="font-mono text-xs">{(currentTrip.aircraft as any)?.yearOfMake || currentTrip.aircraft?.yearOfManufacture || 2018}</td>
-                      <td className="font-mono text-xs font-bold">{currentTrip.aircraft?.passengers || (currentTrip.aircraft as any)?.maxPax || currentTrip.legs?.[0]?.paxCount || 4} Pax</td>
-                      <td><span className="pill green">VALID AOC</span></td>
-                      <td className="font-mono font-bold text-xs text-right text-[var(--ink)]">
-                        {(currentTrip.pricing as any)?.directFlightCost
-                          ? formatCurrency((currentTrip.pricing as any).directFlightCost, currentTrip.pricing.currency)
-                          : formatCurrency(currentTrip.pricing?.flightPrice || Math.round((currentTrip.pricing?.totalFlightPrice || 13516) * 0.85), currentTrip.pricing?.currency)}
-                      </td>
-                      <td className="font-mono text-xs text-[var(--muted)]">Confirmed</td>
-                      <td className="text-right">
-                        <span className="pill green">SELECTED</span>
-                      </td>
-                    </tr>
-
-                    {/* Additional logged offers */}
-                    {(currentTrip.sourcingOptions || []).map((opt) => (
-                      <tr key={opt.id}>
-                        <td className="font-bold text-[var(--ink)]">{opt.operatorName}</td>
-                        <td className="font-sans text-xs">{opt.aircraftType}</td>
-                        <td className="font-mono text-xs">2018</td>
-                        <td className="font-mono text-xs font-bold">4 Pax</td>
-                        <td><span className="pill green">AOC VERIFIED</span></td>
-                        <td className="font-mono font-bold text-xs text-right text-[var(--ink)]">
-                          {formatCurrency(opt.price, opt.currency)}
-                        </td>
-                        <td className="font-mono text-xs text-[var(--muted)]">{opt.validUntil}</td>
-                        <td className="text-right">
-                          <button className="btn-secondary text-[11px] py-1 px-2">
-                            Select
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            <TripSourcingTab trip={currentTrip} operators={operators} onSave={saveTrip} userName={actorName} />
           )}
 
           {/* TAB 4: PRICING (R-019) */}
@@ -2879,82 +2501,20 @@ export default function TripPageShell({ tripId, initialTab = "itinerary" }: Trip
           )}
         </div>
 
-        {/* Right Rail Info Panel matching Images 1, 2, 3, 4 */}
-        {activeTab !== "accounting" && (
-          <div className="bg-white border border-slate-200/90 rounded-xl p-5 space-y-5 text-xs shadow-sm self-start">
-          {/* 1. ACCOUNT */}
-          <div className="space-y-1">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">ACCOUNT</div>
-            <div className="font-bold text-slate-900 text-xs">
-              Adeyemi Holdings Ltd
-            </div>
-            <div>
-              <span className="text-blue-600 font-mono text-xs hover:underline cursor-pointer">
-                ACC-30412
-              </span>
-            </div>
-          </div>
-
-          {/* 2. AUTHORISED PERSON */}
-          <div className="space-y-1">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">AUTHORISED PERSON</div>
-            <div className="text-slate-900 text-xs font-medium">
-              Tunde Adeyemi
-            </div>
-          </div>
-
-          {/* 3. SEND DOCUMENTS TO */}
-          <div className="space-y-1">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">SEND DOCUMENTS TO</div>
-            <div className="text-slate-900 text-xs font-mono">office@adeyemi-holdings.ng</div>
-            <div className="text-slate-500 text-[11px]">Preferred: secretary&apos;s office</div>
-          </div>
-
-          {/* 4. CURATOR */}
-          <div className="space-y-1">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">CURATOR</div>
-            <div className="text-slate-900 text-xs font-medium">
-              Marcus Vance · 8 %
-            </div>
-            <div className="text-slate-500 text-[11px]">
-              11 tokens left · payout 1 week after flight
-            </div>
-          </div>
-
-          {/* 5. OPERATOR · INTERNAL */}
-          <div className="space-y-1">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">OPERATOR · INTERNAL</div>
-            <div className="text-slate-900 text-xs font-medium">
-              Alpine Executive (AOC valid 2027)
-            </div>
-            <div className="text-slate-400 text-[11px]">Never shown to Curator or client</div>
-          </div>
-
-          {/* 6. DEADLINES */}
-          <div className="space-y-1.5">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">DEADLINES</div>
-            <div className="text-slate-800 text-xs font-medium">€ 250 due before 18 Nov</div>
-            <div className="text-amber-700 text-xs font-medium flex items-center gap-1">
-              ▲ 2 passports before brief
-            </div>
-            <div className="text-slate-700 text-xs">Slot LSGG: requested</div>
-          </div>
-
-          {/* 7. ACTIVITY */}
-          <div className="space-y-1.5">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">ACTIVITY</div>
-            <div className="text-slate-600 text-[11px]">14 Nov 13:02 · Obi · revision -005</div>
-            <div className="text-slate-600 text-[11px]">13 Nov 18:40 · M. Vance · wire proof uploaded</div>
-            <div className="text-slate-600 text-[11px]">13 Nov 09:15 · Obi · route revised -004</div>
-            <button
-              onClick={() => handleTabChange("revisions")}
-              className="text-blue-600 hover:text-blue-800 text-xs pt-1 block cursor-pointer hover:underline"
-            >
-              Full log
-            </button>
-          </div>
-        </div>
-        )}
+        {/* Right rail: notes on the Itinerary tab, trip facts on the other tabs */}
+        {activeTab !== "accounting" &&
+          (activeTab === "itinerary" ? (
+            <ItineraryNotesRail />
+          ) : (
+            <TripInfoRail
+              trip={currentTrip}
+              accounts={accounts}
+              operators={operators}
+              users={users}
+              missingPassports={tripMissingPassports}
+              onFullLog={() => handleTabChange("revisions")}
+            />
+          ))}
       </div>
 
       {/* View Message Modal */}

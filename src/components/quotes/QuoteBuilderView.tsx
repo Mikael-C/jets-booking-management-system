@@ -93,6 +93,132 @@ const parseTimeToLocal = (timeStr?: string, fallback = "08:30"): string => {
   return match ? match[1] : fallback;
 };
 
+// ===== Shared bits for the step layout (designs: 01 Client, 04a Operator search, 06 Price) =====
+const QB_STEP_LABELS: Record<string, string> = {
+  "01": "01 Client",
+  "02": "02 Itinerary",
+  "03": "03 Passengers",
+  "04": "04 Legs, operators and aircraft",
+  "04a": "04a Operator search and new operator",
+  "05": "05 Services",
+  "06": "06 Price"
+};
+
+const NEW_OPERATOR_DRAFT_ID = "__new-operator-draft__";
+
+const NEW_OPERATOR_DOCUMENTS = [
+  "AOC",
+  "Operations specs",
+  "Aircraft on AOC",
+  "Insurance ≥ €25m",
+  "Airworthiness",
+  "Crew licences",
+  "Safety audit",
+  "Sanctions check",
+  "Framework agreement"
+];
+
+const AOC_AUTHORITIES: { label: string; code: string }[] = [
+  { label: "UK CAA · United Kingdom", code: "GB" },
+  { label: "NCAA · Nigeria", code: "NG" },
+  { label: "Austro Control · Austria", code: "AT" },
+  { label: "FOCA · Switzerland", code: "CH" },
+  { label: "DGAC · France", code: "FR" },
+  { label: "LBA · Germany", code: "DE" },
+  { label: "ENAC · Italy", code: "IT" },
+  { label: "AESA · Spain", code: "ES" },
+  { label: "ANAC · Portugal", code: "PT" },
+  { label: "TM-CAD · Malta", code: "MT" },
+  { label: "IAA · Ireland", code: "IE" },
+  { label: "ILT · Netherlands", code: "NL" },
+  { label: "HCAA · Greece", code: "GR" },
+  { label: "IoM CAA · Isle of Man", code: "IM" },
+  { label: "GCAA · United Arab Emirates", code: "AE" },
+  { label: "GACA · Saudi Arabia", code: "SA" },
+  { label: "QCAA · Qatar", code: "QA" },
+  { label: "GCAA · Ghana", code: "GH" },
+  { label: "KCAA · Kenya", code: "KE" },
+  { label: "SACAA · South Africa", code: "ZA" },
+  { label: "FAA · United States", code: "US" },
+  { label: "TCCA · Canada", code: "CA" },
+  { label: "Other authority", code: "" }
+];
+
+// ICAO location prefix → ISO country code (for the country hint next to an operator)
+const ICAO_PREFIX_COUNTRY: Record<string, string> = {
+  DN: "NG", LO: "AT", EG: "GB", LS: "CH", LF: "FR", LM: "MT", LE: "ES", LI: "IT", ED: "DE", ET: "DE",
+  OM: "AE", EH: "NL", EB: "BE", LP: "PT", LG: "GR", OE: "SA", OT: "QA", LN: "MC", FA: "ZA", HK: "KE",
+  DG: "GH", OB: "BH", OK: "KW", EI: "IE", ES: "SE", EN: "NO", EK: "DK", EF: "FI", LK: "CZ", EP: "PL",
+  LH: "HU", LT: "TR", LL: "IL", HE: "EG", GM: "MA", DA: "DZ", DT: "TN", EL: "LU", LJ: "SI", LD: "HR",
+  LY: "RS", LR: "RO", LB: "BG", UU: "RU", WS: "SG", VH: "HK", RJ: "JP", CY: "CA", EY: "LT", EV: "LV", EE: "EE"
+};
+
+const AIRCRAFT_CATEGORY_SHORT: Record<string, string> = {
+  turboprop: "Turboprop",
+  piston: "Piston",
+  "entry-level": "Very light",
+  light: "Light jet",
+  "super-light": "Super light jet",
+  midsize: "Midsize jet",
+  "super-midsize": "Super midsize",
+  heavy: "Heavy jet",
+  large: "Large jet",
+  "ultra-long-range": "Ultra long range",
+  "vip-airliner": "VIP airliner"
+};
+
+const getOperatorCountryCode = (op: OperatorRecord): string => {
+  const authority = (op.aocAuthority || "").toLowerCase();
+  const byAuthority = AOC_AUTHORITIES.find((a) => {
+    if (!a.code) return false;
+    const [abbr, country] = a.label.toLowerCase().split(" · ");
+    return authority.includes(country) || (abbr.length > 2 && authority.includes(abbr));
+  });
+  if (byAuthority) return byAuthority.code;
+  const icao = (op.baseIcao || "").toUpperCase();
+  if (icao.startsWith("K")) return "US";
+  return ICAO_PREFIX_COUNTRY[icao.slice(0, 2)] || "—";
+};
+
+// Ranks aircraft for a typed model: 0 exact, 1 starts-with, 2 contains, 3 similar name
+const rankAircraftForQuery = (aircraft: Aircraft, rawQuery: string): number => {
+  const q = rawQuery.trim().toLowerCase().replace(/\s+/g, " ");
+  if (!q) return -1;
+  const name = aircraft.name.toLowerCase();
+  const model = aircraft.manufacturer && name.startsWith(aircraft.manufacturer.toLowerCase())
+    ? name.slice(aircraft.manufacturer.length).trim()
+    : name.split(" ").slice(1).join(" ");
+  if (name === q || model === q) return 0;
+  if (name.startsWith(q) || model.startsWith(q)) return 1;
+  if (name.includes(q)) return 2;
+  const words = q.split(" ").filter((w) => w.length >= 3 && /[a-z]/.test(w));
+  if (words.some((w) => name.includes(w))) return 3;
+  return -1;
+};
+
+function IdMark({ id, large = false }: { id?: string; large?: boolean }) {
+  if (!id) return null;
+  const match = id.match(/^([A-Za-z]+-)([A-Za-z0-9]+?)(-\d{2,3})?$/);
+  if (!match) return <span className="font-semibold">{id}</span>;
+  const [, prefix, root, suffix] = match;
+  return (
+    <span className="inline-flex items-baseline whitespace-nowrap">
+      <span className={`${large ? "text-[17px]" : "text-[10px]"} font-semibold uppercase tracking-wide opacity-80`}>{prefix}</span>
+      <span className="font-bold">{root}</span>
+      {suffix && <span className={`${large ? "text-[17px]" : "text-[11px]"} font-semibold opacity-80`}>{suffix}</span>}
+    </span>
+  );
+}
+
+function StepNote({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="bg-slate-50/80 border border-slate-100 rounded-xl px-4 py-3.5">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 mb-1.5">{title}</div>
+      <div className="text-[13px] text-slate-800 leading-relaxed space-y-1">{children}</div>
+    </div>
+  );
+}
+
 interface QuoteBuilderProps {
   reviseTripId?: string;
   fromRequestId?: string;
@@ -127,7 +253,8 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
     addBooking,
     updateAgentRequestStatus,
     sendMessage,
-    addOperator
+    addOperator,
+    updateAccount
   } = useAviation();
 
   // Find source if revising or creating from request
@@ -306,6 +433,30 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
     if (owner) {
       setLeadPaxName(owner);
     }
+    // New account: owner and assistant are picked again from that account's people
+    setOwnerPersonId("");
+    setPaContactId("");
+    setPaName("");
+    setPaEmail("");
+    setPaPhone("");
+    applyAccountDefaults(acc);
+  };
+
+  // Step 01 choices saved on the account last time are used as defaults
+  const applyAccountDefaults = (acc: any) => {
+    const d = acc?.quoteDefaults;
+    if (!d) return;
+    if (d.authorisedOwnerId) {
+      const person = (acc.authorizedPersons || []).find((p: any) => p.id === d.authorisedOwnerId);
+      if (person) {
+        setOwnerPersonId(person.id);
+        if (person.fullName) setLeadPaxName(person.fullName);
+      }
+    }
+    setIsHandledByPa(Boolean(d.isHandledByPa));
+    if (d.isHandledByPa && d.assistantContactId) setPaContactId(d.assistantContactId);
+    if (d.sendDocsTo) setSendDocsTo(d.sendDocsTo);
+    if (d.signsAgreement) setSignsAgreement(d.signsAgreement);
   };
 
   const filteredAccounts = useMemo(() => {
@@ -316,7 +467,9 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
       const matchNum = a.accountNumber?.toLowerCase().includes(q);
       const matchContact = a.preferredContactName?.toLowerCase().includes(q) ||
         a.authorizedPersons?.some((p) => p.fullName.toLowerCase().includes(q));
-      return matchName || matchNum || matchContact;
+      const matchPlace =
+        a.billingAddress?.toLowerCase().includes(q) || a.country?.toLowerCase().includes(q);
+      return matchName || matchNum || matchContact || matchPlace;
     });
   }, [accounts, accountSearchQuery]);
 
@@ -387,8 +540,17 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
   });
 
   // 1. Client, Authorised Owner & Assistant controls (Image 10)
-  const [sendDocsTo, setSendDocsTo] = useState<"owner" | "assistant" | "both">("both");
-  const [signsAgreement, setSignsAgreement] = useState<"owner" | "assistant">("owner");
+  const [sendDocsTo, setSendDocsTo] = useState<"owner" | "assistant" | "both">(() => {
+    const saved = (sourceTrip as any)?.sendDocsTo;
+    return saved === "owner" || saved === "assistant" || saved === "both" ? saved : "both";
+  });
+  const [signsAgreement, setSignsAgreement] = useState<"owner" | "assistant">(() => {
+    return (sourceTrip as any)?.signsAgreement === "assistant" ? "assistant" : "owner";
+  });
+  // Authorised Owner is always a person (Contact / authorised person) on the account, never the company
+  const [ownerPersonId, setOwnerPersonId] = useState<string>(() => (sourceTrip as any)?.authorisedOwnerId || "");
+  // Assistant / representative picked from the account's people ("__manual__" = typed in by hand)
+  const [paContactId, setPaContactId] = useState<string>(() => (sourceTrip as any)?.assistantContactId || "");
 
   // 3. Passengers & Cargo
   const [paxCount, setPaxCount] = useState<number>(() => {
@@ -564,6 +726,17 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
   const [newOpPhone, setNewOpPhone] = useState("");
   const [operatorFeedback, setOperatorFeedback] = useState<string | null>(null);
 
+  // Step 04a · operator search and new operator
+  const [opSearchQuery, setOpSearchQuery] = useState("");
+  const [acSearchQuery, setAcSearchQuery] = useState("");
+  const [opTargetLeg, setOpTargetLeg] = useState<number | "all">("all");
+  const [newOpEnabled, setNewOpEnabled] = useState(false);
+  const [newOpAuthority, setNewOpAuthority] = useState("");
+  const [newOpError, setNewOpError] = useState("");
+
+  // Breadcrumb follows the step in view
+  const [activeStep, setActiveStep] = useState<string>("01");
+
   const handleSaveNewOperator = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!newOpLegalName.trim()) return;
@@ -734,7 +907,8 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
 
   // 6. Margins, Passenger Fees & Payment (Step 06 - Screen 1 design)
   const [passengerFeesItemised, setPassengerFeesItemised] = useState<boolean>(true);
-  const [passengerFeesAppliesTo, setPassengerFeesAppliesTo] = useState<"leg-1" | "leg-2" | "both">("leg-2");
+  // Zero-based indexes of the legs the passenger fee applies to. Follows the number of legs on the trip.
+  const [passengerFeeLegs, setPassengerFeeLegs] = useState<number[]>([1]);
   const [passengerFeesDesc, setPassengerFeesDesc] = useState<string>("Abuja (DNAA) departure passenger charge");
   const [passengerFeesAmount, setPassengerFeesAmount] = useState<number>(45);
   const [passengerFeesCharged, setPassengerFeesCharged] = useState<"pax" | "flat">("pax");
@@ -942,12 +1116,68 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
     customServicesTotal;
 
   // Passenger fees line at cost (Step 06 - Screen 1 design)
+  // Keep the selected fee legs valid when legs are added or removed (one-way, round trip, multi-leg)
+  useEffect(() => {
+    const legCount = displayLegs.length;
+    setPassengerFeeLegs((prev) => {
+      const kept = prev.filter((i) => i >= 0 && i < legCount);
+      if (kept.length > 0 && kept.length === prev.length) return prev;
+      if (kept.length > 0) return kept;
+      return [Math.max(0, legCount - 1)];
+    });
+  }, [displayLegs.length]);
+
+  const passengerFeePerLeg = useMemo(() => {
+    if (!passengerFeesItemised) return 0;
+    return passengerFeesCharged === "pax"
+      ? passengerFeesAmount * (passengerFeesPax || paxCount || 1)
+      : passengerFeesAmount;
+  }, [passengerFeesItemised, passengerFeesCharged, passengerFeesAmount, passengerFeesPax, paxCount]);
+
+  const passengerFeeLegsSorted = useMemo(
+    () => [...passengerFeeLegs].filter((i) => i < displayLegs.length).sort((a, b) => a - b),
+    [passengerFeeLegs, displayLegs.length]
+  );
+
+  const passengerFeeAppliesToAll = displayLegs.length > 1 && passengerFeeLegsSorted.length === displayLegs.length;
+
+  const passengerFeeLegsLabel = useMemo(() => {
+    const sel = passengerFeeLegsSorted;
+    if (sel.length === 0) return "no leg";
+    if (displayLegs.length > 1 && sel.length === displayLegs.length) {
+      return displayLegs.length === 2 ? "both legs" : "all legs";
+    }
+    if (sel.length === 1) return `leg ${sel[0] + 1}`;
+    return `legs ${sel.slice(0, -1).map((i) => i + 1).join(", ")} & ${sel[sel.length - 1] + 1}`;
+  }, [passengerFeeLegsSorted, displayLegs.length]);
+
+  const handleTogglePassengerFeeLeg = (legIndex: number | "all") => {
+    const legCount = displayLegs.length;
+    if (legIndex === "all") {
+      setPassengerFeeLegs(Array.from({ length: legCount }, (_, i) => i));
+      return;
+    }
+    // One or two legs: behaves like a single choice (Leg 1 / Leg 2 / Both)
+    if (legCount <= 2) {
+      setPassengerFeeLegs([legIndex]);
+      return;
+    }
+    // Multi-leg: pick one or more legs. Clicking a leg while "All legs" is on selects just that leg.
+    setPassengerFeeLegs((prev) => {
+      const current = prev.filter((i) => i < legCount);
+      if (current.length === legCount) return [legIndex];
+      if (current.includes(legIndex)) {
+        const next = current.filter((i) => i !== legIndex);
+        return next.length > 0 ? next : current;
+      }
+      return [...current, legIndex];
+    });
+  };
+
   const passengerFeesLineAtCost = useMemo(() => {
     if (!passengerFeesItemised) return 0;
-    const perUnit = passengerFeesCharged === "pax" ? passengerFeesAmount * (passengerFeesPax || paxCount || 5) : passengerFeesAmount;
-    if (passengerFeesAppliesTo === "both") return perUnit * (displayLegs.length || 2);
-    return perUnit;
-  }, [passengerFeesItemised, passengerFeesCharged, passengerFeesAmount, passengerFeesPax, paxCount, passengerFeesAppliesTo, displayLegs.length]);
+    return passengerFeePerLeg * passengerFeeLegsSorted.length;
+  }, [passengerFeesItemised, passengerFeePerLeg, passengerFeeLegsSorted.length]);
 
   // Total Cost Base: Direct Buying Prices + Passenger Fees at Cost
   const totalCostBase = effectiveOperatorFlightCost + passengerFeesLineAtCost;
@@ -1012,16 +1242,8 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
     const legs = displayLegs.map((leg, idx) => {
       const legBuyingPrice = leg.buyingPrice || Math.round(effectiveOperatorFlightCost / (displayLegs.length || 1));
       
-      let legPassengerFee = 0;
-      if (passengerFeesItemised) {
-        if (passengerFeesAppliesTo === "both") {
-          legPassengerFee = passengerFeesLineAtCost / (displayLegs.length || 2);
-        } else if (passengerFeesAppliesTo === "leg-1" && idx === 0) {
-          legPassengerFee = passengerFeesLineAtCost;
-        } else if (passengerFeesAppliesTo === "leg-2" && idx === 1) {
-          legPassengerFee = passengerFeesLineAtCost;
-        }
-      }
+      const legPassengerFee =
+        passengerFeesItemised && passengerFeeLegsSorted.includes(idx) ? passengerFeePerLeg : 0;
       
       const legBase = legBuyingPrice + legPassengerFee;
       const legMargin = Math.round(legBase * marginRatio * 100) / 100;
@@ -1045,7 +1267,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
     }
     
     return legs;
-  }, [displayLegs, effectiveOperatorFlightCost, passengerFeesItemised, passengerFeesAppliesTo, passengerFeesLineAtCost, totalCostBase, companyMarginAmount, agentMarginAmount]);
+  }, [displayLegs, effectiveOperatorFlightCost, passengerFeesItemised, passengerFeeLegsSorted, passengerFeePerLeg, totalCostBase, companyMarginAmount, agentMarginAmount]);
 
   const documentLinesSum = useMemo(() => {
     const charterTotal = legPricingBreakdown.reduce((s, l) => s + l.charterPrice, 0);
@@ -1054,6 +1276,217 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
   }, [legPricingBreakdown, passengerFeesItemised, passengerFeesLineAtCost, servicesTotal]);
 
   const documentsAddUp = Math.abs(documentLinesSum - clientTotal) < 0.05;
+
+  const currencySymbol = currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF";
+  const money = (n: number) =>
+    `${currencySymbol} ${(Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  // ===== Step 04a · operator search and new operator =====
+  const draftOperator: OperatorRecord | null = useMemo(() => {
+    if (!newOpEnabled) return null;
+    const name = newOpLegalName.trim() || "New operator";
+    return {
+      id: NEW_OPERATOR_DRAFT_ID,
+      legalName: name,
+      tradingName: name,
+      aocNumber: newOpAoc.trim(),
+      aocAuthority: newOpAuthority,
+      aocExpiry: "",
+      baseIcao: newOpBaseIcao.trim().toUpperCase(),
+      salesContact: "Operations",
+      salesEmail: newOpEmail.trim(),
+      opsPhone: newOpPhone.trim(),
+      opsEmail: newOpEmail.trim(),
+      status: "pending",
+      qualificationChecklist: NEW_OPERATOR_DOCUMENTS.map((docType, i) => ({
+        id: `doc-${i + 1}`,
+        docType,
+        status: "pending" as const
+      })),
+      createdAt: ""
+    };
+  }, [newOpEnabled, newOpLegalName, newOpAoc, newOpAuthority, newOpBaseIcao, newOpEmail, newOpPhone]);
+
+  const allOperators: OperatorRecord[] = useMemo(
+    () => (draftOperator ? [draftOperator, ...operators] : operators),
+    [draftOperator, operators]
+  );
+
+  // Same aircraft on all legs (or a one-leg trip) means the search always fills every leg
+  const effectiveOpTarget: number | "all" =
+    sameAircraftOnAllLegs || displayLegs.length <= 1 || opTargetLeg === "all" || opTargetLeg >= displayLegs.length
+      ? "all"
+      : opTargetLeg;
+
+  const targetLegIndexes = effectiveOpTarget === "all" ? displayLegs.map((_, i) => i) : [effectiveOpTarget];
+  const targetLegOperatorIds = targetLegIndexes
+    .map((i) => displayLegs[i]?.operatorId)
+    .filter((x): x is string => Boolean(x));
+  const targetLegAircraftIds = targetLegIndexes
+    .map((i) => displayLegs[i]?.aircraft?.id)
+    .filter((x): x is string => Boolean(x));
+
+  const operatorSearchResults = useMemo(() => {
+    const q = opSearchQuery.trim().toLowerCase();
+    if (!q) return [] as OperatorRecord[];
+    const scored = operators
+      .map((op) => {
+        const code = getOperatorCountryCode(op);
+        const countryName = AOC_AUTHORITIES.find((a) => a.code === code)?.label.split(" · ")[1] || "";
+        const fields = [op.tradingName, op.legalName, op.aocNumber, op.aocAuthority, op.baseIcao, code, countryName].map(
+          (f) => (f || "").toLowerCase()
+        );
+        const starts = fields.slice(0, 3).some((f) => f.startsWith(q));
+        const hit = fields.some((f) => f.includes(q));
+        return { op, score: !hit ? -1 : starts ? 0 : 1 };
+      })
+      .filter((x) => x.score >= 0)
+      .sort((a, b) => a.score - b.score || (a.op.tradingName || a.op.legalName).localeCompare(b.op.tradingName || b.op.legalName));
+    return scored.slice(0, 6).map((x) => x.op);
+  }, [opSearchQuery, operators]);
+
+  const aircraftSearchResults = useMemo(() => {
+    const q = acSearchQuery.trim();
+    if (!q) return [] as { aircraft: Aircraft; rank: number }[];
+    return fleetData
+      .map((aircraft) => ({ aircraft, rank: rankAircraftForQuery(aircraft, q) }))
+      .filter((r) => r.rank >= 0)
+      .sort((a, b) => a.rank - b.rank || a.aircraft.name.length - b.aircraft.name.length || a.aircraft.name.localeCompare(b.aircraft.name))
+      .slice(0, 6);
+  }, [acSearchQuery]);
+
+  const applyOperatorToTarget = (opId: string) => {
+    if (effectiveOpTarget === "all") {
+      setSelectedOperatorId(opId);
+      displayLegs.forEach((_, i) => updateLegField(i, "operatorId", opId));
+    } else {
+      updateLegField(effectiveOpTarget, "operatorId", opId);
+    }
+  };
+
+  const applyAircraftToTarget = (ac: Aircraft) => {
+    if (effectiveOpTarget === "all") {
+      setSelectedAircraft(ac);
+      displayLegs.forEach((_, i) => updateLegField(i, "aircraft", ac));
+    } else {
+      updateLegField(effectiveOpTarget, "aircraft", ac);
+    }
+  };
+
+  const handleToggleNewOperator = (checked: boolean) => {
+    setNewOpEnabled(checked);
+    setNewOpError("");
+    if (checked) {
+      applyOperatorToTarget(NEW_OPERATOR_DRAFT_ID);
+      return;
+    }
+    const fallback = operators[0]?.id || "";
+    if (selectedOperatorId === NEW_OPERATOR_DRAFT_ID) setSelectedOperatorId(fallback);
+    setMultiLegs((prev) =>
+      prev.map((l) => (l.operatorId === NEW_OPERATOR_DRAFT_ID ? { ...l, operatorId: fallback } : l))
+    );
+  };
+
+  const openOperatorSearch = (target: number | "all") => {
+    setOpTargetLeg(target);
+    if (typeof document !== "undefined") {
+      document.getElementById("qb-step-04a")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
+
+  // ===== Leg strip shown above 04a and 06 =====
+  const formatShortDate = (iso?: string) => {
+    if (!iso) return "";
+    const d = new Date(`${iso}T00:00:00`);
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+  };
+
+  const renderLegStrip = (extra: string) => (
+    <div className="bg-slate-50/80 border border-slate-100 rounded-xl px-4 py-3 flex flex-wrap items-baseline gap-x-6 gap-y-1.5 text-[15px] text-slate-800">
+      {displayLegs.map((leg, i) => {
+        const o = leg.origin?.icao || "";
+        const d = leg.destination?.icao || "";
+        const oCity = i === 0 ? leg.origin?.city || "" : "";
+        const dCity = i === 0 ? leg.destination?.city || "" : "";
+        return (
+          <span key={leg.id || `strip-${i}`} className="whitespace-nowrap">
+            <strong className="font-semibold">Leg</strong> <strong className="font-semibold ml-1">{i + 1}</strong>{" "}
+            {o}
+            {oCity ? ` ${oCity}` : ""} → {d}
+            {dCity ? ` ${dCity}` : ""} · {formatShortDate(leg.flightDate)} {leg.departureTime} LT
+          </span>
+        );
+      })}
+      <span className="text-[13px] text-slate-500">{extra}</span>
+    </div>
+  );
+
+  // ===== Compact live total for the steps between 02 and 05 =====
+  const renderLiveTotalNote = () => (
+    <StepNote title="Live total">
+      <div className="flex justify-between gap-3">
+        <span className="text-slate-500">Buying prices</span>
+        <span className="font-mono">{money(effectiveOperatorFlightCost)}</span>
+      </div>
+      {passengerFeesLineAtCost > 0 && (
+        <div className="flex justify-between gap-3">
+          <span className="text-slate-500">Passenger fees</span>
+          <span className="font-mono">{money(passengerFeesLineAtCost)}</span>
+        </div>
+      )}
+      <div className="flex justify-between gap-3">
+        <span className="text-slate-500">Margins</span>
+        <span className="font-mono">{money(companyMarginAmount + agentMarginAmount)}</span>
+      </div>
+      <div className="flex justify-between gap-3">
+        <span className="text-slate-500">Services</span>
+        <span className="font-mono">{money(servicesTotal)}</span>
+      </div>
+      <div className="flex justify-between gap-3 border-t border-slate-200 pt-1.5 mt-1 font-semibold text-slate-900">
+        <span>Client total</span>
+        <span className="font-mono">{money(clientTotal)}</span>
+      </div>
+      <div className={`text-[12px] pt-1 ${documentsAddUp ? "text-emerald-700" : "text-amber-700"}`}>
+        {documentsAddUp ? "✓ Document lines add up" : "▲ Document lines do not add up"}
+      </div>
+      <button
+        type="button"
+        onClick={() => document.getElementById("qb-step-06")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+        className="text-[12px] text-blue-600 hover:underline pt-0.5"
+      >
+        Go to price (06)
+      </button>
+    </StepNote>
+  );
+
+  // Track the step in view for the breadcrumb
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let frame = 0;
+    const compute = () => {
+      frame = 0;
+      const nodes = Array.from(document.querySelectorAll<HTMLElement>("[data-qb-step]"));
+      if (nodes.length === 0) return;
+      const line = window.innerHeight * 0.3;
+      let current = nodes[0].dataset.qbStep || "01";
+      for (const node of nodes) {
+        if (node.getBoundingClientRect().top <= line) current = node.dataset.qbStep || current;
+      }
+      setActiveStep((prev) => (prev === current ? prev : current));
+    };
+    const onScroll = () => {
+      if (!frame) frame = window.requestAnimationFrame(compute);
+    };
+    compute();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+      if (frame) window.cancelAnimationFrame(frame);
+    };
+  }, [isPhotoPickerOpen]);
 
   // Selected Account details
   const activeAccount = useMemo(() => {
@@ -1076,8 +1509,217 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
     return accounts[0];
   }, [accounts, selectedAccountId, sourceRequest]);
 
+  // ===== Step 01 · people on the selected account =====
+  const accountPeople = useMemo(() => {
+    const persons: any[] = (activeAccount as any)?.authorizedPersons || [];
+    return persons.map((p: any) => {
+      const role = String(p.roleTitle || p.title || "").replace(/\s*·\s*default\s*$/i, "").trim();
+      const hasPassport = Boolean(p.hasPassport || p.passportDetails?.passportNumber);
+      return {
+        id: String(p.id || p.contactId || p.fullName),
+        fullName: String(p.fullName || ""),
+        role,
+        email: String(p.email || ""),
+        phone: String(p.phone || ""),
+        isPrimary: Boolean(p.isPrimaryAccountName),
+        hasPassport,
+        label: [p.fullName, role, hasPassport ? "passport on file" : "no passport on file"].filter(Boolean).join(" · ")
+      };
+    });
+  }, [activeAccount]);
+
+  const selectedOwnerPerson = useMemo(() => {
+    return (
+      accountPeople.find((p) => p.id === ownerPersonId) ||
+      accountPeople.find((p) => p.fullName.toLowerCase() === (leadPaxName || "").toLowerCase()) ||
+      undefined
+    );
+  }, [accountPeople, ownerPersonId, leadPaxName]);
+
+  // Assistants: other authorised persons + contacts linked to the account (never the owner)
+  const assistantCandidates = useMemo(() => {
+    const ownerName = (selectedOwnerPerson?.fullName || leadPaxName || "").toLowerCase();
+    const list: { id: string; name: string; role: string; phone: string; email: string }[] = [];
+    const seen = new Set<string>();
+    accountPeople.forEach((p) => {
+      const key = p.fullName.toLowerCase();
+      if (!key || key === ownerName || seen.has(key)) return;
+      seen.add(key);
+      list.push({ id: `auth:${p.id}`, name: p.fullName, role: p.role || "Authorised person", phone: p.phone, email: p.email });
+    });
+    const acc: any = activeAccount;
+    (contacts || []).forEach((c: any) => {
+      const linked =
+        (acc?.id && c.associatedAccountId === acc.id) ||
+        (acc?.accountNumber && c.associatedAccountId === acc.accountNumber) ||
+        (acc?.name && c.associatedAccountName === acc.name);
+      if (!linked) return;
+      const name = String(c.fullName || `${c.firstName || ""} ${c.lastName || ""}`).trim();
+      const key = name.toLowerCase();
+      if (!key || key === ownerName || seen.has(key)) return;
+      seen.add(key);
+      list.push({
+        id: `contact:${c.id}`,
+        name,
+        role: String(c.title || c.roleTitle || "Contact").split("·")[0].trim(),
+        phone: String(c.phone || ""),
+        email: String(c.email || "")
+      });
+    });
+    return list;
+  }, [accountPeople, activeAccount, contacts, selectedOwnerPerson, leadPaxName]);
+
+  // Default the Authorised Owner to the account's primary person when the account changes
+  useEffect(() => {
+    if (accountPeople.length === 0) return;
+    const stillValid = accountPeople.some((p) => p.id === ownerPersonId);
+    if (stillValid) return;
+    const byName = accountPeople.find((p) => p.fullName.toLowerCase() === (leadPaxName || "").toLowerCase());
+    const pick = byName || accountPeople.find((p) => p.isPrimary) || accountPeople[0];
+    setOwnerPersonId(pick.id);
+    if (!byName && pick.fullName) setLeadPaxName(pick.fullName);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountPeople]);
+
+  // Pick an assistant automatically when "Handled by an assistant" is switched on
+  useEffect(() => {
+    if (!isHandledByPa) return;
+    if (paContactId === "__manual__") return;
+    const current = paContactId ? assistantCandidates.find((a) => a.id === paContactId) : undefined;
+    if (current) {
+      if (!paName) {
+        setPaName(current.name);
+        setPaEmail(current.email);
+        setPaPhone(current.phone);
+      }
+      return;
+    }
+    if (!paContactId && paName) {
+      const match = assistantCandidates.find((a) => a.name.toLowerCase() === paName.toLowerCase());
+      setPaContactId(match ? match.id : "__manual__");
+      return;
+    }
+    const first = assistantCandidates[0];
+    if (first) {
+      setPaContactId(first.id);
+      setPaName(first.name);
+      setPaEmail(first.email);
+      setPaPhone(first.phone);
+    } else {
+      setPaContactId("__manual__");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isHandledByPa, assistantCandidates]);
+
+  // Without an assistant, documents go to the owner and the owner signs
+  useEffect(() => {
+    if (isHandledByPa) return;
+    setSendDocsTo("owner");
+    setSignsAgreement("owner");
+  }, [isHandledByPa]);
+
+  // Defaults saved on the pre-selected account apply once for a new quote
+  const appliedInitialDefaultsRef = React.useRef(false);
+  useEffect(() => {
+    if (appliedInitialDefaultsRef.current || sourceTrip) return;
+    const acc = accounts.find((a) => a.id === activeAccount?.id);
+    if (!acc) return;
+    appliedInitialDefaultsRef.current = true;
+    applyAccountDefaults(acc);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeAccount]);
+
+  const handleSelectOwnerPerson = (personId: string) => {
+    setOwnerPersonId(personId);
+    const person = accountPeople.find((p) => p.id === personId);
+    if (person?.fullName) setLeadPaxName(person.fullName);
+  };
+
+  const handleSelectAssistant = (candidateId: string) => {
+    setPaContactId(candidateId);
+    if (candidateId === "__manual__") return;
+    const cand = assistantCandidates.find((a) => a.id === candidateId);
+    if (cand) {
+      setPaName(cand.name);
+      setPaEmail(cand.email);
+      setPaPhone(cand.phone);
+    }
+  };
+
+  const getAccountCity = (acc: any): string => {
+    if (!acc) return "";
+    const parts = String(acc.billingAddress || "").split(",").map((x: string) => x.trim()).filter(Boolean);
+    const country = String(acc.country || "").trim().toLowerCase();
+    const withoutCountry = parts.filter((x: string) => x.toLowerCase() !== country);
+    return withoutCountry[withoutCountry.length - 1] || acc.country || "";
+  };
+
+  const getAccountTripCount = (acc: any): number => {
+    if (!acc) return 0;
+    const fromBookings = bookings.filter((b) => b.accountNumber && b.accountNumber === acc.accountNumber).length;
+    return Math.max(fromBookings, Number(acc.lifetimeTrips || acc.totalBookings || 0));
+  };
+
+  const formatCuratorShort = (name?: string) => {
+    if (!name) return "";
+    const clean = name.replace(/\s*\(.*\)\s*$/, "").trim();
+    const parts = clean.split(/\s+/);
+    if (parts.length < 2) return clean;
+    return `${parts[0][0]}. ${parts.slice(1).join(" ")}`;
+  };
+
+  const billingLine = useMemo(() => {
+    const acc: any = activeAccount;
+    if (!acc?.billingAddress) return "—";
+    const country = String(acc.country || "").trim().toLowerCase();
+    return String(acc.billingAddress)
+      .split(",")
+      .map((x: string) => x.trim())
+      .filter((x: string) => x && x.toLowerCase() !== country)
+      .join(", ");
+  }, [activeAccount]);
+
+  const curatorName = sourceRequest?.agentName || (activeAccount as any)?.agentName || "";
+
   // Submission handler
   const handleCompleteQuotation = async () => {
+    // 04a: a new operator needs at least a name before the quote is saved
+    if (newOpEnabled && !newOpLegalName.trim()) {
+      setNewOpError("Type the operator name, or untick “Operator not in database”.");
+      if (typeof document !== "undefined") {
+        document.getElementById("qb-step-04a")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+      return;
+    }
+    // 06: "Complete" is blocked when the document lines do not add up
+    if (!documentsAddUp) return;
+
+    // 04a: the new operator is saved to Operators with status "Documents pending" together with the quote
+    let savedNewOperator: OperatorRecord | null = null;
+    if (newOpEnabled && draftOperator) {
+      savedNewOperator = {
+        ...draftOperator,
+        id: `op-${Date.now()}`,
+        createdAt: new Date().toISOString(),
+        notes: `Added from quote ${versionLabel} · documents pending`
+      };
+      addOperator(savedNewOperator);
+    }
+    const resolveOperator = (op?: OperatorRecord) =>
+      op && op.id === NEW_OPERATOR_DRAFT_ID && savedNewOperator ? savedNewOperator : op;
+    const resolvedSelectedOperator = resolveOperator(selectedOperator);
+    const legOperators = displayLegs.map((leg, i) => {
+      const op = resolveOperator(allOperators.find((o) => o.id === leg.operatorId) || selectedOperator);
+      return {
+        legNumber: i + 1,
+        operatorId: op?.id || "",
+        operatorName: op?.tradingName || op?.legalName || "",
+        operatorStatus: op?.status || "",
+        aircraftName: leg.aircraft?.name || "",
+        buyingPrice: leg.buyingPrice || 0
+      };
+    });
+
     // Build legs
     const legs: FlightLeg[] = [];
 
@@ -1338,18 +1980,18 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
         paPhone: isHandledByPa ? paPhone : undefined,
       },
       operator: {
-        companyName: selectedOperator?.tradingName || sourceTrip?.operator.companyName || "GlobeAir AG",
+        companyName: resolvedSelectedOperator?.tradingName || sourceTrip?.operator.companyName || "GlobeAir AG",
         legalEntity: sourceTrip?.operator.legalEntity || "GlobeAir Aviation Operations Ltd",
         representativeName: "Charter Desk",
-        supportEmail: selectedOperator?.opsEmail || sourceTrip?.operator.supportEmail || "charter@globeair.com",
-        supportPhone: selectedOperator?.opsPhone || sourceTrip?.operator.supportPhone || "+43 7221 727400",
+        supportEmail: resolvedSelectedOperator?.opsEmail || sourceTrip?.operator.supportEmail || "charter@globeair.com",
+        supportPhone: resolvedSelectedOperator?.opsPhone || sourceTrip?.operator.supportPhone || "+43 7221 727400",
         vatNumber: sourceTrip?.operator.vatNumber || "ATU 6335 7619",
         additionalVatNumbers: [],
         iban: sourceTrip?.operator.iban || "AT89 3740 0000 1122 3344",
         bic: sourceTrip?.operator.bic || "LOWWAT22",
         bankName: sourceTrip?.operator.bankName || "Erste Bank Aviation",
-        accountHolder: selectedOperator?.tradingName || sourceTrip?.operator.accountHolder || "GlobeAir AG",
-        commercialRegistry: `AOC ${selectedOperator?.aocNumber || "AT.AOC.0842"}`,
+        accountHolder: resolvedSelectedOperator?.tradingName || sourceTrip?.operator.accountHolder || "GlobeAir AG",
+        commercialRegistry: `AOC ${resolvedSelectedOperator?.aocNumber || "AT.AOC.0842"}`,
         courtOfJurisdiction: "Linz Commercial Court"
       },
       legs,
@@ -1388,9 +2030,45 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
       adminMarginValue: effectiveCompanyMarginPct,
       manualServices: activeServicesList,
       sourceAgentRequestId: sourceRequest?.id,
+      authorisedOwnerId: selectedOwnerPerson?.id,
+      authorisedOwnerName: leadPaxName,
+      assistantContactId: isHandledByPa ? paContactId || undefined : undefined,
+      sendDocsTo,
+      signsAgreement,
+      legOperators,
+      operatorPendingApproval: legOperators.some(
+        (lo) => lo.operatorStatus && lo.operatorStatus !== "approved" && lo.operatorStatus !== "approved_with_conditions"
+      ),
+      passengerFeeItems:
+        passengerFeesItemised && passengerFeesLineAtCost > 0
+          ? [
+              {
+                description: passengerFeesDesc,
+                amount: passengerFeesAmount,
+                charged: passengerFeesCharged,
+                pax: passengerFeesPax,
+                legs: passengerFeeLegsSorted.map((i) => i + 1),
+                lineAtCost: passengerFeesLineAtCost
+              }
+            ]
+          : [],
       createdAt: sourceTrip?.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
+
+    // 01: the choices are saved on the account as defaults for next time
+    const accountForDefaults = accounts.find((a) => a.id === activeAccount?.id);
+    if (accountForDefaults) {
+      updateAccount(accountForDefaults.id, {
+        quoteDefaults: {
+          authorisedOwnerId: selectedOwnerPerson?.id,
+          isHandledByPa,
+          assistantContactId: isHandledByPa ? paContactId || undefined : undefined,
+          sendDocsTo,
+          signsAgreement
+        }
+      });
+    }
 
     try {
       const persisted = await addBooking(newBooking);
@@ -1430,7 +2108,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
     }
   };
 
-  const selectedOperator = operators.find((op) => op.id === selectedOperatorId) || operators[0];
+  const selectedOperator = allOperators.find((op) => op.id === selectedOperatorId) || allOperators[0];
   const operatorName = selectedOperator?.tradingName || "Sahel Executive";
 
   // ====================================================
@@ -1965,306 +2643,377 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
 
   return (
     <div className="space-y-5">
-      {/* Top Banner if pre-filled from Agent Request */}
-      {sourceRequest && (
-        <div className="callout green text-xs flex items-center justify-between">
-          <div>
-            <span className="font-bold block">Pre-filled from Broker Request #{sourceRequest.id}</span>
-            <span className="font-mono text-[11px] opacity-80">
-              Agent: {sourceRequest.agentName} • Route: {sourceRequest.route} • Pax: {sourceRequest.paxCount}
-            </span>
-          </div>
-          <span className="pill green font-bold">1 TOKEN DEDUCTED</span>
-        </div>
-      )}
-
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[var(--line)] pb-3">
-        <div>
-          <div className="flex items-center gap-2 text-xs font-mono text-[var(--muted)] mb-1">
+      {/* Page header · breadcrumb, title and actions */}
+      <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-1.5 text-[13px] text-slate-500 mb-2">
             <Link
               href={isBookingRevision ? "/bookings" : "/quotes"}
-              className="hover:text-[var(--ink)] transition-colors"
+              className="hover:text-slate-800 transition-colors"
             >
               {isBookingRevision ? "Bookings" : "Quotes"}
             </Link>
             <span>/</span>
-            <span>
-              {reviseTripId
-                ? isBookingRevision
-                  ? "Revise Booking"
-                  : "Revise Quote"
-                : "New Quote Builder"}
+            <span className="inline-flex items-baseline gap-1">
+              {reviseTripId || effectiveReviseId ? (
+                isBookingRevision ? "Revise booking" : "Revise quote"
+              ) : sourceRequest ? (
+                <>
+                  New quote from <IdMark id={sourceRequest.id} />
+                </>
+              ) : (
+                "New quote"
+              )}
             </span>
+            <span>/</span>
+            <span>{QB_STEP_LABELS[activeStep] || "01 Client"}</span>
           </div>
-          <h1 className="text-2xl font-bold font-display text-[var(--ink)] m-0">
-            {effectiveReviseId
-              ? isBookingRevision
-                ? `Revise Booking · ${versionLabel}`
-                : `Revise quote · ${formattedQuoteId}`
-              : `New quote · ${formattedQuoteId}`}
+          <h1 className="text-[28px] leading-tight font-bold text-slate-900 m-0 flex flex-wrap items-baseline gap-x-2">
+            <span>
+              {effectiveReviseId ? (isBookingRevision ? "Revise booking" : "Revise quote") : "New quote"}
+            </span>
+            <span className="text-slate-400">·</span>
+            <IdMark id={isBookingRevision ? versionLabel : formattedQuoteId} large />
           </h1>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5 flex-shrink-0">
           <Link
-            href={
-              isBookingRevision
-                ? `/trips/${rootId}/revisions`
-                : "/quotes"
-            }
-            className="btn-secondary text-xs"
+            href={isBookingRevision ? `/trips/${rootId}/revisions` : "/quotes"}
+            className="bg-white border border-slate-200 text-slate-900 hover:bg-slate-50 px-4 py-2.5 rounded-lg text-sm font-semibold shadow-sm transition-colors"
           >
             Cancel
           </Link>
           <button
-            onClick={handleCompleteQuotation}
-            className="btn-primary text-xs"
+            type="button"
+            onClick={() => router.push(isBookingRevision ? `/trips/${rootId}/revisions` : "/quotes")}
+            className="bg-white border border-slate-200 text-slate-900 hover:bg-slate-50 px-4 py-2.5 rounded-lg text-sm font-semibold shadow-sm transition-colors"
           >
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-            <span>
-              {isBookingRevision
-                ? `Complete Booking Revision (${versionLabel})`
-                : sourceRequest
-                ? `Complete Quotation and Send to Agent (${versionLabel})`
-                : `Complete Quotation (${versionLabel})`}
-            </span>
+            Save draft
+          </button>
+          <button
+            type="button"
+            onClick={handleCompleteQuotation}
+            disabled={!documentsAddUp}
+            title={documentsAddUp ? undefined : "The document lines do not add up to the total"}
+            className="bg-[#0B1320] hover:bg-slate-800 text-white px-4 py-2.5 rounded-lg text-sm font-semibold shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isBookingRevision
+              ? `Complete booking revision`
+              : sourceRequest || curatorName
+              ? "Complete and send to Curator"
+              : "Complete quotation"}
           </button>
         </div>
       </div>
 
-      {/* 2-Column Builder Layout: 6 Sections Left, Live Price Panel Right */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Form: Sections 1-6 in Order (R-014) */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* SECTION 1: CLIENT (Image 10) */}
-          <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-4">
-            <div className="flex items-center gap-2 border-b border-[var(--line)] pb-2.5">
-              <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-[var(--wf)] text-[var(--ink)]">
-                01
-              </span>
-              <h3 className="text-base font-bold font-display text-[var(--ink)] m-0">
-                Client, Authorised Owner and assistant
-              </h3>
+      {/* Built from the Curator's request */}
+      {sourceRequest && (
+        <div className="bg-[#EEF4FD] border border-[#C9DBF5] rounded-xl px-5 py-4 text-sm text-slate-800">
+          <div className="font-bold text-slate-900 inline-flex items-baseline gap-1">
+            Built from <IdMark id={sourceRequest.id} />
+          </div>
+          <p className="m-0 mt-1.5 leading-relaxed">
+            Everything the Curator keyed in (client, legs, passengers, pets, services, aircraft wishes, notes) is already
+            filled in. Edit only what needs changing; edited fields show a small &ldquo;edited&rdquo; mark, and the Curator
+            sees what changed.
+          </p>
+        </div>
+      )}
+
+      {/* Builder rows: each step has its own notes column, like the design */}
+      <div className="space-y-6">
+        {/* ===== STEP 01 · CLIENT, AUTHORISED OWNER AND ASSISTANT ===== */}
+        <div id="qb-step-01" data-qb-step="01" className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-6 scroll-mt-6">
+          <div className="bg-white border border-slate-200 rounded-xl p-6 sm:p-7 shadow-2xs">
+            <div className="flex items-baseline gap-2.5 mb-5">
+              <span className="font-mono text-sm font-semibold text-slate-500">01</span>
+              <h3 className="text-lg font-bold text-slate-900 m-0">Client, Authorised Owner and assistant</h3>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-sans">
-              {/* Searchable Client Account Dropdown */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-5 gap-y-4">
+              {/* LEFT · Client account search */}
               <div className="relative" ref={accountDropdownRef}>
-                <label className="block text-xs font-mono font-bold text-[var(--muted)] mb-1">
-                  Client Account
+                <label className="block text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 mb-1.5">
+                  Client account
                 </label>
-                <button
-                  type="button"
-                  onClick={() => setIsAccountDropdownOpen(!isAccountDropdownOpen)}
-                  className="w-full bg-[var(--paper)] border border-[var(--line)] rounded-lg px-3 py-2 text-xs text-[var(--ink)] flex items-center justify-between text-left hover:border-gray-400 focus:outline-none transition-all shadow-2xs"
-                >
-                  <span className="truncate font-medium">
-                    {activeAccount?.name || "Select Account"}{" "}
-                    <span className="text-[var(--muted)] font-mono">
-                      ({activeAccount?.accountNumber || selectedAccountId})
-                    </span>
-                  </span>
-                  <ChevronDown className="w-3.5 h-3.5 text-[var(--muted)] shrink-0 ml-1.5" />
-                </button>
+                <input
+                  type="text"
+                  value={isAccountDropdownOpen ? accountSearchQuery : activeAccount?.name || ""}
+                  onFocus={() => {
+                    setAccountSearchQuery("");
+                    setIsAccountDropdownOpen(true);
+                  }}
+                  onChange={(e) => {
+                    setAccountSearchQuery(e.target.value);
+                    if (!isAccountDropdownOpen) setIsAccountDropdownOpen(true);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      setIsAccountDropdownOpen(false);
+                      (e.target as HTMLInputElement).blur();
+                    }
+                    if (e.key === "Enter" && filteredAccounts[0]) {
+                      e.preventDefault();
+                      handleSelectAccount(filteredAccounts[0]);
+                      (e.target as HTMLInputElement).blur();
+                    }
+                  }}
+                  placeholder="Search by account name, number, city or person"
+                  className="w-full bg-white border border-slate-300 rounded-lg px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-500"
+                />
 
                 {isAccountDropdownOpen && (
-                  <div className="absolute left-0 top-full mt-1 w-full bg-[var(--card)] border border-[var(--line)] rounded-xl shadow-2xl p-2.5 z-40 space-y-2">
-                    <div className="relative">
-                      <Search className="w-3.5 h-3.5 text-[var(--muted)] absolute left-2.5 top-1/2 -translate-y-1/2" />
-                      <input
-                        type="text"
-                        autoFocus
-                        value={accountSearchQuery}
-                        onChange={(e) => setAccountSearchQuery(e.target.value)}
-                        placeholder="Search account name, ref, or contact..."
-                        className="w-full bg-[var(--paper)] border border-[var(--line)] rounded-lg pl-8 pr-3 py-1.5 text-xs text-[var(--ink)] placeholder:text-[var(--muted)] focus:outline-none focus:ring-1 focus:ring-blue-500"
-                      />
-                    </div>
-
-                    <div className="max-h-56 overflow-y-auto space-y-1 divide-y divide-[var(--line)]">
+                  <div className="absolute left-0 right-0 top-full mt-2 bg-white border border-slate-200 rounded-xl shadow-xl z-40 overflow-hidden">
+                    <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
                       {filteredAccounts.map((acc) => {
                         const isSelected = acc.accountNumber === selectedAccountId;
-                        const owner = resolveOwnerNameForAccount(acc);
+                        const personCount = acc.authorizedPersons?.length || 0;
+                        const trips = getAccountTripCount(acc);
+                        const city = getAccountCity(acc);
+                        const curator = formatCuratorShort(acc.agentName);
                         return (
                           <button
                             key={acc.id}
                             type="button"
+                            onMouseDown={(e) => e.preventDefault()}
                             onClick={() => handleSelectAccount(acc)}
-                            className={`w-full text-left p-2 rounded-lg text-xs transition-colors flex flex-col gap-0.5 ${
-                              isSelected
-                                ? "bg-[var(--wf)] text-[var(--ink)] font-semibold"
-                                : "hover:bg-[var(--paper)] text-[var(--ink)]"
+                            className={`w-full text-left px-4 py-3 transition-colors ${
+                              isSelected ? "bg-slate-50" : "hover:bg-slate-50"
                             }`}
                           >
-                            <div className="flex items-center justify-between">
-                              <span className="font-bold truncate">{acc.name}</span>
-                              <span className="font-mono text-[10px] text-[var(--muted)] shrink-0 ml-2">
-                                {acc.accountNumber}
-                              </span>
+                            <div className="flex items-baseline gap-2 flex-wrap">
+                              <span className="text-[17px] font-bold text-slate-900">{acc.name}</span>
+                              <span className="font-mono text-[13px] text-slate-500">{acc.accountNumber}</span>
                             </div>
-                            <div className="text-[11px] text-[var(--muted)] truncate flex items-center gap-1">
-                              <span>Owner / Signatory:</span>
-                              <strong className="text-[var(--ink)] font-normal">{owner}</strong>
+                            <div className="text-[13px] text-slate-500 mt-0.5">
+                              {[
+                                city,
+                                `${personCount} authorised ${personCount === 1 ? "person" : "persons"}`,
+                                `${trips} ${trips === 1 ? "trip" : "trips"}`,
+                                curator ? `Curator ${curator}` : ""
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")}
                             </div>
                           </button>
                         );
                       })}
                       {filteredAccounts.length === 0 && (
-                        <div className="py-4 text-center text-xs text-[var(--muted)] italic">
-                          No matching client accounts found
+                        <div className="px-4 py-4 text-sm text-slate-500">
+                          No account matches &ldquo;{accountSearchQuery}&rdquo;.
                         </div>
                       )}
+                    </div>
+                    <div className="px-4 py-3 border-t border-slate-100">
+                      <Link
+                        href="/accounts"
+                        className="text-[15px] text-[#1F5FAE] underline underline-offset-2 hover:text-[#174A88]"
+                      >
+                        + New account
+                      </Link>
                     </div>
                   </div>
                 )}
               </div>
 
-              {/* Authorised Owner Field (Linked to Account) */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-mono font-bold text-[var(--muted)]">
-                    Authorised Owner
+              {/* RIGHT · Owner, assistant and document routing */}
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 mb-1.5">
+                    Authorised Owner (person on the account)
                   </label>
-                  <span className="text-[10px] text-blue-600 font-mono font-medium">
-                    Linked to account
-                  </span>
+                  <div className="relative">
+                    <select
+                      value={selectedOwnerPerson?.id || (accountPeople.length === 0 ? "__none__" : "__request__")}
+                      onChange={(e) => handleSelectOwnerPerson(e.target.value)}
+                      className="w-full appearance-none bg-white border border-slate-300 rounded-lg pl-3.5 pr-9 py-2.5 text-sm text-slate-900 focus:outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-500 cursor-pointer"
+                    >
+                      {accountPeople.length === 0 && (
+                        <option value="__none__">No authorised persons on this account yet</option>
+                      )}
+                      {accountPeople.length > 0 && !selectedOwnerPerson && (
+                        <option value="__request__" disabled>
+                          {leadPaxName ? `${leadPaxName} · not listed on the account` : "Choose a person"}
+                        </option>
+                      )}
+                      {accountPeople.map((person) => (
+                        <option key={person.id} value={person.id}>
+                          {person.label}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-4 h-4 text-slate-600 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  </div>
+                  <p className="text-[13px] text-slate-500 mt-1.5 mb-0 leading-snug">
+                    Only people listed as authorised persons on the account can be chosen.{" "}
+                    <Link
+                      href={activeAccount?.id ? `/accounts/${activeAccount.id}` : "/accounts"}
+                      className="text-[#1F5FAE] underline underline-offset-2 hover:text-[#174A88]"
+                    >
+                      Add authorised person
+                    </Link>
+                  </p>
                 </div>
-                <input
-                  type="text"
-                  value={leadPaxName}
-                  onChange={(e) => setLeadPaxName(e.target.value)}
-                  placeholder="Primary account owner / signatory"
-                  className="w-full bg-[var(--paper)] border border-[var(--line)] rounded-lg px-3 py-2 text-xs text-[var(--ink)] focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
-              </div>
 
-              {/* PA / Representative Reservation Section */}
-              <div className="sm:col-span-2 pt-1">
-                <label className="inline-flex items-center gap-2 text-xs font-medium text-[var(--ink)] cursor-pointer select-none">
+                <label className="flex items-center gap-2.5 text-[15px] text-slate-900 cursor-pointer select-none">
                   <input
                     type="checkbox"
                     checked={isHandledByPa}
-                    onChange={(e) => setIsHandledByPa(e.target.checked)}
-                    className="w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500 cursor-pointer accent-amber-600"
+                    onChange={(e) => {
+                      setIsHandledByPa(e.target.checked);
+                      if (e.target.checked) setSendDocsTo("both");
+                    }}
+                    className="w-4 h-4 rounded border-slate-300 accent-[#1F6FEB] cursor-pointer"
                   />
-                  <span>
-                    Request handled by Personal Assistant (PA) / Representative on behalf of Authorised Owner
-                  </span>
+                  <span>Handled by an assistant or representative (PA)</span>
                 </label>
 
                 {isHandledByPa && (
-                  <div className="mt-2.5 p-3.5 bg-amber-50/70 border border-amber-200/90 rounded-xl space-y-3">
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-amber-950">
-                      <UserCheck className="w-3.5 h-3.5 text-amber-700" />
-                      <span>PA / Representative Reservation Details</span>
-                      <span className="text-[10px] font-normal text-amber-800 ml-auto font-mono">
-                        Authorised agent for {leadPaxName || "Owner"}
-                      </span>
+                  <div>
+                    <label className="block text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 mb-1.5">
+                      Assistant / representative
+                    </label>
+                    <div className="relative">
+                      <select
+                        value={paContactId || "__manual__"}
+                        onChange={(e) => handleSelectAssistant(e.target.value)}
+                        className="w-full appearance-none bg-white border border-slate-300 rounded-lg pl-3.5 pr-9 py-2.5 text-sm text-slate-900 focus:outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-500 cursor-pointer truncate"
+                      >
+                        {assistantCandidates.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {[a.name, a.role, a.phone, a.email].filter(Boolean).join(" · ")}
+                          </option>
+                        ))}
+                        <option value="__manual__">Someone else · type the details</option>
+                      </select>
+                      <ChevronDown className="w-4 h-4 text-slate-600 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                     </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                      <div>
-                        <label className="block text-[10px] font-mono font-bold text-amber-900 mb-1">
-                          PA / Representative Name
-                        </label>
+                    {paContactId === "__manual__" && (
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2">
                         <input
                           type="text"
                           value={paName}
                           onChange={(e) => setPaName(e.target.value)}
-                          placeholder="e.g. Sarah Jenkins (Executive PA)"
-                          className="w-full bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 text-xs text-gray-900 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                          placeholder="Name"
+                          className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-500"
                         />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-mono font-bold text-amber-900 mb-1">
-                          PA Email (for Operational Briefs)
-                        </label>
-                        <input
-                          type="email"
-                          value={paEmail}
-                          onChange={(e) => setPaEmail(e.target.value)}
-                          placeholder="pa@clientoffice.com"
-                          className="w-full bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 text-xs text-gray-900 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-mono font-bold text-amber-900 mb-1">
-                          PA Direct Mobile / Phone
-                        </label>
                         <input
                           type="tel"
                           value={paPhone}
                           onChange={(e) => setPaPhone(e.target.value)}
-                          placeholder="+44 7700 900077"
-                          className="w-full bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 text-xs text-gray-900 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                          placeholder="Mobile"
+                          className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-500"
+                        />
+                        <input
+                          type="email"
+                          value={paEmail}
+                          onChange={(e) => setPaEmail(e.target.value)}
+                          placeholder="Email"
+                          className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-500"
                         />
                       </div>
-                    </div>
-
-                    <div className="text-[11px] text-amber-900/80 leading-relaxed">
-                      Quotation and charter agreement remain issued to Authorised Owner (<strong>{leadPaxName || "Account Holder"}</strong>), while operations and flight communications will be coordinated with <strong>{paName || "PA / Representative"}</strong>.
-                    </div>
+                    )}
                   </div>
                 )}
-              </div>
 
-              {/* Image 10 Routing of Documents & Signatory Controls */}
-              <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-[var(--line)]">
                 <div>
-                  <label className="block text-xs font-mono font-bold text-[var(--muted)] mb-1.5">
-                    Send quotes, contracts and invoices to:
+                  <label className="block text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 mb-1.5">
+                    Send quotes, contracts and invoices to
                   </label>
-                  <div className="flex items-center gap-2">
-                    {(["owner", "assistant", "both"] as const).map((opt) => (
-                      <button
-                        key={opt}
-                        type="button"
-                        onClick={() => setSendDocsTo(opt)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize border transition-all ${
-                          sendDocsTo === opt
-                            ? "bg-[#0F1420] text-white border-[#0F1420] shadow-sm"
-                            : "bg-white text-gray-700 border-gray-200 hover:border-gray-400"
-                        }`}
-                      >
-                        {opt === "both" ? "Both" : opt === "owner" ? "Owner" : "Assistant"}
-                      </button>
-                    ))}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {(["owner", "assistant", "both"] as const).map((opt) => {
+                      const disabled = !isHandledByPa && opt !== "owner";
+                      return (
+                        <button
+                          key={opt}
+                          type="button"
+                          disabled={disabled}
+                          onClick={() => setSendDocsTo(opt)}
+                          className={`px-4 py-2 rounded-full border text-[15px] transition-all ${
+                            sendDocsTo === opt
+                              ? "bg-[#0B1320] text-white border-[#0B1320]"
+                              : "bg-white text-slate-800 border-slate-300 hover:border-slate-500"
+                          } disabled:opacity-40 disabled:cursor-not-allowed`}
+                        >
+                          {opt === "owner" ? "Owner" : opt === "assistant" ? "Assistant" : "Both"}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-mono font-bold text-[var(--muted)] mb-1.5">
-                    Signs the charter agreement:
+                  <label className="block text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 mb-1.5">
+                    Signs the charter agreement
                   </label>
-                  <div className="flex items-center gap-2">
-                    {(["owner", "assistant"] as const).map((opt) => (
-                      <button
-                        key={opt}
-                        type="button"
-                        onClick={() => setSignsAgreement(opt)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize border transition-all ${
-                          signsAgreement === opt
-                            ? "bg-[#0F1420] text-white border-[#0F1420] shadow-sm"
-                            : "bg-white text-gray-700 border-gray-200 hover:border-gray-400"
-                        }`}
-                      >
-                        {opt === "owner" ? "Owner" : "Assistant"}
-                      </button>
-                    ))}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {(["owner", "assistant"] as const).map((opt) => {
+                      const disabled = !isHandledByPa && opt === "assistant";
+                      return (
+                        <button
+                          key={opt}
+                          type="button"
+                          disabled={disabled}
+                          onClick={() => setSignsAgreement(opt)}
+                          className={`px-4 py-2 rounded-full border text-[15px] transition-all ${
+                            signsAgreement === opt
+                              ? "bg-[#0B1320] text-white border-[#0B1320]"
+                              : "bg-white text-slate-800 border-slate-300 hover:border-slate-500"
+                          } disabled:opacity-40 disabled:cursor-not-allowed`}
+                        >
+                          {opt === "owner" ? "Owner" : "Assistant (with written authority)"}
+                        </button>
+                      );
+                    })}
                   </div>
+                  <p className="text-[13px] text-slate-500 mt-2 mb-0 leading-snug">
+                    Assistant signing needs an authority letter on file (upload on the Contact record).
+                  </p>
                 </div>
               </div>
+            </div>
 
-              <div className="sm:col-span-2 bg-[var(--paper)] p-3 rounded-lg border border-[var(--line)] font-mono text-xs space-y-0.5 text-[var(--muted)]">
-                <div>Billing Address: <strong className="text-[var(--ink)]">{activeAccount?.billingAddress || "10 Mayfair Place"}</strong></div>
-                <div>Account Ref: <strong className="text-[var(--ink)]">{activeAccount?.accountNumber}</strong></div>
+            {/* Billing · Curator · From request */}
+            <div className="mt-5 bg-slate-50 rounded-lg px-5 py-3.5 flex flex-wrap gap-x-10 gap-y-3">
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Billing</div>
+                <div className="text-[15px] text-slate-900 mt-0.5">{billingLine}</div>
+              </div>
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Curator</div>
+                <div className="text-[15px] text-slate-900 mt-0.5">
+                  {curatorName ? curatorName.replace(/\s*\(.*\)\s*$/, "") : "No Curator · direct client"}
+                </div>
+              </div>
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">From request</div>
+                <div className="text-[15px] text-slate-900 mt-0.5">
+                  {sourceRequest ? <IdMark id={sourceRequest.id} /> : "—"}
+                </div>
               </div>
             </div>
           </div>
 
+          {/* Notes column */}
+          <div className="space-y-3 self-start">
+            <StepNote title="Rules">
+              <p className="m-0">Search by account name, number, city or person.</p>
+              <p className="m-0">Authorised Owner is always a person (Contact), never the company.</p>
+              <p className="m-0">The assistant gets documents but signs only with written authority.</p>
+              <p className="m-0">Choices are saved on the account as defaults for next time.</p>
+            </StepNote>
+            <StepNote title="Status">
+              <p className="m-0">MOD-05</p>
+            </StepNote>
+          </div>
+        </div>
+
+        {/* ===== STEPS 02 – 04 ===== */}
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-6">
+          <div className="space-y-6 min-w-0">
           {/* SECTION 2: ITINERARY */}
-          <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-4">
+          <div id="qb-step-02" data-qb-step="02" className="scroll-mt-6 bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-4">
             <div className="flex items-center justify-between border-b border-[var(--line)] pb-2.5">
               <div className="flex items-center gap-2">
                 <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-[var(--wf)] text-[var(--ink)]">
@@ -2599,7 +3348,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
           </div>
 
           {/* SECTION 3: PASSENGERS, LUGGAGE & PETS (Image 5 & 10) */}
-          <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-4">
+          <div id="qb-step-03" data-qb-step="03" className="scroll-mt-6 bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-4">
             <div className="flex items-center gap-2 border-b border-[var(--line)] pb-2.5">
               <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-[var(--wf)] text-[var(--ink)]">
                 03
@@ -2826,7 +3575,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
           </div>
 
           {/* SECTION 4: LEGS, OPERATORS AND AIRCRAFT (Matching Image 8) */}
-          <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-4">
+          <div id="qb-step-04" data-qb-step="04" className="scroll-mt-6 bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-4">
             <div className="flex items-center justify-between border-b border-[var(--line)] pb-2.5">
               <div className="flex items-center gap-2">
                 <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-[var(--wf)] text-[var(--ink)]">
@@ -2838,11 +3587,11 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
               </div>
               <button
                 type="button"
-                onClick={() => setIsAddOperatorOpen((prev) => !prev)}
+                onClick={() => openOperatorSearch(sameAircraftOnAllLegs ? "all" : 0)}
                 className="btn-secondary text-xs flex items-center gap-1.5 py-1 px-2.5"
               >
-                <Plus className="w-3.5 h-3.5 text-[var(--accent)]" />
-                <span>Add Operator</span>
+                <Search className="w-3.5 h-3.5 text-[var(--accent)]" />
+                <span>Search or add operator</span>
               </button>
             </div>
 
@@ -2850,123 +3599,6 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
               <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg text-xs flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
                 <span>{operatorFeedback}</span>
-              </div>
-            )}
-
-            {/* Inline Add Operator Form (Saves automatically to database) */}
-            {isAddOperatorOpen && (
-              <div className="p-4 bg-amber-50/60 border border-amber-200 rounded-xl space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Building2 className="w-4 h-4 text-amber-800" />
-                    <h4 className="text-xs font-bold font-display text-amber-950 uppercase tracking-wider">
-                      Quick Add Operator (Direct to Database)
-                    </h4>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setIsAddOperatorOpen(false)}
-                    className="text-amber-800 hover:text-amber-950 p-1"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-                <p className="text-[11px] text-amber-800">
-                  Operator not in our database? Add their details below. They will be saved to the database immediately with status &ldquo;Documents Pending&rdquo;.
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 pt-1">
-                  <div>
-                    <label className="block text-[10px] font-mono font-bold text-amber-900 mb-1">
-                      Operator Legal Name *
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Sahel Jet Services Ltd"
-                      value={newOpLegalName}
-                      onChange={(e) => setNewOpLegalName(e.target.value)}
-                      className="w-full bg-white border border-[#E0DAD0] rounded-lg px-3 py-1.5 text-xs text-[#0F1420] focus:outline-none focus:border-[var(--accent)]"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-mono font-bold text-amber-900 mb-1">
-                      Trading / Brand Name
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Sahel Executive"
-                      value={newOpTradingName}
-                      onChange={(e) => setNewOpTradingName(e.target.value)}
-                      className="w-full bg-white border border-[#E0DAD0] rounded-lg px-3 py-1.5 text-xs text-[#0F1420] focus:outline-none focus:border-[var(--accent)]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-mono font-bold text-amber-900 mb-1">
-                      AOC Number *
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. NCAA AOC 0377"
-                      value={newOpAoc}
-                      onChange={(e) => setNewOpAoc(e.target.value)}
-                      className="w-full bg-white border border-[#E0DAD0] rounded-lg px-3 py-1.5 text-xs text-[#0F1420] uppercase focus:outline-none focus:border-[var(--accent)]"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-mono font-bold text-amber-900 mb-1">
-                      Country / Jurisdiction
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Nigeria / NCAA"
-                      value={newOpCountry}
-                      onChange={(e) => setNewOpCountry(e.target.value)}
-                      className="w-full bg-white border border-[#E0DAD0] rounded-lg px-3 py-1.5 text-xs text-[#0F1420] focus:outline-none focus:border-[var(--accent)]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-mono font-bold text-amber-900 mb-1">
-                      Base Airport (ICAO)
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. DNAA"
-                      value={newOpBaseIcao}
-                      onChange={(e) => setNewOpBaseIcao(e.target.value.toUpperCase())}
-                      className="w-full bg-white border border-[#E0DAD0] rounded-lg px-3 py-1.5 text-xs text-[#0F1420] uppercase focus:outline-none focus:border-[var(--accent)]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-mono font-bold text-amber-900 mb-1">
-                      Ops Contact Email
-                    </label>
-                    <input
-                      type="email"
-                      placeholder="ops@saheljets.com"
-                      value={newOpEmail}
-                      onChange={(e) => setNewOpEmail(e.target.value)}
-                      className="w-full bg-white border border-[#E0DAD0] rounded-lg px-3 py-1.5 text-xs text-[#0F1420] focus:outline-none focus:border-[var(--accent)]"
-                    />
-                  </div>
-                </div>
-                <div className="flex justify-end gap-2 pt-2 border-t border-amber-200">
-                  <button
-                    type="button"
-                    onClick={() => setIsAddOperatorOpen(false)}
-                    className="btn-secondary text-xs py-1 px-3"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSaveNewOperator()}
-                    className="btn-primary text-xs py-1 px-3 bg-amber-700 hover:bg-amber-800 text-white flex items-center gap-1.5"
-                  >
-                    <Save className="w-3.5 h-3.5" />
-                    <span>Save & Select Operator</span>
-                  </button>
-                </div>
               </div>
             )}
 
@@ -3015,7 +3647,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                 const legDestCode = legItem.destination?.icao || (typeof legItem.destination === "string" ? legItem.destination : "LFMN");
                 const legDestCity = legItem.destination?.city || legItem.destination?.name || "";
 
-                const currentLegOp = operators.find((o) => o.id === legItem.operatorId) || selectedOperator || operators[0];
+                const currentLegOp = allOperators.find((o) => o.id === legItem.operatorId) || selectedOperator || allOperators[0];
                 const isQualified = currentLegOp?.status === "approved";
                 const legAircraft = legItem.aircraft || selectedAircraft;
                 const legBuyingPrice = legItem.buyingPrice ?? Math.round(operatorFlightCost / (displayLegs.length || 1));
@@ -3040,9 +3672,18 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                     {/* Row 1: Operator & Buying Price */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                       <div className="md:col-span-2">
-                        <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
-                          OPERATOR · INTERNAL, NEVER ON DOCUMENTS
-                        </label>
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider">
+                            OPERATOR · INTERNAL, NEVER ON DOCUMENTS
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => openOperatorSearch(sameAircraftOnAllLegs ? "all" : idx)}
+                            className="text-[11px] text-blue-600 font-semibold hover:underline"
+                          >
+                            Search or add operator
+                          </button>
+                        </div>
                         <div className="flex items-center gap-2">
                           <div className="relative flex-1">
                             <select
@@ -3058,9 +3699,10 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                               }}
                               className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs font-semibold text-gray-800 shadow-2xs appearance-none pr-8 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
                             >
-                              {operators.map((op) => (
+                              {allOperators.map((op) => (
                                 <option key={op.id} value={op.id}>
-                                  {op.tradingName || op.legalName} · AOC {op.aocNumber}
+                                  {op.tradingName || op.legalName}
+                                  {op.id === NEW_OPERATOR_DRAFT_ID ? " · new, documents pending" : ` · AOC ${op.aocNumber}`}
                                 </option>
                               ))}
                             </select>
@@ -3345,8 +3987,308 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
             </div>
           </div>
 
+          </div>
+
+          {/* Notes column · live total while editing legs */}
+          <div className="self-start lg:sticky lg:top-6">{renderLiveTotalNote()}</div>
+        </div>
+
+        {/* ===== STEP 04a · OPERATOR SEARCH AND NEW OPERATOR ===== */}
+        <div id="qb-step-04a" data-qb-step="04a" className="space-y-4 scroll-mt-6">
+          {renderLegStrip(`${paxCount} pax · ${(displayLegs[0]?.aircraft as any)?.categoryLabel || selectedAircraft.categoryLabel || "Aircraft TBC"}`)}
+
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-6">
+            <div className="bg-white border border-slate-200 rounded-xl p-6 sm:p-7 shadow-2xs min-w-0">
+              <div className="flex flex-wrap items-baseline justify-between gap-3 mb-4">
+                <div className="flex items-baseline gap-2.5">
+                  <span className="font-mono text-sm font-semibold text-slate-500">04</span>
+                  <h3 className="text-lg font-bold text-slate-900 m-0">Operator search and new operator</h3>
+                </div>
+                {displayLegs.length > 1 && !sameAircraftOnAllLegs && (
+                  <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                    <span className="text-slate-500 mr-1">For</span>
+                    {displayLegs.map((leg, legIdx) => (
+                      <button
+                        key={`op-target-${legIdx}`}
+                        type="button"
+                        onClick={() => setOpTargetLeg(legIdx)}
+                        title={`${leg.origin?.icao || ""} → ${leg.destination?.icao || ""}`}
+                        className={`px-2.5 py-1 rounded-full border font-semibold transition-all ${
+                          opTargetLeg === legIdx
+                            ? "bg-[#0B1320] text-white border-[#0B1320]"
+                            : "bg-white text-slate-700 border-slate-300 hover:border-slate-500"
+                        }`}
+                      >
+                        Leg {legIdx + 1}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setOpTargetLeg("all")}
+                      className={`px-2.5 py-1 rounded-full border font-semibold transition-all ${
+                        opTargetLeg === "all"
+                          ? "bg-[#0B1320] text-white border-[#0B1320]"
+                          : "bg-white text-slate-700 border-slate-300 hover:border-slate-500"
+                      }`}
+                    >
+                      All legs
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* AIR CARRIER / OPERATOR */}
+                <div className="min-w-0">
+                  <label className="block text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 mb-1.5">
+                    Air carrier / operator
+                  </label>
+                  <input
+                    type="text"
+                    value={opSearchQuery}
+                    onChange={(e) => setOpSearchQuery(e.target.value)}
+                    placeholder="Name, AOC number or country"
+                    className="w-full bg-white border border-slate-300 rounded-lg px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-500"
+                  />
+                  {opSearchQuery.trim().length > 0 && (
+                    <div className="mt-2 border border-slate-200 rounded-lg overflow-hidden bg-white">
+                      {operatorSearchResults.map((op) => {
+                        const qualified = op.status === "approved" || op.status === "approved_with_conditions";
+                        const isChosen = targetLegOperatorIds.includes(op.id);
+                        return (
+                          <button
+                            key={op.id}
+                            type="button"
+                            onClick={() => applyOperatorToTarget(op.id)}
+                            className={`w-full text-left px-4 py-2.5 border-b border-slate-100 last:border-b-0 flex flex-wrap items-center gap-x-2 gap-y-1 transition-colors ${
+                              isChosen ? "bg-slate-50" : "hover:bg-slate-50"
+                            }`}
+                          >
+                            <span className="text-[17px] font-bold text-slate-900">{op.tradingName || op.legalName}</span>
+                            <span className="font-mono text-[13px] text-slate-500">
+                              {getOperatorCountryCode(op)} · {op.aocNumber ? `AOC ${op.aocNumber}` : "AOC —"}
+                            </span>
+                            <span
+                              className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                                qualified ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800"
+                              }`}
+                            >
+                              {qualified ? "Qualified" : "Documents pending"}
+                            </span>
+                            {isChosen && <CheckCircle2 className="w-4 h-4 text-emerald-600 ml-auto" />}
+                          </button>
+                        );
+                      })}
+                      <div className="px-4 py-3 bg-[#FFF8E8] text-[15px] text-slate-800 leading-snug">
+                        {operatorSearchResults.length > 0 ? "No other match" : "No match"} for &ldquo;{opSearchQuery.trim()}…&rdquo;.{" "}
+                        <strong>Operator not in database?</strong> Turn on the switch below.
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* AIRCRAFT MODEL */}
+                <div className="min-w-0">
+                  <label className="block text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 mb-1.5">
+                    Aircraft model
+                  </label>
+                  <input
+                    type="text"
+                    value={acSearchQuery}
+                    onChange={(e) => setAcSearchQuery(e.target.value)}
+                    placeholder="e.g. phenom 300"
+                    className="w-full bg-white border border-slate-300 rounded-lg px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-500"
+                  />
+                  {acSearchQuery.trim().length > 0 && (
+                    <div className="mt-2 border border-slate-200 rounded-lg overflow-hidden bg-white">
+                      <div className="px-4 py-2 text-[13px] text-slate-500 border-b border-slate-100">
+                        &ldquo;{acSearchQuery.trim()}&rdquo; · exact and starts-with matches first
+                      </div>
+                      {aircraftSearchResults.map(({ aircraft, rank }) => {
+                        const isChosen = targetLegAircraftIds.includes(aircraft.id);
+                        return (
+                          <button
+                            key={aircraft.id}
+                            type="button"
+                            onClick={() => applyAircraftToTarget(aircraft)}
+                            className={`w-full text-left px-4 py-2.5 border-b border-slate-100 last:border-b-0 flex flex-wrap items-baseline gap-x-2 transition-colors ${
+                              isChosen ? "bg-slate-100" : "hover:bg-slate-50"
+                            }`}
+                          >
+                            <span className="text-[17px] font-bold text-slate-900">{aircraft.name}</span>
+                            <span className="text-[13px] text-slate-500">
+                              {AIRCRAFT_CATEGORY_SHORT[aircraft.category] || aircraft.categoryLabel} ·{" "}
+                              {rank >= 3 ? "similar name" : `${aircraft.passengers} pax`}
+                            </span>
+                          </button>
+                        );
+                      })}
+                      {aircraftSearchResults.length === 0 && (
+                        <div className="px-4 py-3 text-sm text-slate-500">No aircraft type matches. Check the spelling.</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <label className="mt-5 flex items-center gap-2.5 text-[15px] text-slate-900 cursor-pointer select-none w-fit">
+                <input
+                  type="checkbox"
+                  checked={newOpEnabled}
+                  onChange={(e) => handleToggleNewOperator(e.target.checked)}
+                  className="w-4 h-4 rounded border-slate-300 accent-[#1F6FEB] cursor-pointer"
+                />
+                <span>Operator not in database</span>
+              </label>
+
+              {newOpEnabled && (
+                <div className="mt-4 border border-[#F1E3C4] bg-[#FFFCF5] rounded-xl p-5 space-y-4">
+                  <div className="text-[15px] font-bold text-slate-900">New operator · saved to Operators when the quote is saved</div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1.3fr)_minmax(0,0.75fr)_minmax(0,1.1fr)] gap-3">
+                    <div>
+                      <label className="block text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 mb-1.5">
+                        Operator name
+                      </label>
+                      <input
+                        type="text"
+                        value={newOpLegalName}
+                        onChange={(e) => {
+                          setNewOpLegalName(e.target.value);
+                          if (newOpError) setNewOpError("");
+                        }}
+                        placeholder="e.g. Skyline Executive Aviation"
+                        className={`w-full bg-white border rounded-lg px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-500 ${
+                          newOpError ? "border-red-400" : "border-slate-300"
+                        }`}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 mb-1.5">
+                        AOC number
+                      </label>
+                      <input
+                        type="text"
+                        value={newOpAoc}
+                        onChange={(e) => setNewOpAoc(e.target.value.toUpperCase())}
+                        placeholder="e.g. GB-2291"
+                        className="w-full bg-white border border-slate-300 rounded-lg px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 mb-1.5">
+                        Issuing authority / country
+                      </label>
+                      <div className="relative">
+                        <select
+                          value={newOpAuthority}
+                          onChange={(e) => setNewOpAuthority(e.target.value)}
+                          className="w-full appearance-none bg-white border border-slate-300 rounded-lg pl-3.5 pr-9 py-2.5 text-sm text-slate-900 focus:outline-none focus:border-slate-500 cursor-pointer"
+                        >
+                          <option value="">Choose authority</option>
+                          {AOC_AUTHORITIES.map((a) => (
+                            <option key={a.label} value={a.label}>
+                              {a.label}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown className="w-4 h-4 text-slate-600 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="w-40">
+                    <label className="block text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 mb-1.5">
+                      Base (ICAO)
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={4}
+                      value={newOpBaseIcao}
+                      onChange={(e) => setNewOpBaseIcao(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
+                      placeholder="EGGW"
+                      className="w-full bg-white border border-slate-300 rounded-lg px-3.5 py-2.5 text-sm font-mono text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-500"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1.3fr)_minmax(0,0.85fr)_minmax(0,1fr)] gap-3">
+                    <div>
+                      <label className="block text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 mb-1.5">
+                        Ops contact email
+                      </label>
+                      <input
+                        type="email"
+                        value={newOpEmail}
+                        onChange={(e) => setNewOpEmail(e.target.value)}
+                        placeholder="ops@operator.example"
+                        className="w-full bg-white border border-slate-300 rounded-lg px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 mb-1.5">
+                        24h phone
+                      </label>
+                      <input
+                        type="tel"
+                        value={newOpPhone}
+                        onChange={(e) => setNewOpPhone(e.target.value)}
+                        placeholder="+44 20 ..."
+                        className="w-full bg-white border border-slate-300 rounded-lg px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-500"
+                      />
+                    </div>
+                  </div>
+
+                  {newOpError && <p className="text-sm text-red-600 m-0">{newOpError}</p>}
+
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 mb-2">
+                      Documents (9-point check)
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {NEW_OPERATOR_DOCUMENTS.map((doc) => (
+                        <span
+                          key={doc}
+                          className="text-[13px] font-semibold text-amber-800 bg-[#FCEFD2] px-2.5 py-1 rounded-full"
+                        >
+                          {doc} · pending
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="bg-[#FCEFD2] rounded-lg px-4 py-3 text-[15px] text-amber-900 leading-snug">
+                    <strong>Documents pending.</strong> The quote can be sent as &ldquo;subject to operator approval&rdquo;. The
+                    trip cannot be booked until the MD marks the operator qualified. [Rule to confirm]
+                  </div>
+                </div>
+              )}
+
+              <p className="text-[13px] text-slate-500 mt-5 mb-0">
+                Opens from a leg&apos;s operator field (step 04). Aircraft, buying price and photos are entered on that leg.
+              </p>
+            </div>
+
+            <div className="space-y-3 self-start">
+              <StepNote title="Search">
+                <p className="m-0">Operators: name, AOC number, country.</p>
+                <p className="m-0">Aircraft: exact and starts-with matches first, then similar names; filter by category.</p>
+              </StepNote>
+              <StepNote title="New operator">
+                <p className="m-0">Saved with status &lsquo;Documents pending&rsquo;.</p>
+                <p className="m-0">Flag shows on the quote, the trip and the Operators list until all nine checks are done.</p>
+              </StepNote>
+              <StepNote title="Status">
+                <p className="m-0">NF-08, MOD-05, MOD-08</p>
+              </StepNote>
+            </div>
+          </div>
+        </div>
+
+        {/* ===== STEP 05 · SERVICES ===== */}
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-6">
+          <div className="space-y-6 min-w-0">
           {/* SECTION 5: SERVICES · HELICOPTER TRANSFER (Image 6) */}
-          <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-4">
+          <div id="qb-step-05" data-qb-step="05" className="scroll-mt-6 bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-4">
             <div className="flex items-center justify-between border-b border-[var(--line)] pb-2.5">
               <div className="flex items-center gap-2">
                 <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-[var(--wf)] text-[var(--ink)]">
@@ -4312,6 +5254,17 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
             </div>
           </div>
 
+          </div>
+
+          {/* Notes column · live total while editing services */}
+          <div className="self-start lg:sticky lg:top-6">{renderLiveTotalNote()}</div>
+        </div>
+
+        {/* ===== STEP 06 · PRICE ===== */}
+        <div id="qb-step-06" data-qb-step="06" className="space-y-4 scroll-mt-6">
+          {renderLegStrip(`${paxCount} pax · ${tripType === "round_trip" ? "Round trip" : tripType === "multi_leg" ? "Multi-leg" : "One way"}`)}
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-6">
+            <div className="space-y-6 min-w-0">
           {/* SECTION 6: BUYING PRICES, PASSENGER FEES & MARGINS (Image 1 Screen Design) */}
           <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-6">
             <div className="flex items-center gap-2 border-b border-[var(--line)] pb-2.5">
@@ -4326,7 +5279,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
             {/* 1. Buying prices table per leg */}
             <div className="border border-gray-200 rounded-xl p-4 bg-white shadow-2xs space-y-2.5 font-mono text-xs">
               {displayLegs.map((leg, lIdx) => {
-                const op = operators.find((o) => o.id === leg.operatorId);
+                const op = allOperators.find((o) => o.id === leg.operatorId);
                 const opName = op?.tradingName || op?.legalName || (lIdx === 0 ? "Alpine Executive" : "Sahel Jet Services");
                 const acName = leg.aircraft?.name || (lIdx === 0 ? "Challenger 350" : "Citation Latitude");
                 const price = leg.buyingPrice || Math.round(effectiveOperatorFlightCost / (displayLegs.length || 1));
@@ -4376,31 +5329,54 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
               {passengerFeesItemised && (
                 <div className="space-y-3">
                   <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
-                    {/* APPLIES TO */}
-                    <div className="sm:col-span-3">
+                    {/* APPLIES TO · follows the number of legs on the trip */}
+                    <div className={displayLegs.length > 3 ? "sm:col-span-12" : "sm:col-span-4"}>
                       <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
                         APPLIES TO
                       </label>
-                      <div className="inline-flex rounded-md shadow-2xs border border-gray-300 p-0.5 bg-gray-50 w-full justify-between">
-                        {[
-                          { id: "leg-1", label: "Leg 1" },
-                          { id: "leg-2", label: "Leg 2" },
-                          { id: "both", label: "Both" }
-                        ].map((btn) => (
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {displayLegs.map((leg, legIdx) => {
+                          const isOn = !passengerFeeAppliesToAll && passengerFeeLegsSorted.includes(legIdx);
+                          const routeTitle = `${leg.origin?.icao || ""} → ${leg.destination?.icao || ""}`;
+                          return (
+                            <button
+                              key={leg.id || `fee-leg-${legIdx}`}
+                              type="button"
+                              title={routeTitle}
+                              onClick={() => handleTogglePassengerFeeLeg(legIdx)}
+                              className={`px-3.5 py-1.5 rounded-full border text-xs font-semibold transition-all ${
+                                isOn
+                                  ? "bg-gray-900 text-white border-gray-900 shadow-2xs"
+                                  : "bg-white text-gray-700 border-gray-300 hover:border-gray-500"
+                              }`}
+                            >
+                              Leg {legIdx + 1}
+                            </button>
+                          );
+                        })}
+                        {displayLegs.length > 1 && (
                           <button
-                            key={btn.id}
                             type="button"
-                            onClick={() => setPassengerFeesAppliesTo(btn.id as any)}
-                            className={`flex-1 py-1 text-xs font-semibold rounded text-center transition-all ${passengerFeesAppliesTo === btn.id ? "bg-gray-900 text-white shadow-2xs" : "text-gray-700 hover:text-gray-900"}`}
+                            onClick={() => handleTogglePassengerFeeLeg("all")}
+                            className={`px-3.5 py-1.5 rounded-full border text-xs font-semibold transition-all ${
+                              passengerFeeAppliesToAll
+                                ? "bg-gray-900 text-white border-gray-900 shadow-2xs"
+                                : "bg-white text-gray-700 border-gray-300 hover:border-gray-500"
+                            }`}
                           >
-                            {btn.label}
+                            {displayLegs.length === 2 ? "Both" : "All legs"}
                           </button>
-                        ))}
+                        )}
                       </div>
+                      {displayLegs.length > 2 && (
+                        <p className="text-[10px] text-gray-500 font-sans mt-1 mb-0">
+                          Pick one or more legs. The fee is charged once on each leg picked.
+                        </p>
+                      )}
                     </div>
 
                     {/* DESCRIPTION */}
-                    <div className="sm:col-span-9">
+                    <div className={displayLegs.length > 3 ? "sm:col-span-12" : "sm:col-span-8"}>
                       <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider mb-1">
                         DESCRIPTION
                       </label>
@@ -4705,9 +5681,9 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
           </div>
         </div>
 
-        {/* Right 1 Col: Internal Build & What the Documents Show (Screen 1 Design) */}
-        <div>
-          <div className="space-y-4 sticky top-6">
+        {/* Right Col: Internal Build & What the Documents Show (Screen 1 Design) */}
+        <div className="min-w-0">
+          <div className="space-y-4 lg:sticky lg:top-6">
             {/* Card 1: Internal build (admin only) */}
             <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-3.5 shadow-sm">
               <div className="flex items-center justify-between border-b border-[var(--line)] pb-2.5">
@@ -4794,7 +5770,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                 {passengerFeesItemised && passengerFeesLineAtCost > 0 && (
                   <div className="flex justify-between">
                     <span className="text-[var(--muted)]">
-                      Passenger fees · {passengerFeesAppliesTo === "both" ? "both legs" : passengerFeesAppliesTo === "leg-1" ? "leg 1" : "leg 2"} · {passengerFeesCharged === "pax" ? `${passengerFeesPax} × € ${passengerFeesAmount.toFixed(2)}` : "flat"}
+                      Passenger fees · {passengerFeeLegsLabel} · {passengerFeesCharged === "pax" ? `${passengerFeesPax} × ${currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF"} ${passengerFeesAmount.toFixed(2)}` : "flat"}{passengerFeeLegsSorted.length > 1 ? ` × ${passengerFeeLegsSorted.length} legs` : ""}
                     </span>
                     <span className="font-medium text-[var(--ink)]">
                       {currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF "} {passengerFeesLineAtCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -4891,6 +5867,8 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
               <div>NF-21 passenger fees</div>
               <div>NF-22 price per leg</div>
             </div>
+          </div>
+        </div>
           </div>
         </div>
       </div>

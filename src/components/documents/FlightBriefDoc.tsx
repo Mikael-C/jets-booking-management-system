@@ -45,6 +45,11 @@ export default function FlightBriefDoc({ booking }: FlightBriefDocProps) {
   const aircraftName = aircraft?.name || "Citation XLS+";
   const aircraftReg = firstLeg?.aircraftRegistration || aircraft?.registration || "OE-FFB";
 
+  // Itinerary tab: "Contact on the brief" (crew mobile, 24/7 desk or none)
+  const briefContact = firstLeg?.briefContact || "desk_24_7";
+  const briefCrew = (firstLeg?.crew || []).filter((c) => c.name && (c.role === "CMDR" || c.role === "F/O"));
+  const briefLegLabel: string = (booking as any).briefLegLabel || "";
+
   const repName = booking.agentName || "Marcus Vance";
   const repPhone = "+44 20 7946 0912";
 
@@ -241,9 +246,18 @@ export default function FlightBriefDoc({ booking }: FlightBriefDocProps) {
                 24/7 FLIGHT OPERATIONS DISPATCH
               </p>
               <div className="space-y-1 text-xs text-slate-700">
-                <p>
-                  Operations Duty Desk: <strong className="font-mono text-slate-900">{company.phone24_7 || company.phone}</strong>
-                </p>
+                {briefContact !== "none" && (
+                  <p>
+                    Operations Duty Desk: <strong className="font-mono text-slate-900">{company.phone24_7 || company.phone}</strong>
+                  </p>
+                )}
+                {briefContact === "crew_mobile" &&
+                  briefCrew.map((c) => (
+                    <p key={`${c.role}-${c.name}`}>
+                      {c.role === "CMDR" ? "Captain" : c.role === "F/O" ? "First officer" : "Cabin"}: {c.name}
+                      {c.phone ? <strong className="font-mono text-slate-900"> · {c.phone}</strong> : null}
+                    </p>
+                  ))}
                 <p>
                   Charter Representative: {repName} ({repPhone})
                 </p>
@@ -257,7 +271,7 @@ export default function FlightBriefDoc({ booking }: FlightBriefDocProps) {
 
         {/* Footer */}
         <DocumentFooter
-          leftText={`${briefId} · ${client?.fullName || "Private Charter"}`}
+          leftText={`${briefId} · ${client?.fullName || "Private Charter"}${briefLegLabel ? ` · ${briefLegLabel}` : ""}`}
           currentPage={1}
           totalPages={1}
         />

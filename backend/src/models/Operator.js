@@ -50,6 +50,8 @@ const operatorSchema = new mongoose.Schema(
     internalNotes: { type: String, default: '' },
     tags: [String],
     avinodeId: { type: String, default: '' },
+    // Quote the operator was first added from (quote builder step 04a)
+    addedFromQuote: { type: String, default: '' },
     isActive: { type: Boolean, default: true },
   },
   {

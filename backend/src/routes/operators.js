@@ -8,28 +8,33 @@ const { createAuditEntry } = require('../services/auditService');
 const dayjs = require('dayjs');
 
 const qualDocSchema = Joi.object({
+  id: Joi.string().optional(),
   docType: Joi.string().required(),
   status: Joi.string().valid('pass', 'fail', 'pending').required(),
   expiryDate: Joi.string().optional().allow(''),
   notes: Joi.string().optional().allow('')
 });
 
+// Only the legal name is required: operators added from the quote builder (step 04a) are saved with
+// whatever the broker knows so far and status "pending" (Documents pending) until the nine checks are done.
 const operatorSchema = Joi.object({
-  legalName: Joi.string().required(),
-  tradingName: Joi.string().required(),
-  aocNumber: Joi.string().required(),
-  aocAuthority: Joi.string().required(),
-  aocExpiry: Joi.string().required(),
-  baseIcao: Joi.string().required(),
-  salesContact: Joi.string().required(),
-  salesEmail: Joi.string().email().required(),
-  opsPhone: Joi.string().required(),
-  opsEmail: Joi.string().email().required(),
+  legalName: Joi.string().trim().required(),
+  tradingName: Joi.string().allow('').optional(),
+  aocNumber: Joi.string().allow('').optional(),
+  aocAuthority: Joi.string().allow('').optional(),
+  aocExpiry: Joi.string().allow('').optional(),
+  baseIcao: Joi.string().allow('').max(4).optional(),
+  country: Joi.string().allow('').optional(),
+  salesContact: Joi.string().allow('').optional(),
+  salesEmail: Joi.string().email().allow('').optional(),
+  opsPhone: Joi.string().allow('').optional(),
+  opsEmail: Joi.string().email().allow('').optional(),
   status: Joi.string().valid('pending', 'approved', 'approved_with_conditions', 'suspended', 'rejected').default('pending'),
   insuranceExpiry: Joi.string().optional().allow(''),
   safetyRating: Joi.string().optional().allow(''),
   safetyRatingProvider: Joi.string().optional().allow(''),
   notes: Joi.string().optional().allow(''),
+  addedFromQuote: Joi.string().optional().allow(''),
   qualificationChecklist: Joi.array().items(qualDocSchema).optional()
 });
 
@@ -39,10 +44,15 @@ router.get('/', authorize('super_admin', 'admin', 'operations'), async (req, res
   const filter = {};
   if (status) filter.status = status;
   if (search) {
+    // Operators are searched by name, AOC number and country / issuing authority
+    const safe = String(search).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     filter.$or = [
-      { legalName: { $regex: search, $options: 'i' } },
-      { tradingName: { $regex: search, $options: 'i' } },
-      { aocNumber: { $regex: search, $options: 'i' } }
+      { legalName: { $regex: safe, $options: 'i' } },
+      { tradingName: { $regex: safe, $options: 'i' } },
+      { aocNumber: { $regex: safe, $options: 'i' } },
+      { aocAuthority: { $regex: safe, $options: 'i' } },
+      { country: { $regex: safe, $options: 'i' } },
+      { baseIcao: { $regex: safe, $options: 'i' } }
     ];
   }
   const skip = (parseInt(page) - 1) * parseInt(limit);
@@ -94,8 +104,15 @@ router.post('/', authorize('super_admin', 'admin'), validate(operatorSchema), as
     'Master Charter Broker Agreement Signed'
   ].map((docType, i) => ({ id: `doc-${i + 1}`, docType, status: 'pending' }));
 
+  // Same AOC already on file: return the existing record instead of creating a duplicate
+  if (req.body.aocNumber) {
+    const existing = await Operator.findOne({ aocNumber: req.body.aocNumber, isActive: { $ne: false } });
+    if (existing) return res.status(200).json(existing);
+  }
+
   const op = new Operator({
     ...req.body,
+    tradingName: req.body.tradingName || req.body.legalName,
     qualificationChecklist: req.body.qualificationChecklist?.length ? req.body.qualificationChecklist : defaultChecklist
   });
   await op.save();
