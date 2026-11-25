@@ -1132,6 +1132,11 @@ export interface AppSettings {
     bundles: TokenBundleConfig[];
   };
   requestOverdueMinutes: number; // e.g. 30
+  /** Wording printed on the charter agreement */
+  documents?: {
+    paymentTerms?: string; // e.g. "100 % on signature, and in all cases before departure"
+    passengerDocsDeadlineHours?: number; // e.g. 48
+  };
   notifications: {
     emailAlerts: boolean;
     urgentTripHours: number; // e.g. 72 (3 days)

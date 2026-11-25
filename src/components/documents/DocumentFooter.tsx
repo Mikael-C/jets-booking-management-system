@@ -10,8 +10,8 @@ interface DocumentFooterProps {
 
 export default function DocumentFooter({ leftText, currentPage, totalPages }: DocumentFooterProps) {
   return (
-    <div className="mt-auto pt-4 text-[11px] text-slate-400 flex justify-between items-center font-normal select-none">
-      <div>{leftText}</div>
+    <div className="mt-auto pt-3 border-t border-[#D1D5DB] text-[11px] text-[#6B7280] flex justify-between items-center select-none">
+      <div className="font-mono">{leftText}</div>
       <div>
         Page {currentPage} / {totalPages}
       </div>

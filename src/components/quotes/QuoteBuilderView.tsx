@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
+import { estimateLegMinutes, fmtDuration, legTiming } from "@/lib/documentData";
+import { fbosFor } from "@/components/trip/tripTabUtils";
 import { HeaderId } from "@/components/ui/DocId";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAviation } from "@/lib/aviationContext";
@@ -2093,6 +2095,69 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
         if (!tripServices.some((x) => x.id === ts.id)) tripServices.push(ts);
       });
 
+    // Each saved leg carries what the documents print: its own aircraft, its charter price,
+    // a real FBO from the directory (or none), no made-up flight number, and an estimated block time
+    legs.forEach((leg, i) => {
+      const dl: any = displayLegs[i] || {};
+      const ac: any = dl.aircraft || selectedAircraft;
+      const prev: any = (sourceTrip?.legs || []).find(
+        (p: any) => p && p.origin?.icao === leg.origin?.icao && p.destination?.icao === leg.destination?.icao && (p.legNumber || 0) === leg.legNumber
+      );
+      (leg as any).aircraftSpec = {
+        name: ac?.name || leg.aircraftType || "",
+        category: ac?.category,
+        categoryLabel: ac?.categoryLabel,
+        yearOfMake: dl.yearOfMake ?? ac?.yearOfManufacture,
+        yearOfRefurbishment: dl.yearOfRefurbishment ?? ac?.yearOfRefurbishment,
+        seats: dl.seats ?? ac?.passengers,
+        lavatoryOnBoard: dl.lavatoryOnBoard ?? ac?.toilette,
+        lavatoryType: dl.lavatoryType,
+        smokingCabin: dl.smokingCabin ?? ac?.smokingCabin,
+        exteriorPhoto: dl.exteriorPhoto || ac?.imageExterior || "",
+        cabinPhoto: dl.cabinPhoto || ac?.imageInterior || ""
+      };
+      leg.aircraftType = ac?.name || leg.aircraftType;
+      (leg as any).charterPrice = legPricingBreakdown[i]?.charterPrice;
+      (leg as any).buyingPrice = legPricingBreakdown[i]?.buyingPrice;
+      if (prev) {
+        // A revision keeps what the itinerary already holds for the same leg
+        leg.departureHandling = prev.departureHandling || leg.departureHandling;
+        leg.arrivalHandling = prev.arrivalHandling || leg.arrivalHandling;
+        leg.departureFboChanged = prev.departureFboChanged;
+        leg.arrivalFboChanged = prev.arrivalFboChanged;
+        leg.crew = prev.crew || [];
+        leg.aircraftRegistration = prev.aircraftRegistration || ac?.registration || "";
+        leg.flightNumber = prev.flightNumber || "";
+        leg.briefContact = prev.briefContact;
+        if ((prev.passengers || []).length > (leg.passengers || []).length) leg.passengers = prev.passengers;
+      } else {
+        const fbo = (icao?: string) => {
+          const f = fbosFor(icao)[0];
+          return f
+            ? { name: f.name, airportCode: icao || "", phone: f.phone || "", email: f.email || "", address: f.address || "" }
+            : { name: "", airportCode: icao || "", phone: "", email: "" };
+        };
+        leg.departureHandling = fbo(leg.origin?.icao);
+        leg.arrivalHandling = fbo(leg.destination?.icao);
+        leg.aircraftRegistration = ac?.registration || "";
+        leg.flightNumber = "";
+      }
+      const keepTimes = prev && prev.departureTimeLocal === leg.departureTimeLocal && (prev.arrivalEdited || prev.flightTimeMinutes);
+      if (keepTimes) {
+        leg.arrivalTimeLocal = prev.arrivalTimeLocal;
+        leg.flightTimeFormatted = prev.flightTimeFormatted;
+        leg.flightTimeMinutes = prev.flightTimeMinutes;
+        leg.arrivalEdited = prev.arrivalEdited;
+      } else {
+        const minutes = estimateLegMinutes(leg.origin, leg.destination, ac);
+        if (minutes) {
+          leg.flightTimeMinutes = minutes;
+          leg.flightTimeFormatted = fmtDuration(minutes);
+          leg.arrivalTimeLocal = legTiming(leg, ac).arr;
+        }
+      }
+    });
+
     const linked = getLinkedIds(rootId, nextVersionNum);
     const newBooking: Booking = {
       id: isBookingRevision
@@ -2205,6 +2270,8 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
       ),
       // 05: services move to the booking's Services tab
       tripServices,
+      // Charter price per leg as shown in step 06 (the documents print exactly these)
+      ...({ legPricing: legPricingBreakdown } as any),
       // 03: pets travel with the trip and show on the booking's Passengers tab
       pets: hasPets
         ? pets.map((p) => ({

@@ -3,171 +3,126 @@
 import React from "react";
 import { Booking } from "@/types/aviation";
 import { useAviation } from "@/lib/aviationContext";
-import { initialSettings } from "@/data/initialSettings";
-import DocumentHeader from "./DocumentHeader";
-import DocumentFooter from "./DocumentFooter";
-import { formatDocCurrency } from "./QuotationDoc";
+import { clientParty, docMoney, fmtDate, representative, round2, tripNo } from "@/lib/documentData";
+import { AmountRow, DocPage, Letterhead, PartyBlock, RepBlock, Section, TitleBlock, thCls, useDocSettings, useLedger } from "./docKit";
 
 interface CreditNoteDocProps {
   booking: Booking;
 }
 
 export default function CreditNoteDoc({ booking }: CreditNoteDocProps) {
-  const { settings } = useAviation();
-  const company = settings?.company || initialSettings.company;
+  const settings = useDocSettings();
+  const { users } = useAviation() as any;
+  const { ledger, state } = useLedger(booking.id);
+  const party = clientParty(booking);
+  const rep = representative(booking, users || [], settings.company);
 
-  const {
-    client,
-    pricing,
-    tripNumber,
-    accountNumber,
-    contractDate
-  } = booking;
+  // The credit note asked for (first on the booking passed in), as saved in the trip ledger
+  const asked: any = (booking.creditNotes || [])[0] || {};
+  const askedNumber = asked.number || asked.creditNoteNumber || "";
+  const notes: any[] = ledger?.creditNotes || [];
+  const note = notes.find((n) => n.number === askedNumber) || (askedNumber ? null : notes[notes.length - 1]) || null;
+  const number = note?.number || askedNumber;
+  const amount = round2(note ? note.amount : Math.abs(Number(asked.amount) || 0));
+  const isCharge = note ? note.direction === "charge" : false;
+  const against = note?.against || asked.appliesTo || asked.against || "";
+  const issued = note?.issuedAt || asked.issuedAt || asked.issueDate;
+  const currency = ledger?.currency || booking.pricing?.currency || "EUR";
 
-  const creditNote = booking.creditNotes?.[0];
-  const tripRef = (tripNumber || "FE4578").split("-")[0];
-  const creditNoteNumber = creditNote?.creditNoteNumber || `CN-${tripRef}-01`;
-  const againstInvoice = `INV-${tripRef}-01`;
-  const currency = pricing?.currency || "EUR";
-  const creditAmount = creditNote?.amount || 250;
-  const clientName = client?.companyName || client?.fullName || "Adeyemi Holdings Ltd";
+  const invoices: any[] = (ledger?.invoices || []).filter((i: any) => !["combined", "void"].includes(i.status));
+  const againstInv = (ledger?.invoices || []).find((i: any) => i.number === against);
+  const againstLine = againstInv
+    ? againstInv.kind === "charter" || /^charter/i.test(againstInv.line || "")
+      ? String(againstInv.line || "Charter").replace(/^Charter · /, "Private charter flight · ")
+      : String(againstInv.line || againstInv.purpose || "").replace(/^Additional service · /i, "")
+    : "";
 
-  const repName = booking.agentName || "Marcus Vance";
-  const repEmail = booking.agentEmail || "marcus@vanceaviation.co.uk";
-  const repPhone = "+44 20 7946 0912";
+  // Trip balance including every credit note up to and including this one
+  const issuedTime = issued ? new Date(issued).getTime() || Infinity : Infinity;
+  const creditsSoFar = notes.filter((n) => n.direction === "credit" && (n.number === number || (new Date(n.issuedAt || 0).getTime() || 0) <= issuedTime));
+  const charges = notes.filter((n) => n.direction === "charge");
+  const invoiced = round2(invoices.reduce((s, i) => s + i.amount, 0) + charges.reduce((s, n) => s + n.amount, 0));
+  const credited = round2(creditsSoFar.reduce((s, n) => s + n.amount, 0));
+  const receivedPayments: any[] = (ledger?.payments || []).filter((p: any) => p.status === "received");
+  const received = round2(receivedPayments.reduce((s, p) => s + p.amount, 0));
+  const balance = round2(invoiced - credited - received);
+  const againstOpen = againstInv ? round2(againstInv.open) : null;
+  const lastMethod = receivedPayments.length ? receivedPayments[receivedPayments.length - 1].method : "";
+
+  let closing = "";
+  if (ledger) {
+    if (balance < -0.005)
+      closing = `Refund due to you: ${docMoney(-balance, currency)}, paid back by ${lastMethod === "card" ? "card refund" : "bank transfer to the account you paid from"}.`;
+    else if (balance > 0.005) closing = `Balance still to pay on this trip: ${docMoney(balance, currency)}.`;
+    else closing = `${against && againstOpen !== null && againstOpen <= 0.005 ? `${against} is now settled. ` : ""}No payment is due and no refund is owed.`;
+  }
 
   return (
-    <div className="credit-note-document text-slate-900 bg-transparent font-sans max-w-[820px] mx-auto select-none print:max-w-none">
-      {/* ================= PAGE 1: CREDIT NOTE ================= */}
-      <div className="doc-page min-h-[1123px] bg-white p-10 sm:p-12 rounded-sm shadow-xl border border-slate-200 mb-8 print:mb-0 print:border-none print:shadow-none print:p-0 flex flex-col justify-between box-border">
-        <div className="space-y-6">
-          <DocumentHeader booking={booking} />
+    <div className="credit-note-document bg-transparent select-none print:max-w-none">
+      <DocPage footerLeft={`${number} · ${party.name}`} page={1} pages={1}>
+        <Letterhead />
+        <TitleBlock
+          title="Credit note"
+          meta={[
+            { label: "Credit note", value: number, mono: true },
+            ...(against ? [{ label: "Against invoice", value: against, mono: true }] : []),
+            { label: "Trip", value: tripNo(booking), mono: true },
+            { label: "Issue date", value: fmtDate(issued) }
+          ]}
+        />
 
-          {/* Title & Credit Note Meta */}
-          <div className="flex items-start justify-between">
-            <h1 className="text-3xl font-bold tracking-tight text-slate-900">
-              Credit note
-            </h1>
-            <div className="text-right text-xs space-y-1">
-              <div className="flex justify-end gap-3">
-                <span className="text-[10px] font-semibold text-slate-600 tracking-wider uppercase">CREDIT NOTE</span>
-                <span className="font-semibold text-slate-900 font-mono w-40 text-right">{creditNoteNumber}</span>
-              </div>
-              <div className="flex justify-end gap-3">
-                <span className="text-[10px] font-semibold text-slate-600 tracking-wider uppercase">AGAINST INVOICE</span>
-                <span className="font-semibold text-slate-900 font-mono w-40 text-right">{againstInvoice}</span>
-              </div>
-              <div className="flex justify-end gap-3">
-                <span className="text-[10px] font-semibold text-slate-600 tracking-wider uppercase">TRIP ROOT</span>
-                <span className="font-semibold text-slate-900 font-mono w-40 text-right">{tripRef}</span>
-              </div>
-              <div className="flex justify-end gap-3">
-                <span className="text-[10px] font-semibold text-slate-600 tracking-wider uppercase">ISSUE DATE</span>
-                <span className="font-medium text-slate-900 w-40 text-right">{contractDate || "15 Nov 2026"}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Issued To & Representative */}
-          <div className="grid grid-cols-2 gap-8 text-xs pt-1">
-            <div>
-              <p className="text-[10px] font-bold text-slate-900 tracking-wider uppercase mb-1.5">
-                ISSUED TO
-              </p>
-              <p className="font-bold text-slate-900 text-sm">{clientName}</p>
-              <p className="text-slate-700">Attn: {client?.fullName || "Tunde Adeyemi"}</p>
-              <p className="text-slate-600">{client?.streetAddress || "14 Bourdillon Road, Ikoyi"}</p>
-              <p className="text-slate-600">{client?.cityPostalCountry || "Lagos, Nigeria"}</p>
-              <p className="text-slate-600 font-mono mt-0.5">Account {accountNumber || "ACC-30412"}</p>
-            </div>
-
-            <div>
-              <p className="text-[10px] font-bold text-slate-900 tracking-wider uppercase mb-1.5">
-                REPRESENTATIVE
-              </p>
-              <p className="font-semibold text-slate-900 text-sm">{repName}</p>
-              <p className="text-slate-700">{repEmail}</p>
-              <p className="text-slate-600">{repPhone}</p>
-            </div>
-          </div>
-
-          {/* Description & Amount Table */}
-          <div className="pt-2">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="border-b border-slate-300 text-[10px] font-bold text-slate-700 uppercase tracking-wider">
-                  <th className="py-2 pr-4 font-bold">DESCRIPTION</th>
-                  <th className="py-2 pl-4 text-right font-bold w-36 whitespace-nowrap">AMOUNT</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-xs">
-                <tr className="align-top">
-                  <td className="py-3 pr-4">
-                    <p className="font-bold text-slate-900">Commercial credit adjustment</p>
-                    <p className="text-slate-700 mt-0.5">
-                      Credit applied against Invoice {againstInvoice} (Trip Reference {tripRef})
-                    </p>
-                  </td>
-                  <td className="py-3 pl-4 text-right font-medium text-slate-900 font-mono whitespace-nowrap">
-                    {formatDocCurrency(-creditAmount, currency)}
-                  </td>
-                </tr>
-
-                <tr className="align-top">
-                  <td className="py-2.5 pr-4 text-slate-700">
-                    <span className="font-semibold text-slate-900">VAT: </span>
-                    <span className="text-[11px] text-slate-600">{company.vatWording || company.vatExemptionClause}</span>
-                  </td>
-                  <td className="py-2.5 pl-4 text-right font-medium text-slate-900 font-mono whitespace-nowrap">
-                    {formatDocCurrency(0, currency)}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-
-            {/* Total Credited */}
-            <div className="border-t border-slate-900 pt-3 mt-1 flex justify-between items-center text-sm">
-              <span className="font-bold text-slate-900">Total credited</span>
-              <span className="font-bold text-rose-700 text-base font-mono">
-                {formatDocCurrency(-creditAmount, currency)}
-              </span>
-            </div>
-          </div>
-
-          {/* TRIP BALANCE AFTER THIS CREDIT NOTE */}
-          <div className="pt-2">
-            <h3 className="text-[10px] font-bold text-slate-900 tracking-wider uppercase mb-2">
-              TRIP LEDGER SUMMARY AFTER THIS CREDIT NOTE
-            </h3>
-            <div className="border-t border-b border-slate-200 divide-y divide-slate-100 text-xs font-mono">
-              <div className="py-2.5 flex justify-between items-center">
-                <span className="text-slate-700 font-sans">Original Invoiced Amount ({againstInvoice})</span>
-                <span className="text-slate-900">{formatDocCurrency(booking.pricing.totalFlightPrice, currency)}</span>
-              </div>
-              <div className="py-2.5 flex justify-between items-center">
-                <span className="text-slate-700 font-sans">Total Credited ({creditNoteNumber})</span>
-                <span className="text-rose-700 font-bold">{formatDocCurrency(-creditAmount, currency)}</span>
-              </div>
-              <div className="py-2.5 flex justify-between items-center">
-                <span className="text-slate-700 font-sans">Adjusted Net Payable</span>
-                <span className="text-slate-900 font-bold">
-                  {formatDocCurrency(booking.pricing.totalFlightPrice - creditAmount, currency)}
-                </span>
-              </div>
-            </div>
-            <p className="text-xs text-slate-600 mt-2.5 font-sans leading-relaxed">
-              This credit note has been applied to the client account. If payment was already received in full, the balance may be retained as flight credit or refunded upon written instruction.
-            </p>
-          </div>
+        <div className="grid grid-cols-2 gap-10 mb-6">
+          <PartyBlock label="Issued to" party={party} />
+          <RepBlock label="Representative" rep={rep} />
         </div>
 
-        {/* Footer */}
-        <DocumentFooter
-          leftText={`${creditNoteNumber} · ${clientName}`}
-          currentPage={1}
-          totalPages={1}
-        />
-      </div>
+        <table className="w-full border-collapse">
+          <thead>
+            <tr className="border-b-2 border-[#111827]">
+              <th className={thCls}>Description</th>
+              <th className={`${thCls} text-right w-[180px]`}>Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="border-b border-[#E5E7EB] align-top">
+              <td className="py-[8px] px-[6px]">
+                {isCharge ? (
+                  <>
+                    <strong>Charge</strong> · {note?.internalNote || note?.reasonCategory || "Additional service"}
+                  </>
+                ) : (
+                  <>
+                    <strong>Credit</strong> {against ? `against invoice ${against}` : "on this trip"}
+                    {againstLine && <div>{againstLine}</div>}
+                  </>
+                )}
+              </td>
+              <td className="py-[8px] px-[6px] text-right whitespace-nowrap">{docMoney(isCharge ? amount : -amount, currency)}</td>
+            </tr>
+            <tr className="border-b border-[#E5E7EB]">
+              <td className="py-[8px] px-[6px]">VAT · as on the original invoice</td>
+              <td className="py-[8px] px-[6px] text-right">{docMoney(0, currency)}</td>
+            </tr>
+            <tr className="border-b-2 border-[#111827] border-t-2">
+              <td className="py-[9px] px-[6px] font-bold">{isCharge ? "Total charged" : "Total credited"}</td>
+              <td className="py-[9px] px-[6px] text-right font-bold text-[16px] whitespace-nowrap">{docMoney(isCharge ? amount : -amount, currency)}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <Section className="mt-8 mb-2">Trip balance after this credit note</Section>
+        {!ledger ? (
+          <p className="text-[#6B7280]">{state === "loading" ? "Loading the trip balance…" : "The trip balance could not be loaded."}</p>
+        ) : (
+          <>
+            <AmountRow label={`Invoiced${invoices.length ? ` · ${invoices.map((i) => i.number).join(", ")}` : ""}`} amount={docMoney(invoiced, currency)} />
+            <AmountRow label={`Credited${creditsSoFar.length ? ` · ${creditsSoFar.map((n) => n.number).join(", ")}` : ""}`} amount={docMoney(-credited, currency)} />
+            <AmountRow label="Received" amount={docMoney(-received, currency)} />
+            <AmountRow label="Balance" amount={docMoney(balance, currency)} bold />
+            <p className="mt-5">{closing}</p>
+          </>
+        )}
+      </DocPage>
     </div>
   );
 }

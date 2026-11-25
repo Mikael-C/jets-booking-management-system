@@ -1,281 +1,213 @@
 "use client";
 
 import React from "react";
-import { Booking } from "@/types/aviation";
+import { Booking, FlightLeg } from "@/types/aviation";
 import { useAviation } from "@/lib/aviationContext";
-import { initialSettings } from "@/data/initialSettings";
-import DocumentHeader from "./DocumentHeader";
-import DocumentFooter from "./DocumentFooter";
+import { fbosFor } from "@/components/trip/tripTabUtils";
+import { briefNo, cityOf, clientParty, fmtDay, fmtDuration, fmtStamp, legAircraft, legTiming, representative } from "@/lib/documentData";
+import { realFbo } from "./QuotationDoc";
+import { DocPage, Label, Letterhead, PhotoBox, Ph, Section, TitleBlock, mono, useDocSettings } from "./docKit";
 
 interface FlightBriefDocProps {
   booking: Booking;
 }
 
+const initialName = (full: string) => {
+  const parts = String(full || "").trim().split(/\s+/);
+  return parts.length > 1 ? `${parts[0][0]}. ${parts.slice(1).join(" ")}` : full;
+};
+
+function fboDetails(leg: FlightLeg, side: "departure" | "arrival") {
+  const name = realFbo(leg, side);
+  const h = side === "departure" ? leg.departureHandling : leg.arrivalHandling;
+  const icao = side === "departure" ? leg.origin?.icao : leg.destination?.icao;
+  const dir = name ? fbosFor(icao).find((f) => f.name.replace(/\s+FBO$/i, "") === name) : undefined;
+  const contact = [h?.address || dir?.address, h?.phone || dir?.phone].filter(Boolean).join(", ");
+  return { name, contact };
+}
+
 export default function FlightBriefDoc({ booking }: FlightBriefDocProps) {
-  const { settings } = useAviation();
-  const company = settings?.company || initialSettings.company;
+  const settings = useDocSettings();
+  const { users } = useAviation() as any;
+  const company = settings.company;
+  const party = clientParty(booking);
+  const rep = representative(booking, users || [], company);
+  const anyB: any = booking;
 
-  const {
-    client,
-    aircraft,
-    legs,
-    tripNumber,
-    contractDate,
-    services
-  } = booking;
+  // Legs on this brief: the ones chosen when it was generated
+  const all = (booking.legs || []).filter((l) => !l.isCancelled);
+  const chosenNums: number[] | undefined = !anyB.briefLegLabel && Array.isArray(booking.lastBriefLegs) && booking.lastBriefLegs.length ? booking.lastBriefLegs : undefined;
+  const legs = chosenNums ? all.filter((l, i) => chosenNums.includes(l.legNumber || i + 1)) : all;
+  const totalLegs = Number(anyB.briefTotalLegs) || (chosenNums ? all.length : Math.max(all.length, ...legs.map((l) => l.legNumber || 0)));
+  const nums = legs.map((l, i) => l.legNumber || i + 1);
+  const legsText =
+    nums.length === totalLegs && totalLegs === 1
+      ? "1 of 1"
+      : `${nums.length === 1 ? nums[0] : `${nums.slice(0, -1).join(", ")} and ${nums[nums.length - 1]}`} of ${totalLegs}`;
+  const footerLegs = nums.length === 1 ? `Leg ${nums[0]}` : nums.every((v, i) => i === 0 || v === nums[i - 1] + 1) ? `Legs ${nums[0]}–${nums[nums.length - 1]}` : `Legs ${nums.join(", ")}`;
 
-  const tripRef = (tripNumber || "FE4578").split("-")[0];
-  const quoteVersion = booking.quoteVersion || 1;
-  const versionFormatted = String(quoteVersion).padStart(3, "0");
-  const briefId = `FB-${tripRef}-${versionFormatted}`;
-  const firstLeg = legs && legs.length > 0 ? legs[0] : null;
-
-  const originIcao = firstLeg?.origin?.icao || "LEIB";
-  const destIcao = firstLeg?.destination?.icao || "LSGG";
-  const originCity = firstLeg?.origin?.city || "Ibiza";
-  const destCity = firstLeg?.destination?.city || "Geneva";
-  const originName = firstLeg?.origin?.name || "Ibiza Airport";
-  const destName = firstLeg?.destination?.name || "Geneva Airport";
-
-  const departureTime = firstLeg?.departureTimeLocal || "10:00";
-  const arrivalTime = firstLeg?.arrivalTimeLocal || "12:05";
-  const flightDate = firstLeg?.flightDate || contractDate || "20 Nov 2026";
-  const blockTime = firstLeg?.flightTimeFormatted || "2h 05m";
-
-  const aircraftName = aircraft?.name || "Citation XLS+";
-  const aircraftReg = firstLeg?.aircraftRegistration || aircraft?.registration || "OE-FFB";
-
-  // Itinerary tab: "Contact on the brief" (crew mobile, 24/7 desk or none)
-  const briefContact = firstLeg?.briefContact || "desk_24_7";
-  const briefCrew = (firstLeg?.crew || []).filter((c) => c.name && (c.role === "CMDR" || c.role === "F/O"));
-  const briefLegLabel: string = (booking as any).briefLegLabel || "";
-
-  const repName = booking.agentName || "Marcus Vance";
-  const repPhone = "+44 20 7946 0912";
-
-  // Passenger manifest - Names only per R-031, no passport numbers on client brief
-  const manifestItems = firstLeg?.passengers && firstLeg.passengers.length > 0
-    ? firstLeg.passengers
-    : [
-        { fullName: `${client?.fullName || "Lead Passenger"} (Lead)`, nationality: "Confirmed on APIS", isLead: true }
-      ];
-
-  const cateringText = services?.vipCateringDetails || "Executive VIP catering: cold platters, fresh fruit, artisan bakery & champagne";
-  const luggageText = firstLeg?.luggage
-    ? `${firstLeg.luggage.standardSuitcases || 4} suitcases, ${firstLeg.luggage.pieceCount || 2} soft bags`
-    : "4 standard hard-shell suitcases, 2 soft cabin bags";
+  // Passengers on the legs of this brief (names only; no document numbers)
+  const names: { name: string; lead: boolean }[] = [];
+  legs.forEach((l) =>
+    (l.passengers || []).forEach((p) => {
+      const n = String(p.fullName || "").trim();
+      if (n && !names.some((x) => x.name === n)) names.push({ name: n, lead: Boolean(p.isLeadPassenger) });
+    })
+  );
+  const pax = names.length || Math.max(0, ...legs.map((l) => l.paxCount || 0));
+  const number = briefNo(booking);
 
   return (
-    <div className="flight-brief-document text-slate-900 bg-transparent font-sans max-w-[820px] mx-auto select-none print:max-w-none">
-      {/* ================= PAGE 1: FLIGHT BRIEF ================= */}
-      <div className="doc-page min-h-[1123px] bg-white p-10 sm:p-12 rounded-sm shadow-xl border border-slate-200 mb-8 print:mb-0 print:border-none print:shadow-none print:p-0 flex flex-col justify-between box-border">
-        <div className="space-y-6">
-          <DocumentHeader booking={booking} />
+    <div className="flight-brief-document bg-transparent select-none print:max-w-none">
+      <DocPage footerLeft={`${number} · ${footerLegs}`} page={1} pages={1}>
+        <Letterhead />
+        <TitleBlock
+          title="Flight brief"
+          meta={[
+            { label: "Brief", value: number, mono: true },
+            { label: "Legs", value: legsText },
+            { label: "Issued", value: fmtStamp(booking.lastBriefIssuedAt || new Date()) },
+            { label: "Client", value: `${party.name}${pax ? ` · ${pax} pax` : ""}` }
+          ]}
+        />
 
-          {/* Title & Brief Meta */}
-          <div className="flex items-start justify-between">
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight text-slate-900">
-                Flight brief
-              </h1>
-              <p className="text-xs text-slate-500 font-sans mt-0.5">
-                Client departure itinerary & handling dispatch overview
-              </p>
-            </div>
-            <div className="text-right text-xs space-y-1">
-              <div className="flex justify-end gap-3">
-                <span className="text-[10px] font-semibold text-slate-600 tracking-wider uppercase">BRIEF REF</span>
-                <span className="font-semibold text-slate-900 font-mono w-36 text-right">{briefId}</span>
+        <div className="space-y-4">
+          {legs.map((leg, i) => {
+            const idx = all.indexOf(leg);
+            const ac = legAircraft(booking, leg, idx >= 0 ? idx : i);
+            const prevAc = i > 0 ? legAircraft(booking, legs[i - 1], all.indexOf(legs[i - 1])) : null;
+            const t = legTiming(leg, booking.aircraft);
+            const dep = fboDetails(leg, "departure");
+            const arr = fboDetails(leg, "arrival");
+            const crew = leg.crew || [];
+            const byRole = (r: string) => crew.find((c) => c.role === r && c.name)?.name || "";
+            const captain = crew.find((c) => c.role === "CMDR");
+            const contact = leg.briefContact || "desk_24_7";
+            const notes: string[] = [];
+            if (i === 0) notes.push("Please arrive 30 minutes before departure with passports.");
+            if (prevAc && prevAc.name && ac.name && prevAc.name !== ac.name) notes.push(`Different aircraft from leg ${legs[i - 1].legNumber || i}.`);
+            if (t.dayOffset > 0 && t.arrivalDate) notes.push(`Arrival ${fmtDay(t.arrivalDate).replace(/(\w+) 0?(\d+)/, "$1 $2")}, local time.`);
+            return (
+              <div key={`${leg.legNumber}-${i}`} className="border border-[#D1D5DB] rounded-[10px] px-3.5 py-3">
+                <div className="flex items-baseline justify-between gap-4">
+                  <div className="font-bold text-[15px]">
+                    Leg {leg.legNumber || i + 1} · {fmtDay(leg.flightDate)}
+                  </div>
+                  <div className={`${mono} text-[13px]`}>
+                    Reg{" "}
+                    <strong>
+                      <Ph value={ac.registration} label="registration" />
+                    </strong>{" "}
+                    · Flight no.{" "}
+                    <strong>
+                      <Ph value={leg.flightNumber} label="flight no." />
+                    </strong>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-4 mt-2">
+                  <div>
+                    <Label>Departure</Label>
+                    <div className={`${mono} text-[18px] font-bold`}>
+                      {leg.origin?.icao} {t.dep}
+                    </div>
+                    <div>
+                      {cityOf(leg.origin)}
+                      {dep.name ? ` · ${dep.name}` : ""}
+                    </div>
+                    <div className="text-[12px]">
+                      <Ph value={dep.contact} label="FBO address, phone" />
+                    </div>
+                  </div>
+                  <div>
+                    <Label>Arrival</Label>
+                    <div className={`${mono} text-[18px] font-bold`}>
+                      {leg.destination?.icao} {t.arr || "—"}
+                      {t.dayOffset > 0 && <span className="text-[11px] ml-1 align-middle">+{t.dayOffset}</span>}
+                    </div>
+                    <div>
+                      {cityOf(leg.destination)}
+                      {arr.name ? ` · ${arr.name}` : ""}
+                    </div>
+                    <div className="text-[12px]">
+                      <Ph value={arr.contact} label="FBO address, phone" />
+                    </div>
+                  </div>
+                  <div>
+                    <Label>Crew</Label>
+                    <div>
+                      Capt. <Ph value={byRole("CMDR")} label="name" /> · FO <Ph value={byRole("F/O")} label="name" /> · Cabin{" "}
+                      <Ph value={byRole("Cabin Attendant")} label="name" />
+                    </div>
+                    {contact === "crew_mobile" && (
+                      <div>
+                        Crew mobile <Ph value={captain?.phone} label="number" />
+                      </div>
+                    )}
+                    {contact === "desk_24_7" && (
+                      <div>
+                        Contact: {(company.name || "Orbelo").split(" ")[0]} 24/7 <Ph value={company.phone24_7} label="24/7 number" />
+                      </div>
+                    )}
+                    {t.minutes ? <div className="text-[#6B7280]">Flight time ≈ {fmtDuration(t.minutes)}</div> : null}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-[150px_150px_1fr] gap-3 mt-3 items-start">
+                  <PhotoBox src={ac.exterior} label="Exterior" />
+                  <PhotoBox src={ac.cabin} label="Cabin" />
+                  <div>
+                    <div>
+                      <strong>{ac.name || <Ph label="Aircraft" />}</strong>
+                      {ac.category ? ` · ${ac.category}` : ""}
+                    </div>
+                    {(ac.built || ac.refurbished) && (
+                      <div>
+                        Built · refurbished {ac.built || "—"} · {ac.refurbished || "—"}
+                      </div>
+                    )}
+                    {(ac.seats || ac.lavatoryShort) && <div>{[ac.seats ? `${ac.seats} seats` : "", ac.lavatoryShort].filter(Boolean).join(" · ")}</div>}
+                    {ac.smoking && <div>{ac.smoking} cabin</div>}
+                  </div>
+                </div>
+                {notes.length > 0 && <div className="text-[12px] text-[#4B5563] mt-2">{notes.join(" ")}</div>}
               </div>
-              <div className="flex justify-end gap-3">
-                <span className="text-[10px] font-semibold text-slate-600 tracking-wider uppercase">TRIP ROOT</span>
-                <span className="font-semibold text-slate-900 font-mono w-36 text-right">{tripRef}</span>
-              </div>
-              <div className="flex justify-end gap-3">
-                <span className="text-[10px] font-semibold text-slate-600 tracking-wider uppercase">ISSUED</span>
-                <span className="font-medium text-slate-900 w-36 text-right">{flightDate}</span>
-              </div>
-              <div className="flex justify-end gap-3">
-                <span className="text-[10px] font-semibold text-slate-600 tracking-wider uppercase">STATUS</span>
-                <span className="font-bold text-emerald-700 w-36 text-right">Confirmed</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Three Cards: DEPARTURE | ARRIVAL | AIRCRAFT */}
-          <div className="grid grid-cols-3 gap-4 pt-1">
-            {/* Departure */}
-            <div className="border border-slate-200 rounded-lg p-4 bg-white">
-              <p className="text-[10px] font-bold text-slate-600 tracking-wider uppercase mb-1">
-                DEPARTURE
-              </p>
-              <p className="text-xl font-bold text-slate-900 tracking-tight font-mono">
-                {originIcao} {departureTime}
-              </p>
-              <p className="text-xs text-slate-600 mt-1">
-                {flightDate} · Local time
-              </p>
-              <p className="text-xs text-slate-800 font-medium mt-0.5">
-                {originName}
-              </p>
-            </div>
-
-            {/* Arrival */}
-            <div className="border border-slate-200 rounded-lg p-4 bg-white">
-              <p className="text-[10px] font-bold text-slate-600 tracking-wider uppercase mb-1">
-                ARRIVAL
-              </p>
-              <p className="text-xl font-bold text-slate-900 tracking-tight font-mono">
-                {destIcao} {arrivalTime}
-              </p>
-              <p className="text-xs text-slate-600 mt-1">
-                {flightDate} · Local time
-              </p>
-              <p className="text-xs text-slate-800 font-medium mt-0.5">
-                {destName}
-              </p>
-            </div>
-
-            {/* Aircraft */}
-            <div className="border border-slate-200 rounded-lg p-4 bg-white">
-              <p className="text-[10px] font-bold text-slate-600 tracking-wider uppercase mb-1">
-                AIRCRAFT
-              </p>
-              <p className="text-xl font-bold text-slate-900 tracking-tight">
-                {aircraftName}
-              </p>
-              <p className="text-xs text-slate-600 mt-1 font-mono">
-                Registration: <strong className="text-slate-900">{aircraftReg}</strong>
-              </p>
-              <p className="text-xs text-slate-800 font-mono mt-0.5">
-                Flight time ≈ {blockTime}
-              </p>
-            </div>
-          </div>
-
-          {/* Where to Go & On Arrival */}
-          <div className="grid grid-cols-2 gap-8 text-xs pt-1">
-            <div>
-              <p className="text-[10px] font-bold text-slate-900 tracking-wider uppercase mb-1.5">
-                WHERE TO GO · {originCity.toUpperCase()} ({originIcao})
-              </p>
-              <p className="font-semibold text-slate-900 text-sm">
-                {firstLeg?.departureHandling?.name || "ExecuJet FBO Terminal"}
-              </p>
-              <p className="text-slate-600 mt-1">
-                {firstLeg?.departureHandling?.address || "General Aviation Terminal, Airport Way"}
-              </p>
-              <p className="text-slate-600 font-mono text-[11px] mt-0.5">
-                Tel: {firstLeg?.departureHandling?.phone || "+41 22 939 1234"} · VHF: 131.750 MHz
-              </p>
-              <p className="text-slate-700 mt-2 font-medium">
-                Please arrive at the private terminal <strong>20–30 minutes</strong> before departure with original travel documents.
-              </p>
-            </div>
-
-            <div>
-              <p className="text-[10px] font-bold text-slate-900 tracking-wider uppercase mb-1.5">
-                ON ARRIVAL · {destCity.toUpperCase()} ({destIcao})
-              </p>
-              <p className="font-semibold text-slate-900 text-sm">
-                {firstLeg?.arrivalHandling?.name || "Jet Aviation Private Terminal"}
-              </p>
-              <p className="text-slate-600 mt-1">
-                {firstLeg?.arrivalHandling?.address || "Executive Apron Gate 4"}
-              </p>
-              <p className="text-slate-600 font-mono text-[11px] mt-0.5">
-                Tel: {firstLeg?.arrivalHandling?.phone || "+41 22 717 8200"} · VHF: 130.400 MHz
-              </p>
-              <p className="text-slate-700 mt-2">
-                VIP luggage handling directly to airside transfer vehicle.
-              </p>
-            </div>
-          </div>
-
-          {/* PASSENGERS (NAMES ONLY PER R-031) */}
-          <div className="pt-2">
-            <h3 className="text-[10px] font-bold text-slate-900 tracking-wider uppercase mb-2">
-              PASSENGER MANIFEST
-            </h3>
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="border-b border-slate-300 text-[10px] font-bold text-slate-700 uppercase tracking-wider">
-                  <th className="py-2 pr-4 font-bold">PASSENGER NAME</th>
-                  <th className="py-2 px-4 font-bold">NATIONALITY</th>
-                  <th className="py-2 pl-4 font-bold w-36">TRAVEL STATUS</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-xs">
-                {manifestItems.map((pax: any, i: number) => (
-                  <tr key={i}>
-                    <td className="py-2.5 pr-4 font-semibold text-slate-900">{pax.fullName}</td>
-                    <td className="py-2.5 px-4 text-slate-700">{pax.nationality || "British"}</td>
-                    <td className="py-2.5 pl-4 text-emerald-700 font-medium">Manifest Cleared</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <p className="text-[10px] text-slate-500 mt-2 font-mono">
-              Note: Passport numbers and dates of birth are omitted from the client brief for privacy, but have been transmitted to Border Control & handling agents.
-            </p>
-          </div>
-
-          {/* Bottom Section: ON BOARD & 24/7 CONTACT */}
-          <div className="grid grid-cols-2 gap-8 items-start pt-2">
-            {/* On Board */}
-            <div>
-              <h3 className="text-[10px] font-bold text-slate-900 tracking-wider uppercase mb-2">
-                ON BOARD AMENITIES
-              </h3>
-              <div className="space-y-1.5 text-xs text-slate-700">
-                <p>
-                  <strong className="text-slate-900">Catering:</strong> {cateringText}
-                </p>
-                <p>
-                  <strong className="text-slate-900">Luggage Allowance:</strong> {luggageText}
-                </p>
-                <p>
-                  <strong className="text-slate-900">Wi-Fi:</strong> High-speed Ka-band connectivity included
-                </p>
-              </div>
-            </div>
-
-            {/* 24/7 CONTACT Box */}
-            <div className="border border-slate-900 rounded-lg p-3.5 bg-white">
-              <p className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-1.5">
-                24/7 FLIGHT OPERATIONS DISPATCH
-              </p>
-              <div className="space-y-1 text-xs text-slate-700">
-                {briefContact !== "none" && (
-                  <p>
-                    Operations Duty Desk: <strong className="font-mono text-slate-900">{company.phone24_7 || company.phone}</strong>
-                  </p>
-                )}
-                {briefContact === "crew_mobile" &&
-                  briefCrew.map((c) => (
-                    <p key={`${c.role}-${c.name}`}>
-                      {c.role === "CMDR" ? "Captain" : c.role === "F/O" ? "First officer" : "Cabin"}: {c.name}
-                      {c.phone ? <strong className="font-mono text-slate-900"> · {c.phone}</strong> : null}
-                    </p>
-                  ))}
-                <p>
-                  Charter Representative: {repName} ({repPhone})
-                </p>
-                <p className="text-[11px] text-slate-500 font-mono pt-1">
-                  Email: {company.email}
-                </p>
-              </div>
-            </div>
-          </div>
+            );
+          })}
         </div>
 
-        {/* Footer */}
-        <DocumentFooter
-          leftText={`${briefId} · ${client?.fullName || "Private Charter"}${briefLegLabel ? ` · ${briefLegLabel}` : ""}`}
-          currentPage={1}
-          totalPages={1}
-        />
-      </div>
+        <div className="grid grid-cols-[1fr_290px] gap-8 mt-6 items-start">
+          <div>
+            <Section className="mb-2">
+              Passengers · {nums.length === 1 ? `leg ${nums[0]}` : `legs ${nums.slice(0, -1).join(", ")} and ${nums[nums.length - 1]}`}
+            </Section>
+            {names.length ? (
+              <div className="grid grid-cols-2 gap-x-6 gap-y-[3px] text-[13.5px]">
+                {names.map((p) => (
+                  <div key={p.name}>
+                    {p.name}
+                    {p.lead ? " (lead)" : ""}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div>
+                <Ph label="Passenger names" />
+              </div>
+            )}
+            <p className="text-[12px] text-[#4B5563] mt-2 mb-0">
+              Document numbers are not printed on the client&apos;s brief. The operator receives the full manifest separately.
+            </p>
+          </div>
+          <div className="border-2 border-[#111827] rounded-[10px] px-4 py-3">
+            <Section className="mb-2">24/7 contact</Section>
+            <div>
+              {(company.name || "Orbelo").split(" ")[0]} operations: <Ph value={company.phone24_7} label="24/7 number" />
+            </div>
+            <div>Your representative: {rep.name ? initialName(rep.name) : <Ph label="representative" />}</div>
+          </div>
+        </div>
+      </DocPage>
     </div>
   );
 }

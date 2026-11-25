@@ -1,299 +1,230 @@
 "use client";
 
 import React from "react";
-import { Booking } from "@/types/aviation";
-import { useAviation } from "@/lib/aviationContext";
-import { initialSettings } from "@/data/initialSettings";
-import DocumentHeader from "./DocumentHeader";
-import DocumentFooter from "./DocumentFooter";
-import { formatDocCurrency } from "./QuotationDoc";
+import { Booking, CancellationFeeStep } from "@/types/aviation";
+import { agreementNo, clientParty, docMoney, documentPricing, fmtDate, fmtDay, legAircraft, legTiming, legsWord, quoteNo } from "@/lib/documentData";
+import { AmountRow, DocPage, Label, Letterhead, PartyBlock, Ph, Section, TitleBlock, thCls, useDocSettings } from "./docKit";
 
 interface CharterAgreementDocProps {
   booking: Booking;
 }
 
+/** "More than 14 days", "7 to 14 days", "48 hours to 7 days", "Less than 48 hours, or no-show" */
+function noticeText(s: CancellationFeeStep): string {
+  const unit = (d: number) => (d > 0 && d <= 3 ? `${d * 24} hours` : `${d} days`);
+  const min = Number(s.daysPriorMin) || 0;
+  const max = s.daysPriorMax === null || s.daysPriorMax === undefined ? null : Number(s.daysPriorMax);
+  if (max === null) return `More than ${unit(min)}`;
+  if (min <= 0) return `Less than ${unit(max)}, or no-show`;
+  return `${unit(min)} to ${unit(max)}`;
+}
+
 export default function CharterAgreementDoc({ booking }: CharterAgreementDocProps) {
-  const { settings } = useAviation();
-  const company = settings?.company || initialSettings.company;
-  const cancellationPolicy = settings?.cancellationPolicy || initialSettings.cancellationPolicy;
-  const activeTerms = settings?.termsVersions?.find((t) => t.isActive) || settings?.termsVersions?.[0] || initialSettings.termsVersions[0];
-  const cardFeePercent = settings?.pricing?.cardFeePercent ?? initialSettings.pricing?.cardFeePercent ?? 3.5;
-
-  const {
-    client,
-    aircraft,
-    legs,
-    pricing,
-    tripNumber,
-    quoteReference,
-    accountNumber,
-    contractDate
-  } = booking;
-
-  const agreementId = tripNumber ? `C-${tripNumber}` : "C-MX5521-001";
-  const basedOnQuote = quoteReference || (tripNumber ? `Q-${tripNumber}` : "Q-MX5521-001");
-  const currency = pricing?.currency || "EUR";
-  const totalPrice = pricing?.totalFlightPrice ?? 58844;
-  const clientName = client?.companyName || client?.fullName || "Bello Group Ltd";
-  const footerRef = `${agreementId} · ${clientName}`;
+  const settings = useDocSettings();
+  const company = settings.company;
+  const cardFee = settings.pricing?.cardFeePercent ?? 3.5;
+  const policy = (settings.cancellationPolicy || []).slice().sort((a, b) => (b.daysPriorMin || 0) - (a.daysPriorMin || 0));
+  const terms = (settings.termsVersions || []).find((t) => t.isActive) || (settings.termsVersions || [])[0];
+  const pricing = documentPricing(booking, cardFee);
+  const cur = pricing.currency;
+  const party = clientParty(booking);
+  const number = agreementNo(booking);
+  const signed = Boolean(booking.isContractSigned || booking.isBooked);
+  const signedDate = fmtDate(booking.contractSignedDate || (signed ? booking.contractDate : ""));
+  const date = fmtDate(booking.contractDate || (booking as any).quoteSentAt || booking.createdAt);
+  const footer = `${number} · ${party.name}`;
+  const docsHours = (settings as any).documents?.passengerDocsDeadlineHours;
+  const paymentTerms = (settings as any).documents?.paymentTerms || booking.paymentDueDate || "";
+  const legNums = pricing.legs.map((l) => l.legNumber);
+  const signer =
+    booking.signsAgreement === "assistant" && (booking.paName || booking.client?.paName)
+      ? booking.paName || booking.client?.paName || ""
+      : party.attn;
+  const brokerSignatory = [company.representativeName, company.signatoryTitle].filter(Boolean).join(", ");
 
   return (
-    <div className="charter-agreement-document text-slate-900 bg-transparent font-sans max-w-[820px] mx-auto select-none print:max-w-none">
-      {/* ================= PAGE 1 ================= */}
-      <div className="doc-page min-h-[1123px] bg-white p-10 sm:p-12 rounded-sm shadow-xl border border-slate-200 mb-8 print:mb-0 print:border-none print:shadow-none print:p-0 flex flex-col justify-between box-border">
-        <div className="space-y-5">
-          <DocumentHeader booking={booking} />
+    <div className="charter-agreement-document bg-transparent select-none print:max-w-none">
+      {/* ───────── Page 1 ───────── */}
+      <DocPage footerLeft={footer} page={1} pages={2}>
+        <Letterhead />
+        <TitleBlock
+          title="Charter agreement"
+          meta={[
+            { label: "Agreement", value: number, mono: true },
+            { label: "Based on quote", value: quoteNo(booking), mono: true },
+            { label: "Date", value: date || <Ph label="date" /> },
+            { label: "Status", value: signed ? `Signed${signedDate ? ` ${signedDate}` : ""}` : booking.isCancelled ? "Cancelled" : "For signature" }
+          ]}
+        />
 
-          {/* Title & Agreement Meta */}
-          <div className="flex items-start justify-between">
-            <h1 className="text-3xl font-bold tracking-tight text-slate-900">
-              Charter agreement
-            </h1>
-            <div className="text-right text-xs space-y-1">
-              <div className="flex justify-end gap-3">
-                <span className="text-[10px] font-semibold text-slate-600 tracking-wider uppercase">AGREEMENT</span>
-                <span className="font-semibold text-slate-900 font-mono w-28 text-right">{agreementId}</span>
-              </div>
-              <div className="flex justify-end gap-3">
-                <span className="text-[10px] font-semibold text-slate-600 tracking-wider uppercase">BASED ON QUOTE</span>
-                <span className="font-semibold text-slate-900 font-mono w-28 text-right">{basedOnQuote}</span>
-              </div>
-              <div className="flex justify-end gap-3">
-                <span className="text-[10px] font-semibold text-slate-600 tracking-wider uppercase">DATE</span>
-                <span className="font-medium text-slate-900 w-28 text-right">{contractDate || "15 Nov 2026"}</span>
-              </div>
-              <div className="flex justify-end gap-3">
-                <span className="text-[10px] font-semibold text-slate-600 tracking-wider uppercase">STATUS</span>
-                <span className="font-medium text-slate-900 w-28 text-right">For signature</span>
-              </div>
-            </div>
-          </div>
-
-          {/* The Client & The Broker */}
-          <div className="grid grid-cols-2 gap-8 text-xs pt-1">
+        <div className="grid grid-cols-2 gap-10 mb-6">
+          <PartyBlock label="The client" party={party} />
+          <div>
+            <Label className="mb-2">The broker</Label>
             <div>
-              <p className="text-[10px] font-bold text-slate-900 tracking-wider uppercase mb-1.5">
-                THE CLIENT
-              </p>
-              <p className="font-bold text-slate-900 text-sm">{clientName}</p>
-              <p className="text-slate-700">Attn: {client?.fullName || "Ifeoma Bello"}, Managing Director</p>
-              <p className="text-slate-600">{client?.streetAddress || "Plot 1120 Maitama District"}</p>
-              <p className="text-slate-600">{client?.cityPostalCountry || "Abuja, Nigeria"}</p>
-              <p className="text-slate-600 font-mono mt-0.5">Account {accountNumber || "ACC-30877"}</p>
+              <Ph value={company.legalEntity} label="Company legal name" />, acting as charter broker and contracting party with the client, arranging the
+              flights with an approved air operator (the operating carrier).
             </div>
-
             <div>
-              <p className="text-[10px] font-bold text-slate-900 tracking-wider uppercase mb-1.5">
-                THE BROKER
-              </p>
-              <p className="font-bold text-slate-900 text-sm">{company.legalEntity}</p>
-              <p className="text-slate-700 leading-relaxed mt-0.5">
-                Acting as charter broker and contracting party with the client, arranging the flights with an approved air operator (the operating carrier).
-              </p>
-              <p className="text-slate-500 mt-1 font-mono text-[11px]">
-                {company.address} · Reg. {company.registrationNumber}
-              </p>
+              <Ph value={[company.address, company.registrationNumber].filter(Boolean).join(" · ")} label="Registered address · Company no." />
             </div>
           </div>
+        </div>
 
-          {/* 1 · FLIGHTS */}
-          <div className="pt-1">
-            <h3 className="text-[10px] font-bold text-slate-900 tracking-wider uppercase mb-2">
-              1 · FLIGHTS
-            </h3>
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="border-b border-slate-300 text-[10px] font-bold text-slate-700 uppercase tracking-wider">
-                  <th className="py-2 pr-2 font-bold w-12">LEG</th>
-                  <th className="py-2 px-2 font-bold w-36">DATE</th>
-                  <th className="py-2 px-2 font-bold">ROUTE</th>
-                  <th className="py-2 px-2 font-bold text-center whitespace-nowrap">DEPARTS (LT)</th>
-                  <th className="py-2 px-2 font-bold">AIRCRAFT</th>
-                  <th className="py-2 pl-2 font-bold text-right w-12">PAX</th>
+        <Section className="mb-2">1 · Flights and aircraft</Section>
+        <table className="w-full border-collapse mb-2">
+          <thead>
+            <tr className="border-b-2 border-[#111827]">
+              <th className={`${thCls} w-[40px]`}>Leg</th>
+              <th className={thCls}>Date · route · departs</th>
+              <th className={thCls}>Aircraft</th>
+              <th className={`${thCls} text-right w-[50px]`}>Pax</th>
+              <th className={`${thCls} text-right`}>Charter price</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pricing.legs.map(({ leg, index, legNumber, price }) => {
+              const ac = legAircraft(booking, leg, index);
+              const t = legTiming(leg, booking.aircraft);
+              const specs = [ac.built || "—", ac.refurbished || "—", ac.seats ? `${ac.seats} seats` : "", ac.lavatoryShort, ac.smoking.toLowerCase()].filter(Boolean).join(" · ");
+              return (
+                <tr key={`${legNumber}-${index}`} className="border-b border-[#E5E7EB] align-top">
+                  <td className="py-[8px] px-[6px]">{legNumber}</td>
+                  <td className="py-[8px] px-[6px] whitespace-nowrap">
+                    <div>{fmtDay(leg.flightDate, true)}</div>
+                    <div>
+                      {leg.origin?.icao} → {leg.destination?.icao}
+                      {t.dep ? ` · ${t.dep} LT` : ""}
+                    </div>
+                  </td>
+                  <td className="py-[8px] px-[6px]">
+                    <div className="font-bold">{ac.name || <Ph label="Aircraft" />}</div>
+                    <div className="text-[11.5px] text-[#4B5563]">{specs}</div>
+                  </td>
+                  <td className="py-[8px] px-[6px] text-right">{leg.paxCount || leg.passengers?.length || ""}</td>
+                  <td className="py-[8px] px-[6px] text-right whitespace-nowrap">{docMoney(price, cur)}</td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-xs">
-                {legs && legs.length > 0 ? (
-                  legs.map((leg, index) => {
-                    const originCode = leg.origin?.icao || "LFPB";
-                    const destCode = leg.destination?.icao || "DNAA";
-                    return (
-                      <tr key={leg.legNumber || index}>
-                        <td className="py-2.5 pr-2 font-medium text-slate-900">{leg.legNumber || index + 1}</td>
-                        <td className="py-2.5 px-2 text-slate-800 whitespace-nowrap">{leg.flightDate || "Tue 24 Nov 2026"}</td>
-                        <td className="py-2.5 px-2 font-semibold text-slate-900">{originCode} → {destCode}</td>
-                        <td className="py-2.5 px-2 text-center font-mono text-slate-800">{leg.departureTimeLocal || "08:30"}</td>
-                        <td className="py-2.5 px-2 text-slate-800">{aircraft?.name || "Challenger 350"} or similar</td>
-                        <td className="py-2.5 pl-2 text-right font-medium text-slate-900">{leg.paxCount || 5}</td>
-                      </tr>
-                    );
-                  })
-                ) : (
-                  <>
-                    <tr>
-                      <td className="py-2.5 pr-2 font-medium text-slate-900">1</td>
-                      <td className="py-2.5 px-2 text-slate-800 whitespace-nowrap">Tue 24 Nov 2026</td>
-                      <td className="py-2.5 px-2 font-semibold text-slate-900">LFPB → DNAA</td>
-                      <td className="py-2.5 px-2 text-center font-mono text-slate-800">08:30</td>
-                      <td className="py-2.5 px-2 text-slate-800">Challenger 350 or similar</td>
-                      <td className="py-2.5 pl-2 text-right font-medium text-slate-900">5</td>
-                    </tr>
-                    <tr>
-                      <td className="py-2.5 pr-2 font-medium text-slate-900">2</td>
-                      <td className="py-2.5 px-2 text-slate-800 whitespace-nowrap">Mon 30 Nov 2026</td>
-                      <td className="py-2.5 px-2 font-semibold text-slate-900">DNAA → LFPB</td>
-                      <td className="py-2.5 px-2 text-center font-mono text-slate-800">16:00</td>
-                      <td className="py-2.5 px-2 text-slate-800">Challenger 350 or similar</td>
-                      <td className="py-2.5 pl-2 text-right font-medium text-slate-900">5</td>
-                    </tr>
-                  </>
-                )}
-              </tbody>
-            </table>
-          </div>
+              );
+            })}
+          </tbody>
+        </table>
+        <p className="text-[11.5px] text-[#4B5563] mt-0 mb-6">
+          Each leg is operated by an approved AOC holder (the operating carrier). An aircraft of the same category and standard may be substituted by the
+          operating carrier; the client is told before departure.
+        </p>
 
-          {/* 2 · PRICE AND PAYMENT */}
-          <div className="pt-2">
-            <h3 className="text-[10px] font-bold text-slate-900 tracking-wider uppercase mb-2">
-              2 · PRICE AND PAYMENT
-            </h3>
-            <div className="border-t border-b border-slate-200 divide-y divide-slate-100 text-xs">
-              <div className="py-2.5 flex justify-between items-center">
-                <span className="text-slate-700">Total charter price, including services listed in the quotation</span>
-                <span className="font-bold text-slate-900 text-sm font-mono">{formatDocCurrency(totalPrice, currency)}</span>
-              </div>
-              <div className="py-2.5 flex justify-between items-center">
-                <span className="text-slate-700">Payment due</span>
-                <span className="text-slate-900 font-medium font-sans">
-                  100% upon signature, and in all cases prior to departure
-                </span>
-              </div>
-              <div className="py-2.5 flex justify-between items-center">
-                <span className="text-slate-700">Method</span>
-                <span className="text-slate-800 font-medium">
-                  Bank transfer, or credit card (+{cardFeePercent}% card fee)
-                </span>
-              </div>
-            </div>
-          </div>
+        <Section className="mb-2">2 · Price and payment</Section>
+        <div className="mb-6">
+          <AmountRow label={`Charter price · ${legsWord(legNums)} (as above)`} amount={docMoney(pricing.charterTotal, cur)} />
+          {pricing.passengerFees.map((f, i) => (
+            <AmountRow key={`f-${i}`} label={f.label} amount={docMoney(f.amount, cur)} />
+          ))}
+          {pricing.services.map((s, i) => (
+            <AmountRow key={`s-${i}`} label={s.label} amount={s.included ? "Included" : docMoney(s.amount, cur)} />
+          ))}
+          {pricing.vat > 0 && <AmountRow label="VAT" amount={docMoney(pricing.vat, cur)} />}
+          <AmountRow label="Total" amount={docMoney(pricing.total, cur)} bold />
+          <AmountRow
+            label="Payment due"
+            amount={<Ph value={paymentTerms} label="e.g. 100 % on signature, and in all cases before departure" />}
+          />
+          <AmountRow label="Method" amount={`Bank transfer, or card with ${cardFee} % fee`} />
+        </div>
 
-          {/* 3 · CANCELLATION BY THE CLIENT */}
-          <div className="pt-2">
-            <h3 className="text-[10px] font-bold text-slate-900 tracking-wider uppercase mb-2">
-              3 · CANCELLATION BY THE CLIENT
-            </h3>
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="border-b border-slate-300 text-[10px] font-bold text-slate-700 uppercase tracking-wider">
-                  <th className="py-2 font-bold">NOTICE BEFORE FIRST DEPARTURE</th>
-                  <th className="py-2 text-right font-bold w-40">CANCELLATION FEE</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-xs">
-                {cancellationPolicy.map((step, idx) => (
-                  <tr key={idx}>
-                    <td className="py-2 text-slate-800">{step.description}</td>
-                    <td className="py-2 text-right text-slate-900 font-mono font-semibold">{step.feePercentage}%</td>
+        <Section className="mb-2">3 · Cancellation by the client</Section>
+        <table className="w-full border-collapse">
+          <thead>
+            <tr className="border-b-2 border-[#111827]">
+              <th className={thCls}>Notice before first departure</th>
+              <th className={`${thCls} text-right`}>Cancellation fee</th>
+            </tr>
+          </thead>
+          <tbody>
+            {policy.length > 0
+              ? policy.map((s) => (
+                  <tr key={s.id} className="border-b border-[#E5E7EB]">
+                    <td className="py-[7px] px-[6px]">{noticeText(s)}</td>
+                    <td className="py-[7px] px-[6px] text-right">{s.feePercentage} %</td>
+                  </tr>
+                ))
+              : ["More than ... days", "... to ... days", "Less than ... hours, or no-show"].map((t, i) => (
+                  <tr key={t} className="border-b border-[#E5E7EB]">
+                    <td className="py-[7px] px-[6px]">
+                      <Ph label={t} />
+                    </td>
+                    <td className="py-[7px] px-[6px] text-right">
+                      <Ph label={i === 2 ? "100 %" : "... %"} />
+                    </td>
                   </tr>
                 ))}
-              </tbody>
-            </table>
-            <p className="text-[10px] text-slate-500 mt-2">
-              Cancellation policy governed strictly by standard terms agreed upon execution.
-            </p>
-          </div>
+          </tbody>
+        </table>
+        {policy.length === 0 && <p className="text-[11.5px] text-[#4B5563] mt-1.5 mb-0">Placeholder until the cancellation policy is set in Settings.</p>}
 
-          {/* 4 · PASSENGERS AND DOCUMENTS */}
-          <div className="pt-2">
-            <h3 className="text-[10px] font-bold text-slate-900 tracking-wider uppercase mb-1.5">
-              4 · PASSENGERS AND DOCUMENTS
-            </h3>
-            <p className="text-xs text-slate-700 leading-relaxed">
-              The client provides full names and valid travel documents for every passenger, and pet passports where pets travel, no later than 48 hours before departure. Luggage beyond what is stated in the quotation may not fit the aircraft.
-            </p>
-          </div>
+        <Section className="mt-6 mb-2">4 · Passengers and documents</Section>
+        <p className="m-0">
+          The client provides full names and valid travel documents for every passenger, and pet passports where pets travel, no later than{" "}
+          <Ph value={docsHours ? `${docsHours} hours` : ""} label="48 hours" /> before departure. Luggage beyond what is stated in the quotation may not fit
+          the aircraft.
+        </p>
+      </DocPage>
+
+      {/* ───────── Page 2 ───────── */}
+      <DocPage footerLeft={footer} page={2} pages={2}>
+        <Letterhead />
+        <Section className="mb-3">5 · Terms and conditions</Section>
+        <div className="border-2 border-dashed border-[#C9A24A] rounded-[10px] px-5 py-4 min-h-[420px] text-[12.5px] leading-relaxed">
+          {terms && terms.fullText ? (
+            <>
+              <div className="text-[11px] text-[#4B5563] mb-3">
+                {terms.title || "Terms and conditions"} · version {terms.version}
+                {terms.effectiveDate ? ` · effective ${fmtDate(terms.effectiveDate)}` : ""}
+              </div>
+              <div className="whitespace-pre-line">{terms.fullText}</div>
+            </>
+          ) : (
+            <>
+              <Ph label="Full terms and conditions, supplied by your lawyer." />
+              <p className="mt-4">
+                Typically covers: the broker&apos;s role and the operating carrier&apos;s responsibility for the flight · aircraft substitution · delays, weather and
+                air-traffic restrictions · the operator&apos;s right to refuse carriage · dangerous goods · passenger conduct · liability limits and insurance ·
+                force majeure · data protection (passenger data) · governing law and jurisdiction.
+              </p>
+              <p>The app inserts the current version of these terms from Settings, so every agreement carries the version that applied on the day it was issued.</p>
+            </>
+          )}
         </div>
 
-        {/* Footer Page 1 */}
-        <DocumentFooter leftText={footerRef} currentPage={1} totalPages={2} />
-      </div>
+        <p className="mt-6 mb-8">
+          By signing, the client confirms the flights, the price and the terms above, and that the person signing is authorised to sign for the client.
+        </p>
 
-      {/* ================= PAGE 2 ================= */}
-      <div className="doc-page min-h-[1123px] bg-white p-10 sm:p-12 rounded-sm shadow-xl border border-slate-200 mb-8 print:mb-0 print:border-none print:shadow-none print:p-0 flex flex-col justify-between box-border">
-        <div className="space-y-6">
-          <DocumentHeader booking={booking} />
-
-          {/* 5 · TERMS AND CONDITIONS */}
+        <div className="grid grid-cols-2 gap-12">
           <div>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-[10px] font-bold text-slate-900 tracking-wider uppercase m-0">
-                5 · TERMS AND CONDITIONS
-              </h3>
-              <span className="font-mono text-[10px] text-slate-500 font-semibold">
-                Version: {activeTerms.version}
-              </span>
-            </div>
-
-            <div className="border border-slate-200 rounded-xl p-5 bg-[#FCFAF7] space-y-3 text-xs leading-relaxed text-slate-700">
-              <p className="font-semibold text-slate-900">
-                Standard Charter Conditions ({activeTerms.version})
-              </p>
-              <p>
-                1. <strong>Broker Capacity:</strong> The broker acts exclusively as an intermediary between the charterer and the operating carrier. All flights are performed under the air carrier's Air Operator Certificate (AOC).
-              </p>
-              <p>
-                2. <strong>Operational Control & Weather:</strong> Operational decisions, including route alterations, weather diversions, and safety determinations, remain at the sole discretion of the aircraft commander (PIC).
-              </p>
-              <p>
-                3. <strong>Substitutions:</strong> In the event of aircraft unavailability due to technical or operational factors, the broker will use reasonable endeavours to provide a comparable aircraft substitute.
-              </p>
-              <p>
-                4. <strong>Passenger Compliance:</strong> Passengers must adhere to international customs, immigration, and aviation security requirements, and present valid biometric travel documents prior to embarkation.
-              </p>
-              <p>
-                5. <strong>Governing Law & Jurisdiction:</strong> This agreement and any non-contractual obligations arising out of or in connection with it shall be governed by and construed in accordance with the laws of {company.courtOfJurisdiction}. The parties irrevocably agree that the courts of {company.courtOfJurisdiction} shall have exclusive jurisdiction.
-              </p>
-            </div>
-          </div>
-
-          {/* Confirmation Text */}
-          <p className="text-xs text-slate-800 leading-relaxed pt-1">
-            By signing, the client confirms the flights, the price and the terms above, and that the person signing is authorised to sign for the client.
-          </p>
-
-          {/* Signatures */}
-          <div className="grid grid-cols-2 gap-10 pt-4">
-            <div>
-              <p className="text-[10px] font-bold text-slate-900 tracking-wider uppercase mb-3">
-                FOR THE CLIENT
-              </p>
-              <div className="border-t border-slate-300 pt-3 text-xs space-y-1">
-                <p className="font-semibold text-slate-900">{client?.fullName || "Ifeoma Bello"}, Managing Director</p>
-                <p className="text-slate-700">{clientName}</p>
-                <p className="text-slate-500 pt-2 font-mono">Date ____________ Place ____________</p>
-              </div>
-            </div>
-
-            <div>
-              <p className="text-[10px] font-bold text-slate-900 tracking-wider uppercase mb-3">
-                FOR THE BROKER
-              </p>
-              <div className="border-t border-slate-300 pt-3 text-xs space-y-1">
-                <p className="font-semibold text-slate-900">Authorised Signatory</p>
-                <p className="text-slate-700">{company.legalEntity}</p>
-                <p className="text-slate-500 pt-2 font-mono">Date ____________ Place ____________</p>
+            <Label className="mb-10">For the client</Label>
+            <div className="border-t border-[#111827] pt-2">
+              <div>{signer || <Ph label="Authorised person" />}</div>
+              <div>{party.name}</div>
+              <div>
+                {signed && booking.contractSignedBy ? `Signed ${signedDate || ""} by ${booking.contractSignedBy}` : "Date ____________ Place ____________"}
               </div>
             </div>
           </div>
-
-          <p className="text-[10px] text-slate-500 pt-2">
-            Signed electronically: the e-signature certificate (signer, time, IP) is attached as the last page upon digital execution.
-          </p>
+          <div>
+            <Label className="mb-10">For the broker</Label>
+            <div className="border-t border-[#111827] pt-2">
+              <div>
+                <Ph value={brokerSignatory} label="Authorised signatory" />
+              </div>
+              <div>
+                <Ph value={company.legalEntity} label="Company legal name" />
+              </div>
+              <div>Date ____________ Place ____________</div>
+            </div>
+          </div>
         </div>
-
-        {/* Footer Page 2 */}
-        <DocumentFooter leftText={footerRef} currentPage={2} totalPages={2} />
-      </div>
+        <p className="text-[11.5px] text-[#4B5563] mt-6">Signed electronically: the e-signature certificate (signer, time, IP) is attached as the last page.</p>
+      </DocPage>
     </div>
   );
 }

@@ -496,6 +496,46 @@ export default function SettingsView() {
                     className="w-full bg-[var(--paper)] border border-[var(--line)] rounded-lg p-3 text-xs font-sans text-[var(--ink)] focus:outline-none focus:border-[var(--accent)]"
                   />
                 </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-mono font-bold text-[var(--muted)] mb-1">
+                    Payment Terms (Prints on Charter Agreements)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 100 % on signature, and in all cases before departure"
+                    value={localSettings.documents?.paymentTerms || ""}
+                    onChange={(e) =>
+                      setLocalSettings({
+                        ...localSettings,
+                        documents: { ...(localSettings.documents || {}), paymentTerms: e.target.value }
+                      })
+                    }
+                    className="w-full bg-[var(--paper)] border border-[var(--line)] rounded-lg px-3 py-2 text-xs font-sans text-[var(--ink)] focus:outline-none focus:border-[var(--accent)]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-mono font-bold text-[var(--muted)] mb-1">
+                    Passenger Documents Deadline (hours before departure)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    placeholder="48"
+                    value={localSettings.documents?.passengerDocsDeadlineHours ?? ""}
+                    onChange={(e) =>
+                      setLocalSettings({
+                        ...localSettings,
+                        documents: {
+                          ...(localSettings.documents || {}),
+                          passengerDocsDeadlineHours: e.target.value === "" ? undefined : Number(e.target.value)
+                        }
+                      })
+                    }
+                    className="w-full bg-[var(--paper)] border border-[var(--line)] rounded-lg px-3 py-2 text-xs font-sans text-[var(--ink)] focus:outline-none focus:border-[var(--accent)]"
+                  />
+                </div>
               </div>
             </div>
           )}

@@ -431,7 +431,7 @@ export default function TripItineraryTab({
     const briefBooking: Booking = {
       ...trip,
       legs: chosen.map((i) => resolved[i]).filter(Boolean),
-      ...({ briefLegLabel: legsLabel(chosen) } as any)
+      ...({ briefLegLabel: legsLabel(chosen), briefTotalLegs: legs.filter((l) => !l.isCancelled).length || legs.length } as any)
     };
     onOpenBrief(briefBooking);
     const legNumbers = chosen.map((i) => i + 1);
