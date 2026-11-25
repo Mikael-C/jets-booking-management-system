@@ -83,12 +83,13 @@ router.get('/', async (req, res) => {
 
 // PUT /api/curator-tiers
 router.put('/', async (req, res) => {
-  const { tiers, tokenRules, directRoute } = req.body;
+  const { tiers, tokenRules, directRoute, rateTable } = req.body;
   const config = await getConfig();
 
   if (tiers) config.tiers = tiers;
   if (tokenRules) config.tokenRules = { ...config.tokenRules.toObject(), ...tokenRules };
   if (directRoute) config.directRoute = { ...config.directRoute.toObject(), ...directRoute };
+  if (Array.isArray(rateTable)) config.rateTable = rateTable;
 
   await config.save();
   res.json({ success: true, data: config, message: 'Curator tiers and token rules updated successfully' });
@@ -123,3 +124,5 @@ router.post('/top-up', async (req, res) => {
 });
 
 module.exports = router;
+
+module.exports.getConfig = getConfig;

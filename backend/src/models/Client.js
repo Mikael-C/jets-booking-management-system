@@ -44,6 +44,14 @@ const clientSchema = new mongoose.Schema(
     isActive: { type: Boolean, default: true },
     tags: [String],
     lastBookingDate: { type: Date, default: null },
+    // Curator portal: clients a Curator added or linked; only they and the desk see them
+    curatorEmails: { type: [String], default: [], index: true },
+    clientType: { type: String, enum: ['company', 'person'], default: 'company' },
+    authorisedPersonName: { type: String, default: '' },
+    assistantName: { type: String, default: '' },
+    assistantEmail: { type: String, default: '' },
+    whatsapp: { type: String, default: '' },
+    documentsTo: { type: String, default: 'owner' },
   },
   {
     timestamps: true,

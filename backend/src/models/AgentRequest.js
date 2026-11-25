@@ -126,6 +126,8 @@ const agentRequestSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
+    // Keeps everything the Curator request form sends (legs, per-leg aircraft, pets, transfers…)
+    strict: false,
     toJSON: { virtuals: true },
     toObject: { virtuals: true },
   }

@@ -46,6 +46,8 @@ const curatorConfigSchema = new mongoose.Schema({
   tokenRules: { type: tokenRulesSchema, default: () => ({}) },
   directRoute: { type: directRouteSchema, default: () => ({}) },
   topUpHistory: [topUpLogSchema],
+  // Price estimate rate table (Curator portal): hourly rates, fees and speeds per category
+  rateTable: { type: [mongoose.Schema.Types.Mixed], default: undefined },
 }, {
   timestamps: true,
 });

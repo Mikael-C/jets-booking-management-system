@@ -1,1548 +1,895 @@
 "use client";
-import React, { useState } from "react";
-import { useRouter } from "next/navigation";
-import { useAviation } from "@/lib/aviationContext";
-import AirportSearchSelect from "@/components/common/AirportSearchSelect";
-import { TripType, RequestLegItem } from "@/types/aviation";
-import { CheckCircle2, Copy, Check, ArrowRight, Plane, Car, Send } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { api } from "@/lib/api";
+import CuratorAirportInput from "./CuratorAirportInput";
+import { AddClientModal, CuratorClient } from "./AgentClientsView";
+import { GhostButton, GoldButton, announceTokens, cardCls, fieldCls, goldLinkCls, labelCls } from "./curatorUi";
 
-const STEPS = [
-  { num: 1, label: "Client" },
-  { num: 2, label: "Route & dates" },
-  { num: 3, label: "Aircraft" },
-  { num: 4, label: "Passengers, luggage, pets" },
-  { num: 5, label: "Services" },
-  { num: 6, label: "Margin & send" },
-];
+const STEPS = ["Client", "Route & dates", "Aircraft", "Passengers, luggage, pets", "Services", "Margin & send"];
+const CATEGORIES = ["Light", "Midsize", "Super midsize", "Heavy", "Ultra long range"];
+const CATEGORY_FROM_KEY: Record<string, string> = { light: "Light", midsize: "Midsize", "super-midsize": "Super midsize", large: "Heavy", "ultra-long-range": "Ultra long range" };
+const VEHICLES = ["Sedan", "SUV", "Van", "Luxury"];
+const FLEX = ["Fixed", "± 1 hour", "± 2 hours", "± 3 hours", "Same day"];
+const SPECIES = ["Dog", "Cat", "Bird", "Other"];
+const TRAVELS = ["In cabin", "Carrier", "Hold"];
 
-const FLEXIBLE_OPTIONS = ["Fixed", "± 1 hour", "± 2 hours", "± 3 hours", "Same day"];
+type TripType = "one_way" | "round_trip" | "multi_leg";
+interface Leg {
+  from: string;
+  to: string;
+  date: string;
+  time: string;
+  flex: string;
+}
+interface LegAircraft {
+  category: string;
+  model: string;
+  why: string;
+}
+interface Pet {
+  name: string;
+  species: string;
+  breed: string;
+  weightKg: string;
+  travels: string;
+}
+interface GroundLeg {
+  selected: boolean;
+  arrival: { enabled: boolean; location: string; vehicle: string };
+  departure: { enabled: boolean; location: string; vehicle: string };
+  passengers: string;
+  special: string;
+}
+interface HeliLeg {
+  selected: boolean;
+  passengers: string;
+  type: string;
+  from: string;
+  to: string;
+  luggage: string;
+}
+interface ExtraTransfer {
+  pickup: string;
+  dropoff: string;
+  when: string;
+  vehicle: string;
+}
+
+const emptyLeg = (): Leg => ({ from: "", to: "", date: "", time: "", flex: "Fixed" });
+const emptyGround = (): GroundLeg => ({
+  selected: false,
+  arrival: { enabled: true, location: "", vehicle: "Sedan" },
+  departure: { enabled: false, location: "", vehicle: "SUV" },
+  passengers: "",
+  special: ""
+});
+const emptyHeli = (): HeliLeg => ({ selected: false, passengers: "", type: "Twin-engine", from: "", to: "", luggage: "" });
+const dayShort = (iso: string) => {
+  if (!iso) return "";
+  const d = new Date(`${iso}T12:00:00`);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+};
+
+const pillCls = (on: boolean, size: "md" | "sm" = "md") =>
+  `rounded-full border font-semibold transition-colors ${size === "md" ? "px-5 py-2 text-[15px]" : "px-4 py-1.5 text-[14px]"} ${
+    on ? "bg-[#C9A24A] border-[#C9A24A] text-[#0B121C]" : "bg-transparent border-[#2A3749] text-[#D5DCE5] hover:border-[#3A4A60]"
+  }`;
+const boxCls = "border border-[#263345] rounded-xl p-5";
+const legTitleCls = "font-mono font-bold text-[15px] text-white mb-3";
+const checkCls = "w-4 h-4 accent-[#2F7BF6]";
+
+function Check({ checked, onChange, children }: { checked: boolean; onChange: (v: boolean) => void; children: React.ReactNode }) {
+  return (
+    <label className="inline-flex items-center gap-2.5 cursor-pointer text-[17px] text-white select-none">
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className={checkCls} />
+      {children}
+    </label>
+  );
+}
 
 export default function AgentNewRequestWizard() {
   const router = useRouter();
-  const {
-    addAgentRequest,
-    currentUser,
-    tokenBalance,
-    checkAndSpendTokens,
-    openTokenModal,
-    clients,
-    contacts,
-  } = useAviation();
+  const params = useSearchParams();
 
-  // Mode: "wizard" vs "estimate" (Screen 3)
-  const [viewMode, setViewMode] = useState<"wizard" | "estimate">("wizard");
+  const [step, setStep] = useState(1);
+  const [error, setError] = useState<string | null>(null);
 
-  // --- Price Estimate State (Screen 3) ---
-  const [estFrom, setEstFrom] = useState("Lagos (DNMM)");
-  const [estTo, setEstTo] = useState("Abuja (DNAA)");
-  const [estDate, setEstDate] = useState("Thu 10 Dec");
-  const [estPax, setEstPax] = useState("4");
-  const [estTrip, setEstTrip] = useState("Return same day");
-  const [copiedWhatsApp, setCopiedWhatsApp] = useState(false);
+  // 1 · Client
+  const [clients, setClients] = useState<CuratorClient[] | null>(null);
+  const [clientError, setClientError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [client, setClient] = useState<CuratorClient | null>(null);
+  const [adding, setAdding] = useState(false);
 
-  // --- Wizard State ---
-  const [step, setStep] = useState(2); // Start at step 2 per design
-  const [tripType, setTripType] = useState<TripType>("round_trip");
-  const [clientName, setClientName] = useState("Adeyemi Holdings Ltd");
-  const [clientContact, setClientContact] = useState("T. Adeyemi");
-  const [clientEmail, setClientEmail] = useState("office@adeyemi.com");
+  // 2 · Route & dates
+  const initialTrip: TripType = params?.get("trip") === "one_way" ? "one_way" : params?.get("trip") === "multi_leg" ? "multi_leg" : params?.get("from") ? "round_trip" : "one_way";
+  const [tripType, setTripType] = useState<TripType>(initialTrip);
+  const [legs, setLegs] = useState<Leg[]>([{ ...emptyLeg(), from: params?.get("from") || "", to: params?.get("to") || "", date: params?.get("date") || "" }]);
+  const [ret, setRet] = useState<Leg>({ ...emptyLeg(), date: params?.get("date") || "" });
 
-  // Leg 1
-  const [leg1From, setLeg1From] = useState("DNMM");
-  const [leg1To, setLeg1To] = useState("EGLF");
-  const [leg1Date, setLeg1Date] = useState("2026-12-05");
-  const [leg1Time, setLeg1Time] = useState("09:00");
-  const [leg1Pax, setLeg1Pax] = useState(5);
-  const [leg1Flex, setLeg1Flex] = useState("± 2 hours");
+  // 3 · Aircraft
+  const prefCategory = CATEGORY_FROM_KEY[params?.get("category") || ""] || "";
+  const [aircraftMode, setAircraftMode] = useState<"same" | "per_leg">("same");
+  const [aircraft, setAircraft] = useState<LegAircraft[]>([{ category: prefCategory, model: "", why: "" }]);
 
-  // Leg 2 (return)
-  const [leg2Date, setLeg2Date] = useState("2026-12-12");
-  const [leg2Time, setLeg2Time] = useState("16:00");
-  const [leg2Pax, setLeg2Pax] = useState(5);
-  const [leg2Flex, setLeg2Flex] = useState("Fixed");
-
-  // Multi-leg
-  const [multiLegs, setMultiLegs] = useState<RequestLegItem[]>([
-    { originIcao: "DNMM", destIcao: "EGLF", flightDate: "2026-12-05", departureTime: "09:00" },
-    { originIcao: "EGLF", destIcao: "LSGG", flightDate: "2026-12-10", departureTime: "11:00" },
-  ]);
-
-  // Step 3 Aircraft
-  const [categoryPreference, setCategoryPreference] = useState("Super Midsize Jet");
-
-  // Step 4 Passengers, luggage, pets (Screen 5)
-  const [suitcases, setSuitcases] = useState(3);
+  // 4 · Passengers, luggage, pets
+  const [passengers, setPassengers] = useState(params?.get("pax") || "");
+  const [suitcases, setSuitcases] = useState("");
+  const [oversize, setOversize] = useState("");
   const [hasPets, setHasPets] = useState(false);
-  const [petCount, setPetCount] = useState(1);
-  const [petWeight, setPetWeight] = useState(8);
-  const [petBreed, setPetBreed] = useState("French Bulldog");
-  const [petNotes, setPetNotes] = useState("");
+  const [pets, setPets] = useState<Pet[]>([{ name: "", species: "Dog", breed: "", weightKg: "", travels: "In cabin" }]);
 
-  // Step 5 Services - Ground Transportation (Screen 6)
-  const [groundRequired, setGroundRequired] = useState(false);
-  const [groundLegs, setGroundLegs] = useState<string[]>(["Leg 1"]);
-  const [groundLegOther, setGroundLegOther] = useState("");
-  const [groundArrivalRequired, setGroundArrivalRequired] = useState(true);
-  const [groundArrivalDropoff, setGroundArrivalDropoff] = useState("");
-  const [groundArrivalVehicle, setGroundArrivalVehicle] = useState<"Sedan" | "SUV" | "Van" | "Luxury">("Sedan");
-  const [groundDepartureRequired, setGroundDepartureRequired] = useState(false);
-  const [groundDeparturePickup, setGroundDeparturePickup] = useState("");
-  const [groundDepartureVehicle, setGroundDepartureVehicle] = useState<"Sedan" | "SUV" | "Van" | "Luxury">("SUV");
-  const [groundPassengers, setGroundPassengers] = useState(4);
-  const [groundInstructions, setGroundInstructions] = useState("");
-  const [extraGroundTransfers, setExtraGroundTransfers] = useState<{ route: string; notes: string }[]>([]);
+  // 5 · Services
+  const [ground, setGround] = useState<GroundLeg[]>([]);
+  const [groundOpen, setGroundOpen] = useState(0);
+  const [groundExtra, setGroundExtra] = useState<ExtraTransfer[]>([]);
+  const [heli, setHeli] = useState<HeliLeg[]>([]);
+  const [heliExtra, setHeliExtra] = useState<(HeliLeg & { when: string })[]>([]);
+  const [catering, setCatering] = useState(false);
+  const [deicing, setDeicing] = useState(false);
+  const [meetAssist, setMeetAssist] = useState(false);
+  const [notes, setNotes] = useState("");
 
-  // Step 5 Services - Helicopter Transfer (Screen 6)
-  const [heliRequired, setHeliRequired] = useState(false);
-  const [heliLegs, setHeliLegs] = useState<string[]>(["Leg 1"]);
-  const [heliLegOther, setHeliLegOther] = useState("");
-  const [heliArrivalRequired, setHeliArrivalRequired] = useState(false);
-  const [heliArrivalDropoff, setHeliArrivalDropoff] = useState("");
-  const [heliArrivalPreference, setHeliArrivalPreference] = useState("Twin Engine VIP (AW139 / EC155)");
-  const [heliDepartureRequired, setHeliDepartureRequired] = useState(false);
-  const [heliDeparturePickup, setHeliDeparturePickup] = useState("");
-  const [heliDeparturePreference, setHeliDeparturePreference] = useState("Twin Engine VIP (AW139 / EC155)");
-  const [heliPassengers, setHeliPassengers] = useState(4);
-  const [heliInstructions, setHeliInstructions] = useState("");
-  const [extraHeliTransfers, setExtraHeliTransfers] = useState<{ route: string; notes: string }[]>([]);
+  // 6 · Margin & send
+  const [marginPct, setMarginPct] = useState("8");
+  const [balance, setBalance] = useState<number | null>(null);
+  const [sending, setSending] = useState(false);
+  const [needTokens, setNeedTokens] = useState(false);
 
-  // Catering & special requests
-  const [catering, setCatering] = useState("");
-
-  // Step 6 Margin
-  const [agentMarginPct, setAgentMarginPct] = useState(8);
-
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [errorMsg, setErrorMsg] = useState("");
-
-  const getAirportLabel = (icao: string) => {
-    const labels: Record<string, string> = {
-      DNMM: "Lagos Murtala Muhammed",
-      DNAA: "Abuja Nnamdi Azikiwe",
-      EGLF: "London Farnborough",
-      LSGG: "Geneva",
-      LFPB: "Paris Le Bourget",
-      LIML: "Milan Linate",
-      LEIB: "Ibiza",
-    };
-    return labels[icao] || icao;
-  };
-
-  const handleCopyWhatsApp = () => {
-    const text = `Lagos–Abuja return, 4 pax, light jet from about $9,000. Shall I get you a firm offer?`;
-    navigator.clipboard?.writeText(text);
-    setCopiedWhatsApp(true);
-    setTimeout(() => setCopiedWhatsApp(false), 2500);
-  };
-
-  const handleSelectEstimateCategory = (categoryName: string) => {
-    setCategoryPreference(categoryName);
-    setLeg1From("DNMM");
-    setLeg1To("DNAA");
-    setLeg1Pax(Number(estPax) || 4);
-    setTripType("round_trip");
-    setViewMode("wizard");
-    setStep(3);
-  };
-
-  const handleSubmit = async () => {
-    setIsSubmitting(true);
-    setErrorMsg("");
-
-    const hasToken = await checkAndSpendTokens("Submit Charter Request", 1, `${leg1From} → ${leg1To} (${clientName})`);
-    if (!hasToken) {
-      setIsSubmitting(false);
-      openTokenModal();
-      return;
+  const loadClients = async (selectId?: string) => {
+    try {
+      const res = await api.curator.clients();
+      const list: CuratorClient[] = res.data || [];
+      setClients(list);
+      setClientError(null);
+      const want = selectId || params?.get("client");
+      if (want) {
+        const found = list.find((c) => c.id === want);
+        if (found) setClient(found);
+      }
+    } catch (err: any) {
+      setClientError(err?.message || "Your clients could not be loaded.");
     }
+  };
+  useEffect(() => {
+    loadClients();
+    api.curator
+      .me()
+      .then((res) => setBalance(Number(res?.data?.tokens) || 0))
+      .catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-    const routeText =
-      tripType === "round_trip"
-        ? `${leg1From} ⇄ ${leg1To}`
-        : tripType === "multi_leg"
-        ? multiLegs.map((l) => `${l.originIcao} → ${l.destIcao}`).join(" | ")
-        : `${leg1From} → ${leg1To}`;
+  /** Legs as flown: a round trip adds the return leg. */
+  const flightLegs: Leg[] = useMemo(() => {
+    if (tripType === "round_trip") return [legs[0], { ...ret, from: legs[0].to, to: legs[0].from }];
+    if (tripType === "one_way") return [legs[0]];
+    return legs;
+  }, [tripType, legs, ret]);
 
-    await addAgentRequest({
-      type: "quote",
-      title: `Charter Request: ${routeText} (${clientName})`,
-      agentName: currentUser?.name || "Agent",
-      agentEmail: currentUser?.email || "agent@orbelo.com",
-      clientName,
-      clientEmail,
-      clientPhone: "",
-      companyName: clientName,
-      tripType,
-      route: routeText,
-      originIcao: leg1From,
-      destIcao: leg1To,
-      flightDate: leg1Date,
-      returnFlightDate: tripType === "round_trip" ? leg2Date : undefined,
-      departureTime: leg1Time,
-      paxCount: leg1Pax,
-      aircraftPreference: categoryPreference,
-      luggageCount: suitcases,
-      hasPets,
-      petDetails: hasPets
-        ? {
-            hasPets: true,
-            petCount,
-            petWeight,
-            totalWeightKg: petWeight,
-            breed: petBreed,
-            petType: petBreed,
-            notes: petNotes,
-          }
-        : undefined,
-      groundTransportation: groundRequired
-        ? {
-            enabled: true,
-            flightLeg: groundLegs,
-            flightLegOther: groundLegOther,
-            onArrival: {
-              required: groundArrivalRequired,
-              dropOffLocation: groundArrivalDropoff,
-              vehiclePreference: groundArrivalVehicle,
-            },
-            onDeparture: {
-              required: groundDepartureRequired,
-              pickUpLocation: groundDeparturePickup,
-              vehiclePreference: groundDepartureVehicle,
-            },
-            additionalRequirements: {
-              passengers: groundPassengers,
-              specialInstructions: groundInstructions,
-            },
-            extraTransfers: extraGroundTransfers,
-          }
-        : undefined,
-      helicopterTransfer: heliRequired
-        ? {
-            enabled: true,
-            flightLeg: heliLegs,
-            flightLegOther: heliLegOther,
-            onArrival: {
-              required: heliArrivalRequired,
-              dropOffLocation: heliArrivalDropoff,
-              vehiclePreference: heliArrivalPreference,
-            },
-            onDeparture: {
-              required: heliDepartureRequired,
-              pickUpLocation: heliDeparturePickup,
-              vehiclePreference: heliDeparturePreference,
-            },
-            additionalRequirements: {
-              passengers: heliPassengers,
-              specialInstructions: heliInstructions,
-            },
-            extraTransfers: extraHeliTransfers,
-          }
-        : undefined,
-      limousineService: groundRequired,
-      specialRequests: catering,
-      agentMarginPct,
-      multiLegs: tripType === "multi_leg" ? multiLegs : undefined,
-    });
+  // Keep the per-leg lists the same length as the legs
+  useEffect(() => {
+    const n = flightLegs.length;
+    setAircraft((prev) => (prev.length === n ? prev : Array.from({ length: n }, (_, i) => prev[i] || { ...prev[0], model: "", why: "" })));
+    setGround((prev) => (prev.length === n ? prev : Array.from({ length: n }, (_, i) => prev[i] || emptyGround())));
+    setHeli((prev) => (prev.length === n ? prev : Array.from({ length: n }, (_, i) => prev[i] || emptyHeli())));
+  }, [flightLegs.length]);
 
-    setIsSubmitting(false);
-    router.push("/agent/requests");
+  const filteredClients = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const list = clients || [];
+    if (!q) return list.slice(0, 8);
+    return list.filter((c) => [c.name, c.authorisedPerson, c.assistant, c.email].some((v) => String(v || "").toLowerCase().includes(q)));
+  }, [clients, search]);
+
+  const tokenCost = flightLegs.length;
+
+  const validate = (s: number): string | null => {
+    if (s === 1 && !client) return "Pick the client first.";
+    if (s === 2) {
+      for (let i = 0; i < flightLegs.length; i++) {
+        const l = flightLegs[i];
+        if (!l.from || !l.to) return `Leg ${i + 1}: pick both airports.`;
+        if (l.from === l.to) return `Leg ${i + 1}: departure and destination are the same.`;
+        if (!l.date) return `Leg ${i + 1}: add the date.`;
+      }
+      for (let i = 1; i < flightLegs.length; i++) {
+        if (flightLegs[i].date < flightLegs[i - 1].date) return `Leg ${i + 1} is dated before leg ${i}.`;
+      }
+    }
+    if (s === 3) {
+      const list = aircraftMode === "same" ? [aircraft[0]] : aircraft;
+      if (list.some((a) => !a || !a.category)) return aircraftMode === "same" ? "Pick a category." : "Pick a category for every leg.";
+    }
+    if (s === 4) {
+      if (!(Number(passengers) >= 1)) return "Add the number of passengers.";
+      if (hasPets && !pets.some((p) => p.species || p.breed)) return "Add the pet details, or untick Travelling with pets.";
+    }
+    return null;
   };
 
-  const canGoNext = step < 6;
-  const canGoPrev = step > 1;
+  const go = (target: number) => {
+    if (target > step) {
+      for (let s = step; s < target; s++) {
+        const msg = validate(s);
+        if (msg) {
+          setStep(s);
+          setError(msg);
+          return;
+        }
+      }
+    }
+    setError(null);
+    setStep(target);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const submit = async () => {
+    for (let s = 1; s <= 5; s++) {
+      const msg = validate(s);
+      if (msg) {
+        setStep(s);
+        setError(msg);
+        return;
+      }
+    }
+    setSending(true);
+    setError(null);
+    setNeedTokens(false);
+    const aircraftList = aircraftMode === "same" ? flightLegs.map(() => aircraft[0]) : aircraft;
+    try {
+      await api.curator.createRequest({
+        clientId: client!.id,
+        tripType,
+        legs: flightLegs.map((l) => ({ ...l, pax: Number(passengers) })),
+        passengers: Number(passengers),
+        aircraftMode,
+        legAircraft: aircraftList,
+        suitcases: Number(suitcases) || 0,
+        oversizeItems: oversize,
+        hasPets,
+        pets: hasPets ? pets.map((p) => ({ ...p, weightKg: Number(p.weightKg) || 0 })) : [],
+        ground: {
+          enabled: ground.some((g) => g.selected) || groundExtra.length > 0,
+          legs: ground.map((g, i) => ({ ...g, leg: i + 1, passengers: Number(g.passengers) || Number(passengers) })),
+          extra: groundExtra
+        },
+        helicopter: {
+          enabled: heli.some((h) => h.selected) || heliExtra.length > 0,
+          legs: heli.map((h, i) => ({ ...h, leg: i + 1, when: "on arrival", passengers: Number(h.passengers) || Number(passengers) })),
+          extra: heliExtra
+        },
+        catering,
+        deicing,
+        meetAssist,
+        notes,
+        marginPct: Number(marginPct) || 0
+      });
+      announceTokens();
+      router.push("/agent/requests");
+    } catch (err: any) {
+      if (err?.code === "INSUFFICIENT_TOKENS") setNeedTokens(true);
+      setError(err?.message || "The request could not be sent.");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const updateLeg = (i: number, patch: Partial<Leg>) => setLegs((prev) => prev.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+  const updateAircraft = (i: number, patch: Partial<LegAircraft>) => setAircraft((prev) => prev.map((a, j) => (j === i ? { ...a, ...patch } : a)));
+  const updateGround = (i: number, patch: Partial<GroundLeg>) => setGround((prev) => prev.map((g, j) => (j === i ? { ...g, ...patch } : g)));
+  const updateHeli = (i: number, patch: Partial<HeliLeg>) => setHeli((prev) => prev.map((h, j) => (j === i ? { ...h, ...patch } : h)));
+  const legHead = (i: number) => `Leg ${i + 1} · ${flightLegs[i]?.from || "—"} → ${flightLegs[i]?.to || "—"}`;
+
+  const nextLabel = step < 6 ? `Next: ${STEPS[step]}` : "";
+  const nav = (
+    <div className="flex items-center gap-3 mt-6">
+      {step > 1 && <GhostButton onClick={() => go(step - 1)}>Back</GhostButton>}
+      {step < 6 && <GoldButton onClick={() => go(step + 1)}>{nextLabel}</GoldButton>}
+    </div>
+  );
 
   return (
-    <div className="space-y-4">
-      {/* View Mode Toggle: Price estimate vs New request wizard */}
-      <div className="flex items-center justify-between border-b border-white/10 pb-3">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setViewMode("estimate")}
-            className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-colors ${
-              viewMode === "estimate"
-                ? "bg-[#C9A052] text-[#0F1420]"
-                : "bg-[#141C2E] text-gray-300 hover:text-white border border-white/10"
-            }`}
-          >
-            Price estimate
-          </button>
-          <button
-            onClick={() => setViewMode("wizard")}
-            className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-colors ${
-              viewMode === "wizard"
-                ? "bg-[#C9A052] text-[#0F1420]"
-                : "bg-[#141C2E] text-gray-300 hover:text-white border border-white/10"
-            }`}
-          >
-            New request wizard
-          </button>
-        </div>
-        <span className="text-xs text-gray-400">
-          Balance: <strong className="text-[#C9A052] font-mono">{tokenBalance} tokens</strong>
-        </span>
-      </div>
-
-      {/* =========================================================================
-          SCREEN 3: PRICE ESTIMATE VIEW
-         ========================================================================= */}
-      {viewMode === "estimate" ? (
-        <div className="space-y-6 pt-1 max-w-6xl">
-          <div>
-            <h1 className="text-2xl font-bold text-white tracking-tight">Price estimate</h1>
-            <p className="text-sm text-gray-400 mt-1">
-              A quick range to share in conversation. Not an offer: the desk confirms the real price within hours.
-            </p>
-          </div>
-
-          {/* Form Filter Row */}
-          <div className="grid grid-cols-1 sm:grid-cols-5 gap-3 bg-[#141C2E] border border-white/10 rounded-xl p-4">
-            <div>
-              <label className="text-[11px] text-gray-400 font-medium block mb-1">From</label>
-              <input
-                type="text"
-                value={estFrom}
-                onChange={(e) => setEstFrom(e.target.value)}
-                className="w-full bg-[#0F1420] border border-white/15 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
-              />
-            </div>
-            <div>
-              <label className="text-[11px] text-gray-400 font-medium block mb-1">To</label>
-              <input
-                type="text"
-                value={estTo}
-                onChange={(e) => setEstTo(e.target.value)}
-                className="w-full bg-[#0F1420] border border-white/15 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
-              />
-            </div>
-            <div>
-              <label className="text-[11px] text-gray-400 font-medium block mb-1">Date</label>
-              <input
-                type="text"
-                value={estDate}
-                onChange={(e) => setEstDate(e.target.value)}
-                className="w-full bg-[#0F1420] border border-white/15 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
-              />
-            </div>
-            <div>
-              <label className="text-[11px] text-gray-400 font-medium block mb-1">Passengers</label>
-              <input
-                type="text"
-                value={estPax}
-                onChange={(e) => setEstPax(e.target.value)}
-                className="w-full bg-[#0F1420] border border-white/15 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
-              />
-            </div>
-            <div>
-              <label className="text-[11px] text-gray-400 font-medium block mb-1">Trip</label>
-              <select
-                value={estTrip}
-                onChange={(e) => setEstTrip(e.target.value)}
-                className="w-full bg-[#0F1420] border border-white/15 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
-              >
-                <option>Return same day</option>
-                <option>One way</option>
-                <option>Multi-leg</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Pricing Table */}
-          <div className="bg-[#141C2E] border border-white/10 rounded-xl overflow-hidden shadow-lg">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-white/10 text-xs text-gray-400 font-medium bg-[#101726]">
-                  <th className="py-3.5 px-5">Category</th>
-                  <th className="py-3.5 px-5">Seats</th>
-                  <th className="py-3.5 px-5">Flying time each way</th>
-                  <th className="py-3.5 px-5 text-right">Estimated range, return, all-in</th>
-                  <th className="py-3.5 px-5 text-right"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5">
-                {[
-                  { cat: "Light jet", seats: "4–7", time: "≈ 1 h 05", range: "$ 9,000 – 12,500" },
-                  { cat: "Midsize", seats: "7–8", time: "≈ 1 h 00", range: "$ 12,000 – 16,000" },
-                  { cat: "Super-midsize", seats: "8–9", time: "≈ 1 h 00", range: "$ 15,000 – 20,000" },
-                  { cat: "Heavy jet", seats: "10–14", time: "≈ 1 h 00", range: "$ 22,000 – 30,000" },
-                ].map((row) => (
-                  <tr key={row.cat} className="hover:bg-white/5 transition-colors">
-                    <td className="py-4 px-5 font-bold text-white">{row.cat}</td>
-                    <td className="py-4 px-5 text-gray-300 font-mono text-xs">{row.seats}</td>
-                    <td className="py-4 px-5 text-gray-300 text-xs">{row.time}</td>
-                    <td className="py-4 px-5 text-right font-mono font-bold text-white text-sm">
-                      {row.range}
-                    </td>
-                    <td className="py-4 px-5 text-right whitespace-nowrap">
-                      <button
-                        onClick={() => handleSelectEstimateCategory(row.cat)}
-                        className="text-[#C9A052] hover:text-[#e0b769] hover:underline font-semibold text-xs transition-colors"
-                      >
-                        Request this
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Bottom Two Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* How the range is built */}
-            <div className="bg-[#141C2E] border border-white/10 rounded-xl p-5 space-y-2">
-              <h3 className="text-sm font-bold text-white">How the range is built</h3>
-              <p className="text-xs text-gray-400 leading-relaxed">
-                Hourly rates by category from OrbAero&apos;s rate table (updated monthly from real quotes) × flying time both ways, plus typical positioning, landing, handling and waiting fees, plus your margin and OrbAero&apos;s fee. December peak season adds 10–20 %. Ranges shown are placeholders until the rate table is filled.
-              </p>
-            </div>
-
-            {/* Share via WhatsApp */}
-            <div className="bg-[#141C2E] border border-white/10 rounded-xl p-5 space-y-3 flex flex-col justify-between">
-              <div>
-                <h3 className="text-sm font-bold text-white mb-2">Share</h3>
-                <p className="text-xs text-gray-300 italic bg-[#0F1420] border border-white/10 rounded-lg p-3">
-                  Send as text: &quot;Lagos–Abuja return, 4 pax, light jet from about $9,000. Shall I get you a firm offer?&quot;
-                </p>
-              </div>
-              <button
-                onClick={handleCopyWhatsApp}
-                className="w-full py-2.5 bg-[#C9A052] hover:bg-[#b88f42] text-[#0F1420] font-bold rounded-lg text-xs transition-all flex items-center justify-center gap-2 shadow-sm"
-              >
-                {copiedWhatsApp ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-black" />
-                    <span>Copied for WhatsApp!</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-3.5 h-3.5" />
-                    <span>Copy for WhatsApp</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-
-          <p className="text-xs text-gray-500 pt-2">
-            Each estimate uses no tokens. Turning it into a request uses 1 token, as usual.
+    <div>
+      <div className="flex items-start justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-[32px] leading-tight font-bold text-white tracking-tight m-0">New request</h1>
+          <p className="text-[15px] text-[#93A1B5] mt-1.5 mb-0">
+            {step === 1 ? "Pick an existing client; details fill in automatically." : `Step ${step} of 6${client ? ` · ${client.name}` : ""}`}
           </p>
         </div>
-      ) : (
-        /* =========================================================================
-            WIZARD VIEW (STEPS 1 - 6)
-           ========================================================================= */
-        <div className="flex gap-0 min-h-[calc(100vh-100px)] -mx-6 -mt-2">
-          {/* Left sidebar steps */}
-          <div className="w-56 bg-[#0A0F1A] border-r border-white/10 py-8 px-4 flex-shrink-0">
-            <div className="space-y-1">
-              {STEPS.map((s) => {
-                const isDone = s.num < step;
-                const isActive = s.num === step;
-                return (
-                  <button
-                    key={s.num}
-                    onClick={() => setStep(s.num)}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left text-xs font-medium transition-colors ${
-                      isActive
-                        ? "bg-[#141C2E] text-white border-l-2 border-[#C9A052]"
-                        : isDone
-                        ? "text-gray-400 hover:text-white"
-                        : "text-gray-600 hover:text-gray-400"
-                    }`}
-                  >
-                    <span
-                      className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
-                        isDone
-                          ? "bg-emerald-500/20 text-emerald-400"
-                          : isActive
-                          ? "bg-[#C9A052] text-[#0F1420]"
-                          : "bg-white/10 text-gray-500"
-                      }`}
-                    >
-                      {isDone ? "✓" : s.num}
-                    </span>
-                    <span>{s.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+        <Link href="/agent/estimate" className={`${goldLinkCls} mt-3 whitespace-nowrap`}>
+          Price estimate
+        </Link>
+      </div>
 
-          {/* Main Content Area */}
-          <div className="flex-1 p-8 overflow-y-auto">
-            {/* STEP 1: CLIENT (MOD-12: Pick an existing client from My clients) */}
-            {step === 1 && (
-              <div className="max-w-xl space-y-5">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h1 className="text-2xl font-bold text-white mb-1">Client details</h1>
-                    <p className="text-xs text-gray-400">Select an existing client from your portfolio or enter a new client.</p>
-                  </div>
-                </div>
+      <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-8 items-start">
+        <div className="space-y-1">
+          {STEPS.map((label, i) => {
+            const n = i + 1;
+            const active = n === step;
+            return (
+              <button
+                key={label}
+                type="button"
+                onClick={() => go(n)}
+                className={`w-full text-left px-5 py-3 rounded-xl text-[18px] transition-colors ${
+                  active ? "bg-[#16233A] text-white font-bold" : "text-[#A8B3C2] hover:text-white"
+                }`}
+              >
+                {n} · {label}
+              </button>
+            );
+          })}
+        </div>
 
-                {/* Existing client picker */}
-                <div className="p-4 bg-[#101726] border border-white/10 rounded-xl space-y-2">
-                  <label className="text-xs text-[#C9A052] font-semibold uppercase tracking-wider block">
-                    Pick from My Clients
-                  </label>
-                  <select
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (!val) return;
-                      const foundClient = (clients || []).find((c) => c.id === val);
-                      if (foundClient) {
-                        setClientName(foundClient.companyName || foundClient.fullName);
-                        setClientContact(foundClient.fullName);
-                        setClientEmail(foundClient.email);
-                        return;
-                      }
-                      const foundContact = (contacts || []).find((c) => c.id === val);
-                      if (foundContact) {
-                        setClientName((foundContact as any).company || (foundContact as any).organization || foundContact.fullName || "");
-                        setClientContact(foundContact.fullName || "");
-                        setClientEmail(foundContact.email || "");
-                        return;
-                      }
-                    }}
-                    className="w-full bg-[#080D1A] border border-white/20 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
-                  >
-                    <option value="">-- Choose existing client --</option>
-                    {(clients || []).map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.fullName} {c.companyName ? `(${c.companyName})` : ""}
-                      </option>
-                    ))}
-                    {(contacts || []).map((cnt) => (
-                      <option key={cnt.id} value={cnt.id}>
-                        {cnt.fullName} {(cnt as any).company ? `(${(cnt as any).company})` : ""}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-4 pt-2">
-                  <div>
-                    <label className="text-xs text-gray-400 uppercase tracking-wide block mb-1">Company / Entity</label>
-                    <input
-                      type="text"
-                      value={clientName}
-                      placeholder="e.g. Adeyemi Holdings Ltd"
-                      onChange={(e) => setClientName(e.target.value)}
-                      className="w-full bg-[#141C2E] border border-white/20 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-400 uppercase tracking-wide block mb-1">Authorized Contact</label>
-                    <input
-                      type="text"
-                      value={clientContact}
-                      placeholder="e.g. Tunde Adeyemi"
-                      onChange={(e) => setClientContact(e.target.value)}
-                      className="w-full bg-[#141C2E] border border-white/20 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-400 uppercase tracking-wide block mb-1">Email</label>
-                    <input
-                      type="email"
-                      value={clientEmail}
-                      placeholder="client@company.com"
-                      onChange={(e) => setClientEmail(e.target.value)}
-                      className="w-full bg-[#141C2E] border border-white/20 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* STEP 2: ROUTE & DATES */}
-            {step === 2 && (
-              <div>
-                <h1 className="text-2xl font-bold text-white mb-2">Route & dates</h1>
-                <p className="text-sm text-gray-400 mb-6">
-                  Estimate uses no tokens. Submitting to desk uses 1 token per leg.
-                </p>
-
-                {/* Trip Type Selector */}
-                <div className="flex items-center gap-2 mb-6">
-                  {(["round_trip", "one_way", "multi_leg"] as const).map((t) => (
+        <div className={`${cardCls} p-7`}>
+          {/* ───────── 1 · Client ───────── */}
+          {step === 1 && (
+            <div>
+              <h2 className="text-[20px] font-bold text-white mt-0 mb-5">Who is the client?</h2>
+              <label className={labelCls}>Search my clients</label>
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Name, owner or email" className={`${fieldCls} py-3`} />
+              {clientError && <div className="text-[14px] text-[#F08C8C] mt-3">{clientError}</div>}
+              {clients && filteredClients.length > 0 && (
+                <div className="mt-4 border border-[#263345] rounded-xl overflow-hidden">
+                  {filteredClients.map((c) => (
                     <button
-                      key={t}
-                      onClick={() => setTripType(t)}
-                      className={`px-4 py-2 rounded text-xs font-semibold transition-colors ${
-                        tripType === t
-                          ? "bg-[#C9A052] text-[#0F1420]"
-                          : "bg-[#141C2E] text-gray-300 hover:text-white border border-white/10"
+                      key={c.id}
+                      type="button"
+                      onClick={() => setClient(c)}
+                      className={`w-full text-left px-5 py-3.5 border-b border-[#263345] last:border-0 transition-colors ${
+                        client?.id === c.id ? "bg-[#16233A]" : "hover:bg-white/[0.03]"
                       }`}
                     >
-                      {t === "round_trip" ? "Round trip" : t === "one_way" ? "One way" : "Multi-leg"}
+                      <span className="text-[18px] font-bold text-white">{c.name}</span>
+                      <span className="text-[15px] text-[#A8B3C2]">
+                        {" "}
+                        · {c.authorisedPerson} ({c.type === "Person" ? "client" : "owner"}){c.assistant ? ` · ${c.assistant} (assistant)` : ""} · {c.trips}{" "}
+                        trip{c.trips === 1 ? "" : "s"}
+                      </span>
                     </button>
                   ))}
                 </div>
-
-                {/* Leg 1 */}
-                <div className="bg-[#141C2E] border border-white/10 rounded-lg p-5 mb-4">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-sm font-semibold text-white">Leg 1</h3>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4 mb-4">
-                    <div>
-                      <label className="text-xs text-gray-400 uppercase tracking-wide block mb-1">From</label>
-                      <AirportSearchSelect
-                        value={leg1From}
-                        onChange={setLeg1From}
-                        placeholder="Search departure..."
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-gray-400 uppercase tracking-wide block mb-1">To</label>
-                      <AirportSearchSelect
-                        value={leg1To}
-                        onChange={setLeg1To}
-                        placeholder="Search destination..."
-                      />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-4 gap-3">
-                    <div>
-                      <label className="text-xs text-gray-400 uppercase tracking-wide block mb-1">Date</label>
-                      <input
-                        type="date"
-                        value={leg1Date}
-                        onChange={(e) => setLeg1Date(e.target.value)}
-                        className="w-full bg-[#0F1420] border border-white/20 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-gray-400 uppercase tracking-wide block mb-1">Depart (LT)</label>
-                      <input
-                        type="time"
-                        value={leg1Time}
-                        onChange={(e) => setLeg1Time(e.target.value)}
-                        className="w-full bg-[#0F1420] border border-white/20 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-gray-400 uppercase tracking-wide block mb-1">Passengers</label>
-                      <input
-                        type="number"
-                        value={leg1Pax}
-                        onChange={(e) => setLeg1Pax(Number(e.target.value))}
-                        min={1}
-                        max={20}
-                        className="w-full bg-[#0F1420] border border-white/20 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-gray-400 uppercase tracking-wide block mb-1">Flexible</label>
-                      <select
-                        value={leg1Flex}
-                        onChange={(e) => setLeg1Flex(e.target.value)}
-                        className="w-full bg-[#0F1420] border border-white/20 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
-                      >
-                        {FLEXIBLE_OPTIONS.map((o) => (
-                          <option key={o}>{o}</option>
-                        ))}
-                      </select>
-                    </div>
+              )}
+              {clients && filteredClients.length === 0 && (
+                <div className="mt-4 text-[15px] text-[#93A1B5]">{search ? "No client matches." : "You have no clients yet."}</div>
+              )}
+              <p className="text-[15px] text-[#A8B3C2] mt-4 mb-0">
+                Not in your list?{" "}
+                <button type="button" onClick={() => setAdding(true)} className="text-[#C9A24A] underline underline-offset-4">
+                  Add a new client
+                </button>
+                : company, authorised owner, assistant (optional), email, WhatsApp.
+              </p>
+              {client && (
+                <div className="mt-5 border border-[#263345] rounded-xl px-6 py-5 bg-[#0F1724]">
+                  <div className="text-[15px] text-[#A8B3C2]">Selected</div>
+                  <div className="text-[20px] font-bold text-white mt-2">{client.name}</div>
+                  <div className="text-[15px] text-[#A8B3C2] mt-2">
+                    Authorised owner: {client.authorisedPerson} · Documents to: {client.documentsTo}
                   </div>
                 </div>
+              )}
+            </div>
+          )}
 
-                {/* Leg 2 (Round trip return) */}
+          {/* ───────── 2 · Route & dates ───────── */}
+          {step === 2 && (
+            <div>
+              <h2 className="text-[20px] font-bold text-white mt-0 mb-5">Route &amp; dates</h2>
+              <div className="flex flex-wrap gap-3 mb-5">
+                {(
+                  [
+                    ["one_way", "One way"],
+                    ["round_trip", "Round trip"],
+                    ["multi_leg", "Multi-leg"]
+                  ] as [TripType, string][]
+                ).map(([k, label]) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => {
+                      setTripType(k);
+                      if (k === "multi_leg" && legs.length < 2) setLegs((prev) => [...prev, { ...emptyLeg(), from: prev[0].to }]);
+                      if (k !== "multi_leg") setLegs((prev) => [prev[0]]);
+                    }}
+                    className={pillCls(tripType === k)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="space-y-4">
+                {legs.map((l, i) => (
+                  <div key={i} className={boxCls}>
+                    <div className="flex items-center justify-between">
+                      <div className={legTitleCls}>Leg {i + 1}</div>
+                      {tripType === "multi_leg" && legs.length > 2 && (
+                        <button type="button" onClick={() => setLegs((prev) => prev.filter((_, j) => j !== i))} className="text-[13px] text-[#F08C8C]">
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className={labelCls}>From</label>
+                        <CuratorAirportInput value={l.from} onChange={(code) => updateLeg(i, { from: code })} />
+                      </div>
+                      <div>
+                        <label className={labelCls}>To</label>
+                        <CuratorAirportInput value={l.to} onChange={(code) => updateLeg(i, { to: code })} />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                      <div>
+                        <label className={labelCls}>Date</label>
+                        <input type="date" value={l.date} onChange={(e) => updateLeg(i, { date: e.target.value })} className={fieldCls} />
+                      </div>
+                      <div>
+                        <label className={labelCls}>Departure (local)</label>
+                        <input type="time" value={l.time} onChange={(e) => updateLeg(i, { time: e.target.value })} className={fieldCls} />
+                      </div>
+                      <div>
+                        <label className={labelCls}>Flexibility</label>
+                        <select value={l.flex} onChange={(e) => updateLeg(i, { flex: e.target.value })} className={fieldCls}>
+                          {FLEX.map((f) => (
+                            <option key={f}>{f}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                ))}
                 {tripType === "round_trip" && (
-                  <div className="bg-[#141C2E] border border-white/10 rounded-lg p-5 mb-4">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-sm font-semibold text-white">Leg 2 · Return</h3>
-                      <span className="text-xs text-gray-500">Departure locked to leg 1 arrival</span>
+                  <div className={boxCls}>
+                    <div className={legTitleCls}>
+                      Leg 2 · return · {legs[0].to || "—"} → {legs[0].from || "—"}
                     </div>
-                    <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div>
-                        <label className="text-xs text-gray-400 uppercase tracking-wide block mb-1">From</label>
-                        <div className="bg-[#0A0F1A] border border-white/10 rounded px-3 py-2.5 text-sm text-gray-400">
-                          {leg1To} · {getAirportLabel(leg1To)}
-                        </div>
+                        <label className={labelCls}>Date</label>
+                        <input type="date" value={ret.date} onChange={(e) => setRet({ ...ret, date: e.target.value })} className={fieldCls} />
                       </div>
                       <div>
-                        <label className="text-xs text-gray-400 uppercase tracking-wide block mb-1">To</label>
-                        <div className="bg-[#0A0F1A] border border-white/10 rounded px-3 py-2.5 text-sm text-gray-400">
-                          {leg1From} · {getAirportLabel(leg1From)}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-4 gap-3">
-                      <div>
-                        <label className="text-xs text-gray-400 uppercase tracking-wide block mb-1">Date</label>
-                        <input
-                          type="date"
-                          value={leg2Date}
-                          onChange={(e) => setLeg2Date(e.target.value)}
-                          className="w-full bg-[#0F1420] border border-white/20 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
-                        />
+                        <label className={labelCls}>Departure (local)</label>
+                        <input type="time" value={ret.time} onChange={(e) => setRet({ ...ret, time: e.target.value })} className={fieldCls} />
                       </div>
                       <div>
-                        <label className="text-xs text-gray-400 uppercase tracking-wide block mb-1">Depart (LT)</label>
-                        <input
-                          type="time"
-                          value={leg2Time}
-                          onChange={(e) => setLeg2Time(e.target.value)}
-                          className="w-full bg-[#0F1420] border border-white/20 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs text-gray-400 uppercase tracking-wide block mb-1">Passengers</label>
-                        <input
-                          type="number"
-                          value={leg2Pax}
-                          onChange={(e) => setLeg2Pax(Number(e.target.value))}
-                          min={1}
-                          max={20}
-                          className="w-full bg-[#0F1420] border border-white/20 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs text-gray-400 uppercase tracking-wide block mb-1">Flexible</label>
-                        <select
-                          value={leg2Flex}
-                          onChange={(e) => setLeg2Flex(e.target.value)}
-                          className="w-full bg-[#0F1420] border border-white/20 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
-                        >
-                          {FLEXIBLE_OPTIONS.map((o) => (
-                            <option key={o}>{o}</option>
+                        <label className={labelCls}>Flexibility</label>
+                        <select value={ret.flex} onChange={(e) => setRet({ ...ret, flex: e.target.value })} className={fieldCls}>
+                          {FLEX.map((f) => (
+                            <option key={f}>{f}</option>
                           ))}
                         </select>
                       </div>
                     </div>
                   </div>
                 )}
-
-                {/* Multi-leg */}
-                {tripType === "multi_leg" &&
-                  multiLegs.map((leg, idx) => (
-                    <div key={idx} className="bg-[#141C2E] border border-white/10 rounded-lg p-5 mb-4">
-                      <h3 className="text-sm font-semibold text-white mb-4">Leg {idx + 1}</h3>
-                      <div className="grid grid-cols-2 gap-4 mb-3">
-                        <div>
-                          <label className="text-xs text-gray-400 block mb-1">From</label>
-                          <AirportSearchSelect
-                            value={leg.originIcao}
-                            onChange={(code) => {
-                              const updated = [...multiLegs];
-                              updated[idx] = { ...updated[idx], originIcao: code };
-                              setMultiLegs(updated);
-                            }}
-                            placeholder="Origin..."
-                          />
-                        </div>
-                        <div>
-                          <label className="text-xs text-gray-400 block mb-1">To</label>
-                          <AirportSearchSelect
-                            value={leg.destIcao}
-                            onChange={(code) => {
-                              const updated = [...multiLegs];
-                              updated[idx] = { ...updated[idx], destIcao: code };
-                              setMultiLegs(updated);
-                            }}
-                            placeholder="Destination..."
-                          />
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="text-xs text-gray-400 block mb-1">Date</label>
-                          <input
-                            type="date"
-                            value={leg.flightDate}
-                            onChange={(e) => {
-                              const u = [...multiLegs];
-                              u[idx] = { ...u[idx], flightDate: e.target.value };
-                              setMultiLegs(u);
-                            }}
-                            className="w-full bg-[#0F1420] border border-white/20 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-xs text-gray-400 block mb-1">Depart (LT)</label>
-                          <input
-                            type="time"
-                            value={leg.departureTime || ""}
-                            onChange={(e) => {
-                              const u = [...multiLegs];
-                              u[idx] = { ...u[idx], departureTime: e.target.value };
-                              setMultiLegs(u);
-                            }}
-                            className="w-full bg-[#0F1420] border border-white/20 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-
                 {tripType === "multi_leg" && (
-                  <button
-                    onClick={() =>
-                      setMultiLegs([
-                        ...multiLegs,
-                        { originIcao: "", destIcao: "", flightDate: leg1Date, departureTime: "10:00" },
-                      ])
-                    }
-                    className="text-sm text-[#C9A052] hover:underline"
-                  >
-                    + Add leg
-                  </button>
+                  <GhostButton onClick={() => setLegs((prev) => [...prev, { ...emptyLeg(), from: prev[prev.length - 1].to }])}>+ Add leg</GhostButton>
                 )}
               </div>
-            )}
+              <p className="text-[15px] text-[#A8B3C2] mt-5 mb-0">Each leg uses 1 token when the request is sent.</p>
+            </div>
+          )}
 
-            {/* STEP 3: AIRCRAFT */}
-            {step === 3 && (
-              <div>
-                <h1 className="text-2xl font-bold text-white mb-6">Which aircraft category?</h1>
-                <div className="grid grid-cols-2 gap-3 max-w-2xl">
-                  {["Very Light Jet", "Light Jet", "Midsize Jet", "Super Midsize Jet", "Heavy Jet", "Ultra Long Range"].map(
-                    (cat) => (
-                      <button
-                        key={cat}
-                        onClick={() => setCategoryPreference(cat)}
-                        className={`p-4 rounded-lg border text-left transition-colors ${
-                          categoryPreference === cat
-                            ? "border-[#C9A052] bg-[#1A2338] text-white"
-                            : "border-white/10 bg-[#141C2E] text-gray-300 hover:border-white/30"
-                        }`}
-                      >
-                        <p className="font-semibold text-sm">{cat}</p>
-                      </button>
-                    )
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* STEP 4: PASSENGERS, LUGGAGE, PETS (Screen 5) */}
-            {step === 4 && (
-              <div>
-                <h1 className="text-2xl font-bold text-white mb-6">Passengers, luggage, pets</h1>
-                <div className="space-y-6 max-w-xl">
-                  <div>
-                    <label className="text-xs text-gray-400 uppercase tracking-wide block mb-1">Suitcases</label>
-                    <input
-                      type="number"
-                      value={suitcases}
-                      onChange={(e) => setSuitcases(Number(e.target.value))}
-                      min={0}
-                      max={50}
-                      className="w-full bg-[#141C2E] border border-white/20 rounded px-3 py-2.5 text-sm text-white focus:outline-none focus:border-[#C9A052]"
-                    />
-                  </div>
-
-                  {/* Pets Subsection (Screen 5) */}
-                  <div className="bg-[#141C2E] border border-white/10 rounded-lg p-5 space-y-4">
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="checkbox"
-                        checked={hasPets}
-                        onChange={(e) => setHasPets(e.target.checked)}
-                        id="pets"
-                        className="w-4 h-4 accent-[#C9A052] rounded"
-                      />
-                      <label htmlFor="pets" className="text-sm font-semibold text-white cursor-pointer">
-                        Travelling with pets
-                      </label>
-                    </div>
-
-                    {hasPets && (
-                      <div className="pt-3 border-t border-white/10 space-y-4">
-                        <p className="text-xs text-[#C9A052] font-medium">Pet Details (In-Cabin & Manifest Requirements)</p>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                          <div>
-                            <label className="text-xs text-gray-400 block mb-1">Number of pets</label>
-                            <input
-                              type="number"
-                              min={1}
-                              value={petCount}
-                              onChange={(e) => setPetCount(Math.max(1, Number(e.target.value)))}
-                              className="w-full bg-[#0F1420] border border-white/20 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-xs text-gray-400 block mb-1">Pet weight (kg)</label>
-                            <input
-                              type="number"
-                              min={1}
-                              value={petWeight}
-                              onChange={(e) => setPetWeight(Math.max(1, Number(e.target.value)))}
-                              className="w-full bg-[#0F1420] border border-white/20 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-xs text-gray-400 block mb-1">Breed / Animal type</label>
-                            <input
-                              type="text"
-                              value={petBreed}
-                              onChange={(e) => setPetBreed(e.target.value)}
-                              placeholder="e.g. French Bulldog"
-                              className="w-full bg-[#0F1420] border border-white/20 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
-                            />
-                          </div>
-                        </div>
-                        <div>
-                          <label className="text-xs text-gray-400 block mb-1">Special pet instructions / notes</label>
-                          <input
-                            type="text"
-                            value={petNotes}
-                            onChange={(e) => setPetNotes(e.target.value)}
-                            placeholder="e.g. Soft carrier under 8kg, pet passport up to date"
-                            className="w-full bg-[#0F1420] border border-white/20 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* STEP 5: SERVICES - GROUND & HELI TRANSPORTATION (Screen 6) */}
-            {step === 5 && (
-              <div>
-                <h1 className="text-2xl font-bold text-white mb-6">Services</h1>
-                <div className="space-y-6 max-w-2xl">
-                  {/* GROUND TRANSPORTATION (Screen 6) */}
-                  <div className="bg-[#141C2E] border border-white/10 rounded-lg p-5 space-y-4">
-                    <h3 className="text-xs font-bold text-[#C9A052] uppercase tracking-wider">GROUND TRANSPORTATION</h3>
-                    <p className="text-sm font-medium text-white">Would you like to add ground transportation?</p>
-                    <div className="flex items-center gap-6">
-                      <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-200">
-                        <input
-                          type="radio"
-                          name="groundTransportChoice"
-                          checked={groundRequired}
-                          onChange={() => setGroundRequired(true)}
-                          className="accent-[#C9A052]"
-                        />
-                        <span>Yes</span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-200">
-                        <input
-                          type="radio"
-                          name="groundTransportChoice"
-                          checked={!groundRequired}
-                          onChange={() => setGroundRequired(false)}
-                          className="accent-[#C9A052]"
-                        />
-                        <span>No</span>
-                      </label>
-                    </div>
-
-                    {groundRequired && (
-                      <div className="pt-4 border-t border-white/10 space-y-5">
-                        <div>
-                          <label className="text-xs text-gray-400 font-semibold uppercase tracking-wide block mb-2">
-                            Transfer Requirements · Flight Leg
-                          </label>
-                          <div className="flex flex-wrap items-center gap-3 text-sm text-gray-200">
-                            {["Leg 1", "Leg 2", "Leg 3"].map((legOption) => (
-                              <label key={legOption} className="flex items-center gap-2 cursor-pointer bg-white/5 px-2.5 py-1 rounded border border-white/10 hover:border-[#C9A052]/50 transition-colors">
-                                <input
-                                  type="checkbox"
-                                  checked={groundLegs.includes(legOption)}
-                                  onChange={(e) => {
-                                    if (e.target.checked) setGroundLegs([...groundLegs, legOption]);
-                                    else setGroundLegs(groundLegs.filter((l) => l !== legOption));
-                                  }}
-                                  className="accent-[#C9A052] rounded"
-                                />
-                                <span className="text-xs">{legOption}</span>
-                              </label>
-                            ))}
-
-                            {/* Additional legs dynamically added */}
-                            {groundLegs
-                              .filter((l) => !["Leg 1", "Leg 2", "Leg 3"].includes(l))
-                              .map((customLeg) => (
-                                <span
-                                  key={customLeg}
-                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#C9A052]/20 border border-[#C9A052]/40 text-xs text-[#C9A052]"
-                                >
-                                  <span>{customLeg}</span>
-                                  <button
-                                    type="button"
-                                    onClick={() => setGroundLegs(groundLegs.filter((l) => l !== customLeg))}
-                                    className="hover:text-white"
-                                  >
-                                    ×
-                                  </button>
-                                </span>
-                              ))}
-
-                            {/* Dropdown Menu for Additional Leg */}
-                            <div className="flex items-center gap-1.5">
-                              <select
-                                value=""
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  if (val && !groundLegs.includes(val)) {
-                                    setGroundLegs([...groundLegs, val]);
-                                  }
-                                }}
-                                className="bg-[#0F1420] border border-white/20 rounded px-2.5 py-1 text-xs text-[#C9A052] focus:outline-none focus:border-[#C9A052] cursor-pointer"
-                              >
-                                <option value="" disabled>+ Add Additional Leg (Dropdown)...</option>
-                                <option value="Leg 2">Leg 2 (Return / Waypoint)</option>
-                                <option value="Leg 3">Leg 3 (Additional Leg)</option>
-                                <option value="Leg 4">Leg 4 (Subsequent Leg)</option>
-                                <option value="Leg 5">Leg 5 (Subsequent Leg)</option>
-                                <option value="All Legs">All Flight Legs</option>
-                              </select>
-                            </div>
-
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs text-gray-400">Other:</span>
-                              <input
-                                type="text"
-                                value={groundLegOther}
-                                onChange={(e) => setGroundLegOther(e.target.value)}
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter" && groundLegOther.trim()) {
-                                    e.preventDefault();
-                                    if (!groundLegs.includes(groundLegOther.trim())) {
-                                      setGroundLegs([...groundLegs, groundLegOther.trim()]);
-                                      setGroundLegOther("");
-                                    }
-                                  }
-                                }}
-                                placeholder="Custom leg..."
-                                className="bg-[#0F1420] border border-white/20 rounded px-2.5 py-1 text-xs text-white focus:outline-none focus:border-[#C9A052] w-28"
-                              />
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* 1. On Arrival */}
-                        <div className="bg-[#0F1420] border border-white/10 rounded-lg p-4 space-y-3">
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-bold text-white">1. On Arrival</span>
-                            <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={groundArrivalRequired}
-                                onChange={(e) => setGroundArrivalRequired(e.target.checked)}
-                                className="accent-[#C9A052] rounded"
-                              />
-                              <span>Required</span>
-                            </label>
-                          </div>
-                          {groundArrivalRequired && (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                              <div>
-                                <label className="text-xs text-gray-400 block mb-1">Drop-off Location</label>
-                                <input
-                                  type="text"
-                                  value={groundArrivalDropoff}
-                                  onChange={(e) => setGroundArrivalDropoff(e.target.value)}
-                                  placeholder="Hotel, villa, or address"
-                                  className="w-full bg-[#141C2E] border border-white/20 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
-                                />
-                              </div>
-                              <div>
-                                <label className="text-xs text-gray-400 block mb-1">Vehicle Preference</label>
-                                <div className="grid grid-cols-4 gap-1.5">
-                                  {(["Sedan", "SUV", "Van", "Luxury"] as const).map((v) => (
-                                    <button
-                                      key={v}
-                                      type="button"
-                                      onClick={() => setGroundArrivalVehicle(v)}
-                                      className={`py-1.5 px-2 text-xs font-medium rounded border transition-colors ${
-                                        groundArrivalVehicle === v
-                                          ? "bg-[#C9A052] text-[#0F1420] border-[#C9A052] font-bold"
-                                          : "bg-[#141C2E] text-gray-300 border-white/10 hover:border-white/30"
-                                      }`}
-                                    >
-                                      {v}
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* 2. On Departure */}
-                        <div className="bg-[#0F1420] border border-white/10 rounded-lg p-4 space-y-3">
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-bold text-white">2. On Departure</span>
-                            <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={groundDepartureRequired}
-                                onChange={(e) => setGroundDepartureRequired(e.target.checked)}
-                                className="accent-[#C9A052] rounded"
-                              />
-                              <span>Required</span>
-                            </label>
-                          </div>
-                          {groundDepartureRequired && (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                              <div>
-                                <label className="text-xs text-gray-400 block mb-1">Pick-up Location</label>
-                                <input
-                                  type="text"
-                                  value={groundDeparturePickup}
-                                  onChange={(e) => setGroundDeparturePickup(e.target.value)}
-                                  placeholder="Origin address or hotel"
-                                  className="w-full bg-[#141C2E] border border-white/20 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
-                                />
-                              </div>
-                              <div>
-                                <label className="text-xs text-gray-400 block mb-1">Vehicle Preference</label>
-                                <div className="grid grid-cols-4 gap-1.5">
-                                  {(["Sedan", "SUV", "Van", "Luxury"] as const).map((v) => (
-                                    <button
-                                      key={v}
-                                      type="button"
-                                      onClick={() => setGroundDepartureVehicle(v)}
-                                      className={`py-1.5 px-2 text-xs font-medium rounded border transition-colors ${
-                                        groundDepartureVehicle === v
-                                          ? "bg-[#C9A052] text-[#0F1420] border-[#C9A052] font-bold"
-                                          : "bg-[#141C2E] text-gray-300 border-white/10 hover:border-white/30"
-                                      }`}
-                                    >
-                                      {v}
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* 3. Additional Requirements */}
-                        <div className="bg-[#0F1420] border border-white/10 rounded-lg p-4 space-y-3">
-                          <span className="text-sm font-bold text-white block">3. Additional Requirements</span>
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                            <div>
-                              <label className="text-xs text-gray-400 block mb-1">Number of Passengers</label>
-                              <input
-                                type="number"
-                                min={1}
-                                value={groundPassengers}
-                                onChange={(e) => setGroundPassengers(Number(e.target.value))}
-                                className="w-full bg-[#141C2E] border border-white/20 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
-                              />
-                            </div>
-                            <div className="sm:col-span-2">
-                              <label className="text-xs text-gray-400 block mb-1">Special Requests / Instructions</label>
-                              <input
-                                type="text"
-                                value={groundInstructions}
-                                onChange={(e) => setGroundInstructions(e.target.value)}
-                                placeholder="Child seats, meet & greet at luggage carousel..."
-                                className="w-full bg-[#141C2E] border border-white/20 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
-                              />
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Additional transfers */}
-                        {extraGroundTransfers.map((xfr, i) => (
-                          <div key={i} className="bg-[#0F1420] border border-white/10 rounded-lg p-3 text-xs space-y-2">
-                            <div className="flex justify-between items-center">
-                              <span className="font-semibold text-[#C9A052]">Additional Transfer #{i + 2}</span>
-                              <button
-                                type="button"
-                                onClick={() => setExtraGroundTransfers(extraGroundTransfers.filter((_, idx) => idx !== i))}
-                                className="text-red-400 hover:text-red-300"
-                              >
-                                Remove
-                              </button>
-                            </div>
-                            <div className="grid grid-cols-2 gap-2">
-                              <input
-                                type="text"
-                                placeholder="Route / Pickup / Dropoff"
-                                value={xfr.route}
-                                onChange={(e) => {
-                                  const u = [...extraGroundTransfers];
-                                  u[i].route = e.target.value;
-                                  setExtraGroundTransfers(u);
-                                }}
-                                className="bg-[#141C2E] border border-white/20 rounded px-2.5 py-1.5 text-xs text-white"
-                              />
-                              <input
-                                type="text"
-                                placeholder="Vehicle & Pax notes"
-                                value={xfr.notes}
-                                onChange={(e) => {
-                                  const u = [...extraGroundTransfers];
-                                  u[i].notes = e.target.value;
-                                  setExtraGroundTransfers(u);
-                                }}
-                                className="bg-[#141C2E] border border-white/20 rounded px-2.5 py-1.5 text-xs text-white"
-                              />
-                            </div>
-                          </div>
-                        ))}
-
-                        <button
-                          type="button"
-                          onClick={() => setExtraGroundTransfers([...extraGroundTransfers, { route: "", notes: "" }])}
-                          className="text-xs text-[#C9A052] hover:underline font-semibold flex items-center gap-1"
-                        >
-                          + Add Another Transfer
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* HELICOPTER TRANSFER (Screen 6) */}
-                  <div className="bg-[#141C2E] border border-white/10 rounded-lg p-5 space-y-4">
-                    <h3 className="text-xs font-bold text-[#C9A052] uppercase tracking-wider">HELICOPTER TRANSFER</h3>
-                    <p className="text-sm font-medium text-white">Would you like to add helicopter transfer?</p>
-                    <div className="flex items-center gap-6">
-                      <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-200">
-                        <input
-                          type="radio"
-                          name="heliTransportChoice"
-                          checked={heliRequired}
-                          onChange={() => setHeliRequired(true)}
-                          className="accent-[#C9A052]"
-                        />
-                        <span>Yes</span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-200">
-                        <input
-                          type="radio"
-                          name="heliTransportChoice"
-                          checked={!heliRequired}
-                          onChange={() => setHeliRequired(false)}
-                          className="accent-[#C9A052]"
-                        />
-                        <span>No</span>
-                      </label>
-                    </div>
-
-                    {heliRequired && (
-                      <div className="pt-4 border-t border-white/10 space-y-5">
-                        <div>
-                          <label className="text-xs text-gray-400 font-semibold uppercase tracking-wide block mb-2">
-                            Transfer Requirements · Flight Leg
-                          </label>
-                          <div className="flex flex-wrap items-center gap-3 text-sm text-gray-200">
-                            {["Leg 1", "Leg 2", "Leg 3"].map((legOption) => (
-                              <label key={legOption} className="flex items-center gap-2 cursor-pointer bg-white/5 px-2.5 py-1 rounded border border-white/10 hover:border-[#C9A052]/50 transition-colors">
-                                <input
-                                  type="checkbox"
-                                  checked={heliLegs.includes(legOption)}
-                                  onChange={(e) => {
-                                    if (e.target.checked) setHeliLegs([...heliLegs, legOption]);
-                                    else setHeliLegs(heliLegs.filter((l) => l !== legOption));
-                                  }}
-                                  className="accent-[#C9A052] rounded"
-                                />
-                                <span className="text-xs">{legOption}</span>
-                              </label>
-                            ))}
-
-                            {/* Additional legs dynamically added */}
-                            {heliLegs
-                              .filter((l) => !["Leg 1", "Leg 2", "Leg 3"].includes(l))
-                              .map((customLeg) => (
-                                <span
-                                  key={customLeg}
-                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#C9A052]/20 border border-[#C9A052]/40 text-xs text-[#C9A052]"
-                                >
-                                  <span>{customLeg}</span>
-                                  <button
-                                    type="button"
-                                    onClick={() => setHeliLegs(heliLegs.filter((l) => l !== customLeg))}
-                                    className="hover:text-white"
-                                  >
-                                    ×
-                                  </button>
-                                </span>
-                              ))}
-
-                            {/* Dropdown Menu for Additional Leg */}
-                            <div className="flex items-center gap-1.5">
-                              <select
-                                value=""
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  if (val && !heliLegs.includes(val)) {
-                                    setHeliLegs([...heliLegs, val]);
-                                  }
-                                }}
-                                className="bg-[#0F1420] border border-white/20 rounded px-2.5 py-1 text-xs text-[#C9A052] focus:outline-none focus:border-[#C9A052] cursor-pointer"
-                              >
-                                <option value="" disabled>+ Add Additional Leg (Dropdown)...</option>
-                                <option value="Leg 2">Leg 2 (Return / Waypoint)</option>
-                                <option value="Leg 3">Leg 3 (Additional Leg)</option>
-                                <option value="Leg 4">Leg 4 (Subsequent Leg)</option>
-                                <option value="Leg 5">Leg 5 (Subsequent Leg)</option>
-                                <option value="All Legs">All Flight Legs</option>
-                              </select>
-                            </div>
-
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs text-gray-400">Other:</span>
-                              <input
-                                type="text"
-                                value={heliLegOther}
-                                onChange={(e) => setHeliLegOther(e.target.value)}
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter" && heliLegOther.trim()) {
-                                    e.preventDefault();
-                                    if (!heliLegs.includes(heliLegOther.trim())) {
-                                      setHeliLegs([...heliLegs, heliLegOther.trim()]);
-                                      setHeliLegOther("");
-                                    }
-                                  }
-                                }}
-                                placeholder="Custom leg..."
-                                className="bg-[#0F1420] border border-white/20 rounded px-2.5 py-1 text-xs text-white focus:outline-none focus:border-[#C9A052] w-28"
-                              />
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* 1. On Arrival Heliport */}
-                        <div className="bg-[#0F1420] border border-white/10 rounded-lg p-4 space-y-3">
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-bold text-white">1. On Arrival Heliport</span>
-                            <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={heliArrivalRequired}
-                                onChange={(e) => setHeliArrivalRequired(e.target.checked)}
-                                className="accent-[#C9A052] rounded"
-                              />
-                              <span>Required</span>
-                            </label>
-                          </div>
-                          {heliArrivalRequired && (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                              <div>
-                                <label className="text-xs text-gray-400 block mb-1">Drop-off Heliport / Destination</label>
-                                <input
-                                  type="text"
-                                  value={heliArrivalDropoff}
-                                  onChange={(e) => setHeliArrivalDropoff(e.target.value)}
-                                  placeholder="e.g. Monaco Heliport (LNMC) or private pad"
-                                  className="w-full bg-[#141C2E] border border-white/20 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
-                                />
-                              </div>
-                              <div>
-                                <label className="text-xs text-gray-400 block mb-1">Helicopter Type / Preference</label>
-                                <select
-                                  value={heliArrivalPreference}
-                                  onChange={(e) => setHeliArrivalPreference(e.target.value)}
-                                  className="w-full bg-[#141C2E] border border-white/20 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
-                                >
-                                  <option>Twin Engine VIP (AW139 / EC155)</option>
-                                  <option>Single Engine (Airbus H125 / EC130)</option>
-                                  <option>Light Twin (Airbus H135 / H145)</option>
-                                  <option>Luxury Custom Shuttle</option>
-                                </select>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* 2. On Departure Heliport */}
-                        <div className="bg-[#0F1420] border border-white/10 rounded-lg p-4 space-y-3">
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-bold text-white">2. On Departure Heliport</span>
-                            <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={heliDepartureRequired}
-                                onChange={(e) => setHeliDepartureRequired(e.target.checked)}
-                                className="accent-[#C9A052] rounded"
-                              />
-                              <span>Required</span>
-                            </label>
-                          </div>
-                          {heliDepartureRequired && (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                              <div>
-                                <label className="text-xs text-gray-400 block mb-1">Pick-up Heliport / Location</label>
-                                <input
-                                  type="text"
-                                  value={heliDeparturePickup}
-                                  onChange={(e) => setHeliDeparturePickup(e.target.value)}
-                                  placeholder="e.g. Battersea Heliport (EGLW)"
-                                  className="w-full bg-[#141C2E] border border-white/20 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
-                                />
-                              </div>
-                              <div>
-                                <label className="text-xs text-gray-400 block mb-1">Helicopter Type / Preference</label>
-                                <select
-                                  value={heliDeparturePreference}
-                                  onChange={(e) => setHeliDeparturePreference(e.target.value)}
-                                  className="w-full bg-[#141C2E] border border-white/20 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
-                                >
-                                  <option>Twin Engine VIP (AW139 / EC155)</option>
-                                  <option>Single Engine (Airbus H125 / EC130)</option>
-                                  <option>Light Twin (Airbus H135 / H145)</option>
-                                  <option>Luxury Custom Shuttle</option>
-                                </select>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* 3. Additional Requirements */}
-                        <div className="bg-[#0F1420] border border-white/10 rounded-lg p-4 space-y-3">
-                          <span className="text-sm font-bold text-white block">3. Additional Requirements</span>
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                            <div>
-                              <label className="text-xs text-gray-400 block mb-1">Number of Passengers</label>
-                              <input
-                                type="number"
-                                min={1}
-                                value={heliPassengers}
-                                onChange={(e) => setHeliPassengers(Number(e.target.value))}
-                                className="w-full bg-[#141C2E] border border-white/20 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
-                              />
-                            </div>
-                            <div className="sm:col-span-2">
-                              <label className="text-xs text-gray-400 block mb-1">Special Requests / Helipad Instructions</label>
-                              <input
-                                type="text"
-                                value={heliInstructions}
-                                onChange={(e) => setHeliInstructions(e.target.value)}
-                                placeholder="Luggage volume restrictions, yacht helipad landing permit..."
-                                className="w-full bg-[#141C2E] border border-white/20 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#C9A052]"
-                              />
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Additional heli transfers */}
-                        {extraHeliTransfers.map((hx, i) => (
-                          <div key={i} className="bg-[#0F1420] border border-white/10 rounded-lg p-3 text-xs space-y-2">
-                            <div className="flex justify-between items-center">
-                              <span className="font-semibold text-[#C9A052]">Additional Heli Transfer #{i + 2}</span>
-                              <button
-                                type="button"
-                                onClick={() => setExtraHeliTransfers(extraHeliTransfers.filter((_, idx) => idx !== i))}
-                                className="text-red-400 hover:text-red-300"
-                              >
-                                Remove
-                              </button>
-                            </div>
-                            <div className="grid grid-cols-2 gap-2">
-                              <input
-                                type="text"
-                                placeholder="Heliport route / Coordinates"
-                                value={hx.route}
-                                onChange={(e) => {
-                                  const u = [...extraHeliTransfers];
-                                  u[i].route = e.target.value;
-                                  setExtraHeliTransfers(u);
-                                }}
-                                className="bg-[#141C2E] border border-white/20 rounded px-2.5 py-1.5 text-xs text-white"
-                              />
-                              <input
-                                type="text"
-                                placeholder="Heli type & instructions"
-                                value={hx.notes}
-                                onChange={(e) => {
-                                  const u = [...extraHeliTransfers];
-                                  u[i].notes = e.target.value;
-                                  setExtraHeliTransfers(u);
-                                }}
-                                className="bg-[#141C2E] border border-white/20 rounded px-2.5 py-1.5 text-xs text-white"
-                              />
-                            </div>
-                          </div>
-                        ))}
-
-                        <button
-                          type="button"
-                          onClick={() => setExtraHeliTransfers([...extraHeliTransfers, { route: "", notes: "" }])}
-                          className="text-xs text-[#C9A052] hover:underline font-semibold flex items-center gap-1"
-                        >
-                          + Add Another Heli Transfer
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* CATERING & SPECIAL REQUESTS */}
-                  <div className="bg-[#141C2E] border border-white/10 rounded-lg p-5 space-y-3">
-                    <label className="text-xs text-gray-400 uppercase tracking-wide block mb-1">
-                      Catering / Special In-Flight Requests
-                    </label>
-                    <textarea
-                      value={catering}
-                      onChange={(e) => setCatering(e.target.value)}
-                      className="w-full bg-[#0F1420] border border-white/20 rounded px-3 py-2.5 text-sm text-white focus:outline-none focus:border-[#C9A052] h-24 resize-none"
-                      placeholder="VIP catering menu, Halal/Kosher, dietary allergies, champagne preference..."
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* STEP 6: MARGIN & SEND */}
-            {step === 6 && (
-              <div>
-                <h1 className="text-2xl font-bold text-white mb-6">Margin & send</h1>
-                <div className="space-y-4 max-w-md">
-                  <div>
-                    <label className="text-xs text-gray-400 uppercase tracking-wide block mb-1">Your margin (%)</label>
-                    <input
-                      type="number"
-                      value={agentMarginPct}
-                      onChange={(e) => setAgentMarginPct(Number(e.target.value))}
-                      min={0}
-                      max={30}
-                      step={0.5}
-                      className="w-full bg-[#141C2E] border border-white/20 rounded px-3 py-2.5 text-sm text-white focus:outline-none focus:border-[#C9A052]"
-                    />
-                    <p className="text-xs text-gray-500 mt-1">
-                      This margin is added on top of the net price. It is never shown to the client.
-                    </p>
-                  </div>
-                  <div className="bg-[#141C2E] border border-white/10 rounded-lg p-4">
-                    <p className="text-sm text-gray-300 mb-2">
-                      Submitting this request costs <span className="text-[#C9A052] font-bold">1 token</span>.
-                    </p>
-                    <p className="text-xs text-gray-500">Current balance: {tokenBalance} tokens</p>
-                  </div>
-                  {errorMsg && <p className="text-xs text-red-400">{errorMsg}</p>}
-                  <button
-                    onClick={handleSubmit}
-                    disabled={isSubmitting || tokenBalance < 1}
-                    className="w-full py-3 bg-[#C9A052] text-[#0F1420] font-bold rounded hover:bg-[#B88F42] disabled:opacity-50 transition-colors shadow-lg"
-                  >
-                    {isSubmitting ? "Submitting..." : "Submit request · 1 token"}
+          {/* ───────── 3 · Aircraft ───────── */}
+          {step === 3 && (
+            <div>
+              <h2 className="text-[20px] font-bold text-white mt-0 mb-5">Aircraft</h2>
+              {flightLegs.length > 1 && (
+                <div className="flex flex-wrap gap-3 mb-5">
+                  <button type="button" onClick={() => setAircraftMode("same")} className={pillCls(aircraftMode === "same")}>
+                    Same aircraft on all legs
+                  </button>
+                  <button type="button" onClick={() => setAircraftMode("per_leg")} className={pillCls(aircraftMode === "per_leg")}>
+                    Different aircraft per leg
                   </button>
                 </div>
-              </div>
-            )}
-
-            {/* Back / Next */}
-            <div className="flex items-center gap-3 mt-8">
-              {canGoPrev && (
-                <button
-                  onClick={() => setStep(step - 1)}
-                  className="px-5 py-2.5 bg-[#141C2E] border border-white/20 text-white text-sm font-medium rounded hover:bg-[#1A2338] transition-colors"
-                >
-                  Back
-                </button>
               )}
-              {canGoNext && (
-                <button
-                  onClick={() => setStep(step + 1)}
-                  className="px-5 py-2.5 bg-[#C9A052] text-[#0F1420] text-sm font-bold rounded hover:bg-[#B88F42] transition-colors"
-                >
-                  Next: {STEPS[step]?.label || "continue"}
-                </button>
+              <div className="space-y-4">
+                {(aircraftMode === "same" ? [0] : flightLegs.map((_, i) => i)).map((i) => {
+                  const a = aircraft[i] || { category: "", model: "", why: "" };
+                  const l = flightLegs[i];
+                  return (
+                    <div key={i} className={boxCls}>
+                      <div className={legTitleCls}>
+                        {aircraftMode === "same"
+                          ? flightLegs.length > 1
+                            ? `All ${flightLegs.length} legs`
+                            : `Leg 1 · ${l.from || "—"} → ${l.to || "—"}${l.date ? ` · ${dayShort(l.date)}` : ""}`
+                          : `Leg ${i + 1} · ${l.from || "—"} → ${l.to || "—"}${l.date ? ` · ${dayShort(l.date)}` : ""}`}
+                      </div>
+                      <div className="flex flex-wrap gap-2.5 mb-4">
+                        {CATEGORIES.map((c) => (
+                          <button key={c} type="button" onClick={() => updateAircraft(i, { category: c })} className={pillCls(a.category === c)}>
+                            {c}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className={labelCls}>Preferred model (optional)</label>
+                          <input value={a.model} onChange={(e) => updateAircraft(i, { model: e.target.value })} className={fieldCls} />
+                        </div>
+                        <div>
+                          <label className={labelCls}>Why (optional)</label>
+                          <input value={a.why} onChange={(e) => updateAircraft(i, { why: e.target.value })} className={fieldCls} />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="text-[15px] text-[#A8B3C2] mt-5 mb-0">
+                The desk sees each leg&apos;s wish in the quote builder, already filled in, and can quote one aircraft per leg. The quote PDF shows the aircraft
+                and photos for each leg.
+              </p>
+            </div>
+          )}
+
+          {/* ───────── 4 · Passengers, luggage, pets ───────── */}
+          {step === 4 && (
+            <div>
+              <h2 className="text-[20px] font-bold text-white mt-0 mb-5">Passengers, luggage, pets</h2>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className={labelCls}>Passengers</label>
+                  <input type="number" min={1} value={passengers} onChange={(e) => setPassengers(e.target.value)} className={`${fieldCls} py-3`} />
+                </div>
+                <div>
+                  <label className={labelCls}>Suitcases</label>
+                  <input type="number" min={0} value={suitcases} onChange={(e) => setSuitcases(e.target.value)} className={`${fieldCls} py-3`} />
+                </div>
+                <div>
+                  <label className={labelCls}>Oversize items</label>
+                  <input value={oversize} onChange={(e) => setOversize(e.target.value)} placeholder="e.g. Golf bag ×1" className={`${fieldCls} py-3`} />
+                </div>
+              </div>
+              <div className="mt-5">
+                <Check checked={hasPets} onChange={setHasPets}>
+                  Travelling with pets
+                </Check>
+              </div>
+              {hasPets && (
+                <div className={`${boxCls} mt-4`}>
+                  <div className="space-y-4">
+                    {pets.map((p, i) => {
+                      const set = (patch: Partial<Pet>) => setPets((prev) => prev.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+                      return (
+                        <div key={i} className="grid grid-cols-[28px_1fr] gap-3 items-end">
+                          <div className="text-[16px] font-bold text-white pb-3">{i + 1}</div>
+                          <div className="grid grid-cols-2 md:grid-cols-[1fr_1fr_1fr_0.5fr_1fr_auto] gap-3 items-end">
+                            <div>
+                              <label className={labelCls}>Name (optional)</label>
+                              <input value={p.name} onChange={(e) => set({ name: e.target.value })} className={fieldCls} />
+                            </div>
+                            <div>
+                              <label className={labelCls}>Species</label>
+                              <select value={p.species} onChange={(e) => set({ species: e.target.value })} className={fieldCls}>
+                                {SPECIES.map((s) => (
+                                  <option key={s}>{s}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className={labelCls}>Breed</label>
+                              <input value={p.breed} onChange={(e) => set({ breed: e.target.value })} className={fieldCls} />
+                            </div>
+                            <div>
+                              <label className={labelCls}>Weight kg</label>
+                              <input type="number" min={0} value={p.weightKg} onChange={(e) => set({ weightKg: e.target.value })} className={fieldCls} />
+                            </div>
+                            <div>
+                              <label className={labelCls}>Travels</label>
+                              <select value={p.travels} onChange={(e) => set({ travels: e.target.value })} className={fieldCls}>
+                                {TRAVELS.map((s) => (
+                                  <option key={s}>{s}</option>
+                                ))}
+                              </select>
+                            </div>
+                            {pets.length > 1 ? (
+                              <button type="button" onClick={() => setPets((prev) => prev.filter((_, j) => j !== i))} className="text-[13px] text-[#F08C8C] pb-3">
+                                Remove
+                              </button>
+                            ) : (
+                              <span />
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <GhostButton className="mt-4" onClick={() => setPets((prev) => [...prev, { name: "", species: "Dog", breed: "", weightKg: "", travels: "In cabin" }])}>
+                    + Add pet
+                  </GhostButton>
+                </div>
               )}
             </div>
-          </div>
+          )}
+
+          {/* ───────── 5 · Services ───────── */}
+          {step === 5 && (
+            <div>
+              <h2 className="text-[20px] font-bold text-white mt-0 mb-5">Services</h2>
+
+              <div className={`${boxCls} mb-5`}>
+                <h3 className="text-[18px] font-bold text-white mt-0 mb-4">Ground transportation</h3>
+                <div className="flex flex-wrap gap-6 mb-4">
+                  {flightLegs.map((_, i) => (
+                    <Check
+                      key={i}
+                      checked={Boolean(ground[i]?.selected)}
+                      onChange={(v) => {
+                        updateGround(i, { selected: v });
+                        if (v) setGroundOpen(i);
+                      }}
+                    >
+                      Leg {i + 1}
+                    </Check>
+                  ))}
+                </div>
+                <div className="space-y-3">
+                  {ground.map((g, i) =>
+                    !g.selected ? null : groundOpen !== i ? (
+                      <button key={i} type="button" onClick={() => setGroundOpen(i)} className="block text-left text-[15px] text-[#A8B3C2] hover:text-white">
+                        {legHead(i)} — {g.arrival.enabled || g.departure.enabled ? "same checklist" : "no transfer chosen"} (collapsed)
+                      </button>
+                    ) : (
+                      <div key={i} className={boxCls}>
+                        <div className={legTitleCls}>{legHead(i)}</div>
+                        {(["arrival", "departure"] as const).map((k, n) => (
+                          <div key={k} className="mb-4">
+                            <Check checked={g[k].enabled} onChange={(v) => updateGround(i, { [k]: { ...g[k], enabled: v } } as Partial<GroundLeg>)}>
+                              {n + 1} · {k === "arrival" ? "On arrival · drop-off" : "On departure · pick-up"}
+                            </Check>
+                            {g[k].enabled && (
+                              <div className="mt-3">
+                                <label className={labelCls}>{k === "arrival" ? "Drop-off location" : "Pick-up location"}</label>
+                                <div className="flex flex-col md:flex-row gap-3">
+                                  <input
+                                    value={g[k].location}
+                                    onChange={(e) => updateGround(i, { [k]: { ...g[k], location: e.target.value } } as Partial<GroundLeg>)}
+                                    className={`${fieldCls} flex-1`}
+                                  />
+                                  <div className="flex gap-2 shrink-0">
+                                    {VEHICLES.map((v) => (
+                                      <button
+                                        key={v}
+                                        type="button"
+                                        onClick={() => updateGround(i, { [k]: { ...g[k], vehicle: v } } as Partial<GroundLeg>)}
+                                        className={pillCls(g[k].vehicle === v, "sm")}
+                                      >
+                                        {v}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                        <div className="grid grid-cols-1 md:grid-cols-[160px_1fr] gap-3">
+                          <div>
+                            <label className={labelCls}>Passengers</label>
+                            <input
+                              type="number"
+                              min={1}
+                              value={g.passengers}
+                              placeholder={passengers}
+                              onChange={(e) => updateGround(i, { passengers: e.target.value })}
+                              className={fieldCls}
+                            />
+                          </div>
+                          <div>
+                            <label className={labelCls}>Special requests</label>
+                            <input value={g.special} onChange={(e) => updateGround(i, { special: e.target.value })} className={fieldCls} />
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  )}
+                  {groundExtra.map((x, i) => {
+                    const set = (patch: Partial<ExtraTransfer>) => setGroundExtra((prev) => prev.map((y, j) => (j === i ? { ...y, ...patch } : y)));
+                    return (
+                      <div key={`gx-${i}`} className={boxCls}>
+                        <div className="flex items-center justify-between">
+                          <div className={legTitleCls}>Extra transfer {i + 1}</div>
+                          <button type="button" onClick={() => setGroundExtra((prev) => prev.filter((_, j) => j !== i))} className="text-[13px] text-[#F08C8C]">
+                            Remove
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          <div>
+                            <label className={labelCls}>Pick-up</label>
+                            <input value={x.pickup} onChange={(e) => set({ pickup: e.target.value })} className={fieldCls} />
+                          </div>
+                          <div>
+                            <label className={labelCls}>Drop-off</label>
+                            <input value={x.dropoff} onChange={(e) => set({ dropoff: e.target.value })} className={fieldCls} />
+                          </div>
+                          <div>
+                            <label className={labelCls}>When</label>
+                            <input value={x.when} onChange={(e) => set({ when: e.target.value })} placeholder="e.g. 6 Dec 19:00" className={fieldCls} />
+                          </div>
+                        </div>
+                        <div className="flex gap-2 mt-3">
+                          {VEHICLES.map((v) => (
+                            <button key={v} type="button" onClick={() => set({ vehicle: v })} className={pillCls(x.vehicle === v, "sm")}>
+                              {v}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <GhostButton className="mt-4" onClick={() => setGroundExtra((prev) => [...prev, { pickup: "", dropoff: "", when: "", vehicle: "Sedan" }])}>
+                  + Add another transfer
+                </GhostButton>
+              </div>
+
+              <div className={`${boxCls} mb-5`}>
+                <h3 className="text-[18px] font-bold text-white mt-0 mb-4">Helicopter transfer</h3>
+                <div className="flex flex-wrap gap-6 mb-4">
+                  {flightLegs.map((_, i) => (
+                    <Check
+                      key={i}
+                      checked={Boolean(heli[i]?.selected)}
+                      onChange={(v) => updateHeli(i, { selected: v, from: heli[i]?.from || flightLegs[i]?.to || "" })}
+                    >
+                      Leg {i + 1}
+                    </Check>
+                  ))}
+                </div>
+                <div className="space-y-3">
+                  {[...heli.map((h, i) => ({ h, i, extra: false as const })), ...heliExtra.map((h, i) => ({ h, i, extra: true as const }))].map(({ h, i, extra }) => {
+                    if (!extra && !h.selected) return null;
+                    const set = (patch: Partial<HeliLeg & { when: string }>) =>
+                      extra ? setHeliExtra((prev) => prev.map((y, j) => (j === i ? { ...y, ...patch } : y))) : updateHeli(i, patch);
+                    return (
+                      <div key={`${extra ? "hx" : "h"}-${i}`} className={boxCls}>
+                        <div className="flex items-center justify-between">
+                          <div className={legTitleCls}>{extra ? `Extra helicopter transfer ${i + 1}` : `Leg ${i + 1} · on arrival`}</div>
+                          {extra && (
+                            <button type="button" onClick={() => setHeliExtra((prev) => prev.filter((_, j) => j !== i))} className="text-[13px] text-[#F08C8C]">
+                              Remove
+                            </button>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-[120px_1fr_1fr_1fr] gap-3">
+                          <div>
+                            <label className={labelCls}>Passengers</label>
+                            <input type="number" min={1} value={h.passengers} placeholder={passengers} onChange={(e) => set({ passengers: e.target.value })} className={fieldCls} />
+                          </div>
+                          <div>
+                            <label className={labelCls}>Helicopter type</label>
+                            <select value={h.type} onChange={(e) => set({ type: e.target.value })} className={fieldCls}>
+                              {["Twin-engine", "Single-engine", "VIP twin-engine (AW139 / EC155)"].map((t) => (
+                                <option key={t}>{t}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className={labelCls}>From</label>
+                            <input value={h.from} onChange={(e) => set({ from: e.target.value })} className={fieldCls} />
+                          </div>
+                          <div>
+                            <label className={labelCls}>To</label>
+                            <input value={h.to} onChange={(e) => set({ to: e.target.value })} className={fieldCls} />
+                          </div>
+                        </div>
+                        <div className="mt-3">
+                          <label className={labelCls}>Luggage</label>
+                          <input value={h.luggage} onChange={(e) => set({ luggage: e.target.value })} className={fieldCls} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <GhostButton className="mt-4" onClick={() => setHeliExtra((prev) => [...prev, { ...emptyHeli(), selected: true, when: "" }])}>
+                  + Add another helicopter transfer
+                </GhostButton>
+              </div>
+
+              <div className="flex flex-wrap gap-8">
+                <Check checked={catering} onChange={setCatering}>
+                  Catering
+                </Check>
+                <Check checked={deicing} onChange={setDeicing}>
+                  De-icing protection
+                </Check>
+                <Check checked={meetAssist} onChange={setMeetAssist}>
+                  Meet &amp; assist at terminal
+                </Check>
+              </div>
+              <p className="text-[15px] text-[#A8B3C2] mt-3 mb-0">No prices here: the desk prices each service in the quote.</p>
+            </div>
+          )}
+
+          {/* ───────── 6 · Margin & send ───────── */}
+          {step === 6 && (
+            <div>
+              <h2 className="text-[20px] font-bold text-white mt-0 mb-5">Margin &amp; send</h2>
+              <div className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-4 items-end">
+                <div>
+                  <label className={labelCls}>Your margin %</label>
+                  <input type="number" min={0} max={30} step={0.5} value={marginPct} onChange={(e) => setMarginPct(e.target.value)} className={`${fieldCls} py-3`} />
+                </div>
+                <p className="text-[15px] text-[#A8B3C2] m-0 pb-3">Added on top of the net price. The client sees only the final price.</p>
+              </div>
+              <div className={`${boxCls} mt-5 space-y-2 text-[16px]`}>
+                <div className="text-white">
+                  <span className="text-[#A8B3C2]">Client:</span> {client?.name || "—"}
+                </div>
+                {flightLegs.map((l, i) => (
+                  <div key={i} className="text-white">
+                    <span className="text-[#A8B3C2]">Leg {i + 1}:</span> <span className="font-mono">{l.from} → {l.to}</span> · {dayShort(l.date)}
+                    {l.time ? ` ${l.time} LT` : ""} ·{" "}
+                    {(aircraftMode === "same" ? aircraft[0] : aircraft[i])?.category || "any category"}
+                    {(aircraftMode === "same" ? aircraft[0] : aircraft[i])?.model ? ` (${(aircraftMode === "same" ? aircraft[0] : aircraft[i])?.model})` : ""}
+                  </div>
+                ))}
+                <div className="text-white">
+                  <span className="text-[#A8B3C2]">Passengers:</span> {passengers || "—"} · {suitcases || 0} suitcases{oversize ? ` · ${oversize}` : ""}
+                  {hasPets ? ` · ${pets.length} pet${pets.length === 1 ? "" : "s"}` : ""}
+                </div>
+                <div className="text-white">
+                  <span className="text-[#A8B3C2]">Services:</span>{" "}
+                  {[
+                    ground.some((g) => g.selected) || groundExtra.length ? "ground transport" : "",
+                    heli.some((h) => h.selected) || heliExtra.length ? "helicopter" : "",
+                    catering ? "catering" : "",
+                    deicing ? "de-icing protection" : "",
+                    meetAssist ? "meet & assist" : ""
+                  ]
+                    .filter(Boolean)
+                    .join(", ") || "none"}
+                </div>
+              </div>
+              <div className="mt-5">
+                <label className={labelCls}>Note to the desk (optional)</label>
+                <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} className={`${fieldCls} resize-none`} />
+              </div>
+              <p className="text-[15px] text-[#A8B3C2] mt-5 mb-0">
+                This request uses <strong className="text-white">{tokenCost} token{tokenCost === 1 ? "" : "s"}</strong> (1 per leg).
+                {balance !== null ? ` Your balance: ${balance}.` : ""}
+              </p>
+              {error && (
+                <div className="mt-4 text-[14px] text-[#F08C8C]">
+                  {error}{" "}
+                  {needTokens && (
+                    <Link href="/agent/tokens" className={goldLinkCls}>
+                      Buy tokens
+                    </Link>
+                  )}
+                </div>
+              )}
+              <div className="flex items-center gap-3 mt-6">
+                <GhostButton onClick={() => go(5)}>Back</GhostButton>
+                <GoldButton onClick={submit} disabled={sending}>
+                  {sending ? "Sending…" : `Send request · ${tokenCost} token${tokenCost === 1 ? "" : "s"}`}
+                </GoldButton>
+              </div>
+            </div>
+          )}
+
+          {step < 6 && error && <div className="mt-4 text-[14px] text-[#F08C8C]">{error}</div>}
+          {step < 6 && nav}
         </div>
+      </div>
+
+      {adding && (
+        <AddClientModal
+          onClose={() => setAdding(false)}
+          onSaved={(id) => {
+            setAdding(false);
+            loadClients(id);
+          }}
+        />
       )}
     </div>
   );

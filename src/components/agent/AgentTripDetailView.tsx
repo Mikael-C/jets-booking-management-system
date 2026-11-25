@@ -1,318 +1,291 @@
 "use client";
-import React, { useState, useRef } from "react";
-import { useAviation } from "@/lib/aviationContext";
-import { formatCurrency } from "@/lib/pricingCalculator";
-import { AlertTriangle, CheckCircle2 } from "lucide-react";
+import React, { useRef, useState } from "react";
+import Link from "next/link";
+import { api } from "@/lib/api";
+import type { DocumentType } from "@/lib/aviationContext";
+import {
+  Badge,
+  Card,
+  DocRef,
+  GhostButton,
+  GoldButton,
+  HeadingRef,
+  LoadState,
+  Modal,
+  Ref,
+  Tone,
+  fieldCls,
+  goldLinkCls,
+  labelCls,
+  money,
+  readFileAsDataUrl,
+  useLoad,
+  useOpenTripDocument
+} from "./curatorUi";
 
-interface Props {
-  tripId: string;
+interface TripData {
+  token: string;
+  bookingId: string;
+  ref: Ref;
+  title: string;
+  sub: string[];
+  badges: { contract: "signed" | "awaiting"; open: number; missingPassports: number; cancelled: boolean };
+  currency: string;
+  invoices: { number: string; label: string; amount: number; open: number; status: { text: string; tone: Tone } }[];
+  canUploadProof: boolean;
+  passengers: { id: string; name: string; complete: boolean; nationality: string; passportExpiry: string }[];
+  documents: {
+    label: string;
+    ref: Ref | null;
+    bookingId: string;
+    docType: DocumentType;
+    ready: boolean;
+    invoice?: { number: string; amount: number };
+    creditNote?: any;
+  }[];
+  commission: { pct: number; amount: number; currency: string; note: string };
 }
 
-export default function AgentTripDetailView({ tripId }: Props) {
-  const { bookings, openDocument } = useAviation();
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [uploadSuccess, setUploadSuccess] = useState(false);
-  const [showPassportModal, setShowPassportModal] = useState(false);
-  const [passportInputs, setPassportInputs] = useState<Record<string, string>>({});
-  const [passportsSaved, setPassportsSaved] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
+const INV_RE = /^INV-([A-Z0-9]+)(-\d{3}-\d+)$/i;
+const invRef = (n: string): Ref => {
+  const m = n.match(INV_RE);
+  return m ? { prefix: "INV", token: m[1], suffix: m[2] } : { prefix: "", token: n };
+};
 
-  // Match strictly by id, tripNumber, tripId, or quoteReference
-  const booking = bookings.find(
-    (b) =>
-      b.id === tripId ||
-      b.tripNumber?.toLowerCase() === tripId.toLowerCase() ||
-      b.tripId?.toLowerCase() === tripId.toLowerCase() ||
-      b.quoteReference?.toLowerCase() === tripId.toLowerCase() ||
-      b.id.toLowerCase() === `booking-${tripId.toLowerCase()}`
-  );
+export default function AgentTripDetailView({ tripId }: { tripId: string }) {
+  const id = decodeURIComponent(tripId);
+  const { data: t, error, loading, reload } = useLoad<TripData>(() => api.curator.trip(id), [id]);
+  const { open, busy } = useOpenTripDocument();
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [notice, setNotice] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+  const [passportOpen, setPassportOpen] = useState(false);
+  const [passportForm, setPassportForm] = useState<Record<string, { passportNumber: string; nationality: string; passportExpiry: string; dateOfBirth: string }>>({});
+  const [sendingPassports, setSendingPassports] = useState(false);
 
-  if (!booking) {
+  if (!t) {
     return (
-      <div className="text-gray-400 py-20 text-center">
-        <p className="text-lg">Trip not found.</p>
-        <p className="text-xs text-gray-500 mt-1">Reference: {tripId}</p>
+      <div className="space-y-4">
+        <Link href="/agent/trips" className={goldLinkCls}>
+          ← My trips
+        </Link>
+        <LoadState loading={loading} error={error} onRetry={reload} />
       </div>
     );
   }
 
-  const leg = booking.legs?.[0];
-  const origin = leg?.origin?.city || leg?.origin?.icao || "Departure";
-  const dest = leg?.destination?.city || leg?.destination?.icao || "Destination";
-  const pax = booking.legs?.reduce((sum, l) => sum + (l.paxCount || 0), 0) || 1;
-  const dateStr = leg?.flightDate
-    ? new Date(leg.flightDate).toLocaleDateString("en-GB", {
-        weekday: "short",
-        day: "numeric",
-        month: "short",
-      })
-    : "Date TBD";
-  const timeStr = (leg as any)?.departureTimeLocal || "10:00";
+  const onFile = async (file?: File | null) => {
+    if (!file) return;
+    if (file.size > 4 * 1024 * 1024) {
+      setNotice({ tone: "err", text: "The file is larger than 4 MB. Send a smaller PDF or image." });
+      return;
+    }
+    setUploading(true);
+    setNotice(null);
+    try {
+      const proofUrl = await readFileAsDataUrl(file);
+      const res = await api.curator.uploadProof(t.token, { proofUrl, proofName: file.name });
+      setNotice({ tone: "ok", text: `Proof uploaded for ${res?.data?.invoiceNumber || "the open invoice"}. The desk confirms once the money arrives.` });
+      reload();
+    } catch (err: any) {
+      setNotice({ tone: "err", text: err?.message || "The proof could not be uploaded." });
+    } finally {
+      setUploading(false);
+      if (fileInput.current) fileInput.current.value = "";
+    }
+  };
 
-  const currency = booking.pricing?.currency || "EUR";
-  const commissionPct = (booking as any).commissionPercentage || 8;
-  const commissionAmt = (booking.pricing?.agentMargin && booking.pricing.agentMargin > 0)
-    ? booking.pricing.agentMargin
-    : ((booking.pricing?.totalFlightPrice || 0) * (commissionPct / 100));
-
-  // Passengers from legs
-  const rawPax = booking.legs?.flatMap((l) => (l as any).passengers || []) || [];
-  const passengers = rawPax.length > 0
-    ? rawPax
-    : [{ id: "p1", fullName: booking.client?.fullName || "Lead Passenger", passportNumber: passportInputs["p1"] || "" }];
-
-  const uniquePax = passengers.filter(
-    (p: any, i: number, arr: any[]) =>
-      arr.findIndex((x: any) => x.fullName === p.fullName) === i
-  );
-
-  const missingPax = uniquePax.filter((p: any) => !p.passportNumber);
-  const missingPassports = missingPax.length;
-
-  const tripRefToken = booking.tripNumber || booking.tripId || "FE4455";
-  const charterInvoiceNum = booking.invoiceNumber || `INV-${tripRefToken}-001`;
-  const extraInvoiceNum = `INV-${tripRefToken}-002`;
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (f) {
-      setUploadedFile(f);
-      setUploadSuccess(true);
-      setTimeout(() => setUploadSuccess(false), 4000);
+  const missing = t.passengers.filter((p) => !p.complete);
+  const openPassports = () => {
+    const init: typeof passportForm = {};
+    missing.forEach((p) => (init[p.id] = { passportNumber: "", nationality: p.nationality || "", passportExpiry: p.passportExpiry || "", dateOfBirth: "" }));
+    setPassportForm(init);
+    setPassportOpen(true);
+  };
+  const sendPassports = async () => {
+    const list = missing
+      .map((p) => ({ id: p.id, name: p.name, ...passportForm[p.id] }))
+      .filter((p) => p.passportNumber && p.passportNumber.trim());
+    if (!list.length) return;
+    setSendingPassports(true);
+    try {
+      await api.curator.sendPassports(t.token, list);
+      setPassportOpen(false);
+      setNotice({ tone: "ok", text: `Passport details sent for ${list.length} passenger${list.length === 1 ? "" : "s"}.` });
+      reload();
+    } catch (err: any) {
+      alert(err?.message || "The passport details could not be sent.");
+    } finally {
+      setSendingPassports(false);
     }
   };
 
   return (
     <div>
-      {/* Header */}
-      <div className="mb-2">
-        <h1 className="text-2xl font-bold text-[#C9A052] mb-1">
-          {booking.tripNumber || booking.tripId || "Charter Flight"} · {origin} → {dest}
-        </h1>
-        <p className="text-sm text-gray-400">
-          {(booking.client as any)?.companyName || booking.client?.fullName || "Private Client"} ·{" "}
-          {dateStr} {timeStr} LT · {booking.aircraft?.name || "Aircraft Assigned"} · {pax} pax
-        </p>
-      </div>
-
-      {/* Status badges */}
-      <div className="flex items-center gap-2 mb-6 flex-wrap">
-        <span className="px-2.5 py-0.5 rounded text-xs font-semibold bg-[#134E2E] text-[#4ADE80]">
-          Contract signed
-        </span>
-        <span className="px-2.5 py-0.5 rounded text-xs font-semibold bg-[#5C3800] text-[#FFB84D]">
-          € 250 open
-        </span>
-        {missingPassports > 0 ? (
-          <span className="px-2.5 py-0.5 rounded text-xs font-semibold bg-[#5C3800] text-[#FFB84D] inline-flex items-center gap-1">
-            <AlertTriangle className="w-3 h-3" />
-            {missingPassports} passports missing
-          </span>
+      <h1 className="text-[40px] leading-tight font-bold text-white tracking-tight m-0 flex flex-wrap items-baseline gap-x-3">
+        <HeadingRef value={t.ref} />
+        <span>·</span>
+        <span>{t.title}</span>
+      </h1>
+      <p className="text-[15px] text-[#93A1B5] mt-1.5 mb-4">{t.sub.join(" · ")}</p>
+      <div className="flex flex-wrap gap-2.5 mb-6">
+        {t.badges.cancelled ? (
+          <Badge tone="red">Cancelled</Badge>
+        ) : t.badges.contract === "signed" ? (
+          <Badge tone="green">Contract signed</Badge>
         ) : (
-          <span className="px-2.5 py-0.5 rounded text-xs font-semibold bg-[#134E2E] text-[#4ADE80] inline-flex items-center gap-1">
-            <CheckCircle2 className="w-3 h-3" />
-            All passports verified
-          </span>
+          <Badge tone="amber">Contract awaiting signature</Badge>
+        )}
+        {t.badges.open > 0 && <Badge tone="amber">{money(t.badges.open, t.currency)} open</Badge>}
+        {t.badges.missingPassports > 0 && (
+          <Badge tone="amber">
+            ▲ {t.badges.missingPassports} passport{t.badges.missingPassports === 1 ? "" : "s"} missing
+          </Badge>
         )}
       </div>
 
-      <div className="flex gap-6">
-        {/* Left Column (Wider) */}
-        <div className="flex-1 space-y-4">
-          {/* Payment Card */}
-          <div className="bg-[#141C2E] border border-white/10 rounded-lg p-5">
-            <h2 className="text-base font-semibold text-white mb-4">Payment</h2>
-            <div className="space-y-2 mb-4">
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-gray-300">{charterInvoiceNum} · charter</span>
-                <span className="px-2.5 py-0.5 rounded text-xs font-semibold bg-[#134E2E] text-[#4ADE80]">
-                  Paid
-                </span>
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-6 items-start">
+        <div className="space-y-6">
+          <Card title="Payment">
+            {t.invoices.length === 0 ? (
+              <p className="text-[15px] text-[#93A1B5] m-0">No invoice yet. It appears here when the desk issues it.</p>
+            ) : (
+              <div className="space-y-2.5">
+                {t.invoices.map((inv) => (
+                  <div key={inv.number} className="flex items-center justify-between gap-4">
+                    <span className="text-[17px] text-white">
+                      <DocRef value={invRef(inv.number)} mono={false} /> · {inv.label}
+                    </span>
+                    <Badge tone={inv.status.tone} className="min-w-[180px] justify-start">
+                      {inv.status.text}
+                    </Badge>
+                  </div>
+                ))}
               </div>
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-gray-300">{extraInvoiceNum} · chauffeur € 250</span>
-                <span className="px-2.5 py-0.5 rounded text-xs font-semibold bg-[#5C3800] text-[#FFB84D]">
-                  Open · due 18 Nov
-                </span>
+            )}
+
+            {t.canUploadProof && (
+              <div
+                className="mt-5 border-2 border-dashed border-[#2A3749] rounded-xl px-6 py-7 text-center"
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  onFile(e.dataTransfer.files?.[0]);
+                }}
+              >
+                <div className="text-[19px] font-bold text-white">Client paid? Upload the transfer proof</div>
+                <div className="text-[15px] text-[#93A1B5] mt-1">The desk confirms once the money arrives. Until then it shows amber.</div>
+                <input
+                  ref={fileInput}
+                  type="file"
+                  accept="application/pdf,image/*"
+                  className="hidden"
+                  onChange={(e) => onFile(e.target.files?.[0])}
+                />
+                <GhostButton className="mt-4" disabled={uploading} onClick={() => fileInput.current?.click()}>
+                  {uploading ? "Uploading…" : "Choose file"}
+                </GhostButton>
               </div>
-            </div>
+            )}
+            {notice && <div className={`mt-4 text-[14px] ${notice.tone === "ok" ? "text-[#6BD49E]" : "text-[#F08C8C]"}`}>{notice.text}</div>}
+          </Card>
 
-            {/* Upload Area */}
-            <div
-              onClick={() => fileRef.current?.click()}
-              className="border border-dashed border-white/20 rounded-lg p-6 text-center cursor-pointer hover:border-[#C9A052]/50 transition-colors bg-[#0F1420]/50"
-            >
-              <p className="text-sm font-semibold text-white mb-1">
-                Client paid? Upload the transfer proof
-              </p>
-              <p className="text-xs text-gray-400 mb-3">
-                The desk confirms once the money arrives. Until then it shows amber.
-              </p>
-              <input
-                ref={fileRef}
-                type="file"
-                className="hidden"
-                onChange={handleFileUpload}
-              />
-              {uploadedFile ? (
-                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-950/60 border border-emerald-500/40 text-xs text-emerald-400 font-medium">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>Uploaded: {uploadedFile.name} (Desk reviewing)</span>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  className="px-4 py-2 bg-[#1A2338] border border-white/20 text-xs font-semibold text-white rounded hover:bg-[#243050]"
-                >
-                  Choose file
-                </button>
-              )}
-            </div>
-          </div>
+          <Card title="Passengers">
+            {t.passengers.length === 0 ? (
+              <p className="text-[15px] text-[#93A1B5] m-0">No passengers on the manifest yet.</p>
+            ) : (
+              <div className="space-y-2.5">
+                {t.passengers.map((p) => (
+                  <div key={p.id} className="flex items-center justify-between gap-4">
+                    <span className="text-[17px] text-white">{p.name}</span>
+                    {p.complete ? <Badge tone="green">Complete</Badge> : <Badge tone="amber">▲ Passport</Badge>}
+                  </div>
+                ))}
+              </div>
+            )}
+            {missing.length > 0 && (
+              <GhostButton className="mt-5" onClick={openPassports}>
+                Send passport details
+              </GhostButton>
+            )}
+          </Card>
+        </div>
 
-          {/* Passengers Card */}
-          <div className="bg-[#141C2E] border border-white/10 rounded-lg p-5">
-            <h2 className="text-base font-semibold text-white mb-4">Passengers</h2>
+        <div className="space-y-6">
+          <Card title="Documents">
             <div className="space-y-2.5">
-              {uniquePax.map((p: any, i: number) => {
-                const hasPassport = Boolean(p.passportNumber || passportInputs[p.id]);
+              {t.documents.map((d, i) => {
+                const key = `${d.docType}-${i}`;
                 return (
-                  <div key={i} className="flex justify-between items-center text-sm">
-                    <span className="text-gray-200">{p.fullName}</span>
-                    {hasPassport ? (
-                      <span className="px-2.5 py-0.5 rounded text-xs font-semibold bg-[#134E2E] text-[#4ADE80]">
-                        Complete
-                      </span>
+                  <div key={key} className="flex items-center justify-between gap-4">
+                    <span className="text-[17px] text-white">
+                      {d.label} {d.ref && <DocRef value={d.ref} mono={false} className="text-[15px]" />}
+                    </span>
+                    {d.ready ? (
+                      <button
+                        type="button"
+                        disabled={busy === key}
+                        onClick={() => open(key, d.bookingId, d.docType, { invoice: d.invoice, creditNote: d.creditNote })}
+                        className={`${goldLinkCls} disabled:opacity-50`}
+                      >
+                        {busy === key ? "…" : "PDF"}
+                      </button>
                     ) : (
-                      <span className="px-2.5 py-0.5 rounded text-xs font-semibold bg-[#5C3800] text-[#FFB84D] inline-flex items-center gap-1">
-                        <AlertTriangle className="w-3 h-3" /> Passport
-                      </span>
+                      <span className="text-[15px] text-[#93A1B5]">when ready</span>
                     )}
                   </div>
                 );
               })}
             </div>
-            <button
-              onClick={() => setShowPassportModal(true)}
-              className="mt-4 px-4 py-2 bg-[#1A2338] border border-white/20 text-xs font-semibold text-white rounded hover:bg-[#243050] transition-colors"
-            >
-              Send passport details
-            </button>
-          </div>
-        </div>
+          </Card>
 
-        {/* Right Column (Narrower) */}
-        <div className="w-64 space-y-4 flex-shrink-0">
-          {/* Documents Card */}
-          <div className="bg-[#141C2E] border border-white/10 rounded-lg p-5">
-            <h2 className="text-sm font-semibold text-white mb-3">Documents</h2>
-            <div className="space-y-2 text-sm">
-              {[
-                {
-                  label: `Quote Q-${booking.tripNumber || "FE4578"}-002`,
-                  type: "quotation" as const,
-                },
-                {
-                  label: `Contract C-${booking.tripNumber || "FE4578"}-002`,
-                  type: "charter_agreement" as const,
-                },
-                {
-                  label: `Invoice ${charterInvoiceNum}`,
-                  type: "invoice" as const,
-                },
-                {
-                  label: `Invoice ${extraInvoiceNum}`,
-                  type: "invoice" as const,
-                },
-              ].map((doc, i) => (
-                <div key={i} className="flex justify-between items-center">
-                  <span className="text-gray-300 text-xs truncate max-w-[140px]">
-                    {doc.label}
-                  </span>
-                  <button
-                    onClick={() => openDocument(booking, doc.type)}
-                    className="text-[#C9A052] hover:underline text-xs font-bold flex-shrink-0 ml-2"
-                  >
-                    PDF
-                  </button>
-                </div>
-              ))}
-              <div className="flex justify-between items-center">
-                <span className="text-gray-300 text-xs">Flight brief</span>
-                <span className="text-gray-500 text-xs">when ready</span>
-              </div>
+          <Card title="My commission">
+            <div className="flex items-center justify-between text-[17px] text-white">
+              <span>{t.commission.pct ? `${t.commission.pct} % of charter` : "Commission"}</span>
+              <span>{money(t.commission.amount, t.commission.currency, 2)}</span>
             </div>
-          </div>
-
-          {/* My Commission Card */}
-          <div className="bg-[#141C2E] border border-white/10 rounded-lg p-5">
-            <h2 className="text-sm font-semibold text-white mb-3">My commission</h2>
-            <div className="flex justify-between items-baseline mb-1">
-              <span className="text-xs text-gray-400">{commissionPct} % of charter</span>
-              <span className="text-base font-bold text-white font-mono">
-                {formatCurrency(commissionAmt, currency as any)}
-              </span>
-            </div>
-            <p className="text-xs text-gray-500 mt-2">Paid 1 week after the flight</p>
-          </div>
+            <div className="text-[15px] text-[#93A1B5] mt-2">{t.commission.note}</div>
+          </Card>
         </div>
       </div>
 
-      {/* Passport Modal */}
-      {showPassportModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-[#141C2E] border border-white/20 rounded-xl p-6 max-w-md w-full shadow-2xl space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-white/10">
-              <h3 className="text-sm font-bold text-white">Send Passenger Passport Details</h3>
-              <button
-                onClick={() => setShowPassportModal(false)}
-                className="text-gray-400 hover:text-white"
-              >
-                ✕
-              </button>
-            </div>
-
-            <p className="text-xs text-gray-400">
-              Provide missing passport numbers for passenger manifest clearance with customs and border control:
-            </p>
-
-            <div className="space-y-3">
-              {missingPax.map((p: any) => (
+      {passportOpen && (
+        <Modal title="Send passport details" onClose={() => setPassportOpen(false)} width="max-w-2xl">
+          <div className="space-y-5">
+            {missing.map((p) => {
+              const f = passportForm[p.id] || { passportNumber: "", nationality: "", passportExpiry: "", dateOfBirth: "" };
+              const set = (k: keyof typeof f, v: string) => setPassportForm((prev) => ({ ...prev, [p.id]: { ...f, [k]: v } }));
+              return (
                 <div key={p.id}>
-                  <label className="text-xs text-gray-300 block mb-1">
-                    {p.fullName} (Passport Number)
-                  </label>
-                  <input
-                    type="text"
-                    value={passportInputs[p.id] || ""}
-                    onChange={(e) =>
-                      setPassportInputs((prev) => ({ ...prev, [p.id]: e.target.value.toUpperCase() }))
-                    }
-                    placeholder="e.g. A99482012"
-                    className="w-full bg-[#0F1420] border border-white/20 rounded px-3 py-2 text-xs text-white font-mono uppercase focus:outline-none focus:border-[#C9A052]"
-                  />
+                  <div className="text-[16px] font-bold text-white mb-2">{p.name}</div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div>
+                      <label className={labelCls}>Passport no.</label>
+                      <input className={fieldCls} value={f.passportNumber} onChange={(e) => set("passportNumber", e.target.value)} />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Nationality</label>
+                      <input className={fieldCls} value={f.nationality} onChange={(e) => set("nationality", e.target.value)} />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Expires</label>
+                      <input type="date" className={fieldCls} value={f.passportExpiry} onChange={(e) => set("passportExpiry", e.target.value)} />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Date of birth</label>
+                      <input type="date" className={fieldCls} value={f.dateOfBirth} onChange={(e) => set("dateOfBirth", e.target.value)} />
+                    </div>
+                  </div>
                 </div>
-              ))}
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                onClick={() => setShowPassportModal(false)}
-                className="px-4 py-2 bg-[#1A2338] border border-white/20 text-xs font-bold text-white rounded hover:bg-[#243050]"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  setShowPassportModal(false);
-                }}
-                className="px-4 py-2 bg-[#C9A052] text-[#0F1420] text-xs font-bold rounded hover:bg-[#B88F42]"
-              >
-                Save Details
-              </button>
-            </div>
+              );
+            })}
           </div>
-        </div>
+          <div className="flex justify-end mt-6">
+            <GoldButton onClick={sendPassports} disabled={sendingPassports || !Object.values(passportForm).some((f) => f.passportNumber.trim())}>
+              {sendingPassports ? "Sending…" : "Send to the desk"}
+            </GoldButton>
+          </div>
+        </Modal>
       )}
     </div>
   );

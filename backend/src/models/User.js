@@ -94,11 +94,21 @@ const userSchema = new mongoose.Schema(
           description: { type: String, default: '' },
           currency: { type: String, default: 'GBP' },
           pricePaid: { type: Number, default: 0 },
+          // Curator portal token ledger
+          bucket: { type: String, default: '' },
+          tripRef: { type: String, default: '' },
+          movement: { type: String, default: '' },
           createdAt: { type: Date, default: Date.now },
         },
       ],
       default: [],
     },
+    // Curator portal
+    curatorTier: { type: String, default: '' },
+    tokenState: { type: mongoose.Schema.Types.Mixed, default: null },
+    agreementSignedAt: { type: Date, default: null },
+    agreementVersion: { type: String, default: '' },
+    pendingTokenPurchases: { type: [mongoose.Schema.Types.Mixed], default: [] },
     notificationPreferences: {
       emailAlerts: { type: Boolean, default: true },
       flightUpdates: { type: Boolean, default: true },

@@ -43,7 +43,11 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
       }
     }
     const errorData = await res.json().catch(() => ({ message: res.statusText }));
-    throw new Error(errorData.message || `API Error: ${res.status}`);
+    const apiError: any = new Error(errorData.message || `API Error: ${res.status}`);
+    apiError.status = res.status;
+    apiError.code = errorData.code;
+    apiError.data = errorData;
+    throw apiError;
   } catch (err: any) {
     if (typeof window !== "undefined" && !API_BASE_URL.startsWith("/")) {
       try {
@@ -407,6 +411,59 @@ export const api = {
   },
 
   // Public payment link page (no login)
+  /** Curator portal: everything is scoped to the signed-in Curator on the backend. */
+  curator: {
+    me: () => request<{ success: boolean; data: any }>(`/curator/me`),
+    requests: () => request<{ success: boolean; data: any }>(`/curator/requests`),
+    createRequest: (data: any) =>
+      request<{ success: boolean; data: any }>(`/curator/requests`, { method: "POST", body: JSON.stringify(data) }),
+    messageDesk: (requestId: string, message: string) =>
+      request<{ success: boolean }>(`/curator/requests/${encodeURIComponent(requestId)}/messages`, {
+        method: "POST",
+        body: JSON.stringify({ message }),
+      }),
+    quote: (id: string) => request<{ success: boolean; data: any }>(`/curator/quotes/${encodeURIComponent(id)}`),
+    confirmQuote: (id: string) =>
+      request<{ success: boolean; data: any }>(`/curator/quotes/${encodeURIComponent(id)}/confirm`, { method: "POST" }),
+    askChange: (id: string, message: string) =>
+      request<{ success: boolean; data: any }>(`/curator/quotes/${encodeURIComponent(id)}/change`, {
+        method: "POST",
+        body: JSON.stringify({ message }),
+      }),
+    trips: () => request<{ success: boolean; data: any[] }>(`/curator/trips`),
+    trip: (id: string) => request<{ success: boolean; data: any }>(`/curator/trips/${encodeURIComponent(id)}`),
+    uploadProof: (id: string, data: { proofUrl: string; proofName: string; invoiceNumber?: string; reference?: string }) =>
+      request<{ success: boolean; data: any }>(`/curator/trips/${encodeURIComponent(id)}/proof`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    sendPassports: (id: string, passengers: any[]) =>
+      request<{ success: boolean }>(`/curator/trips/${encodeURIComponent(id)}/passports`, {
+        method: "POST",
+        body: JSON.stringify({ passengers }),
+      }),
+    clients: () => request<{ success: boolean; data: any[] }>(`/curator/clients`),
+    addClient: (data: any) =>
+      request<{ success: boolean; data: any }>(`/curator/clients`, { method: "POST", body: JSON.stringify(data) }),
+    linkClient: (id: string) =>
+      request<{ success: boolean; data: any }>(`/curator/clients/${encodeURIComponent(id)}/link`, { method: "POST" }),
+    documents: () => request<{ success: boolean; data: any }>(`/curator/documents`),
+    libraryDocument: (code: string) =>
+      request<{ success: boolean; data: any }>(`/curator/documents/library/${encodeURIComponent(code)}`),
+    acknowledge: (code: string) =>
+      request<{ success: boolean }>(`/curator/documents/library/${encodeURIComponent(code)}/acknowledge`, { method: "POST" }),
+    signAgreement: () => request<{ success: boolean; data: any }>(`/curator/agreement/sign`, { method: "POST" }),
+    tokens: () => request<{ success: boolean; data: any }>(`/curator/tokens`),
+    buyTokens: (tokens: number, origin: string) =>
+      request<{ success: boolean; data: any }>(`/curator/tokens/buy`, { method: "POST", body: JSON.stringify({ tokens, origin }) }),
+    checkPurchase: (id: string) =>
+      request<{ success: boolean; data: any }>(`/curator/tokens/purchases/${encodeURIComponent(id)}/check`, { method: "POST" }),
+    estimate: (params: Record<string, string | number | undefined>) => {
+      const q = new URLSearchParams();
+      Object.entries(params).forEach(([k, v]) => v !== undefined && v !== "" && q.set(k, String(v)));
+      return request<{ success: boolean; data: any }>(`/curator/estimate?${q.toString()}`);
+    },
+  },
   pay: {
     get: (token: string) => request<{ success: boolean; data: any }>(`/pay/${encodeURIComponent(token)}`),
     proof: (token: string, data: { payerName?: string; reference?: string; proofName?: string; proofUrl?: string; amount?: number }) =>

@@ -421,3 +421,5 @@ router.post('/documents', async (req, res) => {
 });
 
 module.exports = router;
+
+module.exports.ensureSeeded = ensureSeeded;
