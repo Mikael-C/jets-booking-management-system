@@ -25,6 +25,85 @@ import {
   emptyFinancialHealth
 } from "@/data/overviewData";
 
+const FLIGHTS_PER_PAGE = 8;
+const ACTIONS_PER_PAGE = 8;
+const CARDS_PER_COLUMN = 5;
+
+/** Small pager used by the Overview panels and the Board columns. */
+function Pager({
+  page,
+  total,
+  perPage,
+  onPage,
+  compact = false
+}: {
+  page: number;
+  total: number;
+  perPage: number;
+  onPage: (p: number) => void;
+  compact?: boolean;
+}) {
+  const pages = Math.max(1, Math.ceil(total / perPage));
+  if (total <= perPage) return null;
+  const from = (page - 1) * perPage + 1;
+  const to = Math.min(total, page * perPage);
+  const btn =
+    "px-2 py-1 rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors";
+  if (compact) {
+    return (
+      <div className="flex items-center justify-between gap-1 pt-3 text-[11px] text-slate-500" onClick={(e) => e.stopPropagation()}>
+        <button type="button" className={btn} disabled={page <= 1} onClick={() => onPage(page - 1)} aria-label="Previous page">
+          ‹
+        </button>
+        <span className="font-mono">
+          {page}/{pages}
+        </span>
+        <button type="button" className={btn} disabled={page >= pages} onClick={() => onPage(page + 1)} aria-label="Next page">
+          ›
+        </button>
+      </div>
+    );
+  }
+  const nums: (number | "…")[] = [];
+  for (let i = 1; i <= pages; i++) {
+    if (i === 1 || i === pages || Math.abs(i - page) <= 1) nums.push(i);
+    else if (nums[nums.length - 1] !== "…") nums.push("…");
+  }
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 pt-3 text-xs text-slate-500">
+      <span>
+        {from}–{to} of {total}
+      </span>
+      <div className="flex items-center gap-1">
+        <button type="button" className={btn} disabled={page <= 1} onClick={() => onPage(page - 1)}>
+          Prev
+        </button>
+        {nums.map((n, i) =>
+          n === "…" ? (
+            <span key={`gap-${i}`} className="px-1">
+              …
+            </span>
+          ) : (
+            <button
+              key={n}
+              type="button"
+              onClick={() => onPage(n)}
+              className={`px-2.5 py-1 rounded-md border transition-colors ${
+                n === page ? "bg-[#0f172a] text-white border-[#0f172a]" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+              }`}
+            >
+              {n}
+            </button>
+          )
+        )}
+        <button type="button" className={btn} disabled={page >= pages} onClick={() => onPage(page + 1)}>
+          Next
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export interface BoardColumn {
   id: "request" | "sourcing" | "quoted" | "booked" | "confirmed" | "flown_close";
   title: string;
@@ -195,12 +274,20 @@ export default function OperationsOverview() {
     return flightsList;
   }, [flightsList, flightFilter]);
 
-  // Flights grouped by date
+  // Flights · paged (8 per page), then grouped by date
+  const [flightPage, setFlightPage] = useState(1);
+  useEffect(() => setFlightPage(1), [flightFilter]);
+  const flightPages = Math.max(1, Math.ceil(displayedFlights.length / FLIGHTS_PER_PAGE));
+  const flightPageSafe = Math.min(flightPage, flightPages);
+  const pagedFlights = useMemo(
+    () => displayedFlights.slice((flightPageSafe - 1) * FLIGHTS_PER_PAGE, flightPageSafe * FLIGHTS_PER_PAGE),
+    [displayedFlights, flightPageSafe]
+  );
   const flightsByDate = useMemo(() => {
-    const today = displayedFlights.filter((f) => f.dateGroup === "today");
-    const next24 = displayedFlights.filter((f) => f.dateGroup === "next_24h");
+    const today = pagedFlights.filter((f) => f.dateGroup === "today");
+    const next24 = pagedFlights.filter((f) => f.dateGroup === "next_24h");
     return { today, next24 };
-  }, [displayedFlights]);
+  }, [pagedFlights]);
 
   // Filtered Needs Action items
   const displayedActionItems = useMemo(() => {
@@ -209,6 +296,20 @@ export default function OperationsOverview() {
     }
     return actionItems;
   }, [actionItems, actionFilter]);
+
+  // Needs action · paged (8 per page)
+  const [actionPage, setActionPage] = useState(1);
+  useEffect(() => setActionPage(1), [actionFilter]);
+  const actionPages = Math.max(1, Math.ceil(displayedActionItems.length / ACTIONS_PER_PAGE));
+  const actionPageSafe = Math.min(actionPage, actionPages);
+  const pagedActionItems = useMemo(
+    () => displayedActionItems.slice((actionPageSafe - 1) * ACTIONS_PER_PAGE, actionPageSafe * ACTIONS_PER_PAGE),
+    [displayedActionItems, actionPageSafe]
+  );
+
+  // Board · each column has its own page (5 cards per page); back to page 1 when the filter changes
+  const [columnPages, setColumnPages] = useState<Record<string, number>>({});
+  useEffect(() => setColumnPages({}), [boardFilter]);
 
   // Filtered Board Cards
   const displayedBoardCards = useMemo(() => {
@@ -579,7 +680,10 @@ export default function OperationsOverview() {
 
             {/* Footer note */}
             <div className="pt-4 mt-2 border-t border-slate-100 text-[11px] text-slate-400">
-              Local departure times · live status from flight tracking · updates without refresh
+              <Pager page={flightPageSafe} total={displayedFlights.length} perPage={FLIGHTS_PER_PAGE} onPage={setFlightPage} />
+              <div className={displayedFlights.length > FLIGHTS_PER_PAGE ? "pt-3" : ""}>
+                Local departure times · live status from flight tracking · updates without refresh
+              </div>
             </div>
           </div>
 
@@ -628,7 +732,7 @@ export default function OperationsOverview() {
                       : "Nothing needs action right now."}
                   </div>
                 )}
-                {displayedActionItems.map((item) => (
+                {pagedActionItems.map((item) => (
                   <div
                     key={item.id}
                     className="flex items-center justify-between gap-3 text-xs py-1 px-1 rounded hover:bg-slate-50/80 transition-colors"
@@ -667,7 +771,10 @@ export default function OperationsOverview() {
 
             {/* Footer note */}
             <div className="pt-4 mt-2 border-t border-slate-100 text-[11px] text-slate-400">
-              Sorted by urgency, most overdue first. &ldquo;Mine&rdquo; shows only tasks assigned to you.
+              <Pager page={actionPageSafe} total={displayedActionItems.length} perPage={ACTIONS_PER_PAGE} onPage={setActionPage} />
+              <div className={displayedActionItems.length > ACTIONS_PER_PAGE ? "pt-3" : ""}>
+                Sorted by urgency, most overdue first. &ldquo;Mine&rdquo; shows only tasks assigned to you.
+              </div>
             </div>
           </div>
         </div>
@@ -883,7 +990,11 @@ export default function OperationsOverview() {
       {view === "board" && (
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4 items-start">
-            {boardColumns.map((col) => (
+            {boardColumns.map((col) => {
+              const colPages = Math.max(1, Math.ceil(col.cards.length / CARDS_PER_COLUMN));
+              const colPage = Math.min(columnPages[col.id] || 1, colPages);
+              const colCards = col.cards.slice((colPage - 1) * CARDS_PER_COLUMN, colPage * CARDS_PER_COLUMN);
+              return (
               <div
                 key={col.id}
                 onDragOver={handleDragOver}
@@ -908,7 +1019,7 @@ export default function OperationsOverview() {
                         Empty
                       </div>
                     ) : (
-                      col.cards.map((card) => (
+                      colCards.map((card) => (
                         <div
                           key={card.id}
                           draggable
@@ -948,8 +1059,16 @@ export default function OperationsOverview() {
                     )}
                   </div>
                 </div>
+                <Pager
+                  compact
+                  page={colPage}
+                  total={col.cards.length}
+                  perPage={CARDS_PER_COLUMN}
+                  onPage={(p) => setColumnPages((prev) => ({ ...prev, [col.id]: p }))}
+                />
               </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Board Footer note */}

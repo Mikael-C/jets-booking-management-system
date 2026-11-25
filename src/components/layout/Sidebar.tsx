@@ -90,7 +90,6 @@ export default function Sidebar() {
             }`}
           >
             <span>Requests</span>
-            <span className="text-xs text-gray-400 font-mono">{agentRequests?.length || 0}</span>
           </button>
 
           <button
@@ -102,9 +101,6 @@ export default function Sidebar() {
             }`}
           >
             <span>Quotes</span>
-            <span className="text-xs text-gray-400 font-mono">
-              {bookings.filter((b) => !b.isBooked && !["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(b.status)).length}
-            </span>
           </button>
 
           <button
@@ -116,9 +112,6 @@ export default function Sidebar() {
             }`}
           >
             <span>Bookings</span>
-            <span className="text-xs text-gray-400 font-mono">
-              {bookings.filter((b) => b.isBooked || ["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(b.status)).length}
-            </span>
           </button>
 
           <button
@@ -130,9 +123,6 @@ export default function Sidebar() {
             }`}
           >
             <span>Payments</span>
-            <span className="text-xs text-gray-400 font-mono">
-              {bookings.filter((b) => b.paymentStatus === "deposit_paid" || b.paymentStatus === "unpaid").length}
-            </span>
           </button>
 
           <button
@@ -144,7 +134,6 @@ export default function Sidebar() {
             }`}
           >
             <span>Flight watch</span>
-            <span className="text-xs text-gray-400 font-mono">2 live</span>
           </button>
 
           <button
@@ -156,7 +145,6 @@ export default function Sidebar() {
             }`}
           >
             <span>Messages</span>
-            <span className="text-xs text-gray-400 font-mono">3 due</span>
           </button>
         </div>
 
@@ -238,9 +226,6 @@ export default function Sidebar() {
             }`}
           >
             <span>Contacts</span>
-            <span className="text-xs text-gray-400 font-mono">
-              {contacts?.length || 8}
-            </span>
           </button>
           <button
             onClick={() => navigateTo("curators", "/curators")}
@@ -261,9 +246,6 @@ export default function Sidebar() {
             }`}
           >
             <span>Operators</span>
-            <span className="text-xs text-gray-400 font-mono">
-              {operators?.length || 3}
-            </span>
           </button>
           <button
             onClick={() => navigateTo("aircraft_types", "/aircraft-types")}
@@ -302,7 +284,6 @@ export default function Sidebar() {
             }`}
           >
             <span>Settings</span>
-            <span className="text-[10px] text-gray-400 font-mono">R-039</span>
           </button>
 
           <button
@@ -314,11 +295,6 @@ export default function Sidebar() {
             }`}
           >
             <span>Messages & Chat</span>
-            {unreadMessageCount > 0 && (
-              <span className="text-xs text-amber-500 font-mono font-bold">
-                {unreadMessageCount}
-              </span>
-            )}
           </button>
 
           <button
