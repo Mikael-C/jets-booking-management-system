@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo, useEffect } from "react";
+import TablePager, { usePagedRows } from "@/components/ui/TablePager";
 import { useRouter } from "next/navigation";
 import { useAviation } from "@/lib/aviationContext";
 import { ContactRecord, PetRecord, BioIdType } from "@/types/aviation";
@@ -121,6 +122,9 @@ export default function ContactsView({ selectedContactId }: ContactsViewProps = 
       return true;
     });
   }, [contacts, filterPill, accountFilter, searchQuery]);
+
+  // Pagination: 15 per page, back to page 1 when the search or a filter changes
+  const paged = usePagedRows(filteredContacts, 15, JSON.stringify([searchQuery, filterPill, accountFilter]));
 
   const handleOpenContact = (cnt: ContactRecord) => {
     setActiveCntId(cnt.id);
@@ -974,7 +978,7 @@ export default function ContactsView({ selectedContactId }: ContactsViewProps = 
       {/* Table Card */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
+          <table id="contacts-table" className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="border-b border-gray-100 bg-white">
                 <th className="py-3.5 px-4 font-semibold text-gray-400 text-[11px] uppercase tracking-wider">
@@ -999,7 +1003,7 @@ export default function ContactsView({ selectedContactId }: ContactsViewProps = 
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filteredContacts.map((cnt) => {
+              {paged.pageRows.map((cnt) => {
                 const hasDoc = cnt.hasPassport ?? (!!cnt.passportDetails?.passportNumber && cnt.passportDetails.passportNumber.length > 3);
                 const tripsCount = cnt.upcomingTrips?.length || 0;
                 const roleDisplay = cnt.roleTitle || (cnt.associatedAccountName ? `Authorised person · ${cnt.associatedAccountName}` : "Guest");
@@ -1062,6 +1066,7 @@ export default function ContactsView({ selectedContactId }: ContactsViewProps = 
             </tbody>
           </table>
         </div>
+        <TablePager {...paged} label="contacts" scrollToId="contacts-table" />
 
         {/* Footer Note */}
         <div className="py-3.5 px-4 border-t border-gray-100 text-[11px] text-gray-400 leading-relaxed bg-white">

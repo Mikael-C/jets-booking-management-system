@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import TablePager, { usePagedRows } from "@/components/ui/TablePager";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import DocId from "@/components/ui/DocId";
@@ -84,6 +85,9 @@ export default function FlightBriefsListView() {
     });
   }, [rows, query, filter, sort]);
 
+  // Pagination: 15 per page, back to page 1 when the search or a filter changes
+  const paged = usePagedRows(filtered, 15, JSON.stringify([query, filter, sort]));
+
   const pill = (key: Exclude<Filter, null>, label: string) => (
     <button
       key={key}
@@ -130,7 +134,7 @@ export default function FlightBriefsListView() {
 
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-xs">
+          <table id="briefs-table" className="w-full text-xs">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
                 <th className={thCls}>Brief</th>
@@ -169,7 +173,7 @@ export default function FlightBriefsListView() {
                   </td>
                 </tr>
               )}
-              {filtered.map((r) => {
+              {paged.pageRows.map((r) => {
                 const st = STATUS[r.status];
                 return (
                   <tr
@@ -213,6 +217,7 @@ export default function FlightBriefsListView() {
             </tbody>
           </table>
         </div>
+        <TablePager {...paged} label="briefs" scrollToId="briefs-table" />
         <p className="text-[11px] text-gray-400 leading-relaxed px-4 py-3.5 m-0 border-t border-slate-100">
           A brief exists only for a booking and always belongs to one version. It can be sent once the readiness checks are green, or sent as
           a draft with the missing items listed.

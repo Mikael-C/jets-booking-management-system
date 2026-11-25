@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import TablePager, { usePagedRows } from "@/components/ui/TablePager";
 import Link from "next/link";
 import { useAviation, normalizeBooking } from "@/lib/aviationContext";
 import { api } from "@/lib/api";
@@ -83,6 +84,9 @@ export default function ContractsListView() {
     });
   }, [rows, query, filter, sort]);
 
+  // Pagination: 15 per page, back to page 1 when the search or a filter changes
+  const paged = usePagedRows(filtered, 15, JSON.stringify([query, filter, sort]));
+
   const openContract = async (r: ContractRow) => {
     const booking = await loadBooking(bookings, r.bookingId, normalizeBooking);
     if (booking) openDocument(booking, "charter_agreement");
@@ -132,7 +136,7 @@ export default function ContractsListView() {
 
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-xs">
+          <table id="contracts-table" className="w-full text-xs">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
                 <th className={thCls}>Contract</th>
@@ -170,7 +174,7 @@ export default function ContractsListView() {
                   </td>
                 </tr>
               )}
-              {filtered.map((r) => {
+              {paged.pageRows.map((r) => {
                 const st = STATUS[r.status];
                 return (
                   <tr key={r.id} className="hover:bg-slate-50/60">
@@ -201,6 +205,7 @@ export default function ContractsListView() {
             </tbody>
           </table>
         </div>
+        <TablePager {...paged} label="contracts" scrollToId="contracts-table" />
         <p className="text-[11px] text-gray-400 leading-relaxed px-4 py-3.5 m-0 border-t border-slate-100">
           A signed contract is what turns a quote into a booking. Each contract stores the version of the terms it was issued with.
         </p>

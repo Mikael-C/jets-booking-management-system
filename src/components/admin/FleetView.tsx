@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
+import TablePager, { usePagedRows } from "@/components/ui/TablePager";
 import { fleetData } from "@/data/fleet";
 import { Aircraft } from "@/types/aviation";
 
@@ -252,6 +253,9 @@ export default function FleetView() {
     });
   }, [aircraftTypes, filterPill, searchQuery]);
 
+  // Pagination: 20 per page, back to page 1 when the search or a filter changes
+  const paged = usePagedRows(filteredTypes, 20, JSON.stringify([searchQuery, filterPill]));
+
   return (
     <div className="space-y-5 max-w-6xl mx-auto pb-12">
       {/* Breadcrumb */}
@@ -394,7 +398,7 @@ export default function FleetView() {
       {/* Aircraft Types Table */}
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
+          <table id="aircraft-types-table" className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="border-b border-gray-100 text-gray-400 text-[11px] uppercase tracking-wider">
                 <th className="py-3 px-4 font-semibold">MODEL</th>
@@ -409,7 +413,7 @@ export default function FleetView() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filteredTypes.map((ac) => {
+              {paged.pageRows.map((ac) => {
                 const isFullyPhotographed = ac.hasExtPhoto && ac.hasCabinPhoto;
 
                 return (
@@ -458,6 +462,7 @@ export default function FleetView() {
             </tbody>
           </table>
         </div>
+        <TablePager {...paged} label="aircraft types" scrollToId="aircraft-types-table" />
 
         <div className="p-4 border-t border-gray-100 text-[11px] text-gray-400 leading-relaxed">
           The single list behind every aircraft dropdown: Request (category), New quote builder (model within category), Sourcing (offer aircraft). Specs are typical values for the type; an operator&apos;s own aircraft can differ and its offer overrides them on the quote.

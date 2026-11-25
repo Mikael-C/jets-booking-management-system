@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo, useEffect } from "react";
+import TablePager, { usePagedRows } from "@/components/ui/TablePager";
 import { useRouter } from "next/navigation";
 import { airportsData, findAirportByCode } from "@/data/airports";
 import { Airport } from "@/types/aviation";
@@ -57,6 +58,9 @@ export default function AirportsView({ selectedAirportIcao }: AirportsViewProps 
       return true;
     });
   }, [filterRegion, searchQuery]);
+
+  // Pagination: 20 per page, back to page 1 when the search or a filter changes
+  const paged = usePagedRows(filteredAirports, 20, JSON.stringify([searchQuery, filterRegion]));
 
   const handleOpenAirport = (airport: Airport) => {
     setActiveIcao(airport.icao);
@@ -387,7 +391,7 @@ export default function AirportsView({ selectedAirportIcao }: AirportsViewProps 
       {/* Airports Table */}
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
+          <table id="airports-table" className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="border-b border-gray-100 text-gray-400 text-[11px] uppercase tracking-wider">
                 <th className="py-3 px-4 font-semibold">AIRPORT</th>
@@ -402,7 +406,7 @@ export default function AirportsView({ selectedAirportIcao }: AirportsViewProps 
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filteredAirports.slice(0, 40).map((a) => (
+              {paged.pageRows.map((a) => (
                 <tr
                   key={a.id}
                   onClick={() => handleOpenAirport(a)}
@@ -452,6 +456,7 @@ export default function AirportsView({ selectedAirportIcao }: AirportsViewProps 
             </tbody>
           </table>
         </div>
+        <TablePager {...paged} label="airports" scrollToId="airports-table" />
       </div>
     </div>
   );

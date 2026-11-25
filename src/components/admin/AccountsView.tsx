@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo, useEffect } from "react";
+import TablePager, { usePagedRows } from "@/components/ui/TablePager";
 import { useRouter } from "next/navigation";
 import { useAviation } from "@/lib/aviationContext";
 import { AccountRecord, AuthorizedPerson } from "@/types/aviation";
@@ -88,6 +89,9 @@ export default function AccountsView({ selectedAccountId }: AccountsViewProps = 
       return true;
     });
   }, [accounts, filterPill, agentFilter, searchQuery]);
+
+  // Pagination: 15 per page, back to page 1 when the search or a filter changes
+  const paged = usePagedRows(filteredAccounts, 15, JSON.stringify([searchQuery, filterPill, agentFilter]));
 
   const handleOpenAccount = (acc: AccountRecord) => {
     setActiveAccId(acc.accountNumber || acc.id);
@@ -854,7 +858,7 @@ export default function AccountsView({ selectedAccountId }: AccountsViewProps = 
       {/* Table Card */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
+          <table id="accounts-table" className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="border-b border-gray-100 bg-white">
                 <th className="py-3.5 px-4 font-semibold text-gray-400 text-[11px] uppercase tracking-wider">
@@ -888,7 +892,7 @@ export default function AccountsView({ selectedAccountId }: AccountsViewProps = 
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filteredAccounts.map((acc) => {
+              {paged.pageRows.map((acc) => {
                 const isCompany = acc.accountType === "entity" && !acc.isAgent;
                 const typeLabel = acc.isAgent ? "Agent" : isCompany ? "Company" : "Individual";
                 const contactsCount = acc.authorizedPersons?.length || 1;
@@ -963,6 +967,7 @@ export default function AccountsView({ selectedAccountId }: AccountsViewProps = 
             </tbody>
           </table>
         </div>
+        <TablePager {...paged} label="accounts" scrollToId="accounts-table" />
 
         {/* Footer Note */}
         <div className="py-3.5 px-4 border-t border-gray-100 text-[11px] text-gray-400 leading-relaxed bg-white">
