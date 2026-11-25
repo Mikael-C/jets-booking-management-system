@@ -115,7 +115,7 @@ router.get('/', async (req, res) => {
   const limitNum = Math.min(100, Math.max(1, parseInt(limit)));
 
   const [bookings, total] = await Promise.all([
-    Booking.find(filter).sort(sortObj).skip((pageNum - 1) * limitNum).limit(limitNum).lean(),
+    Booking.find(filter).select('-signedDocuments -signOtp -wetSignature.file').sort(sortObj).skip((pageNum - 1) * limitNum).limit(limitNum).lean(),
     Booking.countDocuments(filter),
   ]);
 

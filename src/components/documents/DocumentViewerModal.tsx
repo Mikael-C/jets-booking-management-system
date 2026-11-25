@@ -6,6 +6,7 @@ import QuotationDoc from "./QuotationDoc";
 import InvoiceDoc from "./InvoiceDoc";
 import FlightBriefDoc from "./FlightBriefDoc";
 import CharterAgreementDoc from "./CharterAgreementDoc";
+import AgreementSigningBar from "./AgreementSigningBar";
 import PassengerManifestDoc from "./PassengerManifestDoc";
 import CreditNoteDoc from "./CreditNoteDoc";
 import { downloadDocumentAsPdf } from "@/lib/pdfExporter";
@@ -397,7 +398,12 @@ export default function DocumentViewerModal() {
           {currentDoc === "quotation" && <QuotationDoc booking={activeBooking} />}
           {currentDoc === "invoice" && <InvoiceDoc booking={activeBooking} />}
           {currentDoc === "flight_brief" && <FlightBriefDoc booking={activeBooking} />}
-          {currentDoc === "charter_agreement" && <CharterAgreementDoc booking={activeBooking} />}
+          {currentDoc === "charter_agreement" && (
+            <>
+              <AgreementSigningBar booking={activeBooking} />
+              <CharterAgreementDoc booking={activeBooking} />
+            </>
+          )}
           {currentDoc === "passenger_manifest" && <PassengerManifestDoc booking={activeBooking} />}
           {currentDoc === "credit_note" && <CreditNoteDoc booking={activeBooking} />}
         </div>

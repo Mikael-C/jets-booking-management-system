@@ -1,6 +1,8 @@
 "use client";
 import React, { useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { toast } from "@/components/ui/Toaster";
 import { api } from "@/lib/api";
 import {
   Badge,
@@ -57,7 +59,12 @@ function StatusBadge({ row }: { row: Row }) {
   return <Badge tone="slate">{row.statusLabel}</Badge>;
 }
 
+/** Where a row opens: the request page, the quote or the trip. */
+const rowHref = (row: Row) =>
+  row.kind === "request" && row.requestId ? `/agent/requests/${encodeURIComponent(row.requestId)}` : row.action?.href || (row.requestId ? `/agent/requests/${encodeURIComponent(row.requestId)}` : "");
+
 export default function AgentRequestsListView() {
+  const router = useRouter();
   const { data, error, loading, reload } = useLoad<{ rows: Row[]; counts: Record<FilterKey, number> }>(() => api.curator.requests(), []);
   const [filter, setFilter] = useState<FilterKey>("all");
   const [sort, setSort] = useState<SortKey>("newest");
@@ -84,10 +91,9 @@ export default function AgentRequestsListView() {
       await api.curator.messageDesk(messaging.requestId, text.trim());
       setMessaging(null);
       setText("");
-      setNotice("Message sent to the desk.");
-      setTimeout(() => setNotice(null), 3000);
+      toast(`Message sent to the desk on ${refText(messaging.ref)}.`);
     } catch (err: any) {
-      alert(err?.message || "The message could not be sent.");
+      toast(err?.message || "The message could not be sent.", "error");
     } finally {
       setSending(false);
     }
@@ -167,7 +173,14 @@ export default function AgentRequestsListView() {
                   </tr>
                 )}
                 {rows.map((row) => (
-                  <tr key={row.id} className="border-b border-white/[0.05] last:border-0">
+                  <tr
+                    key={row.id}
+                    onClick={() => {
+                      const href = rowHref(row);
+                      if (href) router.push(href);
+                    }}
+                    className="border-b border-white/[0.05] last:border-0 cursor-pointer hover:bg-white/[0.025] transition-colors"
+                  >
                     <td className={`${tdCls} text-[16px]`}>
                       <DocRef value={row.ref} />
                     </td>
@@ -183,7 +196,8 @@ export default function AgentRequestsListView() {
                       {row.action?.message ? (
                         <button
                           type="button"
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.stopPropagation();
                             setMessaging(row);
                             setText("");
                           }}
@@ -192,7 +206,7 @@ export default function AgentRequestsListView() {
                           {row.action.label}
                         </button>
                       ) : row.action?.href ? (
-                        <Link href={row.action.href} className={goldLinkCls}>
+                        <Link href={row.action.href} onClick={(e) => e.stopPropagation()} className={goldLinkCls}>
                           {row.action.label}
                         </Link>
                       ) : null}

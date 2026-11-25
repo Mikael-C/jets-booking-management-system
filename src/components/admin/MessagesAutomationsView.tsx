@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import CuratorInboxPanel from "./CuratorInboxPanel";
 import { api } from "@/lib/api";
 import {
   MessageAutomationItem,
@@ -31,16 +32,18 @@ import MessagesView from "@/components/messages/MessagesView";
 
 interface MessagesAutomationsViewProps {
   initialCode?: string;
-  initialTab?: "automations" | "due_now" | "scheduled" | "sent_log" | "failed" | "team_chat";
+  initialTab?: "curators" | "automations" | "due_now" | "scheduled" | "sent_log" | "failed" | "team_chat";
 }
 
 export default function MessagesAutomationsView({
   initialCode,
-  initialTab = "automations",
+  initialTab = "curators",
 }: MessagesAutomationsViewProps) {
   const [activeTab, setActiveTab] = useState<
-    "automations" | "due_now" | "scheduled" | "sent_log" | "failed" | "team_chat"
+    "curators" | "automations" | "due_now" | "scheduled" | "sent_log" | "failed" | "team_chat"
   >(initialTab);
+  const [curatorUnread, setCuratorUnread] = useState(0);
+  const onCuratorUnread = React.useCallback((n: number) => setCuratorUnread(n), []);
 
   const [automations, setAutomations] = useState<MessageAutomationItem[]>([]);
   const [selectedAutomation, setSelectedAutomation] = useState<MessageAutomationItem | null>(null);
@@ -654,6 +657,19 @@ export default function MessagesAutomationsView({
           {/* Tabs row: Automations (28), Due now (3), Scheduled (21), Sent log, Failed (1), Team Chat */}
           <div className="flex items-center gap-1 border-b border-gray-200/80 text-xs font-medium overflow-x-auto">
             <button
+              onClick={() => setActiveTab("curators")}
+              className={`pb-3 px-3 border-b-2 font-medium transition-colors whitespace-nowrap ${
+                activeTab === "curators"
+                  ? "border-gray-900 text-gray-900"
+                  : "border-transparent text-gray-500 hover:text-gray-800"
+              }`}
+            >
+              From Curators{curatorUnread ? (
+                <span className="ml-1.5 bg-amber-500 text-white text-[10px] font-bold rounded-full px-1.5 py-0.5">{curatorUnread}</span>
+              ) : null}
+            </button>
+
+            <button
               onClick={() => setActiveTab("automations")}
               className={`pb-3 px-3 border-b-2 font-medium transition-colors ${
                 activeTab === "automations"
@@ -718,6 +734,11 @@ export default function MessagesAutomationsView({
             >
               Team Chat & Operations
             </button>
+          </div>
+
+          {/* Curator messages from their requests (name + request ID) */}
+          <div className={activeTab === "curators" ? "" : "hidden"}>
+            <CuratorInboxPanel onUnread={onCuratorUnread} />
           </div>
 
           {/* TAB 1: AUTOMATIONS (Default Main View) */}

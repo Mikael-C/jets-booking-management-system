@@ -46,7 +46,12 @@ export default function AgentShell({ children }: { children: React.ReactNode }) 
 
   const isActive = (item: (typeof NAV)[number]) => {
     if (item.href === "/agent/requests") {
-      return pathname === "/agent/requests" || pathname === "/agent/overview" || item.also.some((p) => pathname.startsWith(p));
+      return (
+        pathname === "/agent/requests" ||
+        pathname === "/agent/overview" ||
+        (pathname.startsWith("/agent/requests/") && !pathname.startsWith("/agent/requests/new")) ||
+        item.also.some((p) => pathname.startsWith(p))
+      );
     }
     return pathname === item.href || pathname.startsWith(`${item.href}/`) || item.also.some((p) => pathname.startsWith(p));
   };

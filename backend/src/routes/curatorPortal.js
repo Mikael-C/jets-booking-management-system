@@ -48,7 +48,8 @@ async function loadMine(req) {
   const email = myEmail(req);
   const [requests, bookings] = await Promise.all([
     AgentRequest.find({ agentEmail: P.emailFilter(email), isDeleted: { $ne: true } }).sort({ createdAt: -1 }).lean(),
-    Booking.find({ agentEmail: P.emailFilter(email), isDeleted: { $ne: true } }).sort({ createdAt: -1 }).lean()
+    // Drafts saved on the quote builder stay with the desk until they are sent
+    Booking.find({ agentEmail: P.emailFilter(email), isDeleted: { $ne: true }, isDraft: { $ne: true } }).sort({ createdAt: -1 }).lean()
   ]);
   return { requests, bookings, groups: P.groupTrips(bookings) };
 }
@@ -213,6 +214,91 @@ router.get('/requests', async (req, res) => {
     expired: rows.filter((r) => r.status === 'expired').length
   };
   res.json({ success: true, data: { rows, counts } });
+});
+
+/** One request as the Curator sent it, the quotes made from it and the thread with the desk. */
+router.get('/requests/:id', async (req, res) => {
+  const id = String(req.params.id);
+  const doc = await AgentRequest.findOne({
+    agentEmail: P.emailFilter(myEmail(req)),
+    isDeleted: { $ne: true },
+    $or: [{ id }, { requestNumber: id }, ...(/^[a-f0-9]{24}$/i.test(id) ? [{ _id: id }] : [])]
+  });
+  if (!doc) return res.status(404).json({ success: false, message: 'Request not found' });
+  // Desk replies count as read once the Curator opens the request
+  let changed = false;
+  (doc.messages || []).forEach((m) => {
+    if (m.senderRole !== 'agent' && !m.readByCuratorAt) {
+      m.readByCuratorAt = new Date();
+      changed = true;
+    }
+  });
+  if (changed) await doc.save().catch(() => {});
+  const r = doc.toObject();
+  const { groups } = await loadMine(req);
+  const mine = groups.filter((g) => P.requestForGroup(g, [r]) === r || P.requestForGroup(g, [r]));
+  const legs = Array.isArray(r.multiLegs) && r.multiLegs.length
+    ? r.multiLegs
+    : [
+        { originIcao: r.originIcao, destIcao: r.destIcao, flightDate: r.flightDate, departureTime: r.departureTime },
+        ...(r.tripType === 'round_trip' ? [{ originIcao: r.destIcao, destIcao: r.originIcao, flightDate: r.returnFlightDate || r.returnDate, departureTime: r.returnDepartureTime || '' }] : [])
+      ];
+  const statusLabel = { pending: 'Waiting for quote', in_sourcing: 'Sourcing', processing: 'Being quoted', completed: 'Quoted', declined: 'Declined' }[r.status] || r.status;
+  res.json({
+    success: true,
+    data: {
+      id: r.requestNumber || r.id,
+      ref: docRef('REQ', P.tripToken(r), ''),
+      status: r.status,
+      statusLabel,
+      createdAt: r.createdAt,
+      client: r.companyName || r.clientName || '',
+      owner: r.clientName || '',
+      clientEmail: r.clientEmail || '',
+      tripType: r.tripType,
+      route: r.route,
+      legs: legs.map((l, i) => ({
+        n: i + 1,
+        from: l.originIcao,
+        to: l.destIcao,
+        date: l.flightDate,
+        time: l.departureTime || '',
+        aircraft: (r.legAircraft || [])[r.aircraftMode === 'per_leg' ? i : 0] || null
+      })),
+      pax: r.paxCount,
+      luggage: r.luggageDetailsText || '',
+      pets: Array.isArray(r.petList) ? r.petList : [],
+      services: [
+        r.groundTransportation && r.groundTransportation.enabled ? `Ground transport · ${(r.groundTransportation.flightLeg || []).join(', ')}` : '',
+        r.helicopterTransfer && r.helicopterTransfer.enabled ? `Helicopter · ${(r.helicopterTransfer.flightLeg || []).join(', ')}` : '',
+        r.cateringRequested ? 'Catering' : '',
+        r.deicingInsurance && r.deicingInsurance !== 'none' ? 'De-icing protection' : '',
+        r.meetAndAssist ? 'Meet & assist' : ''
+      ].filter(Boolean),
+      notes: r.specialRequests || '',
+      marginPct: r.agentMarginPct,
+      tokensUsed: r.tokensUsed || 0,
+      quotes: mine.flatMap((g) =>
+        g.versions.map((v) => ({
+          ref: docRef(P.isBooked(v) ? 'TRI' : 'QUO', g.token, P.versionOf(v)),
+          href: P.isBooked(v) ? `/agent/trips/${g.token}` : `/agent/quotes/${v.id || v._id}`,
+          price: P.round2(v.pricing && v.pricing.totalFlightPrice),
+          currency: (v.pricing && v.pricing.currency) || 'EUR',
+          at: v.createdAt,
+          booked: P.isBooked(v)
+        }))
+      ),
+      messages: (r.messages || [])
+        .map((m) => ({
+          id: m.id || String(m._id),
+          from: m.sender,
+          fromDesk: m.senderRole !== 'agent',
+          text: m.message,
+          at: m.timestamp
+        }))
+        .sort((a, b) => new Date(a.at || 0) - new Date(b.at || 0))
+    }
+  });
 });
 
 router.post('/requests/:id/messages', async (req, res) => {

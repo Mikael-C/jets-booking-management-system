@@ -1136,6 +1136,9 @@ export interface AppSettings {
   documents?: {
     paymentTerms?: string; // e.g. "100 % on signature, and in all cases before departure"
     passengerDocsDeadlineHours?: number; // e.g. 48
+    checkInMinutes?: number; // passengers at the terminal / FBO before departure, e.g. 30
+    legalBaseUrl?: string; // where C1–C5 are published, e.g. "orbaero.com"
+    signHost?: string; // shown on the agreement, e.g. "sign.orbaero.com"
   };
   notifications: {
     emailAlerts: boolean;

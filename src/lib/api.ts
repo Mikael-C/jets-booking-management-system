@@ -411,10 +411,67 @@ export const api = {
   },
 
   // Public payment link page (no login)
+  /** Settings · Taxes (R-091), kept by the tax adviser. */
+  taxRules: {
+    list: () => request<{ success: boolean; data: any[] }>("/tax-rules"),
+    create: (row: any) => request<{ success: boolean; data: any }>("/tax-rules", { method: "POST", body: JSON.stringify(row) }),
+    update: (code: string, patch: any) =>
+      request<{ success: boolean; data: any }>(`/tax-rules/${encodeURIComponent(code)}`, { method: "PUT", body: JSON.stringify(patch) }),
+    newRate: (code: string, body: { rate: number; effectiveFrom: string; wording?: string; source?: string }) =>
+      request<{ success: boolean; data: any }>(`/tax-rules/${encodeURIComponent(code)}/new-rate`, { method: "POST", body: JSON.stringify(body) }),
+    confirm: (code: string, source?: string) =>
+      request<{ success: boolean; data: any }>(`/tax-rules/${encodeURIComponent(code)}/confirm`, { method: "POST", body: JSON.stringify({ source }) }),
+    unconfirm: (code: string) => request<{ success: boolean; data: any }>(`/tax-rules/${encodeURIComponent(code)}/unconfirm`, { method: "POST" }),
+    remove: (code: string) => request<{ success: boolean }>(`/tax-rules/${encodeURIComponent(code)}`, { method: "DELETE" }),
+  },
+
+  /** Online signing of the charter agreement (public; the link carries a private key). */
+  sign: {
+    get: (number: string, key: string, origin?: string) =>
+      request<{ success: boolean; data: any }>(
+        `/sign/${encodeURIComponent(number)}?k=${encodeURIComponent(key)}${origin ? `&origin=${encodeURIComponent(origin)}` : ""}`
+      ),
+    code: (number: string, key: string) =>
+      request<{ success: boolean; data: { sentTo: string; expiresInMinutes: number } }>(
+        `/sign/${encodeURIComponent(number)}/code?k=${encodeURIComponent(key)}`,
+        { method: "POST", body: JSON.stringify({}) }
+      ),
+    sign: (number: string, key: string, body: any) =>
+      request<{ success: boolean; data: any }>(`/sign/${encodeURIComponent(number)}/sign?k=${encodeURIComponent(key)}`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+  },
+
+  /** Desk side of the agreement: wet-signed copies and the signed files. */
+  agreements: {
+    uploadWet: (id: string, body: { file: string; fileName: string; signerName: string; signerPosition?: string }) =>
+      request<{ success: boolean; message: string }>(`/agreements/${encodeURIComponent(id)}/wet-signed`, { method: "POST", body: JSON.stringify(body) }),
+    confirmWet: (id: string, origin?: string) =>
+      request<{ success: boolean; data: any }>(`/agreements/${encodeURIComponent(id)}/wet-signed/confirm`, {
+        method: "POST",
+        body: JSON.stringify({ origin }),
+      }),
+    file: (id: string, kind: "agreement" | "certificate") =>
+      request<{ success: boolean; data: { fileName: string; dataUrl: string } }>(`/agreements/${encodeURIComponent(id)}/files/${kind}`),
+  },
+
+  /** Desk inbox: messages Curators send from their requests. */
+  curatorInbox: {
+    list: () => request<{ success: boolean; data: any }>(`/curator-inbox`),
+    read: (requestId: string) =>
+      request<{ success: boolean }>(`/curator-inbox/${encodeURIComponent(requestId)}/read`, { method: "POST" }),
+    reply: (requestId: string, message: string) =>
+      request<{ success: boolean }>(`/curator-inbox/${encodeURIComponent(requestId)}/reply`, {
+        method: "POST",
+        body: JSON.stringify({ message }),
+      }),
+  },
   /** Curator portal: everything is scoped to the signed-in Curator on the backend. */
   curator: {
     me: () => request<{ success: boolean; data: any }>(`/curator/me`),
     requests: () => request<{ success: boolean; data: any }>(`/curator/requests`),
+    requestDetail: (id: string) => request<{ success: boolean; data: any }>(`/curator/requests/${encodeURIComponent(id)}`),
     createRequest: (data: any) =>
       request<{ success: boolean; data: any }>(`/curator/requests`, { method: "POST", body: JSON.stringify(data) }),
     messageDesk: (requestId: string, message: string) =>
@@ -596,9 +653,11 @@ export const api = {
         method: "POST",
         body: JSON.stringify(data),
       }),
-    send: (id: string) =>
-      request<{ message: string; quoteStatus: string }>(`/quotes/${id}/send`, {
+    /** Email the quote; `to` picks the client or the Curator (default: the Curator, else the client). */
+    send: (id: string, to?: "client" | "curator") =>
+      request<{ message: string; quoteStatus: string; to?: string }>(`/quotes/${encodeURIComponent(id)}/send`, {
         method: "POST",
+        body: JSON.stringify({ to, origin: typeof window !== "undefined" ? window.location.origin : undefined }),
       }),
     updateStatus: (id: string, quoteStatus: string) =>
       request<any>(`/quotes/${id}/status`, {

@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { toast } from "@/components/ui/Toaster";
 import { api } from "@/lib/api";
 import CuratorAirportInput from "./CuratorAirportInput";
 import { AddClientModal, CuratorClient } from "./AgentClientsView";
@@ -240,7 +241,7 @@ export default function AgentNewRequestWizard() {
     setNeedTokens(false);
     const aircraftList = aircraftMode === "same" ? flightLegs.map(() => aircraft[0]) : aircraft;
     try {
-      await api.curator.createRequest({
+      const created = await api.curator.createRequest({
         clientId: client!.id,
         tripType,
         legs: flightLegs.map((l) => ({ ...l, pax: Number(passengers) })),
@@ -268,10 +269,12 @@ export default function AgentNewRequestWizard() {
         marginPct: Number(marginPct) || 0
       });
       announceTokens();
+      toast(`Request ${created?.data?.requestNumber || ""} has been sent to the desk. ${tokenCost} token${tokenCost === 1 ? "" : "s"} used.`.replace("  ", " "));
       router.push("/agent/requests");
     } catch (err: any) {
       if (err?.code === "INSUFFICIENT_TOKENS") setNeedTokens(true);
       setError(err?.message || "The request could not be sent.");
+      toast(err?.message || "The request could not be sent.", "error");
     } finally {
       setSending(false);
     }

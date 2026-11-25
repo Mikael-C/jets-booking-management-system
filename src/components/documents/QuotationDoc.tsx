@@ -5,7 +5,14 @@ import { Booking, FlightLeg } from "@/types/aviation";
 import { useAviation } from "@/lib/aviationContext";
 import { fbosFor } from "@/components/trip/tripTabUtils";
 import {
+  settingsFor,
   clientParty,
+  docOptions,
+  legRange,
+  sameAircraftAllLegs,
+  serviceRows,
+  servicesSummary,
+  tripWord,
   docMoney,
   documentPricing,
   fmtDate,
@@ -18,7 +25,9 @@ import {
   quoteNo,
   representative
 } from "@/lib/documentData";
-import { AmountRow, DocPage, Label, Letterhead, PartyBlock, PhotoBox, Ph, RepBlock, Section, TitleBlock, mono, useDocSettings } from "./docKit";
+import { AmountRow, DocPage, Label, Letterhead, PartyBlock, PhotoBox, Ph, RepBlock, Section, TitleBlock, mono, thCls, useDocSettings } from "./docKit";
+import ServiceDetailsPage from "./ServiceDetailsPage";
+import TaxRows from "./TaxRows";
 
 interface QuotationDocProps {
   booking: Booking;
@@ -50,7 +59,7 @@ function validUntil(raw?: string): string {
 }
 
 export default function QuotationDoc({ booking }: QuotationDocProps) {
-  const settings = useDocSettings();
+  const settings = settingsFor(booking, useDocSettings());
   const { users } = useAviation() as any;
   const company = settings.company;
   const cardFee = settings.pricing?.cardFeePercent ?? 3.5;
@@ -60,10 +69,23 @@ export default function QuotationDoc({ booking }: QuotationDocProps) {
   const rep = representative(booking, users || [], company);
   const number = quoteNo(booking);
   const issued = fmtDate((booking as any).quoteSentAt || booking.createdAt || booking.updatedAt);
+  const opts = docOptions(booking);
+  const rows = serviceRows(booking);
+  const servicesSum = pricing.services.reduce((s, l) => s + l.amount, 0);
+  const servicePage = opts.servicesOneLine && rows.length > 0;
+  const pages = servicePage ? 2 : 1;
+  const footer = `${number} · ${party.name}`;
+  const same = sameAircraftAllLegs(booking);
+  const vatText = company.vatWording || company.vatExemptionClause;
+
+  // Aircraft cards: one card when every leg flies the same aircraft, else one per leg
+  const aircraftGroups = same
+    ? [{ nums: pricing.legs.map((l) => l.legNumber), leg: pricing.legs[0]?.leg, index: 0 }]
+    : pricing.legs.map((l) => ({ nums: [l.legNumber], leg: l.leg, index: l.index }));
 
   return (
     <div className="quotation-document bg-transparent select-none print:max-w-none">
-      <DocPage footerLeft={`${number} · ${party.name}`} page={1} pages={1}>
+      <DocPage footerLeft={footer} page={1} pages={pages}>
         <Letterhead />
         <TitleBlock
           title="Charter quotation"
@@ -80,33 +102,68 @@ export default function QuotationDoc({ booking }: QuotationDocProps) {
           <RepBlock label="Your representative" rep={rep} />
         </div>
 
-        <Section className="mb-3">Itinerary and aircraft</Section>
-        <div className="space-y-3">
-          {pricing.legs.map(({ leg, index, price, legNumber }) => {
-            const ac = legAircraft(booking, leg, index);
-            const t = legTiming(leg, booking.aircraft);
-            const depFbo = realFbo(leg, "departure");
-            const arrFbo = realFbo(leg, "arrival");
-            const pax = leg.paxCount || leg.passengers?.length || 0;
-            return (
-              <div key={`${legNumber}-${index}`} className="border border-[#D1D5DB] rounded-[10px] p-3 pl-3.5 grid grid-cols-[1fr_290px] gap-5">
-                <div>
-                  <div className="font-bold text-[14px]">
-                    Leg {legNumber} · {fmtDay(leg.flightDate)}
-                    {pax ? ` · ${pax} pax` : ""}
-                  </div>
-                  <div className="mt-0.5">
-                    <strong>{leg.origin?.icao}</strong> {placeOf(leg.origin)} {t.dep} → <strong>{leg.destination?.icao}</strong> {placeOf(leg.destination)}{" "}
-                    {t.arr}
-                    {t.dayOffset > 0 ? <sup className="text-[9px] font-bold ml-0.5">+{t.dayOffset}</sup> : null}
-                    {t.minutes ? <span className={mono}> · {fmtDuration(t.minutes)}</span> : null}
-                  </div>
-                  {(depFbo || arrFbo) && (
+        <Section className="mb-2">Itinerary</Section>
+        <table className="w-full border-collapse mb-1">
+          <thead>
+            <tr className="border-b-2 border-[#111827]">
+              <th className={`${thCls} w-[40px]`}>Leg</th>
+              <th className={thCls}>Date</th>
+              <th className={thCls}>From</th>
+              <th className={thCls}>To</th>
+              <th className={`${thCls} text-right`}>Departs (LT)</th>
+              <th className={`${thCls} text-right`}>Arrives (LT)</th>
+              <th className={`${thCls} text-right`}>Flight time</th>
+              <th className={`${thCls} text-right w-[44px]`}>Pax</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pricing.legs.map(({ leg, index, legNumber }) => {
+              const t = legTiming(leg, legAircraft(booking, leg, index) as any);
+              const pax = leg.paxCount || leg.passengers?.length || 0;
+              const depFbo = realFbo(leg, "departure");
+              const arrFbo = realFbo(leg, "arrival");
+              return (
+                <tr key={`it-${legNumber}-${index}`} className="border-b border-[#E5E7EB] align-top">
+                  <td className="py-[8px] px-[6px]">{legNumber}</td>
+                  <td className="py-[8px] px-[6px] whitespace-nowrap">{fmtDay(leg.flightDate)}</td>
+                  <td className="py-[8px] px-[6px]">
+                    <div className="font-bold">{leg.origin?.icao}</div>
                     <div className="text-[11.5px] text-[#6B7280]">
-                      FBO {depFbo || "to be confirmed"} → {arrFbo || "to be confirmed"}
+                      {placeOf(leg.origin)}
+                      {depFbo ? ` · ${depFbo}` : ""}
                     </div>
-                  )}
-                  <div className="font-bold mt-3 mb-1">
+                  </td>
+                  <td className="py-[8px] px-[6px]">
+                    <div className="font-bold">{leg.destination?.icao}</div>
+                    <div className="text-[11.5px] text-[#6B7280]">
+                      {placeOf(leg.destination)}
+                      {arrFbo ? ` · ${arrFbo}` : ""}
+                    </div>
+                  </td>
+                  <td className={`py-[8px] px-[6px] text-right ${mono}`}>{t.dep || "—"}</td>
+                  <td className={`py-[8px] px-[6px] text-right ${mono}`}>
+                    {t.arr || "—"}
+                    {t.dayOffset > 0 ? <sup className="text-[9px] font-bold ml-0.5">+{t.dayOffset}</sup> : null}
+                  </td>
+                  <td className={`py-[8px] px-[6px] text-right ${mono}`}>{fmtDuration(t.minutes) || "—"}</td>
+                  <td className="py-[8px] px-[6px] text-right">{pax || ""}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        <p className="text-[11.5px] text-[#6B7280] mt-1 mb-5">Times are local at each airport; flight times are estimates.</p>
+
+        <div className="space-y-3 mb-2">
+          {aircraftGroups.map((g) => {
+            if (!g.leg) return null;
+            const ac = legAircraft(booking, g.leg, g.index);
+            const label = pricing.legs.length > 1 ? `Aircraft · ${legRange(g.nums)}` : "Aircraft";
+            return (
+              <div key={`ac-${g.nums.join("-")}`} className="border border-[#D1D5DB] rounded-[10px] p-3 pl-3.5 grid grid-cols-[1fr_290px] gap-5">
+                <div>
+                  <Label className="mb-1.5">{label}</Label>
+                  <div className="font-bold text-[14px] mb-1.5">
                     {ac.name || <Ph label="Aircraft" />}
                     {ac.category ? ` · ${ac.category}` : ""}
                   </div>
@@ -123,50 +180,47 @@ export default function QuotationDoc({ booking }: QuotationDocProps) {
                     <span>{ac.smoking || "—"}</span>
                   </div>
                 </div>
-                <div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <PhotoBox src={ac.exterior} label="Exterior" />
-                    <PhotoBox src={ac.cabin} label="Cabin" />
-                  </div>
-                  <div className="flex items-baseline justify-between mt-4 font-bold">
-                    <span>Charter price</span>
-                    <span>{docMoney(price, cur)}</span>
-                  </div>
+                <div className="grid grid-cols-2 gap-2 content-start">
+                  <PhotoBox src={ac.exterior} label="Exterior" />
+                  <PhotoBox src={ac.cabin} label="Cabin" />
                 </div>
               </div>
             );
           })}
         </div>
-        <p className="text-[11.5px] text-[#6B7280] mt-2 mb-6">
-          Times are local at each airport; block times are estimates. Photos are representative until the aircraft is assigned. Each flight is operated
-          by an approved AOC holder (the operating carrier); the registration and flight number of each leg are confirmed on the flight brief.
+        <p className="text-[11.5px] text-[#6B7280] mt-1 mb-6">
+          Photos are representative until the aircraft is assigned. Each flight is operated by an approved AOC holder (the operating carrier); the
+          registration and flight number of each leg are confirmed on the flight brief.
         </p>
 
         <Section className="mb-2">Price</Section>
         <div className="grid grid-cols-[1fr_230px] gap-6 items-start">
           <div>
-            {pricing.legs.map(({ leg, legNumber, price, index }) => (
-              <AmountRow
-                key={`p-${index}`}
-                label={`Charter price · leg ${legNumber} · ${leg.origin?.icao || ""} → ${leg.destination?.icao || ""}`}
-                amount={docMoney(price, cur)}
-              />
-            ))}
+            {opts.showPricePerLeg ? (
+              pricing.legs.map(({ leg, legNumber, price, index }) => (
+                <AmountRow
+                  key={`p-${index}`}
+                  label={`Charter price · leg ${legNumber} · ${leg.origin?.icao || ""} → ${leg.destination?.icao || ""}`}
+                  amount={docMoney(price, cur)}
+                />
+              ))
+            ) : (
+              <AmountRow label={`Charter price · ${tripWord(booking)}`} amount={docMoney(pricing.charterTotal, cur)} />
+            )}
             {pricing.passengerFees.map((f, i) => (
               <AmountRow key={`f-${i}`} label={f.label} amount={docMoney(f.amount, cur)} />
             ))}
-            {pricing.services.map((s, i) => (
-              <AmountRow key={`s-${i}`} label={s.label} amount={s.included ? "Included" : docMoney(s.amount, cur)} />
-            ))}
-            <AmountRow
-              label={
-                <>
-                  VAT <Ph value={company.vatExemptionClause} label="rate and exemption text per tax advice" className="text-[12px]" />
-                </>
-              }
-              amount={docMoney(pricing.vat, cur)}
-              border="dark"
-            />
+            {servicePage ? (
+              <AmountRow
+                label={`Additional services · ${servicesSummary(rows)} (details on page 2)`}
+                amount={servicesSum > 0 ? docMoney(servicesSum, cur) : "Included"}
+              />
+            ) : (
+              pricing.services.map((s, i) => (
+                <AmountRow key={`s-${i}`} label={s.label} amount={s.included ? "Included" : docMoney(s.amount, cur)} />
+              ))
+            )}
+            <TaxRows booking={booking} vat={pricing.vat} currency={cur} fallbackWording={vatText} />
             <div className="flex items-baseline justify-between px-[6px] py-[8px] border-b-2 border-[#111827]">
               <span className="font-bold">Total</span>
               <span className="font-bold text-[16px]">{docMoney(pricing.total, cur)}</span>
@@ -175,12 +229,12 @@ export default function QuotationDoc({ booking }: QuotationDocProps) {
           <div className="space-y-3 pt-1">
             <div className="border border-[#D1D5DB] rounded-[8px] p-3">
               <Label>Bank transfer</Label>
-              <div className="mt-1">{docMoney(pricing.total, cur)}</div>
+              <div className="mt-1 font-bold">{docMoney(pricing.total, cur)}</div>
               <div>no surcharge</div>
             </div>
             <div className="border border-[#D1D5DB] rounded-[8px] p-3">
               <Label>Card</Label>
-              <div className="mt-1">{docMoney(pricing.card, cur)}</div>
+              <div className="mt-1 font-bold">{docMoney(pricing.card, cur)}</div>
               <div>includes {cardFee} % card fee</div>
             </div>
           </div>
@@ -192,6 +246,10 @@ export default function QuotationDoc({ booking }: QuotationDocProps) {
           confirmation. Prices are valid until the date above. Cancellation terms are set out in the charter agreement.
         </div>
       </DocPage>
+
+      {servicePage && (
+        <ServiceDetailsPage booking={booking} footerLeft={footer} page={2} pages={pages} showPrices={opts.showServicePrices} currency={cur} />
+      )}
     </div>
   );
 }

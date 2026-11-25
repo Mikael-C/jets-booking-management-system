@@ -21,6 +21,7 @@ import {
   CreditCard
 } from "lucide-react";
 import StatusPill from "@/components/ui/StatusPill";
+import TaxRulesPanel from "@/components/admin/TaxRulesPanel";
 
 type SettingsTab =
   | "margin_tiers"
@@ -29,6 +30,7 @@ type SettingsTab =
   | "bank_accounts"
   | "terms"
   | "cancellation"
+  | "taxes"
   | "tokens"
   | "overdue"
   | "notifications"
@@ -58,6 +60,7 @@ export default function SettingsView() {
     { id: "bank_accounts", label: "Bank accounts (per currency)", icon: <Landmark className="w-4 h-4" /> },
     { id: "terms", label: "Terms versions", icon: <FileText className="w-4 h-4" /> },
     { id: "cancellation", label: "Cancellation policy", icon: <CalendarX2 className="w-4 h-4" /> },
+    { id: "taxes", label: "Taxes", icon: <Percent className="w-4 h-4" /> },
     { id: "tokens", label: "Tokens & pricing rules", icon: <Coins className="w-4 h-4" /> },
     { id: "overdue", label: "Request overdue SLA", icon: <Clock className="w-4 h-4" /> },
     { id: "notifications", label: "Notifications", icon: <Bell className="w-4 h-4" /> },
@@ -683,6 +686,9 @@ export default function SettingsView() {
               </div>
             </div>
           )}
+
+          {/* Taxes (R-091): saved straight to the server, row by row */}
+          {activeTab === "taxes" && <TaxRulesPanel />}
 
           {/* 5. Cancellation Policy */}
           {activeTab === "cancellation" && (

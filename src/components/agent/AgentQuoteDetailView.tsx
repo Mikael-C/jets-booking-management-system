@@ -2,6 +2,7 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { toast } from "@/components/ui/Toaster";
 import { api } from "@/lib/api";
 import {
   Card,
@@ -83,6 +84,7 @@ export default function AgentQuoteDetailView({ quoteId }: { quoteId: string }) {
       setAsking(false);
       setChangeText("");
       const left = res?.data?.freeChangesLeft ?? 0;
+      toast(`Change request sent to the desk for ${refText(q.ref)}.`);
       setMessage({
         tone: "ok",
         text: `Sent to the desk. The revised quote shows here when it is ready. ${left} free change${left === 1 ? "" : "s"} left on this request.`
@@ -92,7 +94,11 @@ export default function AgentQuoteDetailView({ quoteId }: { quoteId: string }) {
       if (err?.code === "NEW_REQUEST_NEEDED") {
         setAsking(false);
         setMessage({ tone: "err", text: err.message, newRequest: true });
-      } else setMessage({ tone: "err", text: err?.message || "The change could not be sent." });
+        toast(err.message, "error");
+      } else {
+        setMessage({ tone: "err", text: err?.message || "The change could not be sent." });
+        toast(err?.message || "The change could not be sent.", "error");
+      }
     } finally {
       setWorking(null);
     }
@@ -104,9 +110,11 @@ export default function AgentQuoteDetailView({ quoteId }: { quoteId: string }) {
     try {
       await api.curator.confirmQuote(q.id);
       setMessage({ tone: "ok", text: "Confirmed. The desk is rechecking the aircraft; the contract follows." });
+      toast(`Client confirmation for ${refText(q.ref)} sent to the desk.`);
       reload();
     } catch (err: any) {
       setMessage({ tone: "err", text: err?.message || "The confirmation could not be sent." });
+      toast(err?.message || "The confirmation could not be sent.", "error");
     } finally {
       setWorking(null);
     }

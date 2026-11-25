@@ -83,29 +83,80 @@ const sendEmail = async ({ to, subject, html, text, attachments = [] }) => {
   }
 };
 
-const sendQuoteEmail = async (to, bookingData, pdfBuffer = null) => {
-  const { tripNumber, client, legs, pricing, aircraft } = bookingData;
-  const leg = legs?.[0] || {};
+const esc = (v) => String(v == null ? '' : v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const money = (n, cur = 'EUR') => `${cur} ${(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const legCode = (a) => (a && (a.icao || a.code)) || '';
+const routeOf = (legs = []) => {
+  const live = legs.filter((l) => !l.isCancelled);
+  if (!live.length) return '';
+  return [legCode(live[0].origin), ...live.map((l) => legCode(l.destination))].filter(Boolean).join(' → ');
+};
+
+/** The links block printed in agreement emails (all clickable). */
+const linksBlock = (links) =>
+  links
+    ? `
+    <div style="margin-top:18px;padding:12px 14px;border:1px solid #C9A24A;border-radius:8px;background:#FBF6EA;">
+      <div><strong>Sign online:</strong> <a href="${esc(links.sign)}">${esc(links.signLabel)}</a></div>
+      <div style="font-size:13px;margin-top:6px;">
+        Charter agreement (C2): <a href="${esc(links.form)}">orbaero.com/legal/charter-agreement</a><br>
+        C1 Brokerage Terms: <a href="${esc(links.terms)}">/legal/terms</a> ·
+        C3 Cancellation Policy: <a href="${esc(links.cancellation)}">/legal/cancellation</a> ·
+        C5 Privacy Notice: <a href="${esc(links.privacy)}">/legal/privacy</a>
+      </div>
+    </div>`
+    : '';
+
+const sendQuoteEmail = async (to, bookingData, pdfBuffer = null, links = null) => {
+  const { client, legs, pricing, aircraft } = bookingData;
+  const ref = (links && links.quote) || bookingData.quoteId || bookingData.tripNumber || '';
+  const leg = (legs || [])[0] || {};
   const html = baseHtmlTemplate(`
     <h2>Your Charter Quotation</h2>
-    <p>Dear ${client?.fullName || 'Valued Client'},</p>
-    <p>Thank you for your interest in Orbelo Private Charter. Please find your quotation details below.</p>
-    <div class="detail-row"><span class="detail-label">Trip Reference</span><span class="detail-value">${tripNumber}</span></div>
-    <div class="detail-row"><span class="detail-label">Route</span><span class="detail-value">${leg.fromIcao || ''} → ${leg.toIcao || ''}</span></div>
-    <div class="detail-row"><span class="detail-label">Departure</span><span class="detail-value">${leg.departureDate || ''}</span></div>
-    <div class="detail-row"><span class="detail-label">Aircraft</span><span class="detail-value">${aircraft?.name || ''}</span></div>
-    <div class="detail-row"><span class="detail-label">Total Amount</span><span class="detail-value amount">${pricing?.currency || 'USD'} ${(pricing?.grandTotal || 0).toLocaleString()}</span></div>
-    <p style="margin-top:20px;">This quotation is valid for 48 hours. To proceed, please contact your Orbelo representative.</p>
-    <p>Best regards,<br>The Orbelo Charter Team</p>
+    <p>Dear ${esc(bookingData.authorisedOwnerName || client?.fullName || 'Valued Client')},</p>
+    <p>Please find your charter quotation attached.</p>
+    <div class="detail-row"><span class="detail-label">Quote</span><span class="detail-value">${esc(ref)}</span></div>
+    <div class="detail-row"><span class="detail-label">Route</span><span class="detail-value">${esc(routeOf(legs || []))}</span></div>
+    <div class="detail-row"><span class="detail-label">First departure</span><span class="detail-value">${esc(leg.flightDate || '')} ${esc(leg.departureTimeLocal || '')}</span></div>
+    <div class="detail-row"><span class="detail-label">Aircraft</span><span class="detail-value">${esc(aircraft?.name || '')}</span></div>
+    <div class="detail-row"><span class="detail-label">Total</span><span class="detail-value amount">${esc(money(pricing?.totalFlightPrice, pricing?.currency || 'EUR'))}</span></div>
+    <p style="margin-top:20px;">To book, sign the charter agreement online. The booking is confirmed as soon as it is signed.</p>
+    ${linksBlock(links)}
+    <p style="margin-top:18px;">Best regards,<br>The Orbelo Charter Team</p>
   `);
 
   const attachments = pdfBuffer ? [{
-    filename: `Orbelo-Quote-${tripNumber}.pdf`,
+    filename: `${ref || 'Quote'}.pdf`,
     content: pdfBuffer,
     contentType: 'application/pdf',
   }] : [];
 
-  return sendEmail({ to, subject: `Orbelo Charter Quotation - ${tripNumber}`, html, attachments });
+  return sendEmail({ to, subject: `Charter quotation ${ref}`, html, attachments });
+};
+
+/** One-time code for the online signature. */
+const sendSignCodeEmail = async (to, { name, number, code }) => {
+  const html = baseHtmlTemplate(`
+    <h2>Your signing code</h2>
+    <p>Dear ${esc(name || 'client')},</p>
+    <p>Use this code to sign charter agreement <strong>${esc(number)}</strong>:</p>
+    <p style="font-size:28px;letter-spacing:6px;font-weight:bold;margin:16px 0;">${esc(code)}</p>
+    <p>The code is valid for 15 minutes. If you did not ask for it, you can ignore this email.</p>
+  `);
+  return sendEmail({ to, subject: `Signing code for ${number}`, html, text: `Your code to sign ${number}: ${code} (valid 15 minutes)` });
+};
+
+/** The countersigned agreement and the signature certificate, after the client signs. */
+const sendSignedAgreementEmail = async (to, { name, number, tripNumber, links, attachments = [], cc }) => {
+  const html = baseHtmlTemplate(`
+    <h2>Charter agreement signed</h2>
+    <p>Dear ${esc(name || 'client')},</p>
+    <p>Thank you. Charter agreement <strong>${esc(number)}</strong> is signed and countersigned, and your booking <strong>${esc(tripNumber)}</strong> is confirmed.</p>
+    <p>The countersigned agreement and the signature certificate are attached. Your first invoice follows separately with its due date.</p>
+    ${linksBlock(links)}
+    <p style="margin-top:18px;">Best regards,<br>The Orbelo Charter Team</p>
+  `);
+  return sendEmail({ to: cc ? [to, cc].filter(Boolean).join(',') : to, subject: `Charter agreement ${number} signed · booking ${tripNumber}`, html, attachments });
 };
 
 const sendBookingConfirmationEmail = async (to, bookingData) => {
@@ -199,6 +250,8 @@ const sendAgentNotificationEmail = async (to, requestData) => {
 module.exports = {
   sendEmail,
   sendQuoteEmail,
+  sendSignCodeEmail,
+  sendSignedAgreementEmail,
   sendBookingConfirmationEmail,
   sendInvoiceEmail,
   sendPaymentReceivedEmail,

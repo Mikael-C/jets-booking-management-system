@@ -13,6 +13,9 @@ const requestMessageSchema = new mongoose.Schema({
   message: { type: String, required: true },
   timestamp: { type: Date, default: Date.now },
   attachments: [{ name: String, url: String, type: String }],
+  // Desk inbox: when the desk read a Curator message / when the Curator read a desk reply
+  readByDeskAt: { type: Date, default: null },
+  readByCuratorAt: { type: Date, default: null },
 }, { _id: true });
 
 const sourcingOptionSchema = new mongoose.Schema({

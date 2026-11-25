@@ -2,9 +2,15 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
-import { estimateLegMinutes, fmtDuration, legTiming } from "@/lib/documentData";
+import { estimateLegMinutes, fmtDuration, legTiming, quoteNo as docQuoteNo, agreementNo as docAgreementNo, serviceRows as docServiceRows } from "@/lib/documentData";
 import { fbosFor } from "@/components/trip/tripTabUtils";
 import { HeaderId } from "@/components/ui/DocId";
+import { toast } from "@/components/ui/Toaster";
+import { api } from "@/lib/api";
+import QuotationDoc from "@/components/documents/QuotationDoc";
+import CharterAgreementDoc from "@/components/documents/CharterAgreementDoc";
+import { downloadDocumentAsPdf } from "@/lib/pdfExporter";
+import { computeTaxes, summarizeTaxes, countryOf, type TaxRule, type TaxableLine } from "@/lib/taxes";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAviation } from "@/lib/aviationContext";
 import { Booking, FlightLeg, TripType, Aircraft, OperatorRecord, TripServiceItem } from "@/types/aviation";
@@ -121,6 +127,17 @@ const QB_STEP_LABELS: Record<string, string> = {
   "06": "06 Price"
 };
 
+// The seven stages of the builder (design), and the steps each one holds
+const QB_STAGES: { n: number; label: string }[] = [
+  { n: 1, label: "Client" },
+  { n: 2, label: "Legs and times" },
+  { n: 3, label: "Aircraft and operators" },
+  { n: 4, label: "Passengers and pets" },
+  { n: 5, label: "Services" },
+  { n: 6, label: "Price" },
+  { n: 7, label: "Review and send" }
+];
+
 const NEW_OPERATOR_DRAFT_ID = "__new-operator-draft__";
 
 const NEW_OPERATOR_DOCUMENTS = [
@@ -233,6 +250,31 @@ interface QuoteBuilderProps {
   mode?: "quote" | "booking";
 }
 
+// The aircraft a Curator asked for: by model name first, then by category
+const REQUEST_CATEGORY_TO_FLEET: Record<string, string> = {
+  light: "light",
+  midsize: "midsize",
+  "super-midsize": "super-midsize",
+  super_midsize: "super-midsize",
+  large: "heavy",
+  heavy: "heavy",
+  "ultra-long-range": "ultra-long-range",
+  ultra_long_range: "ultra-long-range"
+};
+function matchRequestAircraft(model?: string, category?: string, categoryLabel?: string): Aircraft | undefined {
+  const m = String(model || "").toLowerCase().trim();
+  if (m) {
+    const byName = fleetData.find((a) => a.name.toLowerCase() === m) ||
+      fleetData.find((a) => a.name.toLowerCase().includes(m) || m.includes(a.name.toLowerCase()));
+    if (byName) return byName;
+  }
+  const c = String(category || "").toLowerCase().replace(/\s+/g, "-");
+  const fleetCat = REQUEST_CATEGORY_TO_FLEET[c] || (categoryLabel ? REQUEST_CATEGORY_TO_FLEET[String(categoryLabel).toLowerCase().replace(/\s+/g, "-")] : undefined) || c;
+  const byCat = fleetData.find((a) => String(a.category).toLowerCase() === fleetCat);
+  if (byCat && m) return { ...byCat, name: model as string };
+  return byCat;
+}
+
 export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: QuoteBuilderProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -262,7 +304,8 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
     updateAgentRequestStatus,
     sendMessage,
     addOperator,
-    updateAccount
+    updateAccount,
+    currentUser
   } = useAviation();
 
   // Find source if revising or creating from request
@@ -331,6 +374,12 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
       const raw = sourceTrip.tripId || sourceTrip.tripNumber || sourceTrip.id;
       return raw.replace(/^booking-/i, "").replace(/^trip-/i, "").replace(/^quo-/i, "").split("-")[0].toUpperCase();
     }
+    // A Curator request already carries its trip number (TRI-XX000): the quote uses the same code
+    const reqTrip = String((sourceRequest as any)?.tripId || (sourceRequest as any)?.quoteGroupId || "");
+    if (reqTrip) {
+      const token = extractFeToken(reqTrip);
+      if (token) return token;
+    }
     if (sourceRequest?.createdTripId) {
       const token = extractFeToken(sourceRequest.createdTripId);
       if (token) return token;
@@ -340,7 +389,6 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
   });
 
   const nextVersionNum = useMemo(() => {
-    if (!sourceTrip) return 1;
     const existing = bookings.filter((b) => {
       const bToken = extractFeToken(b.tripId || b.tripNumber || b.quoteId || b.quoteReference || b.id);
       if (bToken && bToken.toUpperCase() === rootId.toUpperCase()) return true;
@@ -352,9 +400,11 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
         .toUpperCase();
       return bRoot === rootId.toUpperCase();
     });
+    // A new quote on a trip number that already has quotes (e.g. a second quote for the same request) takes the next version
+    if (!sourceTrip && existing.length === 0) return 1;
     const maxVer = existing.reduce(
       (max, b) => Math.max(max, b.quoteVersion || 1),
-      sourceTrip.quoteVersion || 1
+      sourceTrip?.quoteVersion || 1
     );
     return maxVer + 1;
   }, [bookings, rootId, sourceTrip]);
@@ -386,10 +436,11 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
       if (match) return match.accountNumber || match.id;
       if (sourceRequest.accountId) return sourceRequest.accountId;
     }
-    return accounts[0]?.accountNumber || "ACC-21737";
+    if (sourceRequest) return "";
+    return accounts[0]?.accountNumber || "";
   });
   const [leadPaxName, setLeadPaxName] = useState<string>(() => {
-    return sourceRequest?.clientName || sourceTrip?.client.fullName || "Edward Brinkmann";
+    return sourceRequest?.clientName || sourceTrip?.client.fullName || "";
   });
 
   // Searchable account dropdown state
@@ -424,13 +475,13 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
   }, []);
 
   const resolveOwnerNameForAccount = (acc: any) => {
-    if (!acc) return "Edward Brinkmann";
+    if (!acc) return "";
     const primaryPerson = acc.authorizedPersons?.find((p: any) => p.isPrimaryAccountName);
     if (primaryPerson?.fullName) return primaryPerson.fullName;
     if (acc.preferredContactName) return acc.preferredContactName;
     if (acc.authorizedPersons?.[0]?.fullName) return acc.authorizedPersons[0].fullName;
     if (acc.accountType === "individual") return acc.name;
-    return acc.name || "Edward Brinkmann";
+    return acc.name || "";
   };
 
   const handleSelectAccount = (acc: any) => {
@@ -511,6 +562,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
   });
   const [returnDepartureTime, setReturnDepartureTime] = useState<string>(() => {
     if (sourceTrip?.legs[1]?.departureTimeLocal) return sourceTrip.legs[1].departureTimeLocal;
+    if ((sourceRequest as any)?.returnDepartureTime) return parseTimeToLocal((sourceRequest as any).returnDepartureTime, "16:00");
     return "16:00";
   });
 
@@ -570,9 +622,9 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
       const m = sourceRequest.luggageDetailsText.match(/(\d+)/);
       if (m) return parseInt(m[1], 10);
     }
-    return 6;
+    return sourceRequest ? 0 : 6;
   });
-  const [oversizeItems, setOversizeItems] = useState<string>("Golf bag ×1");
+  const [oversizeItems, setOversizeItems] = useState<string>(() => String((sourceRequest as any)?.oversizeItems || (sourceRequest as any)?.luggage?.specialLuggageDescription || ""));
   // Pets come from the trip being revised, then the Curator's request; a new quote starts with none
   const initialPets = useMemo<PetItem[]>(() => {
     const fromTrip: any[] = (sourceTrip as any)?.pets || [];
@@ -632,18 +684,14 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
 
   // 5. Services: Helicopter & Ground Transportation full state (Images 6 & 7)
   const [heliTransferType, setHeliTransferType] = useState<"arrival" | "departure" | "both">("arrival");
-  const [heliPrefType, setHeliPrefType] = useState<string>("Twin Engine VIP (e.g. Agusta 109)");
-  const [heliDepLocation, setHeliDepLocation] = useState<string>("Monaco Heliport (LNMC)");
-  const [heliArrLocation, setHeliArrLocation] = useState<string>("Nice Côte d'Azur (LFMN)");
-  const [heliLuggageNotes, setHeliLuggageNotes] = useState<string>("3 pax, 3 soft bags");
+  const [heliPrefType, setHeliPrefType] = useState<string>("");
+  const [heliDepLocation, setHeliDepLocation] = useState<string>("");
+  const [heliArrLocation, setHeliArrLocation] = useState<string>("");
+  const [heliLuggageNotes, setHeliLuggageNotes] = useState<string>("");
 
   // Dynamic Ground Transportation State (Image 7)
-  const [hasGroundTransport, setHasGroundTransport] = useState<boolean>(true);
-  const [groundLegsEnabled, setGroundLegsEnabled] = useState<Record<string, boolean>>({
-    "leg-1": true,
-    "leg-2": true,
-    "leg-3": false,
-  });
+  const [hasGroundTransport, setHasGroundTransport] = useState<boolean>(false);
+  const [groundLegsEnabled, setGroundLegsEnabled] = useState<Record<string, boolean>>({});
   const [groundCollapsed, setGroundCollapsed] = useState<Record<string, boolean>>({});
   const [groundTransfers, setGroundTransfers] = useState<Record<string, {
     arrivalRequired: boolean;
@@ -656,40 +704,11 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
     departurePrice: number;
     passengers: number;
     specialRequests: string;
-  }>>({
-    "leg-1": {
-      arrivalRequired: true,
-      arrivalDropoff: "The Savoy, Strand, London",
-      arrivalVehicle: "Luxury",
-      arrivalPrice: 650,
-      departureRequired: true,
-      departurePickup: "14 Bourdillon Road, Ikoyi, Lagos",
-      departureVehicle: "SUV",
-      departurePrice: 180,
-      passengers: 5,
-      specialRequests: "Meet at aircraft steps; child seat ×1"
-    },
-    "leg-2": {
-      arrivalRequired: true,
-      arrivalDropoff: "14 Bourdillon Road, Ikoyi, Lagos",
-      arrivalVehicle: "SUV",
-      arrivalPrice: 180,
-      departureRequired: true,
-      departurePickup: "The Savoy, Strand, London",
-      departureVehicle: "Luxury",
-      departurePrice: 650,
-      passengers: 5,
-      specialRequests: "Meet at aircraft steps; child seat ×1"
-    }
-  });
+  }>>({});
 
   // Dynamic Helicopter Transfer State (Image 6)
   const [hasHeliTransfer, setHasHeliTransfer] = useState<boolean>(false);
-  const [heliLegsEnabled, setHeliLegsEnabled] = useState<Record<string, boolean>>({
-    "leg-1": true,
-    "leg-2": false,
-    "leg-3": false,
-  });
+  const [heliLegsEnabled, setHeliLegsEnabled] = useState<Record<string, boolean>>({});
   const [heliTransfers, setHeliTransfers] = useState<Record<string, {
     transferType: "arrival" | "departure" | "both";
     passengers: number;
@@ -705,24 +724,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
     arrivalPrice?: number;
     luggageDetails: string;
     specialRequests: string;
-  }>>({
-    "leg-1": {
-      transferType: "arrival",
-      passengers: 4,
-      prefType: "Twin-engine, e.g. AW109 or similar",
-      depArrLocation: "EGLF Farnborough Airport",
-      destination: "Battersea Heliport, London",
-      departurePickup: "Battersea Heliport, London",
-      departureAirport: "EGLF Farnborough Airport",
-      departurePrice: 1200,
-      arrivalAirport: "EGLF Farnborough Airport",
-      arrivalDestination: "Battersea Heliport, London",
-      arrivalPrice: 1200,
-      clientPrice: 2400,
-      luggageDetails: "4 cabin bags, 2 suitcases (soft)",
-      specialRequests: "Landing permission at the hotel helipad to be confirmed"
-    }
-  });
+  }>>({});
 
   // 4. Operator Offer
   const [selectedOperatorId, setSelectedOperatorId] = useState<string>(() => {
@@ -772,6 +774,84 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
 
   // Breadcrumb follows the step in view
   const [activeStep, setActiveStep] = useState<string>("01");
+
+  // ===== Seven stages (design): the existing steps grouped, one stage on screen at a time =====
+  const [stage, setStage] = useState<number>(1);
+  const [stagesSeen, setStagesSeen] = useState<number>(1);
+  const stageCls = (n: number) => (stage === n ? "" : "hidden");
+  const goToStage = (n: number) => {
+    const next = Math.max(1, Math.min(7, n));
+    setStage(next);
+    setStagesSeen((prev) => Math.max(prev, next));
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  const [saving, setSaving] = useState(false);
+
+  // Step 7 · what the documents print (saved on the quote, read by the quote and the agreement)
+  const savedDocOptions: any = (sourceTrip as any)?.docOptions || {};
+  const [docPricePerLeg, setDocPricePerLeg] = useState<boolean | null>(() =>
+    typeof savedDocOptions.showPricePerLeg === "boolean" ? savedDocOptions.showPricePerLeg : null
+  );
+  const [docServicesOneLine, setDocServicesOneLine] = useState<boolean>(() =>
+    typeof savedDocOptions.servicesOneLine === "boolean" ? savedDocOptions.servicesOneLine : true
+  );
+  const [docServicePrices, setDocServicePrices] = useState<boolean>(() =>
+    typeof savedDocOptions.showServicePrices === "boolean" ? savedDocOptions.showServicePrices : true
+  );
+  // Step 7 · where the quote goes
+  const [sendToClient, setSendToClient] = useState<boolean>(true);
+  const [sendToCurator, setSendToCurator] = useState<boolean>(() => Boolean(reqId || (sourceTrip as any)?.agentEmail));
+  const [sendWhatsApp, setSendWhatsApp] = useState<boolean>(false);
+  const [previewDoc, setPreviewDoc] = useState<"quote" | "agreement">("quote");
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
+  // Taxes (R-091): the adviser's table from Settings, per-line changes made on the price step, and their log
+  const [taxRules, setTaxRules] = useState<TaxRule[]>([]);
+  const [taxRulesState, setTaxRulesState] = useState<"loading" | "ready" | "error">("loading");
+  const [taxOverrides, setTaxOverrides] = useState<Record<string, string[]>>(() => (sourceTrip as any)?.taxOverrides || {});
+  const [taxChangeLog, setTaxChangeLog] = useState<{ at: string; by: string; line: string; from: string; to: string }[]>(
+    () => (sourceTrip as any)?.taxChangeLog || []
+  );
+  const [taxChangeKey, setTaxChangeKey] = useState<string | null>(null);
+  const loadTaxRules = React.useCallback(() => {
+    setTaxRulesState("loading");
+    api.taxRules
+      .list()
+      .then((res: any) => {
+        setTaxRules(Array.isArray(res?.data) ? res.data : []);
+        setTaxRulesState("ready");
+      })
+      .catch(() => setTaxRulesState("error"));
+  }, []);
+  useEffect(() => {
+    loadTaxRules();
+  }, [loadTaxRules]);
+  // C1, C2, C3, C5 versions in force today, frozen on the quote so the agreement and signature record them
+  const [legalVersions, setLegalVersions] = useState<Record<string, string>>({});
+  useEffect(() => {
+    api.library
+      .documents()
+      .then((res: any) => {
+        const out: Record<string, string> = {};
+        (res?.data || []).forEach((d: any) => {
+          const m = String(d.code || "").match(/^POL-(C\d)$/);
+          if (m) out[m[1]] = String(d.version || "");
+        });
+        setLegalVersions(out);
+      })
+      .catch(() => undefined);
+  }, []);
+  // Private key of the signing link of this quote version
+  const [signToken] = useState<string>(() => {
+    try {
+      const a = new Uint8Array(12);
+      crypto.getRandomValues(a);
+      return Array.from(a, (x) => x.toString(16).padStart(2, "0")).join("");
+    } catch {
+      return `${Date.now().toString(16)}${Math.random().toString(16).slice(2, 14)}`;
+    }
+  });
 
   const handleSaveNewOperator = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -903,7 +983,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
       return {
         limousine: Boolean(sourceRequest.limousineService || sText.includes("limousine")),
         helicopter: Boolean(sourceRequest.helicopterService || sText.includes("helicopter")),
-        catering: Boolean(sText.includes("vip") || sText.includes("menu") || sText.includes("catering") || sourceRequest.specialRequests),
+        catering: Boolean((sourceRequest as any).cateringRequested || sText.includes("catering") || sText.includes("menu")),
         deicing: Boolean(
           sourceRequest.deicingInsurance === "at_reservation" ||
           sourceRequest.deicingInsurance === "within_48h" ||
@@ -914,9 +994,9 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
       };
     }
     return {
-      limousine: true,
+      limousine: false,
       helicopter: false,
-      catering: true,
+      catering: false,
       deicing: false,
       carbonOffset: false,
     };
@@ -945,7 +1025,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
   const [passengerFeesItemised, setPassengerFeesItemised] = useState<boolean>(true);
   // Zero-based indexes of the legs the passenger fee applies to. Follows the number of legs on the trip.
   const [passengerFeeLegs, setPassengerFeeLegs] = useState<number[]>([1]);
-  const [passengerFeesDesc, setPassengerFeesDesc] = useState<string>("Abuja (DNAA) departure passenger charge");
+  const [passengerFeesDesc, setPassengerFeesDesc] = useState<string>("");
   const [passengerFeesAmount, setPassengerFeesAmount] = useState<number>(45);
   const [passengerFeesCharged, setPassengerFeesCharged] = useState<"pax" | "flat">("pax");
   const [passengerFeesPax, setPassengerFeesPax] = useState<number>(() => paxCount || 5);
@@ -955,57 +1035,222 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
   const [companyMarginOverrideAmount, setCompanyMarginOverrideAmount] = useState<number>(3500);
 
   const [agentMarginTierPct, setAgentMarginTierPct] = useState<number>(() => {
-    return sourceRequest?.agentMarginPct || 10;
+    if (sourceRequest) return Number(sourceRequest.agentMarginPct) || 0;
+    return 10;
   });
   const [agentMarginOverride, setAgentMarginOverride] = useState<boolean>(false);
   const [agentMarginOverrideAmount, setAgentMarginOverrideAmount] = useState<number>(5000);
 
   const [companyMarginText, setCompanyMarginText] = useState("8 % · tier > € 35k");
   const [agentMarginText, setAgentMarginText] = useState(() => {
-    if (sourceRequest?.agentMarginPct) {
-      return `${sourceRequest.agentMarginPct} % · set by agent`;
+    if (sourceRequest) {
+      return `${Number(sourceRequest.agentMarginPct) || 0} % · set by Curator`;
     }
     return "10 % · set by agent";
   });
   const [currency, setCurrency] = useState<"EUR" | "USD" | "GBP" | "CHF">("EUR");
-  const [validUntil, setValidUntil] = useState("16 Nov 18:00 LT");
+  // Quotes are valid for 48 hours by default
+  const [validUntil, setValidUntil] = useState(() => {
+    const d = new Date(Date.now() + 48 * 3600 * 1000);
+    return `${d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })} 18:00 LT`;
+  });
 
-  // Keep in sync if sourceRequest loads later
+  // Everything the Curator keyed into the request fills the builder once, as soon as the request is
+  // available (it can load after the page). It is applied one time only, so the desk's own edits are
+  // never overwritten by the background refresh of the requests list.
+  const appliedRequestRef = React.useRef<string | null>(null);
   useEffect(() => {
-    if (sourceRequest) {
-      if (sourceRequest.clientName) setLeadPaxName(sourceRequest.clientName);
-      if (sourceRequest.originIcao) {
-        const apt = findAirportByCode(sourceRequest.originIcao);
-        if (apt) setOriginAirport(apt);
-      }
-      if (sourceRequest.destIcao) {
-        const apt = findAirportByCode(sourceRequest.destIcao);
-        if (apt) setDestAirport(apt);
-      }
-      if (sourceRequest.flightDate) setFlightDate(parseDateToIso(sourceRequest.flightDate, "2026-11-24"));
-      if (sourceRequest.departureTime) setDepartureTime(parseTimeToLocal(sourceRequest.departureTime, "08:30"));
-      if (sourceRequest.returnFlightDate) setReturnFlightDate(parseDateToIso(sourceRequest.returnFlightDate, "2026-11-30"));
-      if (sourceRequest.paxCount) setPaxCount(sourceRequest.paxCount);
-      if (sourceRequest.tripType) setTripType(sourceRequest.tripType);
-      if (sourceRequest.agentMarginPct) setAgentMarginText(`${sourceRequest.agentMarginPct} % · set by agent`);
-      if (sourceRequest.aircraftPreference || sourceRequest.categoryLabel) {
-        const pref = `${sourceRequest.aircraftPreference || ""} ${sourceRequest.categoryLabel || ""}`.toLowerCase();
-        const matched = fleetData.find(
-          (a) =>
-            a.name.toLowerCase().includes(pref) ||
-            pref.includes(a.name.toLowerCase()) ||
-            a.category.toLowerCase().includes(pref) ||
-            pref.includes(a.category.toLowerCase()) ||
-            (pref.includes("challenger") && a.name.toLowerCase().includes("challenger")) ||
-            (pref.includes("latitude") && a.name.toLowerCase().includes("latitude")) ||
-            (pref.includes("super mid") && (a.category.toLowerCase().includes("mid") || a.name.toLowerCase().includes("latitude") || a.name.toLowerCase().includes("challenger")))
-        );
-        if (matched) setSelectedAircraft(matched);
-      }
+    if (!sourceRequest || sourceTrip) return;
+    const key = String(sourceRequest.id || (sourceRequest as any).requestNumber || "");
+    if (!key || appliedRequestRef.current === key) return;
+    appliedRequestRef.current = key;
+    const r: any = sourceRequest;
+    const pax = Number(r.paxCount) || 1;
+
+    // Client: the account whose email or name matches the Curator's client
+    const email = String(r.clientEmail || "").toLowerCase();
+    const names = [r.companyName, r.clientName].filter(Boolean).map((x: string) => x.toLowerCase());
+    const acc = accounts.find((a: any) => {
+      const mails = [a.email, a.preferredContactEmail, ...(a.authorizedPersons || []).map((p: any) => p.email)]
+        .filter(Boolean)
+        .map((x: string) => x.toLowerCase());
+      if (email && mails.includes(email)) return true;
+      const n = String(a.name || "").toLowerCase();
+      return Boolean(n) && names.some((x) => x === n);
+    });
+    if (acc) {
+      setSelectedAccountId((acc as any).accountNumber || acc.id);
+      applyAccountDefaults(acc);
     }
-  }, [sourceRequest]);
+    if (r.clientName) setLeadPaxName(r.clientName);
+    if (r.assistantName && r.documentsTo && r.documentsTo !== "owner") {
+      setIsHandledByPa(true);
+      setPaName(r.assistantName);
+      setPaEmail(r.assistantEmail || "");
+    }
+    if (r.documentsTo === "owner" || r.documentsTo === "assistant" || r.documentsTo === "both") setSendDocsTo(r.documentsTo);
 
+    // Legs, dates, times and the aircraft asked for on each leg
+    const reqLegs: any[] = Array.isArray(r.multiLegs) && r.multiLegs.length
+      ? r.multiLegs
+      : [
+          { originIcao: r.originIcao, destIcao: r.destIcao, flightDate: r.flightDate, departureTime: r.departureTime },
+          ...(r.returnFlightDate ? [{ originIcao: r.destIcao, destIcao: r.originIcao, flightDate: r.returnFlightDate, departureTime: r.returnDepartureTime }] : [])
+        ];
+    const legAc: any[] = Array.isArray(r.legAircraft) ? r.legAircraft : [];
+    const acFor = (i: number): Aircraft => {
+      const a = legAc[i] || legAc[0] || {};
+      return matchRequestAircraft(a.model || r.preferredAircraft, a.category || r.aircraftCategory, a.categoryLabel || r.categoryLabel) || selectedAircraft;
+    };
+    const tt: TripType = r.tripType === "one_way" || r.tripType === "round_trip" || r.tripType === "multi_leg"
+      ? r.tripType
+      : reqLegs.length > 2 ? "multi_leg" : reqLegs.length === 2 ? "round_trip" : "one_way";
+    setTripType(tt);
+    const first = reqLegs[0] || {};
+    const o = findAirportByCode(first.originIcao || r.originIcao || "");
+    const d = findAirportByCode(first.destIcao || r.destIcao || "");
+    if (o) setOriginAirport(o);
+    if (d) setDestAirport(d);
+    if (first.flightDate) setFlightDate(parseDateToIso(first.flightDate, first.flightDate));
+    if (first.departureTime) setDepartureTime(parseTimeToLocal(first.departureTime, "08:30"));
+    const second = reqLegs[1];
+    if (second?.flightDate) setReturnFlightDate(parseDateToIso(second.flightDate, second.flightDate));
+    if (second?.departureTime) setReturnDepartureTime(parseTimeToLocal(second.departureTime, "16:00"));
+    setMultiLegs(
+      reqLegs.map((l, i) => ({
+        id: `leg-${i + 1}`,
+        origin: findAirportByCode(l.originIcao || "") || (i === 0 ? o : undefined) || airportsData[0],
+        destination: findAirportByCode(l.destIcao || "") || airportsData[1],
+        flightDate: l.flightDate ? parseDateToIso(l.flightDate, l.flightDate) : "",
+        departureTime: l.departureTime ? parseTimeToLocal(l.departureTime, "10:00") : "10:00",
+        aircraft: acFor(i)
+      }))
+    );
+    const perLeg = r.aircraftMode === "per_leg" && legAc.some((a, i) => i > 0 && (a.model !== legAc[0]?.model || a.category !== legAc[0]?.category));
+    setSameAircraftOnAllLegs(!perLeg);
+    setSelectedAircraft(acFor(0));
 
+    // Passengers, luggage and pets
+    setPaxCount(pax);
+    setPassengerFeesPax(pax);
+    setLuggagePieces(Number(r.luggageCount ?? r.luggage?.pieceCount) || 0);
+    setOversizeItems(String(r.oversizeItems || r.luggage?.specialLuggageDescription || ""));
+    const reqPets: any[] = Array.isArray(r.petList) && r.petList.length ? r.petList : Array.isArray(r.pets) ? r.pets : [];
+    const withPets = Boolean(r.hasPets) && reqPets.length > 0;
+    setHasPets(withPets);
+    setPets(
+      withPets
+        ? reqPets.map((p, i) => ({
+            ...newPetRow(),
+            id: `pet-${i + 1}`,
+            name: String(p.name || p.petName || ""),
+            species: String(p.species || p.petType || "Dog"),
+            breed: String(p.breed || ""),
+            weightKg: Number(p.weightKg) || 0,
+            ...(p.travels ? { travels: String(p.travels) } : {})
+          }))
+        : []
+    );
+
+    // Ground transport per leg, as the Curator described it (prices are set by the desk)
+    const vehicle = (v: any): "Sedan" | "SUV" | "Van" | "Luxury" => {
+      const x = String(v || "").toLowerCase();
+      if (x.includes("suv")) return "SUV";
+      if (x.includes("van") || x.includes("minibus") || x.includes("sprinter")) return "Van";
+      if (x.includes("lux") || x.includes("limo") || x.includes("s-class") || x.includes("rolls")) return "Luxury";
+      return "Sedan";
+    };
+    const gLegs: any[] = (r.groundTransportation?.perLeg || []).filter((g: any) => g && g.selected !== false);
+    if (r.groundTransportation?.enabled && gLegs.length) {
+      const enabled: Record<string, boolean> = {};
+      const transfers: Record<string, any> = {};
+      gLegs.forEach((g) => {
+        const k = `leg-${Number(g.leg) || 1}`;
+        enabled[k] = true;
+        transfers[k] = {
+          arrivalRequired: Boolean(g.arrival?.enabled),
+          arrivalDropoff: String(g.arrival?.location || ""),
+          arrivalVehicle: vehicle(g.arrival?.vehicle),
+          arrivalPrice: 0,
+          departureRequired: Boolean(g.departure?.enabled),
+          departurePickup: String(g.departure?.location || ""),
+          departureVehicle: vehicle(g.departure?.vehicle),
+          departurePrice: 0,
+          passengers: Number(g.passengers) || pax,
+          specialRequests: String(g.special || "")
+        };
+      });
+      setHasGroundTransport(true);
+      setGroundLegsEnabled(enabled);
+      setGroundTransfers(transfers);
+    } else {
+      setHasGroundTransport(false);
+      setGroundLegsEnabled({});
+      setGroundTransfers({});
+    }
+
+    // Helicopter transfers per leg
+    const hLegs: any[] = (r.helicopterTransfer?.perLeg || []).filter((h: any) => h && h.selected !== false);
+    if (r.helicopterTransfer?.enabled && hLegs.length) {
+      const enabled: Record<string, boolean> = {};
+      const transfers: Record<string, any> = {};
+      hLegs.forEach((h) => {
+        const n = Number(h.leg) || 1;
+        const k = `leg-${n}`;
+        const legDest = reqLegs[n - 1]?.destIcao || "";
+        enabled[k] = true;
+        transfers[k] = {
+          transferType: "arrival",
+          passengers: Number(h.passengers) || pax,
+          prefType: String(h.type || ""),
+          depArrLocation: String(h.from || legDest),
+          destination: String(h.to || ""),
+          arrivalAirport: String(h.from || legDest),
+          arrivalDestination: String(h.to || ""),
+          arrivalPrice: 0,
+          clientPrice: 0,
+          luggageDetails: String(h.luggage || ""),
+          specialRequests: ""
+        };
+      });
+      setHasHeliTransfer(true);
+      setHeliLegsEnabled(enabled);
+      setHeliTransfers(transfers);
+    } else {
+      setHasHeliTransfer(false);
+      setHeliLegsEnabled({});
+      setHeliTransfers({});
+    }
+
+    // Other services
+    setServiceOptions((prev) => ({
+      ...prev,
+      limousine: Boolean(r.groundTransportation?.enabled && gLegs.length),
+      helicopter: Boolean(r.helicopterTransfer?.enabled && hLegs.length),
+      catering: Boolean(r.cateringRequested),
+      deicing: r.deicingInsurance === "at_reservation" || r.deicingInsurance === "within_48h",
+      carbonOffset: Boolean(r.carbonOffset && r.carbonOffset !== "none")
+    }));
+    if (r.meetAndAssist) {
+      setCustomServices((prev) =>
+        prev.some((c) => c.id === "svc-meet-assist")
+          ? prev
+          : [...prev, { id: "svc-meet-assist", name: "Meet & assist at terminal", details: "Requested by the Curator", price: 0 }]
+      );
+    }
+
+    // Passenger fee line starts on the second leg's departure (or the only leg)
+    const feeLeg = reqLegs[1] || reqLegs[0];
+    const feeApt: any = feeLeg ? findAirportByCode(feeLeg.originIcao || "") : null;
+    if (feeApt) setPassengerFeesDesc(`${feeApt.city || feeApt.name} (${feeApt.icao}) departure passenger charge`);
+    setPassengerFeeLegs([reqLegs.length > 1 ? 1 : 0]);
+
+    // The Curator's margin
+    const m = Number(r.agentMarginPct) || 0;
+    setAgentMarginTierPct(m);
+    setAgentMarginText(`${m} % · set by Curator`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sourceRequest, sourceTrip, accounts]);
 
   // Helper for per-leg photo picker
   const openPhotoPickerForLeg = (legIndex: number) => {
@@ -1105,6 +1350,17 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
       ];
     }
   }, [tripType, multiLegs, originAirport, destAirport, flightDate, departureTime, returnFlightDate, returnDepartureTime, selectedAircraft, selectedOperatorId, operatorFlightCost, customExteriorPhoto, customCabinPhoto]);
+
+  // Same aircraft on every leg → printed once, and one charter line by default
+  const allLegsSameAircraft = useMemo(() => {
+    const names = displayLegs.map((l: any) => String(l.aircraft?.name || "").toLowerCase());
+    return names.length < 2 || names.every((n) => n === names[0]);
+  }, [displayLegs]);
+  const docOptionsValue = {
+    showPricePerLeg: docPricePerLeg === null ? !allLegsSameAircraft : docPricePerLeg,
+    servicesOneLine: docServicesOneLine,
+    showServicePrices: docServicePrices
+  };
 
   // Effective operator cost across legs (from Step 04 buying prices)
   const effectiveOperatorFlightCost = useMemo(() => {
@@ -1313,6 +1569,84 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
 
   const documentsAddUp = Math.abs(documentLinesSum - clientTotal) < 0.05;
 
+  // ===== Taxes (R-091): every document line carries a tax code =====
+  const taxableLines = useMemo<TaxableLine[]>(() => {
+    const out: TaxableLine[] = [];
+    const legOf = (i: number) => displayLegs[i] as any;
+    displayLegs.forEach((leg: any, i) => {
+      out.push({
+        key: `charter-${i + 1}`,
+        label: `Charter price · leg ${i + 1} · ${leg.origin?.icao || ""} → ${leg.destination?.icao || ""}`,
+        kind: "charter",
+        legNumber: i + 1,
+        from: countryOf(leg.origin),
+        to: countryOf(leg.destination),
+        amount: legPricingBreakdown[i]?.charterPrice || 0,
+        pax: paxCount,
+        date: leg.flightDate
+      });
+    });
+    if (passengerFeesItemised && passengerFeePerLeg > 0) {
+      passengerFeeLegsSorted.forEach((i) => {
+        const leg = legOf(i);
+        if (!leg) return;
+        out.push({
+          key: `paxfee-${i + 1}`,
+          label: `Passenger fees · leg ${i + 1}`,
+          kind: "passenger_fee",
+          legNumber: i + 1,
+          from: countryOf(leg.origin),
+          to: countryOf(leg.destination),
+          amount: passengerFeePerLeg,
+          date: leg.flightDate
+        });
+      });
+    }
+    const first = legOf(0) || {};
+    if (hasGroundTransport) {
+      displayLegs.forEach((leg: any, i) => {
+        const k = `leg-${i + 1}`;
+        const g = groundTransfers[k];
+        if (!groundLegsEnabled[k] || !g) return;
+        if (g.arrivalRequired)
+          out.push({ key: `ground-arr-${k}`, label: `Ground transfer · arrival · leg ${i + 1}`, kind: "ground", legNumber: i + 1, country: countryOf(leg.destination), amount: g.arrivalPrice || 0, date: leg.flightDate });
+        if (g.departureRequired)
+          out.push({ key: `ground-dep-${k}`, label: `Ground transfer · departure · leg ${i + 1}`, kind: "ground", legNumber: i + 1, country: countryOf(leg.origin), amount: g.departurePrice || 0, date: leg.flightDate });
+      });
+    } else if (serviceOptions.limousine) {
+      out.push({ key: "limo", label: "VIP limousine", kind: "ground", legNumber: 1, country: countryOf(destAirport), amount: limousinePrice, date: first.flightDate });
+    }
+    if (hasHeliTransfer) {
+      displayLegs.forEach((leg: any, i) => {
+        const k = `leg-${i + 1}`;
+        const h = heliTransfers[k];
+        if (!heliLegsEnabled[k] || !h) return;
+        const c = countryOf(leg.destination);
+        out.push({ key: `heli-${k}`, label: `Helicopter transfer · leg ${i + 1}`, kind: "helicopter", legNumber: i + 1, from: c, to: c, amount: h.clientPrice || 0, pax: Number(h.passengers) || paxCount, date: leg.flightDate });
+      });
+    } else if (serviceOptions.helicopter) {
+      const c = countryOf(destAirport);
+      out.push({ key: "heli", label: "Helicopter transfer", kind: "helicopter", legNumber: 1, from: c, to: c, amount: helicopterPrice, pax: paxCount, date: first.flightDate });
+    }
+    const svc = (key: string, label: string, amount: number) =>
+      out.push({ key, label, kind: "service", legNumber: 1, from: countryOf(first.origin), to: countryOf(first.destination), country: countryOf(first.origin), amount, date: first.flightDate });
+    if (serviceOptions.catering) svc("catering", "Catering", cateringPrice);
+    if (serviceOptions.deicing) svc("deicing", "De-icing protection", deicingPrice);
+    if (serviceOptions.carbonOffset) svc("carbon", "Carbon offset", carbonOffsetPrice);
+    customServices.forEach((c) => svc(`custom-${c.id}`, c.name, c.price));
+    return out;
+  }, [
+    displayLegs, legPricingBreakdown, paxCount, passengerFeesItemised, passengerFeePerLeg, passengerFeeLegsSorted, hasGroundTransport, groundTransfers,
+    groundLegsEnabled, serviceOptions, destAirport, limousinePrice, hasHeliTransfer, heliTransfers, heliLegsEnabled, helicopterPrice, cateringPrice,
+    deicingPrice, carbonOffsetPrice, customServices
+  ]);
+  const taxLinesComputed = useMemo(() => computeTaxes(taxableLines, taxRules, taxOverrides), [taxableLines, taxRules, taxOverrides]);
+  const taxSummaryComputed = useMemo(() => summarizeTaxes(taxLinesComputed, taxRules, taxableLines), [taxLinesComputed, taxRules, taxableLines]);
+  const taxTotal = taxSummaryComputed.total;
+  const grandTotal = Math.round((clientTotal + taxTotal) * 100) / 100;
+  // Lines that need a row "to confirm": nothing is charged for them and the quote cannot be sent yet
+  const taxPending = taxLinesComputed.filter((t) => t.pending.length > 0 && t.base > 0);
+
   const currencySymbol = currency === "EUR" ? "€" : currency === "USD" ? "$" : currency === "GBP" ? "£" : "CHF";
   const money = (n: number) =>
     `${currencySymbol} ${(Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -1481,14 +1815,14 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
       </div>
       <div className="flex justify-between gap-3 border-t border-slate-200 pt-1.5 mt-1 font-semibold text-slate-900">
         <span>Client total</span>
-        <span className="font-mono">{money(clientTotal)}</span>
+        <span className="font-mono">{money(grandTotal)}</span>
       </div>
       <div className={`text-[12px] pt-1 ${documentsAddUp ? "text-emerald-700" : "text-amber-700"}`}>
         {documentsAddUp ? "✓ Document lines add up" : "▲ Document lines do not add up"}
       </div>
       <button
         type="button"
-        onClick={() => document.getElementById("qb-step-06")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+        onClick={() => goToStage(6)}
         className="text-[12px] text-blue-600 hover:underline pt-0.5"
       >
         Go to price (06)
@@ -1530,15 +1864,15 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
     if (found) return found;
     if (sourceRequest) {
       return {
-        id: sourceRequest.accountId || "ACC-61346745090425",
-        name: sourceRequest.companyName || sourceRequest.clientName || "Ugochukwu Michael Chukwuekwe",
-        accountNumber: sourceRequest.accountId || "ACC-61346745090425",
-        billingAddress: sourceRequest.clientAddress || "14 Bourdillon Road, Ikoyi, Lagos, Nigeria",
-        country: sourceRequest.clientCityCountry || "Nigeria",
-        email: sourceRequest.clientEmail || "client@orbelo.com",
-        phone: sourceRequest.clientPhone || "+234 803 123 4567",
+        id: sourceRequest.accountId || (sourceRequest as any).clientId || "",
+        name: sourceRequest.companyName || sourceRequest.clientName || "",
+        accountNumber: sourceRequest.accountId || (sourceRequest as any).clientId || "",
+        billingAddress: sourceRequest.clientAddress || "",
+        country: sourceRequest.clientCityCountry || "",
+        email: sourceRequest.clientEmail || "",
+        phone: sourceRequest.clientPhone || "",
         vatNumber: sourceRequest.clientVatNumber || "",
-        agentName: sourceRequest.agentName || "Marcus Vance",
+        agentName: sourceRequest.agentName || "",
         isAgent: false
       };
     }
@@ -1718,29 +2052,8 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
   const curatorName = sourceRequest?.agentName || (activeAccount as any)?.agentName || "";
 
   // Submission handler
-  const handleCompleteQuotation = async () => {
-    // 04a: a new operator needs at least a name before the quote is saved
-    if (newOpEnabled && !newOpLegalName.trim()) {
-      setNewOpError("Type the operator name, or untick “Operator not in database”.");
-      if (typeof document !== "undefined") {
-        document.getElementById("qb-step-04a")?.scrollIntoView({ behavior: "smooth", block: "start" });
-      }
-      return;
-    }
-    // 06: "Complete" is blocked when the document lines do not add up
-    if (!documentsAddUp) return;
-
-    // 04a: the new operator is saved to Operators with status "Documents pending" together with the quote
-    let savedNewOperator: OperatorRecord | null = null;
-    if (newOpEnabled && draftOperator) {
-      savedNewOperator = {
-        ...draftOperator,
-        id: `op-${Date.now()}`,
-        createdAt: new Date().toISOString(),
-        notes: `Added from quote ${versionLabel} · documents pending`
-      };
-      addOperator(savedNewOperator);
-    }
+  // The quote exactly as it is saved (also used for the live document preview on step 7)
+  const buildQuoteBooking = (savedNewOperator: OperatorRecord | null, mode: "send" | "draft" = "send"): Booking => {
     const resolveOperator = (op?: OperatorRecord) =>
       op && op.id === NEW_OPERATOR_DRAFT_ID && savedNewOperator ? savedNewOperator : op;
     const resolvedSelectedOperator = resolveOperator(selectedOperator);
@@ -1774,7 +2087,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
           aircraftRegistration:
             (!sameAircraftOnAllLegs
               ? mLeg.aircraft?.registration
-              : selectedAircraft.registration) || "OE-FFB",
+              : selectedAircraft.registration) || "",
           aircraftType: !sameAircraftOnAllLegs
             ? mLeg.aircraft?.name
             : selectedAircraft.name,
@@ -1789,14 +2102,14 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
           departureHandling: {
             name: `${mLeg.origin?.name || "VIP"} FBO`,
             airportCode: mLeg.origin?.icao || "LSGG",
-            phone: "+41 22 717 0111",
-            email: "ops@tagaviation.com"
+            phone: "",
+            email: ""
           },
           arrivalHandling: {
             name: `${mLeg.destination?.name || "VIP"} FBO`,
             airportCode: mLeg.destination?.icao || "EGSS",
-            phone: "+44 1279 680616",
-            email: "fbo@harrodsaviation.com"
+            phone: "",
+            email: ""
           }
         });
       });
@@ -1811,7 +2124,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
         flightTimeFormatted: "1h 45m",
         paxCount,
         flightNumber: `OB${Math.floor(100 + Math.random() * 900)}`,
-        aircraftRegistration: selectedAircraft.registration || "OE-FFB",
+        aircraftRegistration: selectedAircraft.registration || "",
         aircraftType: selectedAircraft.name,
         crew: [],
         passengers: [
@@ -1822,16 +2135,16 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
           }
         ],
         departureHandling: {
-          name: "TAG Aviation FBO",
+          name: "",
           airportCode: originAirport.icao,
-          phone: "+41 22 717 0111",
-          email: "gva@tagaviation.com"
+          phone: "",
+          email: ""
         },
         arrivalHandling: {
-          name: "Harrods Aviation FBO",
+          name: "",
           airportCode: destAirport.icao,
-          phone: "+44 1279 680616",
-          email: "fbo@harrodsaviation.com"
+          phone: "",
+          email: ""
         }
       });
 
@@ -1846,7 +2159,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
           flightTimeFormatted: "1h 45m",
           paxCount,
           flightNumber: `OB${Math.floor(100 + Math.random() * 900)}`,
-          aircraftRegistration: selectedAircraft.registration || "OE-FFB",
+          aircraftRegistration: selectedAircraft.registration || "",
           aircraftType: selectedAircraft.name,
           crew: [],
           passengers: [
@@ -1857,16 +2170,16 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
             }
           ],
           departureHandling: {
-            name: "Harrods Aviation FBO",
+            name: "",
             airportCode: destAirport.icao,
-            phone: "+44 1279 680616",
-            email: "fbo@harrodsaviation.com"
+            phone: "",
+            email: ""
           },
           arrivalHandling: {
-            name: "TAG Aviation FBO",
+            name: "",
             airportCode: originAirport.icao,
-            phone: "+41 22 717 0111",
-            email: "gva@tagaviation.com"
+            phone: "",
+            email: ""
           }
         });
       }
@@ -1928,7 +2241,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
       activeServicesList.push({
         id: "catering",
         name: "Catering",
-        details: cateringPrice === 0 ? "VIP menu 1 · both legs (included)" : "VIP menu 1 · both legs",
+        details: displayLegs.length > 1 ? "all legs" : "",
         price: cateringPrice
       });
     }
@@ -2071,7 +2384,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
         id: "q-catering",
         type: "catering",
         legNumber: displayLegs.length > 1 ? 0 : 1,
-        menu: "VIP menu 1",
+        menu: "",
         dietary: "",
         included: cateringPrice === 0,
         clientPrice: cateringPrice,
@@ -2169,7 +2482,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
       quoteReference: linked.quoteId,
       quoteGroupId: `quote-group-${rootId.toLowerCase()}`,
       invoiceNumber: sourceTrip?.invoiceNumber || linked.invoiceNumber,
-      accountNumber: activeAccount?.accountNumber || "ACC-21737",
+      accountNumber: activeAccount?.accountNumber || "",
       contractDate: sourceTrip?.contractDate || new Date().toLocaleDateString("de-DE"),
       quoteExpirationDate: validUntil || "48 hours from issuance",
       paymentDueDate: sourceTrip?.paymentDueDate || "Upon contract execution",
@@ -2197,31 +2510,31 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
       paPhone: isHandledByPa ? paPhone : undefined,
       client: {
         fullName: leadPaxName,
-        companyName: activeAccount?.name || sourceTrip?.client.companyName || "Private VIP",
-        streetAddress: activeAccount?.billingAddress || sourceTrip?.client.streetAddress || "10 Mayfair Place",
-        cityPostalCountry: `${activeAccount?.country || sourceTrip?.client.cityPostalCountry || "United Kingdom"}`,
-        phone: activeAccount?.phone || sourceTrip?.client.phone || "+44 20 7946 0192",
-        email: activeAccount?.email || sourceTrip?.client.email || "charter@bgcapital.com",
-        accountNumber: activeAccount?.accountNumber || "ACC-21737",
+        companyName: activeAccount?.name || sourceTrip?.client.companyName || "",
+        streetAddress: activeAccount?.billingAddress || sourceTrip?.client.streetAddress || "",
+        cityPostalCountry: `${activeAccount?.country || sourceTrip?.client.cityPostalCountry || ""}`,
+        phone: activeAccount?.phone || sourceTrip?.client.phone || "",
+        email: activeAccount?.email || sourceTrip?.client.email || "",
+        accountNumber: activeAccount?.accountNumber || "",
         isHandledByPa,
         paName: isHandledByPa ? paName : undefined,
         paEmail: isHandledByPa ? paEmail : undefined,
         paPhone: isHandledByPa ? paPhone : undefined,
       },
       operator: {
-        companyName: resolvedSelectedOperator?.tradingName || sourceTrip?.operator.companyName || "GlobeAir AG",
-        legalEntity: sourceTrip?.operator.legalEntity || "GlobeAir Aviation Operations Ltd",
-        representativeName: "Charter Desk",
-        supportEmail: resolvedSelectedOperator?.opsEmail || sourceTrip?.operator.supportEmail || "charter@globeair.com",
-        supportPhone: resolvedSelectedOperator?.opsPhone || sourceTrip?.operator.supportPhone || "+43 7221 727400",
-        vatNumber: sourceTrip?.operator.vatNumber || "ATU 6335 7619",
+        companyName: resolvedSelectedOperator?.tradingName || sourceTrip?.operator.companyName || "",
+        legalEntity: sourceTrip?.operator.legalEntity || resolvedSelectedOperator?.legalName || "",
+        representativeName: resolvedSelectedOperator?.salesContact || "",
+        supportEmail: resolvedSelectedOperator?.opsEmail || sourceTrip?.operator.supportEmail || "",
+        supportPhone: resolvedSelectedOperator?.opsPhone || sourceTrip?.operator.supportPhone || "",
+        vatNumber: sourceTrip?.operator.vatNumber || "",
         additionalVatNumbers: [],
-        iban: sourceTrip?.operator.iban || "AT89 3740 0000 1122 3344",
-        bic: sourceTrip?.operator.bic || "LOWWAT22",
-        bankName: sourceTrip?.operator.bankName || "Erste Bank Aviation",
-        accountHolder: resolvedSelectedOperator?.tradingName || sourceTrip?.operator.accountHolder || "GlobeAir AG",
-        commercialRegistry: `AOC ${resolvedSelectedOperator?.aocNumber || "AT.AOC.0842"}`,
-        courtOfJurisdiction: "Linz Commercial Court"
+        iban: sourceTrip?.operator.iban || "",
+        bic: sourceTrip?.operator.bic || "",
+        bankName: sourceTrip?.operator.bankName || "",
+        accountHolder: resolvedSelectedOperator?.tradingName || sourceTrip?.operator.accountHolder || "",
+        commercialRegistry: resolvedSelectedOperator?.aocNumber ? `AOC ${resolvedSelectedOperator.aocNumber}` : "",
+        courtOfJurisdiction: sourceTrip?.operator.courtOfJurisdiction || ""
       },
       legs,
       pricing: {
@@ -2234,8 +2547,8 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
         additionalServicesTotal: servicesTotal,
         subtotal: clientSubtotal,
         vatRate: 0,
-        vatAmount: 0,
-        totalFlightPrice: clientTotal,
+        vatAmount: taxTotal,
+        totalFlightPrice: grandTotal,
         currency: currency,
         companyMargin: companyMarginAmount,
         agentCommission: agentMarginAmount,
@@ -2245,7 +2558,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
         limousineService: serviceOptions.limousine,
         luxuryCarRental: false,
         helicopterService: serviceOptions.helicopter,
-        vipCateringDetails: serviceOptions.catering ? "VIP menu 1 · both legs · included" : undefined,
+        vipCateringDetails: serviceOptions.catering ? (cateringPrice === 0 ? "Catering · included" : "Catering") : undefined,
         deicingInsurance: serviceOptions.deicing ? "at_reservation" : "none",
         deicingCostPerLeg: serviceOptions.deicing ? deicingPrice : 0,
         carbonOffset: serviceOptions.carbonOffset ? "neutral" : "none",
@@ -2312,6 +2625,77 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
       createdAt: sourceTrip?.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
+    // Taxes as they were decided for this version (issued quotes keep their rates)
+    (newBooking as any).taxLines = taxLinesComputed;
+    (newBooking as any).taxSummary = taxSummaryComputed;
+    (newBooking as any).taxOverrides = taxOverrides;
+    (newBooking as any).taxChangeLog = taxChangeLog;
+    // What the documents print, frozen with the version (wording, policy, bank, links, legal versions)
+    const activeTerms = (settings.termsVersions || []).find((t: any) => t.isActive) || (settings.termsVersions || [])[0];
+    (newBooking as any).documentSnapshot = {
+      company: { ...settings.company },
+      cancellationPolicy: settings.cancellationPolicy || [],
+      termsVersions: activeTerms ? [activeTerms] : [],
+      bankAccounts: settings.bankAccounts || [],
+      documents: { ...((settings as any).documents || {}) },
+      pricing: { ...(settings.pricing || {}) },
+      links: {
+        legalBase: (settings as any).documents?.legalBaseUrl || "orbaero.com",
+        signHost: (settings as any).documents?.signHost || "sign.orbaero.com"
+      },
+      legalVersions: { ...legalVersions },
+      at: new Date().toISOString()
+    };
+    (newBooking as any).signToken = (sourceTrip as any)?.signToken && isBookingRevision ? (sourceTrip as any).signToken : signToken;
+    // Step 7 print choices and where the quote goes
+    (newBooking as any).docOptions = { ...docOptionsValue };
+    (newBooking as any).sendTo = { client: sendToClient, curator: sendToCurator, whatsapp: sendWhatsApp };
+    (newBooking as any).isDraft = mode === "draft" && !isBookingRevision;
+    if (mode === "draft") {
+      newBooking.status = isBookingRevision ? newBooking.status : ("draft" as any);
+      newBooking.quoteStatus = isBookingRevision ? newBooking.quoteStatus : ("draft" as any);
+    }
+    return newBooking;
+  };
+
+  const handleCompleteQuotation = async (mode: "send" | "draft" = "send") => {
+    if (saving) return;
+    // 04a: a new operator needs at least a name before the quote is saved
+    if (newOpEnabled && !newOpLegalName.trim()) {
+      setNewOpError("Type the operator name, or untick “Operator not in database”.");
+      goToStage(3);
+      toast("Type the new operator's name, or untick “Operator not in database”.", "error");
+      return;
+    }
+    // 06: "Complete" is blocked when the document lines do not add up
+    if (mode === "send" && taxRulesState !== "ready") {
+      goToStage(6);
+      toast("The tax table could not be loaded, so the taxes cannot be worked out. Try again.", "error");
+      return;
+    }
+    if (mode === "send" && taxPending.length > 0) {
+      goToStage(6);
+      toast("A tax row this quote needs is still to confirm by the adviser. Save a draft, or change the line's tax code.", "error");
+      return;
+    }
+    if (mode === "send" && !documentsAddUp) {
+      goToStage(6);
+      toast("The document lines do not add up to the total. Check the price step.", "error");
+      return;
+    }
+
+    // 04a: the new operator is saved to Operators with status "Documents pending" together with the quote
+    let savedNewOperator: OperatorRecord | null = null;
+    if (newOpEnabled && draftOperator) {
+      savedNewOperator = {
+        ...draftOperator,
+        id: `op-${Date.now()}`,
+        createdAt: new Date().toISOString(),
+        notes: `Added from quote ${versionLabel} · documents pending`
+      };
+      addOperator(savedNewOperator);
+    }
+    const newBooking = buildQuoteBooking(savedNewOperator, mode);
 
     // 01: the choices are saved on the account as defaults for next time
     const accountForDefaults = accounts.find((a) => a.id === activeAccount?.id);
@@ -2327,46 +2711,672 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
       });
     }
 
+    setSaving(true);
+    let persisted: any;
     try {
-      const persisted = await addBooking(newBooking);
-
-      if (sourceRequest) {
-        updateAgentRequestStatus(
-          sourceRequest.id,
-          "completed",
-          persisted.id || newBooking.id,
-          `Quoted → ${versionLabel}`
-        );
-
-        if (sendMessage) {
-          sendMessage({
-            channel: "broker_desk",
-            recipientEmail: sourceRequest.agentEmail,
-            recipientName: sourceRequest.agentName,
-            recipientRole: "agent",
-            content: `Official Quotation ${versionLabel} compiled and sent for ${leadPaxName} (${originAirport.icao} ⇄ ${destAirport.icao}). Total: €${clientTotal.toLocaleString("de-DE")}`,
-            tripNumber: versionLabel,
-            requestId: sourceRequest.id,
-          });
-        }
-      }
+      persisted = await addBooking(newBooking);
     } catch (err: any) {
-      console.warn("Complete quotation notice:", err);
+      setSaving(false);
+      toast(err?.message || "The quote could not be saved. Nothing was sent.", "error");
+      return;
     }
+    // addBooking keeps a local copy when the server refuses it: nothing is sent in that case
+    if (!persisted || persisted === newBooking) {
+      setSaving(false);
+      toast("The server did not save the quote, so nothing was sent. Check the connection and try again.", "error");
+      return;
+    }
+    const savedId = String(persisted?.id || newBooking.id);
+    const label = isBookingRevision ? versionLabel : formattedQuoteId.toUpperCase();
 
     if (typeof window !== "undefined") {
-      sessionStorage.setItem("orbelo_selected_quote_id", newBooking.id);
+      sessionStorage.setItem("orbelo_selected_quote_id", savedId);
     }
 
-    if (isBookingRevision) {
-      router.push(`/trips/${rootId}/revisions`);
-    } else {
-      router.push("/quotes");
+    if (mode === "draft") {
+      setSaving(false);
+      toast(`Draft ${label} saved. Nothing was sent.`);
+      router.push(isBookingRevision ? `/trips/${rootId}/revisions` : "/quotes");
+      return;
     }
+
+    const sent: string[] = [];
+    const failed: string[] = [];
+
+    // To the Curator: the request is marked quoted and the message lands on their request page
+    if (sourceRequest) {
+      try {
+        await Promise.resolve(updateAgentRequestStatus(sourceRequest.id, "completed", savedId, `Quoted → ${versionLabel}`));
+      } catch {
+        /* the status follows on the next refresh */
+      }
+      if (sendToCurator) {
+        try {
+          await api.curatorInbox.reply(
+            (sourceRequest as any).requestNumber || sourceRequest.id,
+            `Quote ${label} is ready for ${activeAccount?.name || leadPaxName}: ${displayLegs
+              .map((l) => `${l.origin?.icao} → ${l.destination?.icao}`)
+              .join(", ")} · total ${money(grandTotal)}.`
+          );
+          sent.push(sourceRequest.agentName || "the Curator");
+        } catch {
+          failed.push("the Curator");
+        }
+      }
+    } else if (sendToCurator && curatorName && sendMessage) {
+      try {
+        await Promise.resolve(
+          sendMessage({
+            channel: "broker_desk",
+            recipientEmail: (sourceTrip as any)?.agentEmail,
+            recipientName: curatorName,
+            recipientRole: "agent",
+            content: `Quote ${label} is ready · total ${money(grandTotal)}.`,
+            tripNumber: versionLabel
+          } as any)
+        );
+        sent.push(curatorName);
+      } catch {
+        failed.push("the Curator");
+      }
+    }
+
+    // To the client by email (the quote PDF goes with it)
+    if (sendToClient && !isBookingRevision) {
+      try {
+        await api.quotes.send(savedId, "client");
+        sent.push(newBooking.client?.email || "the client");
+      } catch (err: any) {
+        failed.push(`the client by email (${err?.message || "email not sent"})`);
+      }
+    }
+
+    // WhatsApp notice: opens WhatsApp with the message ready to send
+    if (sendWhatsApp && typeof window !== "undefined") {
+      const phone = String(newBooking.client?.phone || "").replace(/[^0-9]/g, "");
+      if (phone) {
+        const text = `Your charter quote ${label} is ready · total ${money(grandTotal)}. It has been sent to your email.`;
+        window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, "_blank", "noopener");
+        sent.push("WhatsApp");
+      } else {
+        failed.push("WhatsApp (no phone number on the client)");
+      }
+    }
+
+    setSaving(false);
+    if (isBookingRevision) {
+      toast(`Booking revision ${versionLabel} saved.${sent.length ? ` Sent to ${sent.join(", ")}.` : ""}`);
+    } else if (sent.length) {
+      toast(`Quote ${label} sent to ${sent.join(", ")}.`);
+    } else {
+      toast(`Quote ${label} saved.`);
+    }
+    if (failed.length) toast(`Not sent to ${failed.join("; ")}.`, "error");
+
+    router.push(isBookingRevision ? `/trips/${rootId}/revisions` : "/quotes");
   };
 
   const selectedOperator = allOperators.find((op) => op.id === selectedOperatorId) || allOperators[0];
-  const operatorName = selectedOperator?.tradingName || "Sahel Executive";
+  const operatorName = selectedOperator?.tradingName || selectedOperator?.legalName || "";
+
+  // ====================================================
+  // STAGED LAYOUT · step list, right panel, review
+  // ====================================================
+  const accountPicked = accounts.some((a: any) => a.accountNumber === selectedAccountId || a.id === selectedAccountId);
+  const groundCount = hasGroundTransport
+    ? displayLegs.reduce((n, _l, i) => {
+        const k = `leg-${i + 1}`;
+        const g = groundTransfers[k];
+        if (!groundLegsEnabled[k] || !g) return n;
+        return n + (g.arrivalRequired ? 1 : 0) + (g.departureRequired ? 1 : 0);
+      }, 0)
+    : 0;
+  const heliCount = hasHeliTransfer ? displayLegs.filter((_l, i) => heliLegsEnabled[`leg-${i + 1}`] && heliTransfers[`leg-${i + 1}`]).length : 0;
+  const servicesWords = [
+    groundCount ? `${groundCount} ground transfer${groundCount === 1 ? "" : "s"}` : !hasGroundTransport && serviceOptions.limousine ? "limousine" : "",
+    heliCount ? `${heliCount} helicopter` : !hasHeliTransfer && serviceOptions.helicopter ? "helicopter" : "",
+    serviceOptions.catering ? "catering" : "",
+    serviceOptions.deicing ? "de-icing" : "",
+    serviceOptions.carbonOffset ? "carbon offset" : "",
+    ...customServices.map((c) => c.name.toLowerCase())
+  ].filter(Boolean);
+
+  const legOperatorOf = (leg: any) => allOperators.find((o) => o.id === leg.operatorId) || selectedOperator;
+  const routeWord = (() => {
+    if (!displayLegs.length) return "";
+    if (tripType === "round_trip") return `${displayLegs[0].origin?.icao || ""} ⇄ ${displayLegs[0].destination?.icao || ""}`;
+    return [displayLegs[0].origin?.icao, ...displayLegs.map((l) => l.destination?.icao)].filter(Boolean).join(" → ");
+  })();
+  const datesWord = (() => {
+    const ds = displayLegs.map((l) => formatShortDate(l.flightDate)).filter(Boolean);
+    if (!ds.length) return "";
+    return ds.length === 1 ? ds[0] : `${ds[0]} – ${ds[ds.length - 1]}`;
+  })();
+
+  const stageSummary = (n: number): string => {
+    switch (n) {
+      case 1:
+        return [activeAccount?.name, leadPaxName && leadPaxName !== activeAccount?.name ? leadPaxName : ""].filter(Boolean).join(" · ") || "Pick the client";
+      case 2:
+        return [routeWord, datesWord].filter(Boolean).join(" · ");
+      case 3: {
+        const acs = Array.from(new Set(displayLegs.map((l: any) => l.aircraft?.name).filter(Boolean)));
+        const ops = Array.from(new Set(displayLegs.map((l: any) => legOperatorOf(l)?.tradingName || legOperatorOf(l)?.legalName).filter(Boolean)));
+        return [acs.join(", "), ops.join(", ")].filter(Boolean).join(" · ");
+      }
+      case 4:
+        return [
+          `${paxCount} pax`,
+          luggagePieces ? `${luggagePieces} bag${luggagePieces === 1 ? "" : "s"}` : "",
+          hasPets && pets.length ? `${pets.length} pet${pets.length === 1 ? "" : "s"}` : ""
+        ]
+          .filter(Boolean)
+          .join(" · ");
+      case 5:
+        return servicesWords.length ? servicesWords.join(", ") : "No services";
+      case 6:
+        return `Total ${money(grandTotal)}`;
+      default: {
+        const to = [sendToClient ? "client" : "", sendToCurator && (sourceRequest || curatorName) ? "Curator" : ""].filter(Boolean);
+        return to.length ? `Send to ${to.join(" and ")}` : "Choose where it goes";
+      }
+    }
+  };
+
+  // Checks shown in the right panel; each points to the stage that fixes it
+  const quoteWarnings: { stage: number; text: string }[] = [];
+  if (!accountPicked) quoteWarnings.push({ stage: 1, text: sourceRequest ? `No account matches ${sourceRequest.companyName || sourceRequest.clientName || "the client"} yet. Pick or create it.` : "Pick the client account." });
+  if (!leadPaxName.trim()) quoteWarnings.push({ stage: 1, text: "The Authorised Owner is missing." });
+  displayLegs.forEach((l: any, i) => {
+    if (!l.flightDate) quoteWarnings.push({ stage: 2, text: `Leg ${i + 1} has no date.` });
+    if (l.origin?.icao && l.origin?.icao === l.destination?.icao) quoteWarnings.push({ stage: 2, text: `Leg ${i + 1} departs and arrives at the same airport.` });
+    const seats = Number(l.seats || l.aircraft?.passengers || 0);
+    if (seats && paxCount > seats) quoteWarnings.push({ stage: 3, text: `Leg ${i + 1}: ${paxCount} pax, but the ${l.aircraft?.name || "aircraft"} has ${seats} seats.` });
+    const op = legOperatorOf(l);
+    if (op && op.status && op.status !== "approved" && op.status !== "approved_with_conditions")
+      quoteWarnings.push({ stage: 3, text: `Leg ${i + 1}: ${op.tradingName || op.legalName} has documents pending.` });
+  });
+  if (!(effectiveOperatorFlightCost > 0)) quoteWarnings.push({ stage: 3, text: "No buying price entered yet." });
+  if (paxCount < 1) quoteWarnings.push({ stage: 4, text: "Add the number of passengers." });
+  if (hasPets && pets.some((p) => !(Number(p.weightKg) > 0))) quoteWarnings.push({ stage: 4, text: "A pet has no weight." });
+  if (groundCount > 0 && groundServicesTotal === 0) quoteWarnings.push({ stage: 5, text: "Ground transfers have no price (they print as Included)." });
+  if (!documentsAddUp) quoteWarnings.push({ stage: 6, text: "The document lines do not add up to the total." });
+  if (taxRulesState === "error") quoteWarnings.push({ stage: 6, text: "The tax table could not be loaded." });
+  Array.from(new Set(taxPending.flatMap((t) => t.pending))).forEach((code) =>
+    quoteWarnings.push({ stage: 6, text: `Tax row ${code} is to confirm by the adviser; no tax is charged for it and the quote cannot be sent yet.` })
+  );
+  if (sendToClient && !isBookingRevision && !activeAccount?.email) quoteWarnings.push({ stage: 7, text: "The client has no email address." });
+
+  // Price step · Taxes card: each line with the rule found, the tax and a Change link (every change is logged)
+  const changeTaxCode = (key: string, label: string, codes: string[] | null) => {
+    const before = taxLinesComputed.find((t) => t.key === key);
+    setTaxOverrides((prev) => {
+      const next = { ...prev };
+      if (codes && codes.length) next[key] = codes;
+      else delete next[key];
+      return next;
+    });
+    setTaxChangeLog((prev) => [
+      ...prev,
+      {
+        at: new Date().toISOString(),
+        by: currentUser?.name || currentUser?.email || "desk",
+        line: label,
+        from: before ? before.codes.join(" + ") || "none" : "none",
+        to: codes && codes.length ? codes.join(" + ") : "automatic rule"
+      }
+    ]);
+    setTaxChangeKey(null);
+    toast(`Tax code changed on “${label}”.`);
+  };
+  const renderTaxesCard = () => (
+    <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-2xs">
+      <div className="flex flex-wrap items-baseline justify-between gap-3 mb-3">
+        <div className="flex items-baseline gap-2.5">
+          <span className="font-mono text-sm font-semibold text-slate-500">6</span>
+          <h3 className="text-lg font-bold text-slate-900 m-0">Taxes</h3>
+        </div>
+        <span className="text-[12.5px] text-slate-500">Decided leg by leg from the departure and arrival countries · Settings → Taxes</span>
+      </div>
+      {taxRulesState === "loading" && <div className="text-[13px] text-slate-500">Loading the tax table…</div>}
+      {taxRulesState === "error" && (
+        <div className="text-[13px] text-amber-800">
+          The tax table could not be loaded.{" "}
+          <button type="button" className="underline" onClick={loadTaxRules}>
+            Try again
+          </button>
+        </div>
+      )}
+      {taxRulesState === "ready" && (
+        <>
+          <table className="w-full text-[13px]">
+            <thead>
+              <tr className="text-[11px] uppercase tracking-wider text-slate-500 border-b border-slate-200">
+                <th className="text-left py-2 pr-3">Line</th>
+                <th className="text-right py-2 pr-3">Amount</th>
+                <th className="text-left py-2 pr-3">Rule found</th>
+                <th className="text-right py-2 pr-3">Tax</th>
+                <th className="py-2" />
+              </tr>
+            </thead>
+            <tbody>
+              {taxLinesComputed.map((t) => (
+                <React.Fragment key={t.key}>
+                  <tr className="border-b border-slate-100 align-top">
+                    <td className="py-2 pr-3">{t.label}</td>
+                    <td className="py-2 pr-3 text-right font-mono whitespace-nowrap">{money(t.base)}</td>
+                    <td className={`py-2 pr-3 ${t.pending.length && t.base > 0 ? "text-amber-800" : "text-slate-600"}`}>
+                      {t.rule}
+                      {t.pending.length > 0 && t.base > 0 ? " · to confirm, not charged" : ""}
+                    </td>
+                    <td className="py-2 pr-3 text-right font-mono whitespace-nowrap">{money(t.amount)}</td>
+                    <td className="py-2 text-right">
+                      <button type="button" className="text-blue-700 hover:underline text-[12.5px]" onClick={() => setTaxChangeKey(taxChangeKey === t.key ? null : t.key)}>
+                        Change
+                      </button>
+                    </td>
+                  </tr>
+                  {taxChangeKey === t.key && (
+                    <tr className="bg-slate-50/80">
+                      <td colSpan={5} className="py-2.5 px-2">
+                        <div className="flex flex-wrap items-center gap-2 text-[12.5px]">
+                          <span className="text-slate-600">Tax code for this line:</span>
+                          <select
+                            className="border border-slate-300 rounded-md px-2 py-1 bg-white"
+                            defaultValue={taxOverrides[t.key]?.[0] || ""}
+                            onChange={(e) => changeTaxCode(t.key, t.label, e.target.value ? [e.target.value] : null)}
+                          >
+                            <option value="">Automatic (rule from the countries)</option>
+                            {taxRules.map((r) => (
+                              <option key={r.code} value={r.code}>
+                                {r.code} · {r.jurisdiction} · {r.type === "EXEMPT" ? "exempt" : r.type === "OUTSIDE_SCOPE" ? "outside scope" : r.rateType === "per_pax" ? `${r.rate} per pax` : `${r.rate} %`}
+                                {r.status !== "confirmed" ? " (to confirm)" : ""}
+                              </option>
+                            ))}
+                          </select>
+                          <button type="button" className="text-slate-500" onClick={() => setTaxChangeKey(null)}>
+                            Close
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              ))}
+            </tbody>
+          </table>
+          <div className="mt-3 text-[13px] space-y-1">
+            {taxSummaryComputed.lines.map((l) => (
+              <div key={`${l.label}-${l.rateLabel}`} className="flex justify-between gap-3">
+                <span className="text-slate-600">
+                  On the documents: {l.label} · {l.rateLabel}
+                </span>
+                <span className="font-mono">{money(l.amount)}</span>
+              </div>
+            ))}
+            {taxSummaryComputed.wordings.length > 0 && <div className="text-[12px] text-slate-500">Wording printed: {taxSummaryComputed.wordings.join(" ")}</div>}
+            <div className="flex justify-between gap-3 font-semibold text-slate-900 border-t border-slate-200 pt-1.5">
+              <span>Taxes total</span>
+              <span className="font-mono">{money(taxTotal)}</span>
+            </div>
+          </div>
+          {taxChangeLog.length > 0 && (
+            <details className="mt-3 text-[12px] text-slate-500">
+              <summary className="cursor-pointer">Changes ({taxChangeLog.length})</summary>
+              {taxChangeLog
+                .slice()
+                .reverse()
+                .map((c, i) => (
+                  <div key={i}>
+                    {new Date(c.at).toLocaleString("en-GB")} · {c.by} · {c.line}: {c.from} → {c.to}
+                  </div>
+                ))}
+            </details>
+          )}
+        </>
+      )}
+    </div>
+  );
+
+  const renderStageList = () => (
+    <nav className="xl:sticky xl:top-6 bg-white border border-slate-200 rounded-xl p-2 shadow-2xs">
+      {QB_STAGES.map(({ n, label }) => {
+        const active = n === stage;
+        const issues = quoteWarnings.filter((w) => w.stage === n).length;
+        const done = !active && n <= stagesSeen && issues === 0;
+        return (
+          <button
+            key={n}
+            type="button"
+            onClick={() => goToStage(n)}
+            className={`w-full text-left rounded-lg px-3 py-2.5 flex gap-3 items-start transition-colors ${active ? "bg-[#0B1320] text-white" : "hover:bg-slate-50 text-slate-900"}`}
+          >
+            <span
+              className={`mt-[1px] w-6 h-6 shrink-0 rounded-full flex items-center justify-center text-[12px] font-bold ${
+                active ? "bg-[#C9A24A] text-[#0B1320]" : done ? "bg-emerald-600 text-white" : issues && n <= stagesSeen ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-600"
+              }`}
+            >
+              {done ? "✓" : issues && n <= stagesSeen && !active ? "!" : n}
+            </span>
+            <span className="min-w-0">
+              <span className="block text-[14px] font-semibold leading-tight">{label}</span>
+              <span className={`block text-[12px] leading-snug mt-0.5 truncate ${active ? "text-slate-300" : "text-slate-500"}`} title={stageSummary(n)}>
+                {stageSummary(n)}
+              </span>
+            </span>
+          </button>
+        );
+      })}
+    </nav>
+  );
+
+  const charterSum = legPricingBreakdown.reduce((sum, l) => sum + l.charterPrice, 0);
+  const renderRightPanel = () => (
+    <aside className="xl:sticky xl:top-6 space-y-4">
+      <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 mb-1">{isBookingRevision ? "Booking revision" : "Quote"}</div>
+        <div className="text-[17px]">
+          <IdMark id={isBookingRevision ? versionLabel : formattedQuoteId} />
+        </div>
+        {!isBookingRevision && <div className="text-[12px] text-slate-500 mt-0.5">Valid until {validUntil}</div>}
+      </div>
+
+      <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs text-[13px] space-y-1.5">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 mb-1">Running total</div>
+        <div className="flex justify-between gap-3">
+          <span className="text-slate-500">Charter price</span>
+          <span className="font-mono">{money(charterSum)}</span>
+        </div>
+        {passengerFeesItemised && passengerFeesLineAtCost > 0 && (
+          <div className="flex justify-between gap-3">
+            <span className="text-slate-500">Passenger fees</span>
+            <span className="font-mono">{money(passengerFeesLineAtCost)}</span>
+          </div>
+        )}
+        <div className="flex justify-between gap-3">
+          <span className="text-slate-500">Services</span>
+          <span className="font-mono">{money(servicesTotal)}</span>
+        </div>
+        <div className="flex justify-between gap-3">
+          <span className="text-slate-500">Taxes</span>
+          <span className="font-mono">{taxRulesState === "ready" ? money(taxTotal) : "—"}</span>
+        </div>
+        <div className="flex justify-between gap-3 border-t border-slate-200 pt-1.5 font-semibold text-slate-900">
+          <span>Total</span>
+          <span className="font-mono">{money(grandTotal)}</span>
+        </div>
+        <div className="border-t border-dashed border-slate-200 pt-1.5 space-y-1 text-[12px]">
+          <div className="flex justify-between gap-3">
+            <span className="text-slate-500">Buying prices</span>
+            <span className="font-mono">{money(effectiveOperatorFlightCost)}</span>
+          </div>
+          <div className="flex justify-between gap-3">
+            <span className="text-slate-500">Company margin</span>
+            <span className="font-mono">{money(companyMarginAmount)}</span>
+          </div>
+          {agentMarginAmount > 0 && (
+            <div className="flex justify-between gap-3">
+              <span className="text-slate-500">Curator mark-up</span>
+              <span className="font-mono">{money(agentMarginAmount)}</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs text-[13px]">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 mb-1.5">Warnings</div>
+        {quoteWarnings.length === 0 ? (
+          <div className="text-emerald-700">✓ Nothing to fix</div>
+        ) : (
+          <ul className="m-0 p-0 list-none space-y-1.5">
+            {quoteWarnings.map((w, i) => (
+              <li key={`${w.stage}-${i}`}>
+                <button type="button" onClick={() => goToStage(w.stage)} className="text-left text-amber-800 hover:underline">
+                  ▲ {w.text} <span className="text-slate-400">({w.stage})</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-[13px] space-y-1">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 mb-1">Always visible</div>
+        <div className="font-semibold text-slate-900">{activeAccount?.name || "No client yet"}</div>
+        {leadPaxName && leadPaxName !== activeAccount?.name && <div className="text-slate-600">Owner: {leadPaxName}</div>}
+        {routeWord && (
+          <div className="text-slate-600">
+            {routeWord}
+            {datesWord ? ` · ${datesWord}` : ""}
+          </div>
+        )}
+        <div className="text-slate-600">
+          {paxCount} pax{hasPets && pets.length ? ` · ${pets.length} pet${pets.length === 1 ? "" : "s"}` : ""}
+        </div>
+        {sourceRequest && (
+          <div className="text-slate-600 pt-1">
+            From <IdMark id={sourceRequest.id} />
+            {sourceRequest.agentName ? ` · ${sourceRequest.agentName}` : ""}
+          </div>
+        )}
+        {sourceRequest && ((sourceRequest as any).notes || sourceRequest.specialRequests) && (
+          <div className="text-slate-600 text-[12px] italic">“{(sourceRequest as any).notes || sourceRequest.specialRequests}”</div>
+        )}
+      </div>
+    </aside>
+  );
+
+  const Toggle = ({ on, onChange, label, help }: { on: boolean; onChange: (v: boolean) => void; label: string; help: string }) => (
+    <label className="flex items-start justify-between gap-4 py-3 border-b border-slate-100 last:border-b-0 cursor-pointer">
+      <span className="min-w-0">
+        <span className="block text-[14px] font-semibold text-slate-900">{label}</span>
+        <span className="block text-[12.5px] text-slate-500 mt-0.5">{help}</span>
+      </span>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={on}
+        onClick={() => onChange(!on)}
+        className={`relative shrink-0 w-11 h-6 rounded-full transition-colors ${on ? "bg-[#0B1320]" : "bg-slate-300"}`}
+      >
+        <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${on ? "left-[22px]" : "left-0.5"}`} />
+      </button>
+    </label>
+  );
+
+  const handleDownloadPdf = async (booking: Booking) => {
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      await new Promise((r) => setTimeout(r, 60));
+      const name = previewDoc === "quote" ? docQuoteNo(booking) : docAgreementNo(booking);
+      const ok = await downloadDocumentAsPdf("qb-pdf-export", { fileName: `${name}.pdf` });
+      if (ok) toast(`${name}.pdf downloaded.`);
+      else toast("The PDF could not be made. Try again.", "error");
+    } catch {
+      toast("The PDF could not be made. Try again.", "error");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const renderReviewStage = () => {
+    const booking = buildQuoteBooking(null, "send");
+    const svcRows = docServiceRows(booking);
+    const servicePage = docOptionsValue.servicesOneLine && svcRows.length > 0;
+    const pageCount = previewDoc === "quote" ? (servicePage ? 2 : 1) : servicePage ? 3 : 2;
+    const doc = previewDoc === "quote" ? <QuotationDoc booking={booking} /> : <CharterAgreementDoc booking={booking} />;
+    const SCALE = 0.26;
+    const legNums = displayLegs.map((_l, i) => i + 1);
+    const legsLabel = legNums.length === 2 ? "both legs" : "all legs";
+    const curatorTarget = sourceRequest?.agentName || curatorName;
+    const clientEmail = activeAccount?.email || "";
+    const clientPhone = (activeAccount as any)?.phone || "";
+    return (
+      <div className="space-y-5">
+        <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-2xs">
+          <div className="flex flex-wrap items-baseline justify-between gap-3 mb-4">
+            <div className="flex items-baseline gap-2.5">
+              <span className="font-mono text-sm font-semibold text-slate-500">7</span>
+              <h3 className="text-lg font-bold text-slate-900 m-0">Review and send</h3>
+            </div>
+            <div className="inline-flex rounded-lg border border-slate-200 p-0.5 text-[13px]">
+              {(["quote", "agreement"] as const).map((d) => (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => setPreviewDoc(d)}
+                  className={`px-3 py-1.5 rounded-md font-semibold ${previewDoc === d ? "bg-[#0B1320] text-white" : "text-slate-600 hover:text-slate-900"}`}
+                >
+                  {d === "quote" ? "Quote" : "Charter agreement"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Page thumbnails of the document exactly as it prints */}
+          <button
+            type="button"
+            onClick={() => setPreviewOpen(true)}
+            title="Open full size"
+            className="block overflow-hidden rounded-lg border border-slate-200 bg-slate-100 p-3 hover:border-slate-400 transition-colors max-w-full"
+          >
+            <div style={{ width: (794 + 24) * pageCount * SCALE, height: 1123 * SCALE }} className="overflow-hidden pointer-events-none">
+              <div
+                style={{ transform: `scale(${SCALE})`, transformOrigin: "top left", width: (794 + 24) * pageCount }}
+                className="[&>div]:flex [&>div]:gap-6 [&_.doc-page]:mb-0 [&_.doc-page]:shrink-0 [&_.doc-page]:w-[794px] [&_.doc-page]:max-h-[1123px] [&_.doc-page]:overflow-hidden"
+              >
+                {doc}
+              </div>
+            </div>
+          </button>
+          <div className="text-[12.5px] text-slate-500 mt-2">
+            {pageCount} page{pageCount === 1 ? "" : "s"} · click to open full size.{" "}
+            {displayLegs.length > 1 &&
+              (allLegsSameAircraft
+                ? `Same aircraft on ${legsLabel}: printed once as “Aircraft · legs 1–${displayLegs.length}”.`
+                : "Different aircraft per leg: each leg prints its own aircraft.")}
+          </div>
+
+          <div className="mt-5 border-t border-slate-100 pt-1">
+            <Toggle
+              on={docOptionsValue.showPricePerLeg}
+              onChange={(v) => setDocPricePerLeg(v)}
+              label="Show price per leg"
+              help={`One charter line per leg instead of one line for the trip. ${allLegsSameAircraft ? "Off by default when every leg uses the same aircraft" : "On by default because the aircraft differ"}; applies to the quote and the agreement.`}
+            />
+            <Toggle
+              on={docServicesOneLine}
+              onChange={setDocServicesOneLine}
+              label="Additional services as one line"
+              help="Page 1 shows one line for all services; the details print on the service page."
+            />
+            <Toggle
+              on={docServicePrices}
+              onChange={setDocServicePrices}
+              label="Show service prices on page 2"
+              help="On by default. When off, page 2 lists the same services without prices or a subtotal; page 1 keeps the one-line services total. Saved with this version and used on the quote and the agreement."
+            />
+          </div>
+
+          <div className="mt-4">
+            <button
+              type="button"
+              onClick={() => handleDownloadPdf(booking)}
+              disabled={downloading}
+              className="bg-white border border-slate-200 text-slate-900 hover:bg-slate-50 px-4 py-2.5 rounded-lg text-sm font-semibold shadow-sm disabled:opacity-50"
+            >
+              {downloading ? "Making the PDF…" : `Download PDF · ${previewDoc === "quote" ? "quote" : "agreement"}`}
+            </button>
+          </div>
+        </div>
+
+        <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-2xs">
+          <h4 className="text-[15px] font-bold text-slate-900 m-0 mb-3">Send</h4>
+          <div className="space-y-2.5 text-[14px]">
+            {!isBookingRevision && (
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input type="checkbox" className="mt-1 w-4 h-4 accent-[#0B1320]" checked={sendToClient} onChange={(e) => setSendToClient(e.target.checked)} />
+                <span>
+                  <span className="font-semibold">To client</span>
+                  <span className="text-slate-500"> · email{clientEmail ? ` to ${clientEmail}` : " (no email on the account)"}, preferred channel</span>
+                </span>
+              </label>
+            )}
+            {(sourceRequest || curatorName) && (
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input type="checkbox" className="mt-1 w-4 h-4 accent-[#0B1320]" checked={sendToCurator} onChange={(e) => setSendToCurator(e.target.checked)} />
+                <span>
+                  <span className="font-semibold">To Curator</span>
+                  <span className="text-slate-500">
+                    {" "}
+                    · {curatorTarget}
+                    {sourceRequest ? ", on their request page" : ""}
+                  </span>
+                </span>
+              </label>
+            )}
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input type="checkbox" className="mt-1 w-4 h-4 accent-[#0B1320]" checked={sendWhatsApp} onChange={(e) => setSendWhatsApp(e.target.checked)} />
+              <span>
+                <span className="font-semibold">WhatsApp notice</span>
+                <span className="text-slate-500"> · {clientPhone ? `opens WhatsApp to ${clientPhone} with the message ready` : "no phone number on the account"}</span>
+              </span>
+            </label>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 mt-6 pt-4 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => goToStage(6)}
+              className="bg-white border border-slate-200 text-slate-900 hover:bg-slate-50 px-4 py-2.5 rounded-lg text-sm font-semibold shadow-sm"
+            >
+              Back
+            </button>
+            <div className="flex items-center gap-2.5">
+              {!isBookingRevision && (
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => handleCompleteQuotation("draft")}
+                  className="bg-white border border-slate-200 text-slate-900 hover:bg-slate-50 px-4 py-2.5 rounded-lg text-sm font-semibold shadow-sm disabled:opacity-50"
+                >
+                  Save draft
+                </button>
+              )}
+              <button
+                type="button"
+                disabled={saving || !documentsAddUp}
+                title={documentsAddUp ? undefined : "The document lines do not add up to the total"}
+                onClick={() => handleCompleteQuotation("send")}
+                className="bg-[#0B1320] hover:bg-slate-800 text-white px-5 py-2.5 rounded-lg text-sm font-semibold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {saving ? "Saving…" : isBookingRevision ? "Save booking revision" : "Send quote"}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Full-size copy used for the PDF (off screen) */}
+        <div aria-hidden style={{ position: "fixed", left: -12000, top: 0, width: 820 }}>
+          <div id="qb-pdf-export">{previewDoc === "quote" ? <QuotationDoc booking={booking} /> : <CharterAgreementDoc booking={booking} />}</div>
+        </div>
+
+        {previewOpen && (
+          <div className="fixed inset-0 z-50 bg-black/60 overflow-y-auto" onClick={() => setPreviewOpen(false)}>
+            <div className="max-w-[860px] mx-auto my-8 px-4" onClick={(e) => e.stopPropagation()}>
+              <div className="flex justify-end mb-2">
+                <button type="button" onClick={() => setPreviewOpen(false)} className="bg-white rounded-lg px-3 py-1.5 text-sm font-semibold shadow">
+                  Close
+                </button>
+              </div>
+              {doc}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // ====================================================
   // VIEW: AIRCRAFT PHOTOS PICKER (SCREEN 3)
@@ -2923,7 +3933,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
               )}
             </span>
             <span>/</span>
-            <span>{QB_STEP_LABELS[activeStep] || "01 Client"}</span>
+            <span>{`${stage} ${QB_STAGES[stage - 1]?.label || ""}`}</span>
           </div>
           <h1 className="text-[28px] leading-tight font-bold text-slate-900 m-0 flex flex-wrap items-baseline gap-x-2">
             <span>
@@ -2941,25 +3951,22 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
           >
             Cancel
           </Link>
+          {!isBookingRevision && (
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => handleCompleteQuotation("draft")}
+              className="bg-white border border-slate-200 text-slate-900 hover:bg-slate-50 px-4 py-2.5 rounded-lg text-sm font-semibold shadow-sm transition-colors disabled:opacity-50"
+            >
+              Save draft
+            </button>
+          )}
           <button
             type="button"
-            onClick={() => router.push(isBookingRevision ? `/trips/${rootId}/revisions` : "/quotes")}
-            className="bg-white border border-slate-200 text-slate-900 hover:bg-slate-50 px-4 py-2.5 rounded-lg text-sm font-semibold shadow-sm transition-colors"
+            onClick={() => goToStage(7)}
+            className="bg-[#0B1320] hover:bg-slate-800 text-white px-4 py-2.5 rounded-lg text-sm font-semibold shadow-sm transition-colors"
           >
-            Save draft
-          </button>
-          <button
-            type="button"
-            onClick={handleCompleteQuotation}
-            disabled={!documentsAddUp}
-            title={documentsAddUp ? undefined : "The document lines do not add up to the total"}
-            className="bg-[#0B1320] hover:bg-slate-800 text-white px-4 py-2.5 rounded-lg text-sm font-semibold shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isBookingRevision
-              ? `Complete booking revision`
-              : sourceRequest || curatorName
-              ? "Complete and send to Curator"
-              : "Complete quotation"}
+            Review and send
           </button>
         </div>
       </div>
@@ -2971,20 +3978,28 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
             Built from <IdMark id={sourceRequest.id} />
           </div>
           <p className="m-0 mt-1.5 leading-relaxed">
-            Everything the Curator keyed in (client, legs, passengers, pets, services, aircraft wishes, notes) is already
-            filled in. Edit only what needs changing; edited fields show a small &ldquo;edited&rdquo; mark, and the Curator
-            sees what changed.
+            Everything {sourceRequest.agentName || "the Curator"} keyed in (client, legs and times, aircraft per leg, passengers,
+            luggage, pets, services and margin) is already filled in. Edit only what needs changing.
           </p>
+          {((sourceRequest as any).notes || sourceRequest.specialRequests) && (
+            <p className="m-0 mt-1.5 leading-relaxed">
+              <span className="font-semibold">Curator notes:</span> {(sourceRequest as any).notes || sourceRequest.specialRequests}
+            </p>
+          )}
         </div>
       )}
 
-      {/* Builder rows: each step has its own notes column, like the design */}
+      {/* Staged layout: steps on the left, the current stage, the running total on the right */}
+      <div className="grid grid-cols-1 xl:grid-cols-[230px_minmax(0,1fr)_290px] gap-5 items-start">
+        {renderStageList()}
+        <div className="min-w-0 space-y-5">
+      {/* Builder rows */}
       <div className="space-y-6">
         {/* ===== STEP 01 · CLIENT, AUTHORISED OWNER AND ASSISTANT ===== */}
-        <div id="qb-step-01" data-qb-step="01" className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-6 scroll-mt-6">
+        <div id="qb-step-01" data-qb-step="01" className={`grid grid-cols-1 gap-6 scroll-mt-6 ${stageCls(1)}`}>
           <div className="bg-white border border-slate-200 rounded-xl p-6 sm:p-7 shadow-2xs">
             <div className="flex items-baseline gap-2.5 mb-5">
-              <span className="font-mono text-sm font-semibold text-slate-500">01</span>
+              <span className="font-mono text-sm font-semibold text-slate-500">1</span>
               <h3 className="text-lg font-bold text-slate-900 m-0">Client, Authorised Owner and assistant</h3>
             </div>
 
@@ -3252,8 +4267,8 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
             </div>
           </div>
 
-          {/* Notes column */}
-          <div className="space-y-3 self-start">
+          {/* Notes column (shown in the right panel in the staged layout) */}
+          <div className="hidden">
             <StepNote title="Rules">
               <p className="m-0">Search by account name, number, city or person.</p>
               <p className="m-0">Authorised Owner is always a person (Contact), never the company.</p>
@@ -3266,18 +4281,18 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
           </div>
         </div>
 
-        {/* ===== STEPS 02 – 04 ===== */}
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-6">
+        {/* ===== STAGES 2 (legs), 3 (aircraft) and 4 (passengers) ===== */}
+        <div className={`grid grid-cols-1 gap-6 ${stage >= 2 && stage <= 4 ? "" : "hidden"}`}>
           <div className="space-y-6 min-w-0">
           {/* SECTION 2: ITINERARY */}
-          <div id="qb-step-02" data-qb-step="02" className="scroll-mt-6 bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-4">
+          <div id="qb-step-02" data-qb-step="02" className={`${stageCls(2)} scroll-mt-6 bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-4`}>
             <div className="flex items-center justify-between border-b border-[var(--line)] pb-2.5">
               <div className="flex items-center gap-2">
                 <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-[var(--wf)] text-[var(--ink)]">
-                  02
+                  2
                 </span>
                 <h3 className="text-base font-bold font-display text-[var(--ink)] m-0">
-                  Routing & Schedule
+                  Legs and times
                 </h3>
               </div>
 
@@ -3605,10 +4620,10 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
           </div>
 
           {/* SECTION 3: PASSENGERS, LUGGAGE & PETS (Image 5 & 10) */}
-          <div id="qb-step-03" data-qb-step="03" className="scroll-mt-6 bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-4">
+          <div id="qb-step-03" data-qb-step="03" className={`${stageCls(4)} scroll-mt-6 bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-4`}>
             <div className="flex items-center gap-2 border-b border-[var(--line)] pb-2.5">
               <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-[var(--wf)] text-[var(--ink)]">
-                03
+                4
               </span>
               <h3 className="text-base font-bold font-display text-[var(--ink)] m-0">
                 Passengers, luggage and pets
@@ -3833,14 +4848,14 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
           </div>
 
           {/* SECTION 4: LEGS, OPERATORS AND AIRCRAFT (Matching Image 8) */}
-          <div id="qb-step-04" data-qb-step="04" className="scroll-mt-6 bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-4">
+          <div id="qb-step-04" data-qb-step="04" className={`${stageCls(3)} scroll-mt-6 bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-4`}>
             <div className="flex items-center justify-between border-b border-[var(--line)] pb-2.5">
               <div className="flex items-center gap-2">
                 <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-[var(--wf)] text-[var(--ink)]">
-                  04
+                  3
                 </span>
                 <h3 className="text-base font-bold font-display text-[var(--ink)] m-0">
-                  Legs, operators and aircraft
+                  Aircraft and operators
                 </h3>
               </div>
               <button
@@ -4241,25 +5256,23 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
             </div>
 
             <div className="text-[11px] text-gray-500 italic pt-1">
-              Passenger fees for this leg are added on the Price step (06).
+              Passenger fees for this leg are added on the Price step (6).
             </div>
           </div>
 
           </div>
 
-          {/* Notes column · live total while editing legs */}
-          <div className="self-start lg:sticky lg:top-6">{renderLiveTotalNote()}</div>
         </div>
 
         {/* ===== STEP 04a · OPERATOR SEARCH AND NEW OPERATOR ===== */}
-        <div id="qb-step-04a" data-qb-step="04a" className="space-y-4 scroll-mt-6">
+        <div id="qb-step-04a" data-qb-step="04a" className={`space-y-4 scroll-mt-6 ${stageCls(3)}`}>
           {renderLegStrip(`${paxCount} pax · ${(displayLegs[0]?.aircraft as any)?.categoryLabel || selectedAircraft.categoryLabel || "Aircraft TBC"}`)}
 
-          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-6">
+          <div className="grid grid-cols-1 gap-6">
             <div className="bg-white border border-slate-200 rounded-xl p-6 sm:p-7 shadow-2xs min-w-0">
               <div className="flex flex-wrap items-baseline justify-between gap-3 mb-4">
                 <div className="flex items-baseline gap-2.5">
-                  <span className="font-mono text-sm font-semibold text-slate-500">04</span>
+                  <span className="font-mono text-sm font-semibold text-slate-500">3</span>
                   <h3 className="text-lg font-bold text-slate-900 m-0">Operator search and new operator</h3>
                 </div>
                 {displayLegs.length > 1 && !sameAircraftOnAllLegs && (
@@ -4526,7 +5539,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
               </p>
             </div>
 
-            <div className="space-y-3 self-start">
+            <div className="hidden">
               <StepNote title="Search">
                 <p className="m-0">Operators: name, AOC number, country.</p>
                 <p className="m-0">Aircraft: exact and starts-with matches first, then similar names; filter by category.</p>
@@ -4542,15 +5555,15 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
           </div>
         </div>
 
-        {/* ===== STEP 05 · SERVICES ===== */}
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-6">
+        {/* ===== STAGE 5 · SERVICES ===== */}
+        <div className={`grid grid-cols-1 gap-6 ${stageCls(5)}`}>
           <div className="space-y-6 min-w-0">
           {/* SECTION 5: SERVICES · HELICOPTER TRANSFER (Image 6) */}
-          <div id="qb-step-05" data-qb-step="05" className="scroll-mt-6 bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-4">
+          <div id="qb-step-05" data-qb-step="05" className={`scroll-mt-6 bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-4`}>
             <div className="flex items-center justify-between border-b border-[var(--line)] pb-2.5">
               <div className="flex items-center gap-2">
                 <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-[var(--wf)] text-[var(--ink)]">
-                  05
+                  5
                 </span>
                 <h3 className="text-base font-bold font-display text-[var(--ink)] m-0">
                   Services · Helicopter transfer
@@ -4624,10 +5637,10 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                     passengers: paxCount || 4,
                     prefType: "Twin-engine, e.g. AW109 or similar",
                     depArrLocation: `${destCode} Airport`,
-                    destination: "Battersea Heliport, London",
-                    clientPrice: 2400,
-                    luggageDetails: "4 cabin bags, 2 suitcases (soft)",
-                    specialRequests: "Landing permission at the hotel helipad to be confirmed"
+                    destination: "",
+                    clientPrice: 0,
+                    luggageDetails: "",
+                    specialRequests: ""
                   };
 
                   const updateHeliField = (f: string, v: any) => {
@@ -4698,7 +5711,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                                 type="text"
                                 value={curHeli.destination}
                                 onChange={(e) => updateHeliField("destination", e.target.value)}
-                                placeholder="Battersea Heliport, London"
+                                placeholder=""
                                 className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold"
                               />
                             </div>
@@ -4768,9 +5781,9 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                               </label>
                               <input
                                 type="text"
-                                value={curHeli.destination || "Battersea Heliport, London"}
+                                value={curHeli.destination || ""}
                                 onChange={(e) => updateHeliField("destination", e.target.value)}
-                                placeholder="Battersea Heliport, London"
+                                placeholder=""
                                 className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-amber-500 font-semibold"
                               />
                             </div>
@@ -4861,9 +5874,9 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                                 </label>
                                 <input
                                   type="text"
-                                  value={curHeli.departurePickup || "Battersea Heliport, London"}
+                                  value={curHeli.departurePickup || ""}
                                   onChange={(e) => updateHeliField("departurePickup", e.target.value)}
-                                  placeholder="Battersea Heliport, London"
+                                  placeholder=""
                                   className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-amber-500"
                                 />
                               </div>
@@ -4931,9 +5944,9 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                                 </label>
                                 <input
                                   type="text"
-                                  value={curHeli.arrivalDestination || "Battersea Heliport, London"}
+                                  value={curHeli.arrivalDestination || ""}
                                   onChange={(e) => updateHeliField("arrivalDestination", e.target.value)}
-                                  placeholder="Battersea Heliport, London"
+                                  placeholder=""
                                   className="w-full bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs text-gray-800 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500"
                                 />
                               </div>
@@ -5055,23 +6068,23 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                       const destCode = leg.destination?.icao || "LFMN";
                       const h = heliTransfers[legKey] || {
                         transferType: "arrival",
-                        destination: "Battersea Heliport, London",
+                        destination: "",
                         prefType: "Twin-engine, e.g. AW109 or similar",
-                        passengers: 4,
-                        clientPrice: 2400
+                        passengers: paxCount,
+                        clientPrice: 0
                       };
                       if (h.transferType === "both") {
-                        const depPick = h.departurePickup || "Battersea Heliport, London";
+                        const depPick = h.departurePickup || "";
                         const depApt = h.departureAirport || `${origCode} Airport`;
                         const arrApt = h.arrivalAirport || `${destCode} Airport`;
-                        const arrDest = h.arrivalDestination || h.destination || "Battersea Heliport, London";
+                        const arrDest = h.arrivalDestination || h.destination || "";
                         return (
                           <div key={legKey}>
                             Leg {lIdx + 1} · helicopter on both · Departure: {depPick} → {depApt} & Arrival: {arrApt} → {arrDest} · {h.prefType} · {h.passengers} pax · € {h.clientPrice.toLocaleString()}
                           </div>
                         );
                       } else if (h.transferType === "departure") {
-                        const depPick = h.destination || "Battersea Heliport, London";
+                        const depPick = h.destination || "";
                         const depApt = h.depArrLocation || `${origCode} Airport`;
                         return (
                           <div key={legKey}>
@@ -5080,7 +6093,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                         );
                       } else {
                         const arrApt = h.depArrLocation || `${destCode} Airport`;
-                        const arrDest = h.destination || "Battersea Heliport, London";
+                        const arrDest = h.destination || "";
                         return (
                           <div key={legKey}>
                             Leg {lIdx + 1} · helicopter on arrival · {arrApt} → {arrDest} · {h.prefType} · {h.passengers} pax · € {h.clientPrice.toLocaleString()}
@@ -5099,7 +6112,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
             <div className="flex items-center justify-between border-b border-[var(--line)] pb-2.5">
               <div className="flex items-center gap-2">
                 <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-[var(--wf)] text-[var(--ink)]">
-                  05
+                  5
                 </span>
                 <h3 className="text-base font-bold font-display text-[var(--ink)] m-0">
                   Services · Ground transportation
@@ -5173,15 +6186,15 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
 
                   const curTransfer = groundTransfers[legKey] || {
                     arrivalRequired: true,
-                    arrivalDropoff: lIdx === 0 ? "The Savoy, Strand, London" : "14 Bourdillon Road, Ikoyi, Lagos",
-                    arrivalVehicle: lIdx === 0 ? "Luxury" : "SUV",
-                    arrivalPrice: lIdx === 0 ? 650 : 180,
+                    arrivalDropoff: lIdx === 0 ? "" : "",
+                    arrivalVehicle: "Sedan",
+                    arrivalPrice: 0,
                     departureRequired: true,
-                    departurePickup: lIdx === 0 ? "14 Bourdillon Road, Ikoyi, Lagos" : "The Savoy, Strand, London",
-                    departureVehicle: lIdx === 0 ? "SUV" : "Luxury",
-                    departurePrice: lIdx === 0 ? 180 : 650,
+                    departurePickup: lIdx === 0 ? "" : "",
+                    departureVehicle: "Sedan",
+                    departurePrice: 0,
                     passengers: paxCount || 5,
-                    specialRequests: "Meet at aircraft steps; child seat ×1"
+                    specialRequests: ""
                   };
 
                   const isCollapsed = Boolean(groundCollapsed[legKey]);
@@ -5387,14 +6400,14 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
                       const destCode = leg.destination?.icao || "LFMN";
                       const g = groundTransfers[legKey] || {
                         arrivalRequired: true,
-                        arrivalDropoff: "The Savoy, London",
+                        arrivalDropoff: "",
                         arrivalVehicle: "Luxury",
-                        arrivalPrice: 650,
-                        departureRequired: true,
-                        departurePickup: "14 Bourdillon Road",
-                        departureVehicle: "SUV",
-                        departurePrice: 180,
-                        passengers: 5
+                        arrivalPrice: 0,
+                        departureRequired: false,
+                        departurePickup: "",
+                        departureVehicle: "Sedan",
+                        departurePrice: 0,
+                        passengers: paxCount
                       };
                       return (
                         <React.Fragment key={legKey}>
@@ -5514,23 +6527,21 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
 
           </div>
 
-          {/* Notes column · live total while editing services */}
-          <div className="self-start lg:sticky lg:top-6">{renderLiveTotalNote()}</div>
         </div>
 
         {/* ===== STEP 06 · PRICE ===== */}
-        <div id="qb-step-06" data-qb-step="06" className="space-y-4 scroll-mt-6">
+        <div id="qb-step-06" data-qb-step="06" className={`space-y-4 scroll-mt-6 ${stageCls(6)}`}>
           {renderLegStrip(`${paxCount} pax · ${tripType === "round_trip" ? "Round trip" : tripType === "multi_leg" ? "Multi-leg" : "One way"}`)}
-          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-6">
+          <div className="grid grid-cols-1 gap-6">
             <div className="space-y-6 min-w-0">
           {/* SECTION 6: BUYING PRICES, PASSENGER FEES & MARGINS (Image 1 Screen Design) */}
           <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-6">
             <div className="flex items-center gap-2 border-b border-[var(--line)] pb-2.5">
               <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-[var(--wf)] text-[var(--ink)]">
-                06
+                6
               </span>
               <h3 className="text-base font-bold font-display text-[var(--ink)] m-0">
-                Buying prices (from step 04)
+                Buying prices (from step 3)
               </h3>
             </div>
 
@@ -5939,8 +6950,8 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
           </div>
         </div>
 
-        {/* Right Col: Internal Build & What the Documents Show (Screen 1 Design) */}
-        <div className="min-w-0">
+        {/* Right Col: Internal Build & What the Documents Show (the staged layout shows these in the right panel) */}
+        <div className="hidden">
           <div className="space-y-4 lg:sticky lg:top-6">
             {/* Card 1: Internal build (admin only) */}
             <div className="bg-[var(--card)] border border-[var(--line)] rounded-xl p-5 space-y-3.5 shadow-sm">
@@ -6085,7 +7096,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
               <div className="space-y-2 pt-2 border-t border-[var(--line)]">
                 <button
                   type="button"
-                  onClick={handleCompleteQuotation}
+                  onClick={() => handleCompleteQuotation("send")}
                   disabled={!documentsAddUp}
                   className="w-full btn-primary text-xs justify-center py-2.5 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
@@ -6129,6 +7140,32 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
         </div>
           </div>
         </div>
+      </div>
+
+          {stage === 6 && renderTaxesCard()}
+          {stage === 7 && renderReviewStage()}
+
+          {stage < 7 && (
+            <div className="flex items-center justify-between gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => goToStage(stage - 1)}
+                disabled={stage === 1}
+                className="bg-white border border-slate-200 text-slate-900 hover:bg-slate-50 px-4 py-2.5 rounded-lg text-sm font-semibold shadow-sm disabled:opacity-40"
+              >
+                Back
+              </button>
+              <button
+                type="button"
+                onClick={() => goToStage(stage + 1)}
+                className="bg-[#0B1320] hover:bg-slate-800 text-white px-5 py-2.5 rounded-lg text-sm font-semibold shadow-sm"
+              >
+                Continue to {stage + 1} {QB_STAGES[stage]?.label}
+              </button>
+            </div>
+          )}
+        </div>
+        {renderRightPanel()}
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 "use client";
 import React, { useRef, useState } from "react";
 import Link from "next/link";
+import { toast } from "@/components/ui/Toaster";
 import { api } from "@/lib/api";
 import type { DocumentType } from "@/lib/aviationContext";
 import {
@@ -86,9 +87,11 @@ export default function AgentTripDetailView({ tripId }: { tripId: string }) {
       const proofUrl = await readFileAsDataUrl(file);
       const res = await api.curator.uploadProof(t.token, { proofUrl, proofName: file.name });
       setNotice({ tone: "ok", text: `Proof uploaded for ${res?.data?.invoiceNumber || "the open invoice"}. The desk confirms once the money arrives.` });
+      toast(`Transfer proof sent to the desk for ${res?.data?.invoiceNumber || "the open invoice"}.`);
       reload();
     } catch (err: any) {
       setNotice({ tone: "err", text: err?.message || "The proof could not be uploaded." });
+      toast(err?.message || "The proof could not be uploaded.", "error");
     } finally {
       setUploading(false);
       if (fileInput.current) fileInput.current.value = "";
@@ -112,9 +115,10 @@ export default function AgentTripDetailView({ tripId }: { tripId: string }) {
       await api.curator.sendPassports(t.token, list);
       setPassportOpen(false);
       setNotice({ tone: "ok", text: `Passport details sent for ${list.length} passenger${list.length === 1 ? "" : "s"}.` });
+      toast(`Passport details for ${list.length} passenger${list.length === 1 ? "" : "s"} sent to the desk.`);
       reload();
     } catch (err: any) {
-      alert(err?.message || "The passport details could not be sent.");
+      toast(err?.message || "The passport details could not be sent.", "error");
     } finally {
       setSendingPassports(false);
     }

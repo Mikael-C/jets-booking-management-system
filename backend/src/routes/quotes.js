@@ -13,6 +13,7 @@ const { generateQuotePdf } = require('../services/pdfService');
 const { calculatePricing } = require('../services/pricingService');
 const { findAirportByCode } = require('../utils/airportData');
 const { createBookingIdentifiers, createTripNumber } = require('../services/bookingIdentifiers');
+const { agreementLinks } = require('../services/agreementLinks');
 
 const quoteEditableFields = [
   'accountNumber', 'contractDate', 'quoteExpirationDate', 'paymentDueDate',
@@ -218,24 +219,25 @@ router.post('/:id/advance-to-contract', authorize('super_admin', 'admin', 'opera
   return res.json({ success: true, data: booking });
 });
 
-router.post('/:id/convert-to-booking', authorize('super_admin', 'admin', 'operations'), async (req, res) => {
-  const booking = await findBooking(req.params.id);
-  if (!booking) return res.status(404).json({ message: 'Quote not found' });
-  if (booking.isCancelled) return res.status(409).json({ message: 'Cancelled quote iterations cannot be booked' });
-
-  if (isBookedStatus(booking)) return res.json({ success: true, data: booking });
+/**
+ * QUO → TRI: the quote version becomes the booking; the other open versions of the trip are superseded.
+ * Used by "Convert to booking" and by the client's online signature (routes/signing.js).
+ * Returns { booking } or { error: { status, message } }.
+ */
+async function convertQuoteToBooking(booking, { user = null, body = null, via = 'desk' } = {}) {
+  if (booking.isCancelled) return { error: { status: 409, message: 'Cancelled quote iterations cannot be booked' } };
+  if (isBookedStatus(booking)) return { booking };
   const quoteGroupId = booking.quoteGroupId || booking.id || booking._id.toString();
-  const groupToken = createHash('sha256').update(quoteGroupId).digest('hex').slice(0, 10).toUpperCase();
   const existingTripId = booking.tripId;
   const siblings = await Booking.find(getQuoteFamilyFilter(booking));
-  if (siblings.some((sibling) => isBookedStatus(sibling) && !sibling.isCancelled)) {
-    return res.status(409).json({ message: 'A quote from this trip has already been booked' });
+  if (siblings.some((sibling) => isBookedStatus(sibling) && !sibling.isCancelled && !sibling._id.equals(booking._id))) {
+    return { error: { status: 409, message: 'A quote from this trip has already been booked' } };
   }
   const latestVersion = Math.max(0, ...siblings.map(getQuoteVersion));
   if (getQuoteVersion(booking) < latestVersion) {
-    return res.status(409).json({ message: 'Only the latest quote iteration can be booked' });
+    return { error: { status: 409, message: 'Only the latest quote iteration can be booked' } };
   }
-  applyQuoteEdits(booking, req.body);
+  if (body) applyQuoteEdits(booking, body);
   const identifiers = await createBookingIdentifiers({
     quoteGroupId,
     tripId: existingTripId || undefined,
@@ -251,6 +253,7 @@ router.post('/:id/convert-to-booking', authorize('super_admin', 'admin', 'operat
   booking.quoteId = booking.quoteId || identifiers.quoteId;
   booking.quoteReference = booking.quoteReference || booking.quoteId;
   booking.isBooked = true;
+  booking.set('isDraft', false);
   booking.quoteStatus = 'accepted';
   booking.status = 'confirmed';
   booking.bookingRevisionId = booking.bookingRevisionId || identifiers.bookingRevisionId;
@@ -269,17 +272,26 @@ router.post('/:id/convert-to-booking', authorize('super_admin', 'admin', 'operat
       sibling.quoteStatus = 'expired';
       sibling.status = 'cancelled';
     }
-    await sibling.save();
+    if (!sibling._id.equals(booking._id)) await sibling.save();
   }
 
   await createAuditEntry({
-    user: req.user,
+    user,
+    userName: via === 'client' ? 'Client (online signature)' : '',
     action: 'QUOTE_CONVERTED_TO_BOOKING',
     entityType: 'Booking',
     entityId: booking.tripId,
-    details: `Quote ${booking.quoteId} converted to booking ${booking.bookingRevisionId}`
+    details: `Quote ${booking.quoteId} converted to booking ${booking.bookingRevisionId}${via === 'client' ? ' (signed online)' : ''}`
   });
-  return res.json({ success: true, data: booking });
+  return { booking };
+}
+
+router.post('/:id/convert-to-booking', authorize('super_admin', 'admin', 'operations'), async (req, res) => {
+  const booking = await findBooking(req.params.id);
+  if (!booking) return res.status(404).json({ message: 'Quote not found' });
+  const result = await convertQuoteToBooking(booking, { user: req.user, body: req.body });
+  if (result.error) return res.status(result.error.status).json({ message: result.error.message });
+  return res.json({ success: true, data: result.booking });
 });
 
 // POST /api/quotes/generate — generate a quote from an agent request
@@ -416,7 +428,7 @@ router.get('/', authorize('super_admin', 'admin', 'finance', 'operations', 'agen
   const limitNum = Math.min(100, parseInt(limit));
 
   const [quotes, total] = await Promise.all([
-    Booking.find(filter)
+    Booking.find(filter).select('-signedDocuments -signOtp -wetSignature.file')
       .sort({ createdAt: -1 })
       .skip((pageNum - 1) * limitNum)
       .limit(limitNum)
@@ -441,14 +453,28 @@ router.post('/:id/send', authorize('super_admin', 'admin', 'operations'), async 
   if (booking.isCancelled || booking.isBooked) {
     return res.status(409).json({ message: 'Cancelled or booked quote iterations cannot be sent' });
   }
-  const recipientEmail = booking.agentEmail || booking.client?.email;
-  if (!recipientEmail) return res.status(400).json({ message: 'Quote has no agent or client email address' });
+  const to = req.body && req.body.to;
+  const recipientEmail =
+    to === 'client' ? booking.client?.email : to === 'curator' ? booking.agentEmail : booking.agentEmail || booking.client?.email;
+  if (!recipientEmail) {
+    return res.status(400).json({ message: to === 'client' ? 'The client has no email address' : 'Quote has no agent or client email address' });
+  }
 
-  const pdfBuffer = await generateQuotePdf(booking.toObject());
-  await sendQuoteEmail(recipientEmail, booking.toObject(), pdfBuffer);
+  let sent;
+  try {
+    const pdfBuffer = await generateQuotePdf(booking.toObject());
+    const links = to === 'client' ? agreementLinks(booking, req.body && req.body.origin) : null;
+    sent = await sendQuoteEmail(recipientEmail, booking.toObject(), pdfBuffer, links);
+  } catch (err) {
+    return res.status(422).json({ message: `Email could not be sent: ${err && err.message ? err.message : 'mail service error'}` });
+  }
+  if (sent && sent.success === false) {
+    return res.status(422).json({ message: `Email could not be sent: ${sent.message || sent.error || 'mail service error'}` });
+  }
 
   booking.quoteStatus = 'sent';
   booking.status = 'quote_sent';
+  booking.set('isDraft', false);
   await booking.save();
 
   await createAuditEntry({ user: req.user,
@@ -462,7 +488,7 @@ router.post('/:id/send', authorize('super_admin', 'admin', 'operations'), async 
     message: `Quote ${booking.quoteId || booking.tripNumber} has been sent to ${recipientEmail}`
   });
 
-  res.json({ message: 'Quote sent successfully', quoteStatus: 'sent' });
+  res.json({ message: 'Quote sent successfully', quoteStatus: 'sent', to: recipientEmail });
 });
 
 // PATCH /api/quotes/:id/status
@@ -495,3 +521,4 @@ router.patch('/:id/status', authorize('super_admin', 'admin', 'finance', 'operat
 router.post('/:id/version', authorize('super_admin', 'admin', 'operations'), reviseQuote);
 
 module.exports = router;
+module.exports.convertQuoteToBooking = convertQuoteToBooking;

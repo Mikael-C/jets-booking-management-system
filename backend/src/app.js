@@ -8,7 +8,7 @@ const path = require('path');
 
 const { apiLimiter, authLimiter } = require('./middleware/rateLimiter');
 const { errorHandler } = require('./middleware/errorHandler');
-const { authenticate, optionalAuthenticate } = require('./middleware/auth');
+const { authenticate, optionalAuthenticate, authorize } = require('./middleware/auth');
 const logger = require('./middleware/logger');
 
 // Route imports
@@ -33,6 +33,9 @@ const accountPreferenceRoutes = require('./routes/accountPreferences');
 const registryRoutes = require('./routes/registry');
 const publicPayRoutes = require('./routes/publicPay');
 const curatorPortalRoutes = require('./routes/curatorPortal');
+const curatorInboxRoutes = require('./routes/curatorInbox');
+const taxRuleRoutes = require('./routes/taxRules');
+const signingRoutes = require('./routes/signing');
 const notificationRoutes = require('./routes/notifications');
 const auditLogRoutes = require('./routes/auditLog');
 const sourcingRoutes = require('./routes/sourcing');
@@ -174,7 +177,11 @@ app.use('/api/account-preferences', authenticate, accountPreferenceRoutes);
 app.use('/api/registry', authenticate, registryRoutes);
 // Public: the client's payment link (no login)
 app.use('/api/pay', publicPayRoutes);
+app.use('/api/sign', signingRoutes.publicRouter); // public: the link carries a private key
+app.use('/api/agreements', authenticate, signingRoutes.deskRouter);
+app.use('/api/tax-rules', authenticate, taxRuleRoutes);
 app.use('/api/curator', authenticate, curatorPortalRoutes);
+app.use('/api/curator-inbox', authenticate, authorize('super_admin', 'admin', 'operations', 'finance'), curatorInboxRoutes);
 app.use('/api/notifications', authenticate, notificationRoutes);
 app.use('/api/audit-log', authenticate, auditLogRoutes);
 app.use('/api/sourcing', authenticate, sourcingRoutes);

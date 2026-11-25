@@ -1,6 +1,7 @@
 "use client";
 import React, { useMemo, useState } from "react";
 import Link from "next/link";
+import { toast } from "@/components/ui/Toaster";
 import { api } from "@/lib/api";
 import { Badge, GoldButton, LoadState, Modal, PageTitle, cardCls, fieldCls, goldLinkCls, labelCls, tdCls, thCls, useLoad } from "./curatorUi";
 
@@ -34,6 +35,7 @@ export function AddClientModal({ onClose, onSaved }: { onClose: () => void; onSa
     setError(null);
     try {
       const res = await api.curator.addClient({ type, ...form });
+      toast(`${type === "company" ? form.companyName : form.ownerName} added to your clients.`);
       onSaved(res.data.id);
     } catch (err: any) {
       if (err?.code === "EXISTS" && err?.data?.client) setExisting(err.data.client);
@@ -49,6 +51,7 @@ export function AddClientModal({ onClose, onSaved }: { onClose: () => void; onSa
     setSaving(true);
     try {
       await api.curator.linkClient(existing.id);
+      toast(`${existing.name} linked to your clients.`);
       onSaved(existing.id);
     } catch (err: any) {
       setError(err?.message || "The client could not be linked.");

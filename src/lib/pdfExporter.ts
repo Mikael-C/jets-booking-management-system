@@ -44,6 +44,37 @@ export async function downloadDocumentAsPdf(
   containerElementOrId: HTMLElement | string,
   options: PdfExportOptions = {}
 ): Promise<boolean> {
+  const pdf = await renderDocumentPdf(containerElementOrId, options);
+  if (!pdf) return false;
+  pdf.save(options.fileName || "Orbelo_Charter_Document.pdf");
+  return true;
+}
+
+/** The same PDF as a data URI (e.g. the signed agreement stored with the trip). */
+export async function documentPdfDataUri(containerElementOrId: HTMLElement | string, options: PdfExportOptions = {}): Promise<string | null> {
+  const pdf = await renderDocumentPdf(containerElementOrId, options);
+  return pdf ? (pdf.output("datauristring") as string).replace(/^data:application\/pdf;filename=[^;]*;/, "data:application/pdf;") : null;
+}
+
+/** Clickable links: every <a href> on the page becomes a link area at the same place in the PDF. */
+function addLinks(pdf: jsPDF, pageEl: HTMLElement, x0: number, y0: number, wMm: number) {
+  const rect = pageEl.getBoundingClientRect();
+  if (!rect.width) return;
+  const k = wMm / rect.width;
+  pageEl.querySelectorAll<HTMLAnchorElement>("a[href]").forEach((a) => {
+    const href = a.getAttribute("href") || "";
+    if (!/^https?:\/\//i.test(href) && !/^mailto:/i.test(href)) return;
+    const r = a.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    try {
+      pdf.link(x0 + (r.left - rect.left) * k, y0 + (r.top - rect.top) * k, r.width * k, r.height * k, { url: href });
+    } catch {
+      /* link areas are a nicety */
+    }
+  });
+}
+
+async function renderDocumentPdf(containerElementOrId: HTMLElement | string, options: PdfExportOptions = {}): Promise<jsPDF | null> {
   try {
     let container: HTMLElement | null = null;
     if (typeof containerElementOrId === "string") {
@@ -54,7 +85,7 @@ export async function downloadDocumentAsPdf(
 
     if (!container) {
       console.error("[pdfExporter] Target container not found");
-      return false;
+      return null;
     }
 
     // Ensure all web fonts are loaded
@@ -131,15 +162,18 @@ export async function downloadDocumentAsPdf(
         const heightDiff = Math.abs(imgHeight - pdfPageHeight);
         if (heightDiff <= 10) {
           pdf.addImage(imgData, "JPEG", 0, 0, pdfPageWidth, pdfPageHeight, undefined, "FAST");
+          addLinks(pdf, pageEl, 0, 0, pdfPageWidth);
         } else if (imgHeight > pdfPageHeight) {
           // If taller than A4, scale proportionally so footer or bottom signatures never clip
           const scale = pdfPageHeight / imgHeight;
           const scaledWidth = imgWidth * scale;
           const offsetX = (pdfPageWidth - scaledWidth) / 2;
           pdf.addImage(imgData, "JPEG", offsetX, 0, scaledWidth, pdfPageHeight, undefined, "FAST");
+          addLinks(pdf, pageEl, offsetX, 0, scaledWidth);
         } else {
           // Fit to width and position at top of page
           pdf.addImage(imgData, "JPEG", 0, 0, imgWidth, imgHeight, undefined, "FAST");
+          addLinks(pdf, pageEl, 0, 0, imgWidth);
         }
       }
     } else {
@@ -163,11 +197,9 @@ export async function downloadDocumentAsPdf(
       }
     }
 
-    const safeFileName = options.fileName || "Orbelo_Charter_Document.pdf";
-    pdf.save(safeFileName);
-    return true;
+    return pdf;
   } catch (err) {
     console.error("[pdfExporter] Error generating PDF:", err);
-    return false;
+    return null;
   }
 }

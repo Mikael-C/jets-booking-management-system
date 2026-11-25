@@ -1,6 +1,7 @@
 "use client";
 import React, { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { toast } from "@/components/ui/Toaster";
 import { api } from "@/lib/api";
 import { DocRef, GoldButton, LoadState, PageTitle, Ref, announceTokens, cardCls, tdCls, thCls, useLoad } from "./curatorUi";
 
@@ -52,6 +53,7 @@ export default function AgentTokensView() {
   const params = useSearchParams();
   const { data, error, loading, reload } = useLoad<TokenData>(() => api.curator.tokens(), []);
   const [selected, setSelected] = useState<number | null>(null);
+  const [page, setPage] = useState(1);
   const [buying, setBuying] = useState(false);
   const [notice, setNotice] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
 
@@ -87,6 +89,10 @@ export default function AgentTokensView() {
   }
 
   const options = [data.single, ...data.bundles];
+  const PAGE_SIZE = 10;
+  const pages = Math.max(1, Math.ceil(data.ledger.length / PAGE_SIZE));
+  const current = Math.min(page, pages);
+  const pageRows = data.ledger.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE);
   const chosen = options.find((o) => o.tokens === selected) || data.bundles[0] || data.single;
 
   const buy = async () => {
@@ -100,6 +106,7 @@ export default function AgentTokensView() {
         return;
       }
       setNotice({ tone: "ok", text: `${chosen.tokens} token${chosen.tokens === 1 ? "" : "s"} added. The desk sends the invoice.` });
+      toast(`${chosen.tokens} token${chosen.tokens === 1 ? "" : "s"} added to your balance.`);
       announceTokens();
       reload();
     } catch (err: any) {
@@ -149,7 +156,7 @@ export default function AgentTokensView() {
                     </td>
                   </tr>
                 )}
-                {data.ledger.map((l) => {
+                {pageRows.map((l) => {
                   const ref = parseRef(l.tripRef);
                   return (
                     <tr key={l.id} className="border-b border-white/[0.05] last:border-0">
@@ -166,9 +173,50 @@ export default function AgentTokensView() {
               </tbody>
             </table>
           </div>
+          {data.ledger.length > PAGE_SIZE && (
+            <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-white/[0.07] text-[14px] text-[#A8B3C2]">
+              <span>
+                {(current - 1) * PAGE_SIZE + 1}–{Math.min(current * PAGE_SIZE, data.ledger.length)} of {data.ledger.length}
+              </span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setPage(Math.max(1, current - 1))}
+                  disabled={current === 1}
+                  className="px-3 py-1.5 rounded-lg border border-[#2A3749] text-white disabled:opacity-40"
+                >
+                  ‹ Prev
+                </button>
+                {Array.from({ length: pages }, (_, i) => i + 1)
+                  .filter((n) => n === 1 || n === pages || Math.abs(n - current) <= 1)
+                  .map((n, i, arr) => (
+                    <React.Fragment key={n}>
+                      {i > 0 && n - arr[i - 1] > 1 && <span className="px-1">…</span>}
+                      <button
+                        type="button"
+                        onClick={() => setPage(n)}
+                        className={`min-w-[34px] px-2 py-1.5 rounded-lg border ${
+                          n === current ? "bg-[#C9A24A] border-[#C9A24A] text-[#0B121C] font-bold" : "border-[#2A3749] text-white"
+                        }`}
+                      >
+                        {n}
+                      </button>
+                    </React.Fragment>
+                  ))}
+                <button
+                  type="button"
+                  onClick={() => setPage(Math.min(pages, current + 1))}
+                  disabled={current === pages}
+                  className="px-3 py-1.5 rounded-lg border border-[#2A3749] text-white disabled:opacity-40"
+                >
+                  Next ›
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
-        <div className={`${cardCls} p-6`}>
+        <div className={`${cardCls} p-6 self-start`}>
           <h3 className="text-[19px] font-bold text-white m-0 mb-4">Buy tokens</h3>
           <div className="space-y-1">
             {options.map((o) => (

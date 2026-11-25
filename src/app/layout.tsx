@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { AviationProvider } from "@/lib/aviationContext";
+import Toaster from "@/components/ui/Toaster";
 
 export const metadata: Metadata = {
   title: "Orbelo | Private Jet Booking & Charter Management",
@@ -24,6 +25,7 @@ export default function RootLayout({
       </head>
       <body className="antialiased bg-[var(--paper)] text-[var(--ink)]">
         <AviationProvider>{children}</AviationProvider>
+        <Toaster />
       </body>
     </html>
   );

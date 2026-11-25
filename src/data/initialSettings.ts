@@ -22,6 +22,13 @@ export const initialSettings: AppSettings = {
     vatExemptionClause: "Zero-rated VAT for international passenger charter flights under VAT Act 1994, Schedule 8, Group 8.",
     vatWording: "Zero-rated VAT for international air passenger transport pursuant to standard international charter rules."
   },
+  documents: {
+    paymentTerms: "100 % on signature, and in all cases before departure",
+    passengerDocsDeadlineHours: 48,
+    checkInMinutes: 30,
+    legalBaseUrl: "orbaero.com",
+    signHost: "sign.orbaero.com"
+  },
   pricing: {
     cardFeePercent: 3.5,
     defaultCurrency: "EUR"
@@ -92,36 +99,38 @@ export const initialSettings: AppSettings = {
       isActive: false
     }
   ],
+  // C3 Cancellation Policy: 30, 50, 80 or 100 % of the total
   cancellationPolicy: [
     {
       id: "cancel-step-1",
       daysPriorMin: 14,
       daysPriorMax: null,
-      feePercentage: 10,
-      description: "More than 14 days prior to departure: 10% fee (90% refundable)"
+      feePercentage: 30,
+      description: "More than 14 days before the first departure: 30 % of the total"
     },
     {
       id: "cancel-step-2",
       daysPriorMin: 7,
       daysPriorMax: 14,
-      feePercentage: 25,
-      description: "Between 7 and 14 days prior to departure: 25% fee (75% refundable)"
+      feePercentage: 50,
+      description: "7 to 14 days before the first departure: 50 % of the total"
     },
     {
       id: "cancel-step-3",
       daysPriorMin: 2,
       daysPriorMax: 7,
-      feePercentage: 50,
-      description: "Between 48 hours and 7 days prior to departure: 50% fee (50% refundable)"
+      feePercentage: 80,
+      description: "48 hours to 7 days before the first departure: 80 % of the total"
     },
     {
       id: "cancel-step-4",
       daysPriorMin: 0,
       daysPriorMax: 2,
       feePercentage: 100,
-      description: "Less than 48 hours prior to departure: 100% non-refundable"
+      description: "Less than 48 hours before the first departure, or no-show: 100 % of the total"
     }
   ],
+
   tokens: {
     freeTokensOnSignup: 3,
     bundles: [

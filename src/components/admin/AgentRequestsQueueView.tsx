@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useAviation } from "@/lib/aviationContext";
 import { AgentRequest } from "@/types/aviation";
 import { HeaderId } from "@/components/ui/DocId";
+import { toast } from "@/components/ui/Toaster";
+import { api } from "@/lib/api";
 
 interface AgentRequestsQueueViewProps {
   selectedRequestId?: string;
@@ -152,22 +154,30 @@ export default function AgentRequestsQueueView({ selectedRequestId }: AgentReque
     }
   };
 
-  const handleSendMessage = (e: React.FormEvent) => {
+  // Replies go to the Curator through the backend (they show on the Curator's request page)
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!chatMessage.trim() || !activeRequest) return;
-
-    addMessage(activeRequest.id, {
-      senderName: "Obi",
-      senderRole: "Operations Desk",
-      content: chatMessage.trim(),
-      isFromAdmin: true
-    });
-    setChatMessage("");
+    const text = chatMessage.trim();
+    try {
+      await api.curatorInbox.reply(activeRequest.requestNumber || activeRequest.id, text);
+      setChatMessage("");
+      toast(`Message sent to ${activeRequest.agentName || "the Curator"} on ${activeRequest.requestNumber || activeRequest.id}.`);
+      refreshAgentRequests().catch(() => undefined);
+    } catch (err: any) {
+      toast(err?.message || "The message could not be sent.", "error");
+    }
   };
 
-  const handleDecline = () => {
+  const handleDecline = async () => {
     if (!activeRequest) return;
-    updateAgentRequestStatus(activeRequest.id, "declined");
+    if (!window.confirm(`Decline ${activeRequest.requestNumber || activeRequest.id}? The Curator's tokens for it are returned.`)) return;
+    try {
+      await updateAgentRequestStatus(activeRequest.id, "declined");
+      toast(`${activeRequest.requestNumber || activeRequest.id} declined. ${activeRequest.agentName || "The Curator"} has been told.`);
+    } catch (err: any) {
+      toast(err?.message || "The request could not be declined.", "error");
+    }
   };
 
   const handleCreateQuote = () => {

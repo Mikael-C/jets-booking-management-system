@@ -190,7 +190,20 @@ function actionsForTrip(b, stage, ctx) {
     });
   };
 
+  // Tasks written on the trip when the agreement is signed (R-093), until they are done
+  (Array.isArray(b.overviewTasks) ? b.overviewTasks : [])
+    .filter((t) => t && !t.doneAt && t.key && t.title)
+    .forEach((t) => {
+      const due = t.dueAt ? new Date(t.dueAt) : now;
+      push(`task-${t.key}`, isNaN(due.getTime()) ? now : due, `${t.title} · ${code}`, t.linkText || 'Open →', t.tab || 'overview', t.category || 'booking', t.shortBadge || t.title.toLowerCase());
+    });
+
   if (isQuote) {
+    // A wet-signed agreement waits for the MD to confirm it
+    const wet = b.wetSignature || {};
+    if (wet.uploadedAt && !wet.confirmedAt) {
+      push('wet-signed', now, `Wet-signed agreement to confirm · ${code}`, 'Documents →', 'documents', 'quote', 'signed copy to confirm');
+    }
     const exp = b.quoteExpirationDate ? new Date(b.quoteExpirationDate) : null;
     if (exp && !isNaN(exp.getTime()) && exp.getTime() - now.getTime() < 2 * DAY) {
       push('quote-exp', exp, `Quote expires · ${code}`, 'Quote →', 'pricing', 'quote', `expires ${urgencyFor(exp, now).text.replace(/^in /, '')}`);
@@ -279,7 +292,7 @@ function actionsForRequest(r, ctx) {
 async function buildOverview({ userEmail } = {}) {
   const now = new Date();
   const [bookings, requests] = await Promise.all([
-    Booking.find({ isDeleted: { $ne: true } }).sort({ updatedAt: -1 }).limit(2000).lean(),
+    Booking.find({ isDeleted: { $ne: true } }).select('-signedDocuments -signOtp -wetSignature.file -contractSignature.signatureImage').sort({ updatedAt: -1 }).limit(2000).lean(),
     AgentRequest.find({ isDeleted: { $ne: true }, status: { $in: ['pending', 'in_sourcing', 'processing'] } })
       .sort({ createdAt: 1 })
       .limit(500)

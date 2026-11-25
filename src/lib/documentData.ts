@@ -349,3 +349,226 @@ export const legsWord = (nums: number[]) => {
   if (n.length === 2) return `legs ${n[0]} and ${n[1]}`;
   return `legs ${n.slice(0, -1).join(", ")} and ${n[n.length - 1]}`;
 };
+
+/* ───────────── print options (set on the quote builder's review step) ───────────── */
+
+export interface DocOptions {
+  /** One charter line per leg on the quote and the agreement */
+  showPricePerLeg: boolean;
+  /** Additional services as one line on page 1, details on the service page */
+  servicesOneLine: boolean;
+  /** Prices next to each service on the service page */
+  showServicePrices: boolean;
+}
+
+/** True when every leg flies the same aircraft (it is then printed once). */
+export function sameAircraftAllLegs(b: Booking): boolean {
+  const legs = liveLegs(b);
+  if (legs.length < 2) return true;
+  const names = legs.map((l, i) => legAircraft(b, l, i).name.toLowerCase());
+  return names.every((n) => n === names[0]);
+}
+
+/** Saved choices, or the defaults: price per leg only when the aircraft differ; services as one line, with prices. */
+export function docOptions(b: Booking): DocOptions {
+  const o: any = (b as any).docOptions || {};
+  return {
+    showPricePerLeg: typeof o.showPricePerLeg === "boolean" ? o.showPricePerLeg : !sameAircraftAllLegs(b),
+    servicesOneLine: typeof o.servicesOneLine === "boolean" ? o.servicesOneLine : true,
+    showServicePrices: typeof o.showServicePrices === "boolean" ? o.showServicePrices : true
+  };
+}
+
+export interface ServiceRow {
+  /** "1", "2", "All" */
+  leg: string;
+  title: string;
+  detail: string;
+  amount: number;
+  included: boolean;
+  kind: string;
+}
+
+const TYPE_TITLE: Record<string, string> = {
+  limousine: "Ground transfer",
+  helicopter: "Helicopter transfer",
+  catering: "Catering",
+  deicing: "De-icing protection"
+};
+
+/** Services on the service page: from the quote's structured services, else from the saved price lines. */
+export function serviceRows(b: Booking): ServiceRow[] {
+  const legs = liveLegs(b);
+  const pricing = documentPricing(b);
+  const target = round2(pricing.services.reduce((s, l) => s + l.amount, 0));
+  const fromTrip: ServiceRow[] = (b.tripServices || [])
+    .filter((s: any) => s && s.status !== "cancelled" && s.source !== "added")
+    .map((s: any) => {
+      const n = Number(s.legNumber) || 0;
+      const leg = n > 0 ? legs[n - 1] || (b.legs || [])[n - 1] : undefined;
+      const airport = s.timing === "departure" ? leg?.origin : leg?.destination;
+      const place = cityOf(airport) || s.airport || "";
+      let title = s.title || TYPE_TITLE[s.type] || "Service";
+      if (s.type === "limousine") title = `Ground transfer · ${s.timing === "departure" ? "departure" : "arrival"}${place ? ` ${place}` : ""}`;
+      if (s.type === "helicopter") title = `Helicopter transfer${place ? ` · ${place}` : ""}`;
+      const detail =
+        s.type === "limousine"
+          ? [s.vehicle, s.passengers ? `${s.passengers} pax` : "", s.location ? (s.timing === "departure" ? `from ${s.location}` : `to ${s.location}`) : ""]
+              .filter(Boolean)
+              .join(" · ")
+          : s.type === "helicopter"
+            ? [s.from && s.to ? `${s.from} → ${s.to}` : s.to || "", s.passengers ? `${s.passengers} pax` : ""].filter(Boolean).join(" · ")
+            : s.type === "catering"
+              ? [s.menu, s.dietary].filter(Boolean).join(" · ")
+              : String(s.instructions || s.details || "");
+      const amount = s.included ? 0 : round2(s.clientPrice);
+      return { leg: n > 0 ? String(n) : "All", title, detail, amount, included: amount === 0, kind: String(s.type || "custom") };
+    });
+  const tripSum = round2(fromTrip.reduce((s, r) => s + r.amount, 0));
+  if (fromTrip.length && Math.abs(tripSum - target) < 0.01) return fromTrip;
+  // Saved price lines: "Ground Transport (Arrival) · Leg 1"
+  return (b.manualServices || [])
+    .filter((s: any) => s && s.name)
+    .map((s: any) => {
+      const m = String(s.name).match(/·\s*leg\s*(\d+)/i);
+      const amount = round2(s.price ?? s.amount ?? 0);
+      const kind = /ground|limousine/i.test(s.name) ? "limousine" : /helicopter/i.test(s.name) ? "helicopter" : /catering/i.test(s.name) ? "catering" : "custom";
+      return {
+        leg: m ? m[1] : "All",
+        title: String(s.name).replace(/\s*·\s*leg\s*\d+/i, ""),
+        detail: String(s.details || s.description || ""),
+        amount,
+        included: amount === 0,
+        kind
+      };
+    });
+}
+
+/** "4 ground transfers, catering" */
+export function servicesSummary(rows: ServiceRow[]): string {
+  const count = (k: string) => rows.filter((r) => r.kind === k).length;
+  const parts: string[] = [];
+  const g = count("limousine");
+  const h = count("helicopter");
+  if (g) parts.push(`${g} ground transfer${g === 1 ? "" : "s"}`);
+  if (h) parts.push(`${h} helicopter transfer${h === 1 ? "" : "s"}`);
+  if (count("catering")) parts.push("catering");
+  rows
+    .filter((r) => !["limousine", "helicopter", "catering"].includes(r.kind))
+    .forEach((r) => {
+      const t = r.title.toLowerCase();
+      if (!parts.includes(t)) parts.push(t);
+    });
+  return parts.join(", ");
+}
+
+export interface FeeRow {
+  label: string;
+  amount: number;
+}
+
+/** "Leg 2 · Nice departure passenger charge · 4 × € 45.00 · at cost" */
+export function passengerFeeRows(b: Booking): FeeRow[] {
+  const cur = (b.pricing as any)?.currency || "EUR";
+  return (b.passengerFeeItems || [])
+    .filter((f) => f && Number(f.lineAtCost) > 0)
+    .map((f) => {
+      const nums = (f.legs || []).slice().sort((a, c) => a - c);
+      const where = nums.length ? (nums.length === 1 ? `Leg ${nums[0]}` : `Legs ${nums.join(", ")}`) : "";
+      const each = f.charged === "pax" ? `${f.pax} × ${docMoney(f.amount, cur)}` : "flat";
+      return { label: [where, String(f.description || "Passenger charge"), each, "at cost"].filter(Boolean).join(" · "), amount: round2(f.lineAtCost) };
+    });
+}
+
+/** "round trip, 2 legs" · "one way" · "multi-leg, 3 legs" */
+export function tripWord(b: Booking): string {
+  const n = liveLegs(b).length;
+  if (b.tripType === "round_trip") return `round trip, ${n} legs`;
+  if (n <= 1) return "one way";
+  return `multi-leg, ${n} legs`;
+}
+
+/** "legs 1–2" for a run of legs, else "legs 1, 3" */
+export function legRange(nums: number[]): string {
+  const n = [...nums].sort((a, b) => a - b);
+  if (n.length === 0) return "";
+  if (n.length === 1) return `leg ${n[0]}`;
+  const run = n.every((x, i) => i === 0 || x === n[i - 1] + 1);
+  return run ? `legs ${n[0]}–${n[n.length - 1]}` : `legs ${n.join(", ")}`;
+}
+
+/** The bank account for the document's currency (or the default one). */
+export function bankFor(settings: Partial<AppSettings> | undefined, currency: string) {
+  const list = (settings?.bankAccounts || []) as any[];
+  return list.find((a) => a.currency === currency && a.isDefault) || list.find((a) => a.currency === currency) || list.find((a) => a.isDefault) || list[0] || null;
+}
+
+/* ───────────── taxes and links saved with the quote (R-091, R-093) ───────────── */
+
+export interface DocTaxLine {
+  label: string;
+  rateLabel: string;
+  amount: number;
+  wording: string;
+}
+
+/** Tax lines saved on the quote version: one per country and rate, plus exemption wordings. Null for older quotes. */
+export function docTaxes(b: Booking): { lines: DocTaxLine[]; wordings: string[] } | null {
+  const t: any = (b as any).taxSummary;
+  if (!t || !Array.isArray(t.lines)) return null;
+  return {
+    lines: t.lines.filter((l: any) => l && Number(l.amount) > 0).map((l: any) => ({ label: String(l.label || "Tax"), rateLabel: String(l.rateLabel || ""), amount: round2(l.amount), wording: String(l.wording || "") })),
+    wordings: Array.isArray(t.wordings) ? t.wordings.map(String).filter(Boolean) : []
+  };
+}
+
+/** Settings as they were when the quote was issued (issued documents keep their wording, policy and links). */
+export function settingsFor(b: Booking, live: AppSettings): AppSettings {
+  const snap: any = (b as any).documentSnapshot;
+  if (!snap) return live;
+  return {
+    ...live,
+    company: { ...live.company, ...(snap.company || {}) },
+    cancellationPolicy: Array.isArray(snap.cancellationPolicy) && snap.cancellationPolicy.length ? snap.cancellationPolicy : live.cancellationPolicy,
+    termsVersions: Array.isArray(snap.termsVersions) && snap.termsVersions.length ? snap.termsVersions : live.termsVersions,
+    bankAccounts: Array.isArray(snap.bankAccounts) && snap.bankAccounts.length ? snap.bankAccounts : live.bankAccounts,
+    documents: { ...((live as any).documents || {}), ...(snap.documents || {}) },
+    pricing: { ...(live.pricing || { cardFeePercent: 3.5 }), ...(snap.pricing || {}) }
+  } as AppSettings;
+}
+
+export interface AgreementLinks {
+  signLabel: string;
+  signHref: string;
+  form: { label: string; href: string };
+  terms: { label: string; href: string };
+  cancellation: { label: string; href: string };
+  privacy: { label: string; href: string };
+}
+
+/**
+ * Links printed on the agreement. Each legal link carries the issue date so it opens the version in force that day;
+ * the signing link carries the private key of this agreement.
+ */
+export function agreementLinksFor(b: Booking, settings?: Partial<AppSettings>): AgreementLinks {
+  const snap: any = ((b as any).documentSnapshot || {}).links || {};
+  const docs: any = (settings as any)?.documents || {};
+  const legalHost = String(snap.legalBase || docs.legalBaseUrl || "orbaero.com").replace(/^https?:\/\//, "").replace(/\/+$/, "");
+  const signHost = String(snap.signHost || docs.signHost || "sign.orbaero.com").replace(/^https?:\/\//, "").replace(/\/+$/, "");
+  const issued = parseDocDate((b as any).quoteSentAt || b.createdAt) || new Date();
+  const on = `${issued.getFullYear()}-${String(issued.getMonth() + 1).padStart(2, "0")}-${String(issued.getDate()).padStart(2, "0")}`;
+  const legal = (path: string) => ({ label: `${legalHost}/legal/${path}`, href: `https://${legalHost}/legal/${path}?on=${on}` });
+  const number = agreementNo(b);
+  const token = String((b as any).signToken || "");
+  const envBase = typeof process !== "undefined" ? (process.env.NEXT_PUBLIC_SIGN_BASE_URL as string | undefined) : undefined;
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const base = String(envBase || (origin ? `${origin}/sign` : `https://${signHost}`)).replace(/\/+$/, "");
+  return {
+    signLabel: `${signHost}/${number}`,
+    signHref: token ? `${base}/${encodeURIComponent(number)}?k=${token}` : "",
+    form: legal("charter-agreement"),
+    terms: legal("terms"),
+    cancellation: legal("cancellation"),
+    privacy: legal("privacy")
+  };
+}
