@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
+import TablePager, { usePagedRows } from "@/components/ui/TablePager";
 import { useRouter } from "next/navigation";
 import { useAviation } from "@/lib/aviationContext";
 import { AgentRequest } from "@/types/aviation";
@@ -112,9 +113,12 @@ export default function AgentRequestsQueueView({ selectedRequestId }: AgentReque
 
   // Filtered requests list
   const filteredRequests = useMemo(() => {
-    const byTime = (r: AgentRequest) => new Date(r.createdAt).getTime() || 0;
+    // Newest request first on every tab (the number breaks ties when two arrive at the same time)
+    const byTime = (r: AgentRequest) =>
+      new Date((r as any).createdAt || (r as any).receivedAt || (r as any).updatedAt || 0).getTime() || 0;
+    const byNumber = (r: AgentRequest) => String(r.requestNumber || r.id || "");
     return [...agentRequests]
-      .sort((a, b) => (filterPill === "new" ? byTime(a) - byTime(b) : byTime(b) - byTime(a)))
+      .sort((a, b) => byTime(b) - byTime(a) || byNumber(b).localeCompare(byNumber(a), undefined, { numeric: true }))
       .filter((req) => {
       // Filter pill
       if (filterPill === "new" && req.status !== "pending") return false;
@@ -139,6 +143,9 @@ export default function AgentRequestsQueueView({ selectedRequestId }: AgentReque
       return true;
     });
   }, [agentRequests, filterPill, agentFilter, searchQuery]);
+
+  // Pagination: 15 per page, back to page 1 when the tab, agent or search changes
+  const paged = usePagedRows(filteredRequests, 15, JSON.stringify([filterPill, agentFilter, searchQuery]));
 
   const handleOpenRequest = (req: AgentRequest) => {
     setActiveReqId(req.id);
@@ -752,7 +759,7 @@ export default function AgentRequestsQueueView({ selectedRequestId }: AgentReque
       {/* Table Card */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
+          <table id="requests-table" className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="border-b border-gray-100 bg-white">
                 <th className="py-3.5 px-4 font-semibold text-gray-400 text-[11px] uppercase tracking-wider">
@@ -786,7 +793,7 @@ export default function AgentRequestsQueueView({ selectedRequestId }: AgentReque
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filteredRequests.map((req) => (
+              {paged.pageRows.map((req) => (
                 <tr
                   key={req.id}
                   onClick={() => handleOpenRequest(req)}
@@ -847,10 +854,11 @@ export default function AgentRequestsQueueView({ selectedRequestId }: AgentReque
             </tbody>
           </table>
         </div>
+        <TablePager {...paged} label="requests" scrollToId="requests-table" />
 
         {/* Footer Note */}
         <div className="py-3.5 px-4 border-t border-gray-100 text-[11px] text-gray-400 leading-relaxed bg-white">
-          Oldest new request first. A request becomes overdue after {overdueMinutes} minutes without action (set in Settings). Opening it shows the request page, and &ldquo;Create quote&rdquo; turns it into a trip.
+          Newest request first. A request becomes overdue after {overdueMinutes} minutes without action (set in Settings). Opening it shows the request page, and &ldquo;Create quote&rdquo; turns it into a trip.
         </div>
       </div>
     </div>
