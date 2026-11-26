@@ -1,4 +1,5 @@
 const { monitorEventLoopDelay } = require('perf_hooks');
+const mongoose = require('mongoose');
 const logger = require('./logger');
 
 const MB = 1024 * 1024;
@@ -13,17 +14,32 @@ const startHealthMonitor = () => {
   const loop = monitorEventLoopDelay({ resolution: 20 });
   loop.enable();
 
-  const timer = setInterval(() => {
+  // Round-trip time of a trivial command to the primary. Shows whether
+  // slowness is in the app or between the app and MongoDB.
+  const pingDb = async () => {
+    if (mongoose.connection.readyState !== 1) return 'db=not-connected';
+    const start = Date.now();
+    try {
+      await mongoose.connection.db.admin().ping();
+      return `db-ping=${Date.now() - start}ms`;
+    } catch (err) {
+      return `db-ping=FAILED after ${Date.now() - start}ms (${err.message})`;
+    }
+  };
+
+  const timer = setInterval(async () => {
     const ms = (ns) => Math.round(ns / 1e6);
     const mem = process.memoryUsage();
+    const p50 = ms(loop.percentile(50));
     const p99 = ms(loop.percentile(99));
     const max = ms(loop.max);
+    loop.reset();
+    const db = await pingDb();
     const line =
-      `health: event-loop delay p50=${ms(loop.percentile(50))}ms p99=${p99}ms max=${max}ms, ` +
+      `health: ${db}, event-loop delay p50=${p50}ms p99=${p99}ms max=${max}ms, ` +
       `heap=${Math.round(mem.heapUsed / MB)}MB rss=${Math.round(mem.rss / MB)}MB`;
     // Production logger level is 'warn', so log at warn to keep these visible.
     logger.warn(max > 1000 ? `${line} (STALLED)` : line);
-    loop.reset();
   }, INTERVAL_MS);
   timer.unref();
 };

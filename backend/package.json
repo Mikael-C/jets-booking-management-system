@@ -4,7 +4,8 @@
   "description": "Orbelo Private Jet Booking Management System - Backend API",
   "main": "src/server.js",
   "scripts": {
-    "start": "node src/scripts/seed.js && node src/server.js",
+    "start": "node src/server.js",
+    "clear-data": "node src/scripts/clearData.js",
     "dev": "nodemon src/server.js",
     "seed": "node src/scripts/seed.js",
     "seed:fleet": "node src/scripts/seedFleet.js"

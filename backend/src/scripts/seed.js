@@ -397,6 +397,17 @@ const seedDatabase = async (force = false) => {
 };
 
 if (require.main === module) {
+  // Demo seeding replaces real users and data, so running this file does
+  // nothing unless demo data is asked for explicitly. This keeps an old start
+  // command like "node src/scripts/seed.js && node src/server.js" harmless.
+  const wantsDemo =
+    process.env.AUTO_SEED === 'true' ||
+    process.env.FORCE_SEED === 'true' ||
+    process.argv.includes('--demo');
+  if (!wantsDemo) {
+    console.log('ℹ️  Demo seeding is disabled. Run with --demo (or AUTO_SEED=true) to load demo data.');
+    process.exit(0);
+  }
   seedDatabase()
     .then(() => process.exit(0))
     .catch((err) => {

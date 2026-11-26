@@ -1243,7 +1243,10 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
               });
             }
           }
-          if (itemsMap.size > 0) {
+          // When the backend answered, it is the source of truth even if empty,
+          // so trips cached in this browser don't linger after data is cleared.
+          const backendAnswered = bookingsRes.status === "fulfilled" && Array.isArray(bookingsRes.value?.data);
+          if (backendAnswered || itemsMap.size > 0) {
             const normalized = Array.from(itemsMap.values()).map(normalizeBooking);
             setBookings(normalized);
             setBookingsSource("backend");
@@ -2218,7 +2221,9 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      if (itemsMap.size > 0) {
+      // When the backend answered, it is the source of truth even if empty.
+      const backendAnswered = bookingsRes.status === "fulfilled" && Array.isArray(bookingsRes.value?.data);
+      if (backendAnswered || itemsMap.size > 0) {
         const normalized = Array.from(itemsMap.values()).map(normalizeBooking);
         setBookings(normalized);
         setBookingsSource("backend");

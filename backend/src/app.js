@@ -139,15 +139,17 @@ app.get('/', (req, res) => {
   });
 });
 
-// ─── One-Time Seed Trigger (for free-tier hosting without shell access) ───────
+// ─── Seed Trigger (disabled unless explicitly enabled) ────────────────────────
+// Seeding wipes users and loads demo data, so it is off by default. To use it,
+// set ENABLE_SEED_ENDPOINT=true and a strong SEED_SECRET on the server.
 app.all(['/api/seed', '/seed'], async (req, res) => {
+  const expectedSecret = process.env.SEED_SECRET;
+  if (process.env.ENABLE_SEED_ENDPOINT !== 'true' || !expectedSecret) {
+    return res.status(404).json({ success: false, message: 'Not found' });
+  }
   const secret = req.query.secret || req.body?.secret || req.headers['x-seed-secret'];
-  const expectedSecret = process.env.SEED_SECRET || 'orbelo2026!';
   if (secret !== expectedSecret) {
-    return res.status(401).json({
-      success: false,
-      message: 'Unauthorized: Pass ?secret=orbelo2026! to seed the database',
-    });
+    return res.status(401).json({ success: false, message: 'Unauthorized' });
   }
   const { seedDatabase } = require('./scripts/seed');
   const result = await seedDatabase(req.query.force === 'true');
