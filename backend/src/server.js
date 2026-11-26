@@ -6,6 +6,8 @@ const logger = require('./middleware/logger');
 const PORT = process.env.PORT || 5000;
 
 const startServer = async () => {
+  // Start before the DB connects so slow startup work is measured too.
+  require('./middleware/healthMonitor').startHealthMonitor();
   try {
     // Connect to MongoDB
     await connectDB();
