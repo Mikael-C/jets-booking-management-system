@@ -74,6 +74,84 @@ function addLinks(pdf: jsPDF, pageEl: HTMLElement, x0: number, y0: number, wMm: 
   });
 }
 
+
+const A4_WIDTH_PX = 794;
+const A4_HEIGHT_PX = 1123;
+
+/**
+ * A copy of the document laid out at true A4 width, where any page taller than one sheet continues on a new
+ * page: whole blocks (tables, aircraft cards, paragraphs) move to the next page and a heading stays with what
+ * follows it. Page footers are renumbered ("Page 2 / 3"). The copy sits off screen and is removed afterwards.
+ */
+async function paginatedCopy(container: HTMLElement): Promise<{ root: HTMLElement; cleanup: () => void } | null> {
+  if (!container.querySelector(".doc-page")) return null;
+  const host = document.createElement("div");
+  host.setAttribute("aria-hidden", "true");
+  host.style.cssText = `position:fixed;left:-20000px;top:0;width:${A4_WIDTH_PX + 40}px;pointer-events:none;z-index:-1;`;
+  const root = container.cloneNode(true) as HTMLElement;
+  root.removeAttribute("id");
+  host.appendChild(root);
+  document.body.appendChild(host);
+  const cleanup = () => host.remove();
+
+  try {
+    const pages = Array.from(root.querySelectorAll<HTMLElement>(".doc-page"));
+    // Heights are only right once the photos in the copy have loaded
+    await waitForImagesToLoad(root);
+    pages.forEach((page) => {
+      page.style.width = `${A4_WIDTH_PX}px`;
+      page.style.maxWidth = `${A4_WIDTH_PX}px`;
+      page.style.margin = "0";
+    });
+
+    const isHeading = (el: Element | null) => !!el && /^H[1-6]$/.test(el.tagName);
+    const tall = (page: HTMLElement) => page.getBoundingClientRect().height > A4_HEIGHT_PX + 1;
+
+    for (const first of pages) {
+      let page = first;
+      let guard = 0;
+      while (tall(page) && guard++ < 10) {
+        const body = page.querySelector<HTMLElement>(":scope > [data-doc-body]") || (page.firstElementChild as HTMLElement | null);
+        const footer = page.querySelector<HTMLElement>(":scope > [data-doc-footer]") || (page.lastElementChild as HTMLElement | null);
+        if (!body || !footer || body === footer || body.children.length < 2) break;
+
+        const next = page.cloneNode(false) as HTMLElement;
+        const nextBody = body.cloneNode(false) as HTMLElement;
+        next.appendChild(nextBody);
+        next.appendChild(footer.cloneNode(true));
+        page.after(next);
+
+        // Move blocks from the end until this page fits (always leave at least one block behind)
+        while (tall(page) && body.children.length > 1) {
+          nextBody.insertBefore(body.lastElementChild as Element, nextBody.firstChild);
+        }
+        // A heading never ends a page: it goes with the block it introduces
+        while (body.children.length > 1 && isHeading(body.lastElementChild)) {
+          nextBody.insertBefore(body.lastElementChild as Element, nextBody.firstChild);
+        }
+        if (!nextBody.children.length) {
+          next.remove();
+          break;
+        }
+        page = next;
+      }
+    }
+
+    // Renumber every page footer
+    const all = Array.from(root.querySelectorAll<HTMLElement>(".doc-page"));
+    all.forEach((page, i) => {
+      const footer = page.querySelector<HTMLElement>(":scope > [data-doc-footer]");
+      const num = footer?.querySelector<HTMLElement>("[data-doc-pageno]");
+      if (num) num.textContent = `Page ${i + 1} / ${all.length}`;
+    });
+    return { root, cleanup };
+  } catch (err) {
+    console.warn("[pdfExporter] Could not lay out continuation pages:", err);
+    cleanup();
+    return null;
+  }
+}
+
 async function renderDocumentPdf(containerElementOrId: HTMLElement | string, options: PdfExportOptions = {}): Promise<jsPDF | null> {
   try {
     let container: HTMLElement | null = null;
@@ -97,6 +175,24 @@ async function renderDocumentPdf(containerElementOrId: HTMLElement | string, opt
       }
     }
 
+    // Lay the pages out at A4 width; a page that runs past one sheet continues on a new full-width page
+    const laidOut = await paginatedCopy(container);
+    if (laidOut) {
+      try {
+        return await renderPages(laidOut.root, options);
+      } finally {
+        laidOut.cleanup();
+      }
+    }
+    return await renderPages(container, options);
+  } catch (err) {
+    console.error("[pdfExporter] Error generating PDF:", err);
+    return null;
+  }
+}
+
+async function renderPages(container: HTMLElement, options: PdfExportOptions): Promise<jsPDF | null> {
+  try {
     // Ensure all remote and local images are loaded before rasterizing
     await waitForImagesToLoad(container);
 

@@ -80,8 +80,9 @@ router.post('/refresh', validate(refreshSchema), async (req, res) => {
   const newAccessToken = jwtConfig.signAccessToken(payload);
   const newRefreshToken = jwtConfig.signRefreshToken(payload);
 
-  // Rotate refresh token
-  user.refreshTokens = user.refreshTokens.filter((t) => t !== refreshToken).slice(-4).concat(newRefreshToken);
+  // Add the new refresh token. The one just used stays valid until it drops out of the last 5, so two tabs
+  // renewing at the same moment do not sign each other out.
+  user.refreshTokens = (user.refreshTokens || []).slice(-4).concat(newRefreshToken);
   await user.save();
 
   res.json({

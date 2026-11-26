@@ -30,10 +30,12 @@ export function useDocSettings(): AppSettings {
 export function DocPage({ children, footerLeft, page, pages }: { children: React.ReactNode; footerLeft: string; page: number; pages: number }) {
   return (
     <div className="doc-page w-full max-w-[794px] mx-auto min-h-[1123px] bg-white text-[#111827] px-[56px] pt-[50px] pb-[34px] shadow-xl border border-slate-200 mb-8 print:mb-0 print:border-none print:shadow-none flex flex-col box-border font-sans text-[13px] leading-[1.45] break-after-page">
-      <div className="flex-1">{children}</div>
-      <div className="mt-8 pt-3 border-t border-[#D1D5DB] flex items-center justify-between text-[11px] text-[#6B7280] select-none">
+      <div className="flex-1" data-doc-body>
+        {children}
+      </div>
+      <div data-doc-footer className="mt-8 pt-3 border-t border-[#D1D5DB] flex items-center justify-between text-[11px] text-[#6B7280] select-none">
         <span className={mono}>{footerLeft}</span>
-        <span>
+        <span data-doc-pageno>
           Page {page} / {pages}
         </span>
       </div>

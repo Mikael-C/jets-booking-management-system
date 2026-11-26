@@ -40,6 +40,7 @@ import { initialMessages } from "@/data/initialMessages";
 import { fleetData } from "@/data/fleet";
 import { findAirportByCode } from "@/data/airports";
 import { calculatePricing, calculateDistanceNm, estimateFlightTimeMinutes, formatFlightTime } from "@/lib/pricingCalculator";
+import { toast } from "@/components/ui/Toaster";
 import { api } from "@/lib/api";
 import { getQuoteIterationGroupKey } from "@/lib/quoteIterations";
 import { extractFeToken } from "@/lib/idGenerator";
@@ -1761,6 +1762,18 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
       // Ignore
     }
   };
+
+  // The login could not be renewed (e.g. signed out elsewhere, or away for more than 30 days): back to sign-in
+  const logoutRef = React.useRef(logout);
+  logoutRef.current = logout;
+  useEffect(() => {
+    const onExpired = () => {
+      logoutRef.current();
+      toast("Your session has ended. Please sign in again.", "error");
+    };
+    window.addEventListener("orbelo-session-expired", onExpired);
+    return () => window.removeEventListener("orbelo-session-expired", onExpired);
+  }, []);
 
   const setRole = (newRole: UserRole) => {
     setRoleState(newRole);

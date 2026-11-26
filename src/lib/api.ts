@@ -11,23 +11,129 @@ const getBaseApiUrl = (): string => {
 
 const API_BASE_URL = getBaseApiUrl();
 
-function getAuthHeader(): Record<string, string> {
-  if (typeof window === "undefined") return {};
-  const token = localStorage.getItem("orbelo_access_token");
+const ACCESS_KEY = "orbelo_access_token";
+const REFRESH_KEY = "orbelo_refresh_token";
+
+const readToken = (key: string): string | null => {
+  if (typeof window === "undefined") return null;
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+
+function getAuthHeader(token: string | null = readToken(ACCESS_KEY)): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
+
+/** Seconds until the access token expires (null when it cannot be read). */
+function secondsLeft(token: string | null): number | null {
+  if (!token) return null;
+  try {
+    const part = token.split(".")[1];
+    if (!part) return null;
+    const json = JSON.parse(atob(part.replace(/-/g, "+").replace(/_/g, "/")));
+    return typeof json.exp === "number" ? json.exp - Date.now() / 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Renews the access token with the refresh token. Requests that need a new token at the same time share one
+ * renewal; if another tab renewed first, its token is used.
+ */
+let renewing: Promise<string | null> | null = null;
+function renewAccessToken(usedToken: string | null): Promise<string | null> {
+  if (typeof window === "undefined") return Promise.resolve(null);
+  const current = readToken(ACCESS_KEY);
+  if (current && usedToken && current !== usedToken && (secondsLeft(current) ?? 1) > 0) return Promise.resolve(current);
+  if (renewing) return renewing;
+  const run = (async () => {
+    const refreshToken = readToken(REFRESH_KEY);
+    if (!refreshToken) return null;
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshToken }),
+      });
+      if (!res.ok) {
+        const latest = readToken(ACCESS_KEY);
+        return latest && latest !== usedToken && (secondsLeft(latest) ?? 1) > 0 ? latest : null;
+      }
+      const json = await res.json().catch(() => null);
+      const accessToken = json?.data?.accessToken;
+      if (!accessToken) return null;
+      localStorage.setItem(ACCESS_KEY, accessToken);
+      if (json?.data?.refreshToken) localStorage.setItem(REFRESH_KEY, json.data.refreshToken);
+      return accessToken as string;
+    } catch {
+      // Network trouble: keep the session, the next request tries again
+      return readToken(ACCESS_KEY);
+    }
+  })();
+  renewing = run;
+  run.finally(() => {
+    if (renewing === run) renewing = null;
+  });
+  return run;
+}
+
+/** The session could not be renewed: sign out cleanly instead of failing request after request. */
+let sessionEndedAt = 0;
+function endSession() {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(ACCESS_KEY);
+    localStorage.removeItem(REFRESH_KEY);
+  } catch {
+    /* ignore */
+  }
+  if (Date.now() - sessionEndedAt > 5000) {
+    sessionEndedAt = Date.now();
+    window.dispatchEvent(new CustomEvent("orbelo-session-expired"));
+  }
+}
+
+const NO_RENEW = ["/auth/login", "/auth/refresh", "/auth/logout"];
 
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
   const url = `${API_BASE_URL}${cleanEndpoint}`;
-  const headers = {
+  const canRenew = !NO_RENEW.some((p) => cleanEndpoint.startsWith(p));
+
+  // Renew a token that runs out within the next 2 minutes before sending the request
+  let token = readToken(ACCESS_KEY);
+  if (token && canRenew) {
+    const left = secondsLeft(token);
+    if (left !== null && left < 120 && readToken(REFRESH_KEY)) {
+      token = (await renewAccessToken(token)) || token;
+    }
+  }
+  let headers: Record<string, string> = {
     "Content-Type": "application/json",
-    ...getAuthHeader(),
-    ...options.headers,
+    ...getAuthHeader(token),
+    ...((options.headers as Record<string, string>) || {}),
   };
 
   try {
-    const res = await fetch(url, { ...options, headers });
+    let res = await fetch(url, { ...options, headers });
+    // Expired or refused token: renew once and send the request again
+    if (res.status === 401 && canRenew && token && readToken(REFRESH_KEY)) {
+      const fresh = await renewAccessToken(token);
+      if (fresh && fresh !== token) {
+        headers = { ...headers, Authorization: `Bearer ${fresh}` };
+        res = await fetch(url, { ...options, headers });
+      } else if (!fresh) {
+        endSession();
+        const ended: any = new Error("Your session has ended. Please sign in again.");
+        ended.status = 401;
+        ended.code = "SESSION_ENDED";
+        throw ended;
+      }
+    }
     if (res.ok) {
       return await res.json();
     }
@@ -49,6 +155,7 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     apiError.data = errorData;
     throw apiError;
   } catch (err: any) {
+    if (err?.code === "SESSION_ENDED") throw err;
     if (typeof window !== "undefined" && !API_BASE_URL.startsWith("/")) {
       try {
         const localRes = await fetch(`/api${cleanEndpoint}`, { ...options, headers });
