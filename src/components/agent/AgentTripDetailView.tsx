@@ -23,6 +23,7 @@ import {
   useLoad,
   useOpenTripDocument
 } from "./curatorUi";
+import { DeskThreadModal, MessageDeskButton } from "./DeskThread";
 
 interface TripData {
   token: string;
@@ -45,6 +46,7 @@ interface TripData {
     creditNote?: any;
   }[];
   commission: { pct: number; amount: number; currency: string; note: string };
+  threadKey?: string;
 }
 
 const INV_RE = /^INV-([A-Z0-9]+)(-\d{3}-\d+)$/i;
@@ -63,6 +65,7 @@ export default function AgentTripDetailView({ tripId }: { tripId: string }) {
   const [passportOpen, setPassportOpen] = useState(false);
   const [passportForm, setPassportForm] = useState<Record<string, { passportNumber: string; nationality: string; passportExpiry: string; dateOfBirth: string }>>({});
   const [sendingPassports, setSendingPassports] = useState(false);
+  const [messaging, setMessaging] = useState(false);
 
   if (!t) {
     return (
@@ -146,6 +149,9 @@ export default function AgentTripDetailView({ tripId }: { tripId: string }) {
             ▲ {t.badges.missingPassports} passport{t.badges.missingPassports === 1 ? "" : "s"} missing
           </Badge>
         )}
+        <span className="ml-auto">
+          <MessageDeskButton onClick={() => setMessaging(true)} />
+        </span>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-6 items-start">
@@ -291,6 +297,7 @@ export default function AgentTripDetailView({ tripId }: { tripId: string }) {
           </div>
         </Modal>
       )}
+      {messaging && <DeskThreadModal threadKey={t.threadKey || `TRI-${t.token}`} title={t.ref} onClose={() => setMessaging(false)} />}
     </div>
   );
 }

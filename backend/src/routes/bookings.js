@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const { randomUUID } = require('crypto');
 const Joi = require('joi');
 const Booking = require('../models/Booking');
+const AgentRequest = require('../models/AgentRequest');
 const { authorize } = require('../middleware/auth');
 const { validate, schemas } = require('../middleware/validate');
 const { calculatePricing } = require('../services/pricingService');
@@ -183,8 +184,19 @@ router.get('/:id', async (req, res) => {
   if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
 
   // Agent can only see own bookings
-  if (req.userRole === 'agent' && booking.agentEmail !== req.user.email) {
-    return res.status(403).json({ success: false, message: 'Access denied' });
+  if (req.userRole === 'agent') {
+    const me = String(req.user.email || '').toLowerCase();
+    const owner = String(booking.agentEmail || '').toLowerCase();
+    let mine = Boolean(owner) && owner === me;
+    // A revision saved without the Curator's email belongs to the Curator of the same trip
+    if (!mine && !owner && booking.tripId && me) {
+      const escaped = me.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const sibling = await Booking.findOne({ tripId: booking.tripId, isDeleted: { $ne: true }, agentEmail: { $regex: `^${escaped}$`, $options: 'i' } })
+        .select('_id')
+        .lean();
+      mine = Boolean(sibling);
+    }
+    if (!mine) return res.status(403).json({ success: false, message: 'Access denied' });
   }
 
   res.json({ success: true, data: booking });
@@ -234,6 +246,17 @@ router.post('/', async (req, res) => {
   }
 
   await logBookingAction(req.user, 'booking_created', booking, req);
+
+  // A quote saved (not a draft) from a Curator's request moves that request to "Quoted"
+  if (booking.sourceAgentRequestId && !booking.isDraft && booking.status !== 'draft') {
+    const rid = String(booking.sourceAgentRequestId);
+    const or = [{ id: rid }, { requestNumber: rid }];
+    if (mongoose.Types.ObjectId.isValid(rid) && String(new mongoose.Types.ObjectId(rid)) === rid) or.push({ _id: rid });
+    await AgentRequest.updateOne(
+      { $or: or, status: { $in: ['pending', 'in_sourcing', 'processing'] } },
+      { $set: { status: 'completed', generatedBookingId: booking.id || String(booking._id) } }
+    ).catch(() => {});
+  }
 
   res.status(201).json({ success: true, data: booking });
 });

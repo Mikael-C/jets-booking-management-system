@@ -577,6 +577,14 @@ export const api = {
   /** Curator portal: everything is scoped to the signed-in Curator on the backend. */
   curator: {
     me: () => request<{ success: boolean; data: any }>(`/curator/me`),
+    /** Conversations with the desk: one per request, or per trip made without a request. */
+    messages: () => request<{ success: boolean; data: any }>(`/curator/messages`),
+    thread: (key: string) => request<{ success: boolean; data: any }>(`/curator/messages/${encodeURIComponent(key)}`),
+    sendThread: (key: string, message: string) =>
+      request<{ success: boolean; data: any }>(`/curator/messages/${encodeURIComponent(key)}`, {
+        method: "POST",
+        body: JSON.stringify({ message })
+      }),
     requests: () => request<{ success: boolean; data: any }>(`/curator/requests`),
     requestDetail: (id: string) => request<{ success: boolean; data: any }>(`/curator/requests/${encodeURIComponent(id)}`),
     createRequest: (data: any) =>

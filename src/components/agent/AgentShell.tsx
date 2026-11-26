@@ -12,6 +12,7 @@ const NAV = [
   { label: "New request", href: "/agent/requests/new", also: ["/agent/estimate"] },
   { label: "My requests", href: "/agent/requests", also: ["/agent/quotes"] },
   { label: "My trips", href: "/agent/trips", also: [] },
+  { label: "Messages", href: "/agent/messages", also: [] },
   { label: "My clients", href: "/agent/clients", also: [] },
   { label: "Tokens", href: "/agent/tokens", also: [] },
   { label: "Documents", href: "/agent/documents", also: [] }
@@ -21,7 +22,7 @@ export default function AgentShell({ children }: { children: React.ReactNode }) 
   const { currentUser, isAuthenticated, logout } = useAviation();
   const pathname = usePathname() || "";
   const [showUserMenu, setShowUserMenu] = React.useState(false);
-  const [me, setMe] = React.useState<{ name: string; tokens: number } | null>(null);
+  const [me, setMe] = React.useState<{ name: string; tokens: number; unreadMessages: number } | null>(null);
 
   // Top bar: name and token balance straight from the backend
   React.useEffect(() => {
@@ -30,13 +31,23 @@ export default function AgentShell({ children }: { children: React.ReactNode }) 
     const load = () =>
       api.curator
         .me()
-        .then((res) => alive && res?.data && setMe({ name: res.data.name, tokens: Number(res.data.tokens) || 0 }))
+        .then(
+          (res) =>
+            alive &&
+            res?.data &&
+            setMe({ name: res.data.name, tokens: Number(res.data.tokens) || 0, unreadMessages: Number(res.data.unreadMessages) || 0 })
+        )
         .catch(() => undefined);
     load();
     window.addEventListener("curator-tokens-changed", load);
+    window.addEventListener("curator-messages-changed", load);
+    // Desk replies show on the Messages tab without a page reload
+    const poll = window.setInterval(load, 60000);
     return () => {
       alive = false;
       window.removeEventListener("curator-tokens-changed", load);
+      window.removeEventListener("curator-messages-changed", load);
+      window.clearInterval(poll);
     };
   }, [isAuthenticated]);
 
@@ -76,6 +87,9 @@ export default function AgentShell({ children }: { children: React.ReactNode }) 
                 }`}
               >
                 {item.label}
+                {item.href === "/agent/messages" && me?.unreadMessages ? (
+                  <span className="ml-1.5 bg-[#C9A24A] text-[#0B121C] text-[11px] font-bold rounded-full px-1.5 py-0.5 leading-none">{me.unreadMessages}</span>
+                ) : null}
               </Link>
             ))}
           </div>

@@ -19,6 +19,7 @@ import {
   useLoad,
   useOpenTripDocument
 } from "./curatorUi";
+import { DeskThreadModal, MessageDeskButton } from "./DeskThread";
 
 interface QuoteData {
   id: string;
@@ -61,6 +62,7 @@ export default function AgentQuoteDetailView({ quoteId }: { quoteId: string }) {
   const [changeText, setChangeText] = useState("");
   const [working, setWorking] = useState<"change" | "confirm" | null>(null);
   const [message, setMessage] = useState<{ tone: "ok" | "err"; text: string; newRequest?: boolean } | null>(null);
+  const [messaging, setMessaging] = useState(false);
 
   if (!q) {
     return (
@@ -129,7 +131,10 @@ export default function AgentQuoteDetailView({ quoteId }: { quoteId: string }) {
         <span>·</span>
         <span>{q.title}</span>
       </h1>
-      <p className="text-[15px] text-[#93A1B5] mt-1.5 mb-6">{sub}</p>
+      <div className="flex flex-wrap items-center justify-between gap-3 mt-1.5 mb-6">
+        <p className="text-[15px] text-[#93A1B5] m-0">{sub}</p>
+        <MessageDeskButton onClick={() => setMessaging(true)} />
+      </div>
 
       {!q.state.isLatest && (
         <div className="mb-5 text-[15px] text-[#F0B54C]">
@@ -242,6 +247,7 @@ export default function AgentQuoteDetailView({ quoteId }: { quoteId: string }) {
           </div>
         </Modal>
       )}
+      {messaging && <DeskThreadModal threadKey={q.id || q.mongoId} title={q.ref} onClose={() => setMessaging(false)} />}
     </div>
   );
 }

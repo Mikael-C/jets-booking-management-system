@@ -1,9 +1,10 @@
 "use client";
-import React from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { Badge, DocRef, LoadState, PageTitle, Ref, cardCls, goldLinkCls, money, tdCls, thCls, useLoad } from "./curatorUi";
+import { DeskThreadModal, MessageDeskButton } from "./DeskThread";
 
 interface TripRow {
   token: string;
@@ -17,6 +18,8 @@ interface TripRow {
   currency: string;
   open: number | null;
   missingPassports: number;
+  threadKey?: string;
+  unread?: number;
 }
 
 const tone = (s: TripRow["status"]) => (s === "Cancelled" ? "red" : s === "Flown" ? "grey" : "green");
@@ -24,6 +27,14 @@ const tone = (s: TripRow["status"]) => (s === "Cancelled" ? "red" : s === "Flown
 export default function AgentTripsListView() {
   const router = useRouter();
   const { data, error, loading, reload } = useLoad<TripRow[]>(() => api.curator.trips(), []);
+  const [messaging, setMessaging] = useState<TripRow | null>(null);
+
+  // Unread desk replies change when a conversation is opened or answered
+  useEffect(() => {
+    const onChange = () => reload();
+    window.addEventListener("curator-messages-changed", onChange);
+    return () => window.removeEventListener("curator-messages-changed", onChange);
+  }, [reload]);
 
   return (
     <div>
@@ -78,9 +89,12 @@ export default function AgentTripsListView() {
                       {t.missingPassports ? <Badge tone="amber">▲ {t.missingPassports}</Badge> : <Badge tone="green">Complete</Badge>}
                     </td>
                     <td className={`${tdCls} whitespace-nowrap`}>
-                      <Link href={`/agent/trips/${t.token}`} onClick={(e) => e.stopPropagation()} className={goldLinkCls}>
-                        Open trip
-                      </Link>
+                      <div className="flex items-center justify-end gap-4">
+                        <Link href={`/agent/trips/${t.token}`} onClick={(e) => e.stopPropagation()} className={goldLinkCls}>
+                          Open trip
+                        </Link>
+                        <MessageDeskButton unread={t.unread} onClick={() => setMessaging(t)} />
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -88,6 +102,9 @@ export default function AgentTripsListView() {
             </table>
           </div>
         </div>
+      )}
+      {messaging && (
+        <DeskThreadModal threadKey={messaging.threadKey || `TRI-${messaging.token}`} title={messaging.ref} onClose={() => setMessaging(null)} />
       )}
     </div>
   );

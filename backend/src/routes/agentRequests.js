@@ -25,6 +25,55 @@ const getAgentRequestFilter = (id) => {
   };
 };
 
+const OPEN_STATUSES = ['pending', 'in_sourcing', 'processing'];
+const tokenOf = (x) => {
+  const m = String((x && (x.tripId || x.quoteGroupId || x.requestNumber || x.id)) || '').match(/([A-Z]{2}\d{3,6})/i);
+  return m ? m[1].toUpperCase() : '';
+};
+
+/**
+ * A request that already has a quote saved and sent from it is "Quoted" (completed), so it leaves
+ * the desk's New / Sourcing queues even when the status update from the quote builder was missed.
+ * Updates the given lean documents in place and saves the change.
+ */
+async function markQuotedRequests(requests) {
+  const open = (requests || []).filter((r) => r && OPEN_STATUSES.includes(r.status));
+  if (!open.length) return;
+  const ids = open.flatMap((r) => [r.id, r.requestNumber, String(r._id)].filter(Boolean).map(String));
+  const tripIds = open.map((r) => tokenOf(r)).filter(Boolean).map((t) => `TRI-${t}`);
+  const quotes = await Booking.find({
+    isDeleted: { $ne: true },
+    isDraft: { $ne: true },
+    status: { $ne: 'draft' },
+    $or: [{ sourceAgentRequestId: { $in: ids } }, ...(tripIds.length ? [{ tripId: { $in: tripIds } }] : [])]
+  })
+    .select('sourceAgentRequestId tripId id')
+    .lean()
+    .catch(() => []);
+  if (!quotes.length) return;
+  const bySource = new Map();
+  const byTrip = new Map();
+  quotes.forEach((q) => {
+    if (q.sourceAgentRequestId) bySource.set(String(q.sourceAgentRequestId), q);
+    const t = tokenOf(q);
+    if (t) byTrip.set(t, q);
+  });
+  const done = [];
+  open.forEach((r) => {
+    const q = [r.id, r.requestNumber, String(r._id)].map((x) => x && bySource.get(String(x))).find(Boolean) || byTrip.get(tokenOf(r));
+    if (!q) return;
+    r.status = 'completed';
+    if (!r.generatedBookingId) r.generatedBookingId = q.id || String(q._id);
+    done.push({ _id: r._id, generatedBookingId: r.generatedBookingId });
+  });
+  await Promise.all(
+    done.map((d) =>
+      AgentRequest.updateOne({ _id: d._id, status: { $in: OPEN_STATUSES } }, { $set: { status: 'completed', generatedBookingId: d.generatedBookingId } }).catch(() => {})
+    )
+  );
+}
+router.markQuotedRequests = markQuotedRequests;
+
 // GET /api/agent-requests
 router.get('/', async (req, res) => {
   const {
@@ -62,6 +111,7 @@ router.get('/', async (req, res) => {
     AgentRequest.find(filter).sort(sortObj).skip((pageNum - 1) * limitNum).limit(limitNum).lean(),
     AgentRequest.countDocuments(filter),
   ]);
+  await markQuotedRequests(requests).catch(() => {});
 
   res.json({
     success: true,

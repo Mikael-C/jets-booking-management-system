@@ -305,7 +305,8 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
     sendMessage,
     addOperator,
     updateAccount,
-    currentUser
+    currentUser,
+    isBookingsLoading
   } = useAviation();
 
   // Find source if revising or creating from request
@@ -313,36 +314,31 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
     if (!effectiveReviseId) return undefined;
     const clean = effectiveReviseId.trim().toLowerCase();
     const token = extractFeToken(effectiveReviseId);
-    return bookings.find((b) => {
-      const bId = (b.id || "").toLowerCase();
-      const bTripNum = (b.tripNumber || "").toLowerCase();
-      const bTripId = (b.tripId || "").toLowerCase();
-      const bQuoteId = (b.quoteId || "").toLowerCase();
-      const bQuoteRef = (b.quoteReference || "").toLowerCase();
-
-      if (
-        bId === clean ||
-        bTripNum === clean ||
-        bTripId === clean ||
-        bQuoteId === clean ||
-        bQuoteRef === clean
-      ) {
-        return true;
-      }
-      if (
-        bId.replace(/^booking-/i, "").replace(/^trip-/i, "") ===
-        clean.replace(/^booking-/i, "").replace(/^trip-/i, "")
-      ) {
-        return true;
-      }
-      if (token) {
-        const bToken = extractFeToken(b.tripId || b.tripNumber || b.quoteId || b.quoteReference || b.id);
-        if (bToken && bToken.toUpperCase() === token.toUpperCase()) {
-          return true;
-        }
-      }
-      return false;
+    // 1. The exact version asked for (its id or one of its numbers)
+    const exact =
+      bookings.find((b) => (b.id || "").toLowerCase() === clean) ||
+      bookings.find((b) =>
+        [b.tripNumber, b.quoteId, b.quoteReference, b.bookingRevisionId].some((x) => String(x || "").toLowerCase() === clean)
+      ) ||
+      bookings.find(
+        (b) => (b.id || "").toLowerCase().replace(/^booking-/i, "").replace(/^trip-/i, "") === clean.replace(/^booking-/i, "").replace(/^trip-/i, "")
+      );
+    if (exact) return exact;
+    // 2. Only the trip code is known: the latest live version of that trip
+    if (!token) return undefined;
+    const family = bookings.filter((b) => {
+      const bToken = extractFeToken(b.tripId || b.tripNumber || b.quoteId || b.quoteReference || b.id);
+      return Boolean(bToken) && bToken!.toUpperCase() === token.toUpperCase();
     });
+    if (!family.length) return undefined;
+    const ranked = [...family].sort(
+      (a, b) =>
+        Number(Boolean(a.isCancelled)) - Number(Boolean(b.isCancelled)) ||
+        Number(Boolean((a as any).isDraft)) - Number(Boolean((b as any).isDraft)) ||
+        (b.quoteVersion || 1) - (a.quoteVersion || 1) ||
+        new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+    );
+    return ranked[0];
   }, [bookings, effectiveReviseId]);
 
   const isBookingRevision = useMemo(() => {
@@ -366,13 +362,19 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
     );
   }, [agentRequests, reqId]);
 
-  // Root ID and next version
-  const [rootId] = useState<string>(() => {
+  // Root ID and next version. Worked out from the trip being revised (or the request) whenever they
+  // are known: the bookings list can load after the page, and a revision must keep its trip number.
+  const [fallbackRootId] = useState<string>(() => generateTripRootId());
+  const rootId = useMemo<string>(() => {
     if (sourceTrip) {
       const token = extractFeToken(sourceTrip.tripId || sourceTrip.tripNumber || sourceTrip.quoteId || sourceTrip.quoteReference || sourceTrip.id);
       if (token) return token;
       const raw = sourceTrip.tripId || sourceTrip.tripNumber || sourceTrip.id;
       return raw.replace(/^booking-/i, "").replace(/^trip-/i, "").replace(/^quo-/i, "").split("-")[0].toUpperCase();
+    }
+    if (effectiveReviseId) {
+      const token = extractFeToken(effectiveReviseId);
+      if (token) return token;
     }
     // A Curator request already carries its trip number (TRI-XX000): the quote uses the same code
     const reqTrip = String((sourceRequest as any)?.tripId || (sourceRequest as any)?.quoteGroupId || "");
@@ -385,8 +387,8 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
       if (token) return token;
       return sourceRequest.createdTripId.replace(/^booking-/i, "").replace(/^trip-/i, "").replace(/^quo-/i, "").split("-")[0].toUpperCase();
     }
-    return generateTripRootId();
-  });
+    return fallbackRootId;
+  }, [sourceTrip, effectiveReviseId, sourceRequest, fallbackRootId]);
 
   const nextVersionNum = useMemo(() => {
     const existing = bookings.filter((b) => {
@@ -1252,6 +1254,322 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sourceRequest, sourceTrip, accounts]);
 
+  // Revising: the builder opens with everything the version being revised already holds (client,
+  // legs, aircraft, operators, buying prices, services and prices, fees, margins, currency, validity,
+  // print and send choices, taxes). Nothing changes unless the desk changes it. Applied once per
+  // version, also when the bookings list loads after the page.
+  const appliedTripRef = React.useRef<string | null>(null);
+  useEffect(() => {
+    if (!sourceTrip) return;
+    const key = String(sourceTrip.id || "");
+    if (!key || appliedTripRef.current === key) return;
+    appliedTripRef.current = key;
+    const t: any = sourceTrip;
+    const s: any = t.builderState && typeof t.builderState === "object" ? t.builderState : null;
+    const savedLegs: any[] = Array.isArray(t.legs) ? t.legs.filter((l: any) => l && !l.isCancelled) : [];
+    const legPricing: any[] = Array.isArray(t.legPricing) ? t.legPricing : [];
+    const legOps: any[] = Array.isArray(t.legOperators) ? t.legOperators : [];
+    const has = (k: string) => s && Object.prototype.hasOwnProperty.call(s, k);
+    // Photos are stored once on the version; the saved builder state only marks where they go
+    const legPhoto = (i: number, which: "exteriorPhoto" | "cabinPhoto", v: any) =>
+      v === "__saved__" ? savedLegs[i]?.aircraftSpec?.[which] || "" : v;
+
+    // Client and people
+    if (t.accountNumber) setSelectedAccountId(t.accountNumber);
+    const owner = has("leadPaxName") ? s.leadPaxName : t.authorisedOwnerName || t.client?.fullName;
+    if (owner) setLeadPaxName(owner);
+    const pa = Boolean(t.isHandledByPa || t.client?.isHandledByPa);
+    setIsHandledByPa(pa);
+    setPaName(t.paName || t.client?.paName || "");
+    setPaEmail(t.paEmail || t.client?.paEmail || "");
+    setPaPhone(t.paPhone || t.client?.paPhone || "");
+    if (t.authorisedOwnerId) setOwnerPersonId(t.authorisedOwnerId);
+    setPaContactId(pa ? t.assistantContactId || (has("paContactId") ? s.paContactId : "") || "" : "");
+    if (t.sendDocsTo === "owner" || t.sendDocsTo === "assistant" || t.sendDocsTo === "both") setSendDocsTo(t.sendDocsTo);
+    if (t.signsAgreement === "owner" || t.signsAgreement === "assistant") setSignsAgreement(t.signsAgreement);
+
+    // Itinerary
+    const tt: TripType =
+      t.tripType === "one_way" || t.tripType === "round_trip" || t.tripType === "multi_leg"
+        ? t.tripType
+        : savedLegs.length > 2
+          ? "multi_leg"
+          : savedLegs.length === 2
+            ? "round_trip"
+            : "one_way";
+    setTripType(tt);
+    const l0 = savedLegs[0];
+    const l1 = savedLegs[1];
+    if (l0?.origin) setOriginAirport(l0.origin);
+    if (l0?.destination) setDestAirport(l0.destination);
+    if (l0?.flightDate) setFlightDate(l0.flightDate);
+    if (l0?.departureTimeLocal) setDepartureTime(l0.departureTimeLocal);
+    if (l1?.flightDate) setReturnFlightDate(l1.flightDate);
+    if (l1?.departureTimeLocal) setReturnDepartureTime(l1.departureTimeLocal);
+
+    // Aircraft, operator and buying price per leg
+    const tripAircraft: Aircraft = (has("selectedAircraft") && s.selectedAircraft) || t.aircraft || selectedAircraft;
+    const aircraftFor = (leg: any): Aircraft => {
+      const name = String(leg?.aircraftSpec?.name || leg?.aircraftType || "").toLowerCase();
+      if (!name || name === String(tripAircraft?.name || "").toLowerCase()) return tripAircraft;
+      return fleetData.find((a) => a.name.toLowerCase() === name) || { ...tripAircraft, name: leg.aircraftSpec?.name || leg.aircraftType };
+    };
+    if (has("multiLegs") && Array.isArray(s.multiLegs) && s.multiLegs.length) {
+      setMultiLegs(
+        s.multiLegs.map((m: any, i: number) => ({
+          ...m,
+          exteriorPhoto: legPhoto(i, "exteriorPhoto", m.exteriorPhoto),
+          cabinPhoto: legPhoto(i, "cabinPhoto", m.cabinPhoto)
+        }))
+      );
+    } else if (savedLegs.length) {
+      setMultiLegs(
+        savedLegs.map((leg: any, i: number) => {
+          const spec = leg.aircraftSpec || {};
+          const buying = Number(leg.buyingPrice ?? legOps[i]?.buyingPrice ?? legPricing[i]?.buyingPrice) || undefined;
+          return {
+            id: `leg-${i + 1}`,
+            origin: leg.origin || airportsData[0],
+            destination: leg.destination || airportsData[1],
+            flightDate: leg.flightDate || "",
+            departureTime: leg.departureTimeLocal || "10:00",
+            aircraft: aircraftFor(leg),
+            operatorId: legOps[i]?.operatorId || undefined,
+            buyingPrice: buying,
+            exteriorPhoto: spec.exteriorPhoto || undefined,
+            cabinPhoto: spec.cabinPhoto || undefined,
+            ...(spec.yearOfMake !== undefined ? { yearOfMake: spec.yearOfMake } : {}),
+            ...(spec.yearOfRefurbishment !== undefined ? { yearOfRefurbishment: spec.yearOfRefurbishment } : {}),
+            ...(spec.seats !== undefined ? { seats: spec.seats } : {}),
+            ...(spec.smokingCabin !== undefined ? { smokingCabin: spec.smokingCabin } : {}),
+            ...(spec.lavatoryOnBoard !== undefined ? { lavatoryOnBoard: spec.lavatoryOnBoard } : {}),
+            ...(spec.lavatoryType ? { lavatoryType: spec.lavatoryType } : {})
+          } as MultiLegItem;
+        })
+      );
+    }
+    if (has("sameAircraftOnAllLegs")) setSameAircraftOnAllLegs(Boolean(s.sameAircraftOnAllLegs));
+    else {
+      const names = savedLegs.map((l: any) => String(l.aircraftSpec?.name || l.aircraftType || "").toLowerCase()).filter(Boolean);
+      setSameAircraftOnAllLegs(names.length < 2 || names.every((n: string) => n === names[0]));
+    }
+    setSelectedAircraft(tripAircraft);
+    const opId = (has("selectedOperatorId") && s.selectedOperatorId) || legOps[0]?.operatorId;
+    if (opId && operators.some((o) => o.id === opId)) setSelectedOperatorId(opId);
+    const cost = has("operatorFlightCost")
+      ? Number(s.operatorFlightCost) || 0
+      : Number(t.pricing?.operatorCost ?? t.pricing?.flightPrice) || 0;
+    setOperatorFlightCost(cost);
+    const ext = t.aircraftCustomImages?.exterior || t.aircraft?.imageExterior;
+    const cab = t.aircraftCustomImages?.interior || t.aircraft?.imageInterior;
+    if (ext) setCustomExteriorPhoto(ext);
+    if (cab) setCustomCabinPhoto(cab);
+    const views: string[] = Array.isArray(t.aircraftCustomImages?.cabinViews) ? t.aircraftCustomImages.cabinViews.filter(Boolean) : [];
+    if (views.length) {
+      setUploadedPhotos(
+        views.map((url, i) => ({ id: `photo-saved-${i + 1}`, url, name: `Photo ${i + 1}`, isOperator: true, timestamp: Date.now() - i }))
+      );
+    }
+
+    // Passengers, luggage and pets
+    const pax = Number(l0?.paxCount) || Number(t.passengerCount) || 0;
+    if (pax) setPaxCount(pax);
+    if (has("luggagePieces")) setLuggagePieces(Number(s.luggagePieces) || 0);
+    if (has("oversizeItems")) setOversizeItems(String(s.oversizeItems || ""));
+    const savedPets: any[] = Array.isArray(t.pets) ? t.pets : [];
+    setHasPets(savedPets.length > 0 || Boolean(t.petDetails?.hasPets));
+    if (savedPets.length) {
+      setPets(
+        savedPets.map((p: any, i: number) => ({
+          ...newPetRow(),
+          id: String(p.id || `pet-${i + 1}`),
+          name: String(p.name || ""),
+          species: String(p.species || "Dog"),
+          breed: String(p.breed || ""),
+          weightKg: Number(p.weightKg) || 0,
+          travels: String(p.travels || "In cabin, in carrier"),
+          documents: String(p.documents || "EU pet passport"),
+          documentNumber: String(p.documentNumber || ""),
+          notes: String(p.notes || "")
+        }))
+      );
+    }
+
+    // Services and their prices
+    if (s && has("serviceOptions")) {
+      setServiceOptions({ ...s.serviceOptions });
+      setHasGroundTransport(Boolean(s.hasGroundTransport));
+      setGroundLegsEnabled({ ...(s.groundLegsEnabled || {}) });
+      setGroundTransfers({ ...(s.groundTransfers || {}) });
+      setHasHeliTransfer(Boolean(s.hasHeliTransfer));
+      setHeliLegsEnabled({ ...(s.heliLegsEnabled || {}) });
+      setHeliTransfers({ ...(s.heliTransfers || {}) });
+      setCustomServices(Array.isArray(s.customServices) ? s.customServices : []);
+      if (has("limousinePrice")) setLimousinePrice(Number(s.limousinePrice) || 0);
+      if (has("helicopterPrice")) setHelicopterPrice(Number(s.helicopterPrice) || 0);
+      if (has("cateringPrice")) setCateringPrice(Number(s.cateringPrice) || 0);
+      if (has("deicingPrice")) setDeicingPrice(Number(s.deicingPrice) || 0);
+      if (has("carbonOffsetPrice")) setCarbonOffsetPrice(Number(s.carbonOffsetPrice) || 0);
+    } else {
+      const quoted: any[] = (Array.isArray(t.tripServices) ? t.tripServices : []).filter((x: any) => x && x.source !== "added");
+      const opts = { limousine: false, helicopter: false, catering: false, deicing: false, carbonOffset: false };
+      const gEnabled: Record<string, boolean> = {};
+      const gTransfers: Record<string, any> = {};
+      const hEnabled: Record<string, boolean> = {};
+      const hTransfers: Record<string, any> = {};
+      const custom: CustomService[] = [];
+      quoted.forEach((x: any) => {
+        const id = String(x.id || "");
+        const price = Number(x.clientPrice) || 0;
+        const g = id.match(/^q-ground-(arr|dep)-(leg-\d+)$/);
+        const h = id.match(/^q-heli-(leg-\d+)$/);
+        if (g) {
+          const k = g[2];
+          gEnabled[k] = true;
+          const cur = gTransfers[k] || {
+            arrivalRequired: false,
+            arrivalDropoff: "",
+            arrivalVehicle: "Sedan",
+            arrivalPrice: 0,
+            departureRequired: false,
+            departurePickup: "",
+            departureVehicle: "Sedan",
+            departurePrice: 0,
+            passengers: Number(x.passengers) || pax || 1,
+            specialRequests: String(x.instructions || "")
+          };
+          if (g[1] === "arr") Object.assign(cur, { arrivalRequired: true, arrivalDropoff: String(x.location || ""), arrivalVehicle: x.vehicle || "Sedan", arrivalPrice: price });
+          else Object.assign(cur, { departureRequired: true, departurePickup: String(x.location || ""), departureVehicle: x.vehicle || "Sedan", departurePrice: price });
+          gTransfers[k] = cur;
+        } else if (h) {
+          const k = h[1];
+          const dep = x.timing === "departure";
+          hEnabled[k] = true;
+          hTransfers[k] = {
+            transferType: x.timing === "departure" || x.timing === "both" ? x.timing : "arrival",
+            passengers: Number(x.passengers) || pax || 1,
+            prefType: String(x.helicopterType || ""),
+            depArrLocation: dep ? "" : String(x.from || ""),
+            destination: dep ? "" : String(x.to || ""),
+            arrivalAirport: dep ? undefined : String(x.from || ""),
+            arrivalDestination: dep ? undefined : String(x.to || ""),
+            arrivalPrice: dep ? undefined : price,
+            departurePickup: dep ? String(x.from || "") : undefined,
+            departureAirport: dep ? String(x.to || "") : undefined,
+            departurePrice: dep ? price : undefined,
+            clientPrice: price,
+            luggageDetails: String(x.luggage || ""),
+            specialRequests: String(x.instructions || "")
+          };
+        } else if (id === "q-limo") {
+          opts.limousine = true;
+          setLimousinePrice(price);
+        } else if (id === "q-heli") {
+          opts.helicopter = true;
+          setHelicopterPrice(price);
+        } else if (id === "q-catering") {
+          opts.catering = true;
+          setCateringPrice(price);
+        } else if (id === "q-deicing") {
+          opts.deicing = true;
+          setDeicingPrice(price);
+        } else if (id === "q-carbon") {
+          opts.carbonOffset = true;
+          setCarbonOffsetPrice(price);
+        } else if (id.startsWith("q-")) {
+          custom.push({ id: id.slice(2), name: String(x.title || "Service"), details: String(x.instructions || ""), price });
+        }
+      });
+      if (!quoted.length) {
+        // Older versions without service cards: the switches saved on the version
+        opts.limousine = Boolean(t.services?.limousineService);
+        opts.helicopter = Boolean(t.services?.helicopterService);
+        opts.catering = Boolean(t.services?.vipCateringDetails);
+        opts.deicing = Boolean(t.services?.deicingInsurance && t.services.deicingInsurance !== "none");
+        opts.carbonOffset = Boolean(t.services?.carbonOffset && t.services.carbonOffset !== "none");
+        if (opts.deicing && t.services?.deicingCostPerLeg) setDeicingPrice(Number(t.services.deicingCostPerLeg) || 0);
+        if (opts.carbonOffset && t.services?.carbonOffsetRatePerHour) setCarbonOffsetPrice(Number(t.services.carbonOffsetRatePerHour) || 0);
+      }
+      const anyGround = Object.keys(gEnabled).length > 0;
+      const anyHeli = Object.keys(hEnabled).length > 0;
+      setHasGroundTransport(anyGround);
+      setGroundLegsEnabled(gEnabled);
+      setGroundTransfers(gTransfers);
+      setHasHeliTransfer(anyHeli);
+      setHeliLegsEnabled(hEnabled);
+      setHeliTransfers(hTransfers);
+      setServiceOptions({ ...opts, limousine: opts.limousine || anyGround, helicopter: opts.helicopter || anyHeli });
+      setCustomServices(custom);
+    }
+
+    // Passenger fees
+    if (s && has("passengerFeesItemised")) {
+      setPassengerFeesItemised(Boolean(s.passengerFeesItemised));
+      setPassengerFeeLegs(Array.isArray(s.passengerFeeLegs) ? s.passengerFeeLegs : [0]);
+      setPassengerFeesDesc(String(s.passengerFeesDesc || ""));
+      setPassengerFeesAmount(Number(s.passengerFeesAmount) || 0);
+      setPassengerFeesCharged(s.passengerFeesCharged === "flat" ? "flat" : "pax");
+      setPassengerFeesPax(Number(s.passengerFeesPax) || pax || 1);
+    } else {
+      const fee: any = Array.isArray(t.passengerFeeItems) ? t.passengerFeeItems[0] : null;
+      if (fee) {
+        setPassengerFeesItemised(true);
+        setPassengerFeesDesc(String(fee.description || ""));
+        setPassengerFeesAmount(Number(fee.amount) || 0);
+        setPassengerFeesCharged(fee.charged === "flat" ? "flat" : "pax");
+        setPassengerFeesPax(Number(fee.pax) || pax || 1);
+        const legsList = (Array.isArray(fee.legs) ? fee.legs : []).map((n: any) => Number(n) - 1).filter((n: number) => n >= 0);
+        if (legsList.length) setPassengerFeeLegs(legsList);
+      } else if (t.pricing && !Number(t.pricing.passengerFees)) {
+        setPassengerFeesItemised(false);
+      }
+    }
+
+    // Margins: the same amounts as the version being revised
+    if (s && has("companyMarginTierPct")) {
+      setCompanyMarginTierPct(Number(s.companyMarginTierPct) || 0);
+      setCompanyMarginOverride(Boolean(s.companyMarginOverride));
+      setCompanyMarginOverrideAmount(Number(s.companyMarginOverrideAmount) || 0);
+      setCompanyMarginText(String(s.companyMarginText ?? ""));
+      setAgentMarginTierPct(Number(s.agentMarginTierPct) || 0);
+      setAgentMarginOverride(Boolean(s.agentMarginOverride));
+      setAgentMarginOverrideAmount(Number(s.agentMarginOverrideAmount) || 0);
+      setAgentMarginText(String(s.agentMarginText ?? ""));
+    } else if (t.pricing) {
+      const cm = Number(t.pricing.companyMargin) || 0;
+      const am = Number(t.pricing.agentCommission) || 0;
+      const cPct = Number(t.adminMarginValue) || 0;
+      const aPct = Number(t.commissionPercentage) || 0;
+      setCompanyMarginTierPct(cPct);
+      setCompanyMarginText(`${cPct} %`);
+      setCompanyMarginOverride(true);
+      setCompanyMarginOverrideAmount(cm);
+      setAgentMarginTierPct(aPct);
+      setAgentMarginText(`${aPct} %`);
+      setAgentMarginOverride(true);
+      setAgentMarginOverrideAmount(am);
+    }
+
+    // Currency, validity, print and send choices, taxes
+    const cur = t.pricing?.currency;
+    if (cur === "EUR" || cur === "USD" || cur === "GBP" || cur === "CHF") setCurrency(cur);
+    if (t.quoteExpirationDate) setValidUntil(String(t.quoteExpirationDate));
+    const d = t.docOptions || {};
+    if (typeof d.showPricePerLeg === "boolean") setDocPricePerLeg(d.showPricePerLeg);
+    if (typeof d.servicesOneLine === "boolean") setDocServicesOneLine(d.servicesOneLine);
+    if (typeof d.showServicePrices === "boolean") setDocServicePrices(d.showServicePrices);
+    if (t.sendTo && typeof t.sendTo === "object") {
+      setSendToClient(t.sendTo.client !== false);
+      setSendToCurator(Boolean(t.sendTo.curator) || Boolean(t.agentEmail));
+      setSendWhatsApp(Boolean(t.sendTo.whatsapp));
+    } else if (t.agentEmail) {
+      setSendToCurator(true);
+    }
+    if (t.taxOverrides && typeof t.taxOverrides === "object") setTaxOverrides(t.taxOverrides);
+    if (Array.isArray(t.taxChangeLog)) setTaxChangeLog(t.taxChangeLog);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sourceTrip]);
+
   // Helper for per-leg photo picker
   const openPhotoPickerForLeg = (legIndex: number) => {
     setActiveLegForPhotoIndex(legIndex);
@@ -2049,7 +2367,7 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
       .join(", ");
   }, [activeAccount]);
 
-  const curatorName = sourceRequest?.agentName || (activeAccount as any)?.agentName || "";
+  const curatorName = sourceRequest?.agentName || (sourceTrip as any)?.agentName || (activeAccount as any)?.agentName || "";
 
   // Submission handler
   // The quote exactly as it is saved (also used for the live document preview on step 7)
@@ -2566,12 +2884,13 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
       },
       checklist: sourceTrip?.checklist || [],
       quoteVersion: nextVersionNum,
-      agentName: sourceRequest?.agentName,
-      agentEmail: sourceRequest?.agentEmail,
+      // A revision stays with the Curator and the request it came from
+      agentName: sourceRequest?.agentName || (sourceTrip as any)?.agentName,
+      agentEmail: sourceRequest?.agentEmail || (sourceTrip as any)?.agentEmail,
       commissionPercentage: effectiveAgentMarginPct,
       adminMarginValue: effectiveCompanyMarginPct,
       manualServices: activeServicesList,
-      sourceAgentRequestId: sourceRequest?.id,
+      sourceAgentRequestId: sourceRequest?.id || (sourceTrip as any)?.sourceAgentRequestId,
       authorisedOwnerId: selectedOwnerPerson?.id,
       authorisedOwnerName: leadPaxName,
       assistantContactId: isHandledByPa ? paContactId || undefined : undefined,
@@ -2651,6 +2970,57 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
     (newBooking as any).docOptions = { ...docOptionsValue };
     (newBooking as any).sendTo = { client: sendToClient, curator: sendToCurator, whatsapp: sendWhatsApp };
     (newBooking as any).isDraft = mode === "draft" && !isBookingRevision;
+    // Every builder input, so the next revision opens exactly as this version was made.
+    // Uploaded photos are already stored on the version; they are only marked here.
+    const slimPhoto = (v: any) => (typeof v === "string" && v.startsWith("data:") ? "__saved__" : v);
+    (newBooking as any).builderState = {
+      v: 1,
+      leadPaxName,
+      paContactId,
+      sameAircraftOnAllLegs,
+      multiLegs: multiLegs.map((m) => ({ ...m, exteriorPhoto: slimPhoto(m.exteriorPhoto), cabinPhoto: slimPhoto(m.cabinPhoto), cabinPhoto2: slimPhoto(m.cabinPhoto2) })),
+      selectedAircraft: {
+        ...selectedAircraft,
+        imageExterior: slimPhoto(selectedAircraft.imageExterior),
+        imageInterior: slimPhoto(selectedAircraft.imageInterior)
+      },
+      selectedOperatorId: savedNewOperator && selectedOperatorId === NEW_OPERATOR_DRAFT_ID ? savedNewOperator.id : selectedOperatorId,
+      operatorFlightCost,
+      luggagePieces,
+      oversizeItems,
+      serviceOptions,
+      hasGroundTransport,
+      groundLegsEnabled,
+      groundTransfers,
+      hasHeliTransfer,
+      heliLegsEnabled,
+      heliTransfers,
+      customServices,
+      limousinePrice,
+      helicopterPrice,
+      cateringPrice,
+      deicingPrice,
+      carbonOffsetPrice,
+      passengerFeesItemised,
+      passengerFeeLegs,
+      passengerFeesDesc,
+      passengerFeesAmount,
+      passengerFeesCharged,
+      passengerFeesPax,
+      companyMarginTierPct,
+      companyMarginOverride,
+      companyMarginOverrideAmount,
+      companyMarginText,
+      agentMarginTierPct,
+      agentMarginOverride,
+      agentMarginOverrideAmount,
+      agentMarginText
+    };
+    if (savedNewOperator) {
+      (newBooking as any).builderState.multiLegs = (newBooking as any).builderState.multiLegs.map((m: any) =>
+        m.operatorId === NEW_OPERATOR_DRAFT_ID ? { ...m, operatorId: savedNewOperator.id } : m
+      );
+    }
     if (mode === "draft") {
       newBooking.status = isBookingRevision ? newBooking.status : ("draft" as any);
       newBooking.quoteStatus = isBookingRevision ? newBooking.quoteStatus : ("draft" as any);
@@ -2743,22 +3113,35 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
     const sent: string[] = [];
     const failed: string[] = [];
 
-    // To the Curator: the request is marked quoted and the message lands on their request page
+    // To the Curator: the request is marked quoted and the message lands on their request page.
+    // A revision goes to the thread of the request the trip came from.
+    const linkedRequest: any =
+      sourceRequest ||
+      (() => {
+        const rid = String((sourceTrip as any)?.sourceAgentRequestId || "").toLowerCase();
+        if (!rid) return undefined;
+        return agentRequests.find(
+          (r: any) => [r.id, r._id, r.requestNumber].some((x) => x && String(x).toLowerCase() === rid)
+        );
+      })() ||
+      ((sourceTrip as any)?.sourceAgentRequestId ? { id: (sourceTrip as any).sourceAgentRequestId, agentName: (sourceTrip as any).agentName } : undefined);
     if (sourceRequest) {
       try {
         await Promise.resolve(updateAgentRequestStatus(sourceRequest.id, "completed", savedId, `Quoted → ${versionLabel}`));
       } catch {
         /* the status follows on the next refresh */
       }
+    }
+    if (linkedRequest) {
       if (sendToCurator) {
         try {
           await api.curatorInbox.reply(
-            (sourceRequest as any).requestNumber || sourceRequest.id,
-            `Quote ${label} is ready for ${activeAccount?.name || leadPaxName}: ${displayLegs
+            linkedRequest.requestNumber || linkedRequest.id,
+            `${sourceTrip ? (isBookingRevision ? "Revised booking" : "Revised quote") : "Quote"} ${label} is ready for ${activeAccount?.name || leadPaxName}: ${displayLegs
               .map((l) => `${l.origin?.icao} → ${l.destination?.icao}`)
               .join(", ")} · total ${money(grandTotal)}.`
           );
-          sent.push(sourceRequest.agentName || "the Curator");
+          sent.push(linkedRequest.agentName || curatorName || "the Curator");
         } catch {
           failed.push("the Curator");
         }
@@ -3377,6 +3760,24 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
       </div>
     );
   };
+
+  // Revising: wait for the version being revised instead of showing a blank builder
+  if (effectiveReviseId && !sourceTrip) {
+    return (
+      <div className="bg-white border border-slate-200 rounded-xl p-8 text-center text-sm text-slate-600">
+        {isBookingsLoading || bookings.length === 0 ? (
+          "Loading the quote to revise…"
+        ) : (
+          <>
+            The quote <span className="font-mono">{effectiveReviseId}</span> could not be found.{" "}
+            <Link href="/quotes" className="text-blue-600 hover:underline">
+              Back to quotes
+            </Link>
+          </>
+        )}
+      </div>
+    );
+  }
 
   // ====================================================
   // VIEW: AIRCRAFT PHOTOS PICKER (SCREEN 3)

@@ -17,6 +17,7 @@ interface InboxMessage {
 }
 interface Thread {
   requestId: string;
+  kind?: "request" | "trip";
   curator: string;
   curatorEmail: string;
   client: string;
@@ -174,9 +175,18 @@ export default function CuratorInboxPanel({ onUnread }: { onUnread?: (n: number)
                   {thread.curatorEmail ? ` · ${thread.curatorEmail}` : ""}
                 </div>
               </div>
-              <Link href={`/requests/${encodeURIComponent(thread.requestId)}`} className="text-xs font-semibold text-blue-600 hover:underline whitespace-nowrap">
-                Open request
-              </Link>
+              {thread.kind === "trip" ? (
+                <Link
+                  href={`/trips/${encodeURIComponent(thread.requestId.replace(/^TRI-/i, ""))}`}
+                  className="text-xs font-semibold text-blue-600 hover:underline whitespace-nowrap"
+                >
+                  Open trip
+                </Link>
+              ) : (
+                <Link href={`/requests/${encodeURIComponent(thread.requestId)}`} className="text-xs font-semibold text-blue-600 hover:underline whitespace-nowrap">
+                  Open request
+                </Link>
+              )}
             </div>
             <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3 bg-gray-50/40">
               {thread.messages.map((m) => (

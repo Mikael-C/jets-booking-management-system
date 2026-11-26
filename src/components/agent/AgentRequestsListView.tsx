@@ -1,27 +1,10 @@
 "use client";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { toast } from "@/components/ui/Toaster";
 import { api } from "@/lib/api";
-import {
-  Badge,
-  DocRef,
-  FilterPill,
-  GoldButton,
-  LoadState,
-  Modal,
-  PageTitle,
-  Ref,
-  cardCls,
-  fieldCls,
-  goldLinkCls,
-  money,
-  refText,
-  tdCls,
-  thCls,
-  useLoad
-} from "./curatorUi";
+import { Badge, DocRef, FilterPill, LoadState, PageTitle, Ref, cardCls, goldLinkCls, money, tdCls, thCls, useLoad } from "./curatorUi";
+import { DeskThreadModal, MessageDeskButton } from "./DeskThread";
 
 type FilterKey = "all" | "waiting" | "quoted" | "confirmed" | "expired";
 type SortKey = "newest" | "oldest" | "flight";
@@ -43,6 +26,9 @@ interface Row {
   action: { label: string; href?: string; message?: boolean } | null;
   createdAt: string;
   requestId: string | null;
+  /** Conversation with the desk about this row (its request, or its trip) */
+  threadKey?: string | null;
+  unread?: number;
 }
 
 function StatusBadge({ row }: { row: Row }) {
@@ -69,9 +55,13 @@ export default function AgentRequestsListView() {
   const [filter, setFilter] = useState<FilterKey>("all");
   const [sort, setSort] = useState<SortKey>("newest");
   const [messaging, setMessaging] = useState<Row | null>(null);
-  const [text, setText] = useState("");
-  const [sending, setSending] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
+
+  // Unread desk replies change when a conversation is opened or answered
+  useEffect(() => {
+    const onChange = () => reload();
+    window.addEventListener("curator-messages-changed", onChange);
+    return () => window.removeEventListener("curator-messages-changed", onChange);
+  }, [reload]);
 
   const rows = useMemo(() => {
     const list = (data?.rows || []).filter((r) => filter === "all" || r.status === filter);
@@ -83,21 +73,6 @@ export default function AgentRequestsListView() {
 
   const counts = data?.counts;
   const label = (base: string, n?: number) => (n ? `${base} ${n}` : base);
-
-  const send = async () => {
-    if (!messaging?.requestId || !text.trim()) return;
-    setSending(true);
-    try {
-      await api.curator.messageDesk(messaging.requestId, text.trim());
-      setMessaging(null);
-      setText("");
-      toast(`Message sent to the desk on ${refText(messaging.ref)}.`);
-    } catch (err: any) {
-      toast(err?.message || "The message could not be sent.", "error");
-    } finally {
-      setSending(false);
-    }
-  };
 
   return (
     <div>
@@ -134,8 +109,6 @@ export default function AgentRequestsListView() {
           </select>
         </div>
       </div>
-
-      {notice && <div className="mb-4 text-[14px] text-[#6BD49E]">{notice}</div>}
 
       {!data ? (
         <LoadState loading={loading} error={error} onRetry={reload} />
@@ -193,23 +166,14 @@ export default function AgentRequestsListView() {
                     <td className={`${tdCls} text-right whitespace-nowrap`}>{row.clientPrice ? money(row.clientPrice, row.currency) : "—"}</td>
                     <td className={`${tdCls} whitespace-nowrap`}>{row.expires || "—"}</td>
                     <td className={`${tdCls} whitespace-nowrap`}>
-                      {row.action?.message ? (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setMessaging(row);
-                            setText("");
-                          }}
-                          className={goldLinkCls}
-                        >
-                          {row.action.label}
-                        </button>
-                      ) : row.action?.href ? (
-                        <Link href={row.action.href} onClick={(e) => e.stopPropagation()} className={goldLinkCls}>
-                          {row.action.label}
-                        </Link>
-                      ) : null}
+                      <div className="flex items-center justify-end gap-4">
+                        {row.action?.href && !row.action.message && (
+                          <Link href={row.action.href} onClick={(e) => e.stopPropagation()} className={goldLinkCls}>
+                            {row.action.label}
+                          </Link>
+                        )}
+                        {(row.threadKey || row.requestId) && <MessageDeskButton unread={row.unread} onClick={() => setMessaging(row)} />}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -222,21 +186,7 @@ export default function AgentRequestsListView() {
       <p className="text-[15px] text-[#93A1B5] mt-5">Curators only ever see their own clients, requests and trips.</p>
 
       {messaging && (
-        <Modal title={`Message the desk · ${refText(messaging.ref)}`} onClose={() => setMessaging(null)}>
-          <textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            rows={5}
-            autoFocus
-            placeholder="Ask about this request…"
-            className={`${fieldCls} resize-none`}
-          />
-          <div className="flex justify-end mt-4">
-            <GoldButton onClick={send} disabled={sending || !text.trim()}>
-              {sending ? "Sending…" : "Send"}
-            </GoldButton>
-          </div>
-        </Modal>
+        <DeskThreadModal threadKey={String(messaging.threadKey || messaging.requestId)} title={messaging.ref} onClose={() => setMessaging(null)} />
       )}
     </div>
   );

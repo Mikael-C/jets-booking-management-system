@@ -6,6 +6,8 @@
  *   GET  /requests                    My requests and quotes
  *   POST /requests                    New request (spends 1 token per leg)
  *   POST /requests/:id/messages       Message the desk about a request
+ *   GET  /messages                    Every conversation with the desk (one per request or trip)
+ *   GET  /messages/:key  POST /messages/:key   One conversation (request, quote or trip key)
  *   GET  /quotes/:id                  Quote view
  *   POST /quotes/:id/confirm          Client agrees · confirm
  *   POST /quotes/:id/change           Ask for a change (2 free per request before signature)
@@ -51,6 +53,22 @@ async function loadMine(req) {
     // Drafts saved on the quote builder stay with the desk until they are sent
     Booking.find({ agentEmail: P.emailFilter(email), isDeleted: { $ne: true }, isDraft: { $ne: true } }).sort({ createdAt: -1 }).lean()
   ]);
+  // Revisions saved before they carried the Curator's email still belong to the same trip
+  const tripIds = [...new Set(bookings.map((b) => b.tripId).filter(Boolean))];
+  if (tripIds.length) {
+    const have = new Set(bookings.map((b) => String(b._id)));
+    const strays = await Booking.find({
+      tripId: { $in: tripIds },
+      $or: [{ agentEmail: { $exists: false } }, { agentEmail: null }, { agentEmail: '' }],
+      isDeleted: { $ne: true },
+      isDraft: { $ne: true }
+    })
+      .lean()
+      .catch(() => []);
+    strays.forEach((b) => {
+      if (!have.has(String(b._id))) bookings.push(b);
+    });
+  }
   return { requests, bookings, groups: P.groupTrips(bookings) };
 }
 
@@ -93,15 +111,151 @@ function findGroup(groups, id) {
 
 const docRef = (prefix, token, version) => ({ prefix, token, suffix: version ? `-${version}` : '' });
 
+/* ─────────────────────────── messages with the desk ───────────────────────────
+ * One conversation per request. A trip the desk made without a request keeps its conversation on
+ * the trip itself (curatorMessages on the booked or latest version). Thread keys are the request
+ * number (REQ-…) or the trip number (TRI-…).
+ */
+const fromDesk = (m) => m && m.senderRole !== 'agent';
+const threadMessages = (list) =>
+  (list || [])
+    .map((m) => ({ id: m.id || String(m._id || ''), from: m.sender, fromDesk: fromDesk(m), text: m.message, at: m.timestamp, read: fromDesk(m) ? Boolean(m.readByCuratorAt) : true }))
+    .sort((a, b) => new Date(a.at || 0) - new Date(b.at || 0));
+const unreadOf = (list) => (list || []).filter((m) => fromDesk(m) && !m.readByCuratorAt).length;
+const tripMain = (g) => g.booked || g.latest;
+// The version that already holds the trip's conversation (a revision adds versions), else the main one
+const threadVersion = (g) => g.versions.find((v) => Array.isArray(v.curatorMessages) && v.curatorMessages.length) || tripMain(g);
+const requestKey = (r) => r.requestNumber || r.id;
+
+/** Every conversation this Curator has (or can start): one per request, one per trip without a request. */
+function threadIndex(requests, groups) {
+  const threads = [];
+  const linked = new Set();
+  requests.forEach((r) => {
+    const gs = groups.filter((g) => P.requestForGroup(g, requests) === r);
+    gs.forEach((g) => linked.add(g.token));
+    const g = gs.find((x) => x.booked) || gs[0];
+    threads.push({
+      key: requestKey(r),
+      kind: 'request',
+      ref: docRef('REQ', P.tripToken(r), ''),
+      tripRef: g ? docRef(g.booked ? 'TRI' : 'QUO', g.token, '') : null,
+      client: r.companyName || r.clientName || '',
+      route: r.route || [r.originIcao, r.destIcao].filter(Boolean).join(' → '),
+      href: g && g.booked ? `/agent/trips/${g.token}` : `/agent/requests/${encodeURIComponent(requestKey(r))}`,
+      raw: r.messages || [],
+      createdAt: r.createdAt
+    });
+  });
+  groups
+    .filter((g) => !linked.has(g.token))
+    .forEach((g) => {
+      const b = tripMain(g);
+      const holder = threadVersion(g);
+      threads.push({
+        key: `TRI-${g.token}`,
+        kind: 'trip',
+        ref: docRef(g.booked ? 'TRI' : 'QUO', g.token, ''),
+        tripRef: null,
+        client: P.clientName(b),
+        route: P.icaoRoute(b),
+        href: g.booked ? `/agent/trips/${g.token}` : `/agent/quotes/${b.id || b._id}`,
+        raw: holder.curatorMessages || [],
+        createdAt: b.createdAt
+      });
+    });
+  return threads.map((t) => {
+    const msgs = threadMessages(t.raw);
+    const last = msgs[msgs.length - 1] || null;
+    const { raw, ...rest } = t;
+    return { ...rest, count: msgs.length, unread: unreadOf(raw), lastAt: last ? last.at : null, lastText: last ? last.text : '', lastFromDesk: last ? last.fromDesk : false };
+  });
+}
+
+/** The saved document a thread key points to: the request, or the trip version holding its messages. */
+async function threadDoc(req, key) {
+  const { requests, groups } = await loadMine(req);
+  const s = String(key || '').trim();
+  let r = requests.find((x) => [x.id, x.requestNumber, String(x._id)].filter(Boolean).map(String).includes(s));
+  let g = null;
+  if (!r) {
+    g = findGroup(groups, s);
+    if (!g) return null;
+    r = P.requestForGroup(g, requests);
+  }
+  if (r) {
+    const doc = await AgentRequest.findById(r._id);
+    return doc ? { kind: 'request', doc, key: requestKey(r), ref: docRef('REQ', P.tripToken(r), ''), title: [r.companyName || r.clientName, r.route].filter(Boolean).join(' · ') } : null;
+  }
+  const main = tripMain(g);
+  const doc = await Booking.findById(threadVersion(g)._id);
+  return doc
+    ? { kind: 'trip', doc, key: `TRI-${g.token}`, ref: docRef(g.booked ? 'TRI' : 'QUO', g.token, ''), title: [P.clientName(main), P.icaoRoute(main)].filter(Boolean).join(' · ') }
+    : null;
+}
+const docMessages = (t) => (t.kind === 'request' ? t.doc.messages || [] : t.doc.curatorMessages || []);
+
 /* ─────────────────────────── top bar ─────────────────────────── */
 
 router.get('/me', async (req, res) => {
   const user = await User.findById(req.userId);
   if (!user) return res.status(404).json({ success: false, message: 'User not found' });
   const config = await getConfig();
-  const { requests, bookings } = await loadMine(req);
+  const { requests, bookings, groups } = await loadMine(req);
   if (P.syncTokens(user, config, { requests, bookings })) await user.save();
-  res.json({ success: true, data: { name: user.name, email: user.email, tokens: user.tokens || 0, tier: P.tierOf(user, config).tier } });
+  const unreadMessages = threadIndex(requests, groups).reduce((n, t) => n + t.unread, 0);
+  res.json({ success: true, data: { name: user.name, email: user.email, tokens: user.tokens || 0, tier: P.tierOf(user, config).tier, unreadMessages } });
+});
+
+/* ─────────────────────────── messages ─────────────────────────── */
+
+router.get('/messages', async (req, res) => {
+  const { requests, groups } = await loadMine(req);
+  const threads = threadIndex(requests, groups).sort(
+    (a, b) => new Date(b.lastAt || 0) - new Date(a.lastAt || 0) || new Date(b.createdAt || 0) - new Date(a.createdAt || 0)
+  );
+  res.json({ success: true, data: { threads, unread: threads.reduce((n, t) => n + t.unread, 0) } });
+});
+
+router.get('/messages/:key', async (req, res) => {
+  const t = await threadDoc(req, req.params.key);
+  if (!t) return res.status(404).json({ success: false, message: 'Conversation not found' });
+  // Opening the conversation reads the desk's messages
+  let changed = false;
+  docMessages(t).forEach((m) => {
+    if (fromDesk(m) && !m.readByCuratorAt) {
+      m.readByCuratorAt = new Date();
+      changed = true;
+    }
+  });
+  if (changed) {
+    if (t.kind === 'trip') t.doc.markModified('curatorMessages');
+    await t.doc.save().catch(() => {});
+  }
+  res.json({ success: true, data: { key: t.key, kind: t.kind, ref: t.ref, title: t.title, messages: threadMessages(docMessages(t)) } });
+});
+
+router.post('/messages/:key', async (req, res) => {
+  const text = String((req.body && req.body.message) || '').trim();
+  if (!text) return res.status(400).json({ success: false, message: 'Write a message first.' });
+  const t = await threadDoc(req, req.params.key);
+  if (!t) return res.status(404).json({ success: false, message: 'Conversation not found' });
+  const entry = {
+    id: crypto.randomUUID(),
+    sender: req.user.name || req.user.email,
+    senderRole: 'agent',
+    senderEmail: req.user.email,
+    message: text.slice(0, 4000),
+    timestamp: new Date()
+  };
+  if (t.kind === 'request') {
+    t.doc.messages.push(entry);
+  } else {
+    t.doc.curatorMessages = [...(t.doc.curatorMessages || []), entry];
+    t.doc.markModified('curatorMessages');
+  }
+  await t.doc.save();
+  res.status(201).json({ success: true, data: { key: t.key } });
 });
 
 /* ─────────────────────────── requests ─────────────────────────── */
@@ -119,6 +273,10 @@ function requestRows(requests, groups) {
       groupsByRequest.get(k).push(g);
     } else orphanGroups.push(g);
   });
+
+  // Every row can message the desk: on its request, or on the trip when there is no request
+  const threadOf = (g, r) =>
+    r ? { threadKey: requestKey(r), unread: unreadOf(r.messages) } : { threadKey: `TRI-${g.token}`, unread: unreadOf(threadVersion(g).curatorMessages) };
 
   const groupRow = (g, r) => {
     if (g.booked) {
@@ -139,7 +297,8 @@ function requestRows(requests, groups) {
         expires: null,
         action: { label: 'Open trip', href: `/agent/trips/${g.token}` },
         createdAt: b.createdAt,
-        requestId: r ? r.requestNumber || r.id : null
+        requestId: r ? r.requestNumber || r.id : null,
+        ...threadOf(g, r)
       };
     }
     const q = g.latest;
@@ -162,7 +321,8 @@ function requestRows(requests, groups) {
       expires: confirmed || expired || !exp ? null : P.leftText(exp.getTime() - now),
       action: { label: 'View quote', href: `/agent/quotes/${q.id || q._id}` },
       createdAt: q.createdAt,
-      requestId: r ? r.requestNumber || r.id : null
+      requestId: r ? r.requestNumber || r.id : null,
+      ...threadOf(g, r)
     };
   };
 
@@ -182,7 +342,9 @@ function requestRows(requests, groups) {
       currency: 'EUR',
       expires: null,
       createdAt: r.createdAt,
-      requestId: r.requestNumber || r.id
+      requestId: r.requestNumber || r.id,
+      threadKey: requestKey(r),
+      unread: unreadOf(r.messages)
     };
     if (gs.length === 0) {
       if (r.status === 'declined') {
@@ -668,7 +830,7 @@ router.post('/quotes/:id/change', async (req, res) => {
 /* ─────────────────────────── trips ─────────────────────────── */
 
 router.get('/trips', async (req, res) => {
-  const { groups } = await loadMine(req);
+  const { groups, requests } = await loadMine(req);
   const contactIds = [];
   groups.forEach((g) => g.booked && ((P.liveLegs(g.booked)[0] || {}).passengers || []).forEach((p) => p.contactId && contactIds.push(String(p.contactId))));
   const contacts = contactIds.length ? await Contact.find({ $or: [{ id: { $in: contactIds } }, { _id: { $in: contactIds.filter((x) => /^[a-f0-9]{24}$/i.test(x)) } }] }).lean() : [];
@@ -691,7 +853,11 @@ router.get('/trips', async (req, res) => {
         price: P.round2(b.pricing && b.pricing.totalFlightPrice),
         currency: (b.pricing && b.pricing.currency) || 'EUR',
         open: (b.invoices || []).length ? Math.max(0, ledger.totals.openBalance) : null,
-        missingPassports: missing
+        missingPassports: missing,
+        ...(() => {
+          const r = P.requestForGroup(g, requests);
+          return r ? { threadKey: requestKey(r), unread: unreadOf(r.messages) } : { threadKey: `TRI-${g.token}`, unread: unreadOf(threadVersion(g).curatorMessages) };
+        })()
       };
     })
     .sort((a, b) => new Date(b.flightAt || 0) - new Date(a.flightAt || 0));
@@ -727,7 +893,7 @@ const INVOICE_STATUS = (inv) => {
 router.get('/trips/:id', async (req, res) => {
   const found = await tripDoc(req, res);
   if (!found) return;
-  const { g, doc } = found;
+  const { g, doc, request } = found;
   if (P.isBooked(doc) && ensureLedger(doc)) await doc.save();
   const b = doc.toObject();
   const ledger = computeLedger(b);
@@ -793,6 +959,7 @@ router.get('/trips/:id', async (req, res) => {
       token: g.token,
       bookingId: b.id || String(b._id),
       mongoId: String(b._id),
+      threadKey: request ? requestKey(request) : `TRI-${g.token}`,
       ref: docRef('TRI', g.token, ''),
       title: P.cityRoute(b),
       sub: [P.clientName(b), departureText(b), ac.model || ac.name || '', P.paxOf(b) ? `${P.paxOf(b)} pax` : ''].filter(Boolean),
@@ -1056,9 +1223,23 @@ router.get('/documents', async (req, res) => {
       const ver = P.versionOf(v);
       const id = v.id || String(v._id);
       const title = P.cityRoute(v);
-      desk.push({ key: `q-${v._id}`, label: 'Quote', ref: docRef('QUO', g.token, ver), title, version: `-${ver}`, at: v.quoteSentAt || v.createdAt, bookingId: id, docType: 'quotation' });
+      const revised = g.versions.indexOf(v) > 0;
+      desk.push({ key: `q-${v._id}`, label: revised ? 'Revised quote' : 'Quote', ref: docRef('QUO', g.token, ver), title, version: `-${ver}`, at: v.quoteSentAt || v.createdAt, bookingId: id, docType: 'quotation' });
+      // The charter agreement goes out with every live quote (the client signs it online)
+      if (!P.isBooked(v) && !v.isCancelled && !g.booked) {
+        desk.push({
+          key: `ca-${v._id}`,
+          label: 'Charter agreement',
+          ref: docRef('CA', g.token, ver),
+          title: `${title} · awaiting signature`,
+          version: `-${ver}`,
+          at: v.quoteSentAt || v.updatedAt || v.createdAt,
+          bookingId: id,
+          docType: 'charter_agreement'
+        });
+      }
       if (P.isBooked(v)) {
-        desk.push({ key: `ca-${v._id}`, label: 'Contract', ref: docRef('CA', g.token, ver), title, version: `-${ver}`, at: v.contractSignedAt || v.updatedAt || v.createdAt, bookingId: id, docType: 'charter_agreement' });
+        desk.push({ key: `ca-${v._id}`, label: 'Charter agreement', ref: docRef('CA', g.token, ver), title: `${title} · signed`, version: `-${ver}`, at: v.contractSignedAt || v.updatedAt || v.createdAt, bookingId: id, docType: 'charter_agreement' });
         const copy = JSON.parse(JSON.stringify(v));
         ensureLedger(copy);
         computeLedger(copy)

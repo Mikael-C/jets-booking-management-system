@@ -277,6 +277,8 @@ const bookingSchema = new mongoose.Schema(
     legOperators: { type: [mongoose.Schema.Types.Mixed], default: [] },
     operatorPendingApproval: { type: Boolean, default: false },
     passengerFeeItems: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    // Conversation with the Curator for a trip made without a Curator request
+    curatorMessages: { type: [mongoose.Schema.Types.Mixed], default: [] },
     // Trip page · itinerary activity, flight briefs and manifest settings
     itineraryActivity: { type: [mongoose.Schema.Types.Mixed], default: [] },
     lastBriefIssuedAt: { type: String, default: '' },
