@@ -49,6 +49,10 @@ const curatorTierRoutes = require('./routes/curatorTiers');
 
 const app = express();
 
+// Render (and most hosts) sit behind a reverse proxy. Without this, req.ip is
+// the proxy's address and every user shares a single rate-limit bucket.
+app.set('trust proxy', 1);
+
 // ─── Security & Core Middleware ───────────────────────────────────────────────
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' }
@@ -111,8 +115,8 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(morgan('combined', { stream: { write: msg => logger.info(msg.trim()) } }));
 
 // ─── Global rate limiter ──────────────────────────────────────────────────────
+// The login route applies authLimiter itself (routes/auth.js).
 app.use('/api/', apiLimiter);
-app.use('/api/auth/login', authLimiter);
 
 // ─── Health Check ─────────────────────────────────────────────────────────────
 app.get(['/health', '/api/health'], (req, res) => {
