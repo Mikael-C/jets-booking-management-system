@@ -765,6 +765,8 @@ export interface RequestLegItem {
   destIcao: string;
   flightDate: string;
   departureTime?: string;
+  /** Passengers on this leg, when it differs from the request's head count */
+  paxCount?: number;
 }
 
 export interface AgentRequest {
@@ -822,6 +824,7 @@ export interface AgentRequest {
   priority?: "normal" | "urgent" | "vip";
   assignedTo?: string;
   slaDeadline?: string;
+  /** Every leg of the request, the first one included */
   multiLegs?: RequestLegItem[];
 
   // Agent margin and pet/luggage details

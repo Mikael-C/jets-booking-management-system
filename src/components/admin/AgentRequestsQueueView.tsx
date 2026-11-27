@@ -259,25 +259,38 @@ export default function AgentRequestsQueueView({ selectedRequestId }: AgentReque
   // VIEW: DETAILS SCREEN (SCREEN 3)
   // ==========================================
   if (activeRequest) {
-    const isRoundTrip = activeRequest.tripType === "round_trip" || (activeRequest.route || "").includes("⇄");
+    // Every leg of the request, the first one included (multiLegs is normalised to the full list)
+    const allLegs: { originIcao?: string; destIcao?: string; flightDate?: string; departureTime?: string; paxCount?: number }[] =
+      activeRequest.multiLegs && activeRequest.multiLegs.length
+        ? activeRequest.multiLegs
+        : [
+            { originIcao: activeRequest.originIcao, destIcao: activeRequest.destIcao, flightDate: activeRequest.flightDate, departureTime: activeRequest.departureTime },
+            ...((activeRequest.tripType === "round_trip" || (activeRequest.route || "").includes("⇄")) && activeRequest.returnFlightDate
+              ? [{ originIcao: activeRequest.destIcao, destIcao: activeRequest.originIcao, flightDate: activeRequest.returnFlightDate, departureTime: (activeRequest as any).returnDepartureTime }]
+              : [])
+          ];
+    const isMultiLeg = allLegs.length > 2 || activeRequest.tripType === "multi_leg";
+    const isRoundTrip =
+      !isMultiLeg &&
+      (activeRequest.tripType === "round_trip" ||
+        (activeRequest.route || "").includes("⇄") ||
+        (allLegs.length === 2 && allLegs[1].originIcao === allLegs[0].destIcao && allLegs[1].destIcao === allLegs[0].originIcao));
     const day = (v?: string) => {
       if (!v) return "";
       const d = new Date(v.length === 10 ? `${v}T12:00:00` : v);
       return Number.isNaN(d.getTime()) ? v : d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
     };
-    const legText = (from?: string, to?: string, date?: string, time?: string) =>
+    const legText = (from?: string, to?: string, date?: string, time?: string, pax?: number) =>
       [
         `${from || "—"} → ${to || "—"}`,
         [day(date), time ? `${time} LT` : "", activeRequest.isFlexibleTime ? "flexible" : ""].filter(Boolean).join(" "),
-        `${activeRequest.paxCount} pax`
+        `${pax || activeRequest.paxCount} pax`
       ]
         .filter(Boolean)
         .join(" · ");
-    const leg1Str = legText(activeRequest.originIcao, activeRequest.destIcao, activeRequest.flightDate, activeRequest.departureTime);
-    const leg2Str = isRoundTrip
-      ? legText(activeRequest.destIcao, activeRequest.originIcao, activeRequest.returnFlightDate, undefined)
-      : null;
-    const extraLegs = (activeRequest.multiLegs || []).map((l) => legText(l.originIcao, l.destIcao, l.flightDate, l.departureTime));
+    const legStrs = allLegs.map((l) => legText(l.originIcao, l.destIcao, l.flightDate, l.departureTime, l.paxCount));
+    const leg1Str = legStrs[0];
+    const laterLegs = legStrs.slice(1);
     const pet: any = activeRequest.petDetails || activeRequest.pets;
     const petList: any[] = Array.isArray(pet) ? pet : pet && Object.keys(pet).length ? [pet] : [];
     const petsText = petList.length
@@ -416,7 +429,7 @@ export default function AgentRequestsQueueView({ selectedRequestId }: AgentReque
                     TRIP TYPE
                   </div>
                   <div className="font-medium text-gray-900">
-                    {isRoundTrip ? "Round trip" : "One way"}
+                    {isMultiLeg ? `Multi-leg · ${allLegs.length} legs` : isRoundTrip ? "Round trip" : "One way"}
                   </div>
                 </div>
 
@@ -428,28 +441,21 @@ export default function AgentRequestsQueueView({ selectedRequestId }: AgentReque
                   <div className="font-medium text-gray-900">{leg1Str}</div>
                 </div>
 
-                {extraLegs.map((t, i) => (
-                  <div key={`xl-${i}`}>
-                    <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1">
-                      LEG {i + 2}
+                {laterLegs.length > 0 ? (
+                  laterLegs.map((t, i) => (
+                    <div key={`leg-${i + 2}`}>
+                      <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1">
+                        {isRoundTrip ? "RETURN · LEG 2" : `LEG ${i + 2}`}
+                      </div>
+                      <div className="font-medium text-gray-900">{t}</div>
                     </div>
-                    <div className="font-medium text-gray-900">{t}</div>
-                  </div>
-                ))}
-
-                {extraLegs.length > 0 ? null : leg2Str ? (
-                  <div>
-                    <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1">
-                      LEG 2
-                    </div>
-                    <div className="font-medium text-gray-900">{leg2Str}</div>
-                  </div>
+                  ))
                 ) : (
                   <div>
                     <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1">
-                      RETURN DATE
+                      RETURN
                     </div>
-                    <div className="font-medium text-gray-900">None (One way)</div>
+                    <div className="font-medium text-gray-900">{isRoundTrip ? "Return date to be confirmed" : "None (one way)"}</div>
                   </div>
                 )}
 

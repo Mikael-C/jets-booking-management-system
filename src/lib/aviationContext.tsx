@@ -28,7 +28,8 @@ import {
   MessageAttachment,
   AccountRecord,
   ContactRecord,
-  AppSettings
+  AppSettings,
+  RequestLegItem
 } from "@/types/aviation";
 import { initialSettings } from "@/data/initialSettings";
 import { initialBookings, defaultOperator } from "@/data/initialBookings";
@@ -778,12 +779,34 @@ const normalizeAgentRequest = (request: any): AgentRequest => ({
   aircraftPreference: request?.aircraftPreference || request?.preferredAircraft || undefined,
   specialRequests: request?.specialRequests || request?.notes || undefined,
   budgetNotes: request?.budgetNotes || undefined,
-  multiLegs: Array.isArray(request?.multiLegs)
-    ? request.multiLegs
-    : Array.isArray(request?.additionalLegs)
-      ? request.additionalLegs
-      : undefined,
+  multiLegs: requestLegs(request),
 });
+
+/**
+ * Every leg of a request, the first one included. Requests store either the whole list (multiLegs) or only
+ * the legs after the first (additionalLegs); a list that doesn't start with the request's own first leg is
+ * treated as the legs after it.
+ */
+function requestLegs(request: any): RequestLegItem[] | undefined {
+  const pick = (l: any): RequestLegItem => ({
+    originIcao: String(l?.originIcao || l?.origin?.icao || l?.origin || "").toUpperCase(),
+    destIcao: String(l?.destIcao || l?.destination?.icao || l?.destination || "").toUpperCase(),
+    flightDate: String(l?.flightDate || l?.date || "").slice(0, 10),
+    departureTime: l?.departureTime || l?.time || undefined,
+    ...(l?.paxCount ? { paxCount: Number(l.paxCount) } : {})
+  });
+  const first: RequestLegItem | null = request?.originIcao
+    ? pick({ originIcao: request.originIcao, destIcao: request.destIcao, flightDate: request.flightDate, departureTime: request.departureTime })
+    : null;
+  const sameAsFirst = (l: RequestLegItem) =>
+    !!first && l.originIcao === first.originIcao && l.destIcao === first.destIcao && (!l.flightDate || !first.flightDate || l.flightDate === first.flightDate);
+
+  const full = Array.isArray(request?.multiLegs) ? request.multiLegs.filter(Boolean).map(pick) : [];
+  if (full.length) return !first || sameAsFirst(full[0]) ? full : [first, ...full];
+  const extra = Array.isArray(request?.additionalLegs) ? request.additionalLegs.filter(Boolean).map(pick) : [];
+  if (extra.length) return first ? [first, ...extra.filter((l: RequestLegItem, i: number) => !(i === 0 && sameAsFirst(l)))] : extra;
+  return undefined;
+}
 
 interface AviationContextType {
   // Auth state
