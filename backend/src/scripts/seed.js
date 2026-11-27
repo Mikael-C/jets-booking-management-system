@@ -41,24 +41,6 @@ const seedDatabase = async (force = false) => {
   if (existingUsers > 0 && existingClients > 0 && existingOperators > 0 && !forceSeed) {
     console.log(`ℹ️ Database already contains data (${existingUsers} users, ${existingClients} clients, ${existingOperators} operators, ${existingBookings} bookings).`);
 
-    // Clean any legacy seeded mock bookings if present
-    const legacyMockCount = await Booking.countDocuments({
-      $or: [
-        { id: { $regex: /peu|legacy/i } },
-        { tripNumber: { $regex: /peu|qte-2026/i } },
-        { quoteReference: { $regex: /peu/i } }
-      ]
-    });
-    if (legacyMockCount > 0) {
-      console.log(`🧹 Removing ${legacyMockCount} legacy seeded mock bookings...`);
-      await Booking.deleteMany({
-        $or: [
-          { id: { $regex: /peu|legacy/i } },
-          { tripNumber: { $regex: /peu|qte-2026/i } },
-          { quoteReference: { $regex: /peu/i } }
-        ]
-      });
-    }
 
     // Ensure initial communications messages exist
     const existingMessages = await Message.countDocuments();
@@ -408,7 +390,7 @@ if (require.main === module) {
     console.log('ℹ️  Demo seeding is disabled. Run with --demo (or AUTO_SEED=true) to load demo data.');
     process.exit(0);
   }
-  seedDatabase()
+  seedDatabase(process.argv.includes('--force'))
     .then(() => process.exit(0))
     .catch((err) => {
       console.error('❌ Seed failed:', err);

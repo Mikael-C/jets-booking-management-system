@@ -13,8 +13,9 @@ const startServer = async () => {
     await connectDB();
     logger.info('✅ MongoDB connected successfully');
 
-    // Demo seeding is OFF unless AUTO_SEED=true (or FORCE_SEED=true) is set on
-    // the server. Real data is never replaced with demo data on a restart.
+    // Starter data (users, accounts, operators, fleet; no bookings) is loaded automatically when the
+    // database is completely empty, e.g. right after switching to a new cluster. A database that already
+    // has users is never touched. Set AUTO_SEED=false to turn this off, FORCE_SEED=true to wipe and reload.
     try {
       const User = require('./models/User');
       const Client = require('./models/Client');
@@ -22,8 +23,8 @@ const startServer = async () => {
       const userCount = await User.countDocuments();
       const clientCount = await Client.countDocuments();
       const bookingCount = await Booking.countDocuments();
-      const autoSeed = process.env.AUTO_SEED === 'true';
-      if (process.env.FORCE_SEED === 'true' || (autoSeed && (userCount === 0 || clientCount === 0))) {
+      const autoSeed = process.env.AUTO_SEED !== 'false';
+      if (process.env.FORCE_SEED === 'true' || (autoSeed && userCount === 0)) {
         logger.info('🌱 Empty database detected on startup — automatically seeding initial data...');
         const { seedDatabase } = require('./scripts/seed');
         await seedDatabase(process.env.FORCE_SEED === 'true');
