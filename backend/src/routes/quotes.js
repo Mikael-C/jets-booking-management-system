@@ -8,12 +8,13 @@ const Aircraft = require('../models/Aircraft');
 const { authorize } = require('../middleware/auth');
 const { createAuditEntry } = require('../services/auditService');
 const { createNotification } = require('../services/notificationService');
-const { sendQuoteEmail } = require('../services/emailService');
+const { sendQuoteEmail, sendEmail } = require('../services/emailService');
 const { generateQuotePdf } = require('../services/pdfService');
 const { calculatePricing } = require('../services/pricingService');
 const { findAirportByCode } = require('../utils/airportData');
 const { createBookingIdentifiers, createTripNumber } = require('../services/bookingIdentifiers');
 const { agreementLinks } = require('../services/agreementLinks');
+const { postToCurator, recordSent } = require('../services/curatorThread');
 
 const quoteEditableFields = [
   'accountNumber', 'contractDate', 'quoteExpirationDate', 'paymentDueDate',
@@ -447,6 +448,61 @@ router.get('/:id', authorize('super_admin', 'admin', 'finance', 'operations', 'a
 });
 
 // POST /api/quotes/:id/send — email quote to client
+/**
+ * POST /api/quotes/:id/send-to-curator   { document: 'quotation' | 'charter_agreement', origin }
+ * The quote or the charter agreement goes to the Curator: a message in their conversation, the document on
+ * their request / trip page, and an email with the links. The desk stays on the page (no redirect).
+ */
+router.post('/:id/send-to-curator', authorize('super_admin', 'admin', 'operations'), async (req, res) => {
+  const booking = await findBooking(req.params.id);
+  if (!booking) return res.status(404).json({ message: 'Quote not found' });
+  const kind = (req.body && req.body.document) === 'charter_agreement' ? 'charter_agreement' : 'quotation';
+  if (kind === 'charter_agreement' && isBookedStatus(booking)) {
+    return res.status(409).json({ message: 'This trip is already booked; the agreement is signed.' });
+  }
+  if (!booking.agentEmail && !booking.sourceAgentRequestId) {
+    return res.status(400).json({ message: 'This quote has no Curator. Send it to the client instead.' });
+  }
+  const links = agreementLinks(booking, req.body && req.body.origin);
+  const ref = kind === 'charter_agreement' ? links.number : links.quote;
+  const by = (req.user && (req.user.name || req.user.email)) || 'Desk';
+  const text =
+    kind === 'charter_agreement'
+      ? `Charter agreement ${ref} is ready. Download it from the request page, have the client sign it, then upload the signed copy there (or the client can sign online: ${links.sign}).`
+      : `Quote ${ref} is ready for your client. Open it from the request page to review and confirm.`;
+
+  recordSent(booking, { kind, ref, by, bookingId: booking.id || String(booking._id) });
+  if (kind === 'charter_agreement') {
+    booking.agreementSentAt = new Date();
+    booking.agreementSentBy = by;
+    booking.quoteStatus = 'contract_sent';
+  } else if (!booking.quoteSentAt) {
+    booking.quoteSentAt = new Date();
+  }
+  await booking.save();
+  await postToCurator(booking, { text, user: req.user });
+
+  // Email the Curator as well (the message above is what counts if email is not set up)
+  let emailed = false;
+  if (booking.agentEmail) {
+    const result = await sendEmail({
+      to: booking.agentEmail,
+      subject: kind === 'charter_agreement' ? `Charter agreement ${ref} ready` : `Quote ${ref} ready`,
+      html: `<p>${text.replace(links.sign, `<a href="${links.sign}">${links.signLabel}</a>`)}</p>`,
+      text
+    }).catch(() => ({ success: false }));
+    emailed = Boolean(result && result.success);
+  }
+  await createAuditEntry({
+    user: req.user,
+    action: kind === 'charter_agreement' ? 'AGREEMENT_SENT_TO_CURATOR' : 'QUOTE_SENT_TO_CURATOR',
+    entityType: 'Booking',
+    entityId: ref,
+    details: `${ref} sent to ${booking.agentName || booking.agentEmail || 'the Curator'}`
+  });
+  res.json({ success: true, data: { ref, sentAt: new Date().toISOString(), emailed, curator: booking.agentName || booking.agentEmail || '' } });
+});
+
 router.post('/:id/send', authorize('super_admin', 'admin', 'operations'), async (req, res) => {
   const booking = await findBooking(req.params.id);
   if (!booking) return res.status(404).json({ message: 'Quote/Booking not found' });

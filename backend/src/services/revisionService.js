@@ -183,9 +183,44 @@ function buildRevisions(versions, names = new Map()) {
     } else if (next && booked && routeOf(next) !== routeOf(v)) {
       state = 'cancelled_route';
       stateLabel = 'Cancelled route';
+    } else if (booked && next && isBooked(next)) {
+      // A booking revision adds to or subtracts from the booking: it never replaces it
+      state = 'amended';
+      stateLabel = `Amended by -${pad3(ordered[i + 1].n)}`;
     } else {
       state = 'superseded';
       stateLabel = 'Superseded';
+    }
+
+    // This revision's own invoice (the change only) and the booking's running total
+    let revisionInvoice = null;
+    let totalInvoice = null;
+    if (booked) {
+      const pending = (v.supplementaryInvoices || []).find((x) => x && x.invoiceNumber === `INV-${token}-${pad3(n)}`);
+      const credit = (v.creditNotes || []).find((x) => x && (x.number || x.creditNoteNumber) === `CN-${token}-${pad3(n)}`);
+      if (firstBooked) {
+        revisionInvoice = { kind: 'invoice', number: v.originalInvoiceNumber || v.invoiceNumber || `INV-${token}-${pad3(n)}`, amount: totalOf(v), currency: c };
+      } else if (amountChange > 0) {
+        revisionInvoice = { kind: 'invoice', number: `INV-${token}-${pad3(n)}`, amount: round2(pending?.amount ?? amountChange), currency: c };
+      } else if (amountChange < 0) {
+        revisionInvoice = {
+          kind: 'credit_note',
+          number: `CN-${token}-${pad3(n)}`,
+          amount: round2(credit?.amount ?? Math.abs(amountChange)),
+          currency: c,
+          note: credit || null
+        };
+      }
+      totalInvoice = {
+        kind: 'invoice',
+        number: v.originalInvoiceNumber || `INV-${token}-001`,
+        amount: totalOf(v),
+        currency: c,
+        parts: ordered
+          .slice(0, i + 1)
+          .filter(({ v: x }) => isBooked(x))
+          .map(({ n: k }) => `-${pad3(k)}`)
+      };
     }
 
     const email = v.revisedByEmail || v.createdByEmail || '';
@@ -214,6 +249,8 @@ function buildRevisions(versions, names = new Map()) {
         brief: booked,
         creditNote: booked && current.v === v
       },
+      revisionInvoice,
+      totalInvoice,
       quoteNumber: `QUO-${token}-${pad3(n)}`,
       tripNumber: `TRI-${token}-${pad3(n)}`
     };

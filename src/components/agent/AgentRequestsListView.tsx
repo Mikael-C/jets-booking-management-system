@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { Badge, DocRef, FilterPill, LoadState, PageTitle, Ref, cardCls, goldLinkCls, money, tdCls, thCls, useLoad } from "./curatorUi";
 import { DeskThreadModal, MessageDeskButton } from "./DeskThread";
+import { ConfirmQuoteButton, UploadSignedButton, UploadSignedModal } from "./AgreementActions";
 
 type FilterKey = "all" | "waiting" | "quoted" | "confirmed" | "expired";
 type SortKey = "newest" | "oldest" | "flight";
@@ -29,6 +30,10 @@ interface Row {
   /** Conversation with the desk about this row (its request, or its trip) */
   threadKey?: string | null;
   unread?: number;
+  /** Where an open quote stands: quoted → confirmed → agreement_sent → signed_uploaded */
+  deal?: { state: string; quoteId?: string; agreementRef?: Ref };
+  canConfirm?: boolean;
+  canUploadSigned?: boolean;
 }
 
 function StatusBadge({ row }: { row: Row }) {
@@ -55,6 +60,8 @@ export default function AgentRequestsListView() {
   const [filter, setFilter] = useState<FilterKey>("all");
   const [sort, setSort] = useState<SortKey>("newest");
   const [messaging, setMessaging] = useState<Row | null>(null);
+  const [uploading, setUploading] = useState<Row | null>(null);
+  const refText = (r: Ref) => `${r.prefix ? `${r.prefix}-` : ""}${r.token}${r.suffix || ""}`;
 
   // Unread desk replies change when a conversation is opened or answered
   useEffect(() => {
@@ -90,7 +97,7 @@ export default function AgentRequestsListView() {
             {label("Quoted", counts?.quoted)}
           </FilterPill>
           <FilterPill active={filter === "confirmed"} onClick={() => setFilter("confirmed")}>
-            {label("Client confirmed", counts?.confirmed)}
+            {label("Confirmed", counts?.confirmed)}
           </FilterPill>
           <FilterPill active={filter === "expired"} onClick={() => setFilter("expired")}>
             {label("Expired", counts?.expired)}
@@ -167,6 +174,10 @@ export default function AgentRequestsListView() {
                     <td className={`${tdCls} whitespace-nowrap`}>{row.expires || "—"}</td>
                     <td className={`${tdCls} whitespace-nowrap`}>
                       <div className="flex items-center justify-end gap-4">
+                        {row.canConfirm && row.deal?.quoteId && (
+                          <ConfirmQuoteButton quoteId={row.deal.quoteId} refLabel={refText(row.ref)} onDone={reload} />
+                        )}
+                        {row.canUploadSigned && <UploadSignedButton onClick={() => setUploading(row)} />}
                         {row.action?.href && !row.action.message && (
                           <Link href={row.action.href} onClick={(e) => e.stopPropagation()} className={goldLinkCls}>
                             {row.action.label}
@@ -185,6 +196,14 @@ export default function AgentRequestsListView() {
 
       <p className="text-[15px] text-[#93A1B5] mt-5">Curators only ever see their own clients, requests and trips.</p>
 
+      {uploading && (
+        <UploadSignedModal
+          target={uploading.requestId ? { requestId: uploading.requestId } : { quoteId: uploading.deal?.quoteId }}
+          refLabel={uploading.deal?.agreementRef ? refText(uploading.deal.agreementRef) : refText(uploading.ref)}
+          onClose={() => setUploading(null)}
+          onDone={reload}
+        />
+      )}
       {messaging && (
         <DeskThreadModal threadKey={String(messaging.threadKey || messaging.requestId)} title={messaging.ref} onClose={() => setMessaging(null)} />
       )}

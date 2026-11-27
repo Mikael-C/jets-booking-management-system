@@ -368,3 +368,122 @@ table.dense-table tbody tr.clickable-row:hover {
     background: transparent !important;
   }
 }
+
+
+/* ───────────── Curator dashboard · light theme ─────────────
+ * The Curator screens were built dark. The shell carries .curator-light and these rules map that palette to a
+ * white page with dark text; gold buttons keep their colours. Anything inside .curator-keep (document previews)
+ * is left as it is.
+ */
+.curator-light {
+  background-color: #ffffff;
+  color: #0B121C;
+}
+.curator-light input[type="date"],
+.curator-light input[type="time"] {
+  color-scheme: light;
+}
+.curator-light .shadow-2xl:not(.curator-keep *) {
+  box-shadow: 0 20px 45px -12px rgb(15 23 42 / 0.18);
+}
+.curator-light .bg-\[\#0B121C\]:not(.curator-keep *),
+.curator-light .bg-\[\#111A27\]:not(.curator-keep *) {
+  background-color: #ffffff !important;
+}
+.curator-light .bg-\[\#0D1520\]:not(.curator-keep *),
+.curator-light .bg-\[\#0F1724\]:not(.curator-keep *),
+.curator-light .bg-\[\#141A29\]:not(.curator-keep *),
+.curator-light .bg-\[\#16233A\]:not(.curator-keep *),
+.curator-light .bg-\[\#1A2738\]:not(.curator-keep *),
+.curator-light .bg-\[\#1A2230\]:not(.curator-keep *),
+.curator-light .bg-\[\#0F1420\]:not(.curator-keep *),
+.curator-light .bg-white\/\[0\.05\]:not(.curator-keep *),
+.curator-light .bg-white\/\[0\.06\]:not(.curator-keep *) {
+  background-color: #F8FAFC !important;
+}
+.curator-light .hover\:bg-\[\#1C2436\]:hover:not(.curator-keep *),
+.curator-light .hover\:bg-\[\#1A2338\]:hover:not(.curator-keep *),
+.curator-light .hover\:bg-white\/\[0\.03\]:hover:not(.curator-keep *),
+.curator-light .hover\:bg-white\/\[0\.025\]:hover:not(.curator-keep *),
+.curator-light .hover\:bg-white\/\[0\.05\]:hover:not(.curator-keep *),
+.curator-light .hover\:bg-white\/\[0\.02\]:hover:not(.curator-keep *),
+.curator-light .hover\:bg-white\/5:hover:not(.curator-keep *) {
+  background-color: #F1F5F9 !important;
+}
+.curator-light .from-\[\#0F1420\]:not(.curator-keep *) {
+  --tw-gradient-from: #F8FAFC var(--tw-gradient-from-position) !important; --tw-gradient-to: rgb(248 250 252 / 0) var(--tw-gradient-to-position) !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
+}
+.curator-light .to-\[\#1A2338\]:not(.curator-keep *) {
+  --tw-gradient-to: #F1F5F9 var(--tw-gradient-to-position) !important;
+}
+.curator-light .border-\[\#1E2A3B\]:not(.curator-keep *),
+.curator-light .border-\[\#263345\]:not(.curator-keep *),
+.curator-light .border-\[\#2A3749\]:not(.curator-keep *),
+.curator-light .border-\[\#1C2436\]:not(.curator-keep *),
+.curator-light .border-white\/\[0\.07\]:not(.curator-keep *),
+.curator-light .border-white\/\[0\.05\]:not(.curator-keep *),
+.curator-light .border-white\/\[0\.08\]:not(.curator-keep *),
+.curator-light .border-white\/10:not(.curator-keep *),
+.curator-light .border-white\/20:not(.curator-keep *) {
+  border-color: #E5E7EB !important;
+}
+.curator-light .hover\:border-\[\#3A4A60\]:hover:not(.curator-keep *) {
+  border-color: #CBD5E1 !important;
+}
+.curator-light .text-white:not(.curator-keep *),
+.curator-light .text-\[\#E8EDF3\]:not(.curator-keep *) {
+  color: #0B121C !important;
+}
+.curator-light .hover\:text-white:hover:not(.curator-keep *) {
+  color: #0B121C !important;
+}
+.curator-light .text-\[\#D5DCE5\]:not(.curator-keep *),
+.curator-light .text-\[\#C7D1DE\]:not(.curator-keep *),
+.curator-light .text-\[\#C7D0DC\]:not(.curator-keep *) {
+  color: #374151 !important;
+}
+.curator-light .text-\[\#A8B3C2\]:not(.curator-keep *),
+.curator-light .text-\[\#93A1B5\]:not(.curator-keep *) {
+  color: #4B5563 !important;
+}
+.curator-light .text-\[\#5F6E82\]:not(.curator-keep *) {
+  color: #6B7280 !important;
+}
+.curator-light .text-\[\#C9A24A\]:not(.curator-keep *),
+.curator-light .text-\[\#C9A052\]:not(.curator-keep *) {
+  color: #8A6A1F !important;
+}
+.curator-light .hover\:text-\[\#D7B05A\]:hover:not(.curator-keep *),
+.curator-light .hover\:text-\[\#E0C17C\]:hover:not(.curator-keep *) {
+  color: #6F5418 !important;
+}
+.curator-light .decoration-\[\#C9A24A\]:not(.curator-keep *) {
+  text-decoration-color: #8A6A1F !important;
+}
+.curator-light .bg-\[\#3A1A1F\]:not(.curator-keep *) {
+  background-color: #FEF2F2 !important;
+}
+.curator-light .text-\[\#F08C8C\]:not(.curator-keep *),
+.curator-light .text-\[\#FBD5D5\]:not(.curator-keep *) {
+  color: #B91C1C !important;
+}
+.curator-light .border-\[\#5C2A31\]:not(.curator-keep *) {
+  border-color: #FECACA !important;
+}
+.curator-light .bg-\[\#17372A\]:not(.curator-keep *),
+.curator-light .bg-\[\#0F2A1E\]:not(.curator-keep *) {
+  background-color: #ECFDF5 !important;
+}
+.curator-light .text-\[\#6BD49E\]:not(.curator-keep *),
+.curator-light .text-\[\#C9F2DC\]:not(.curator-keep *) {
+  color: #047857 !important;
+}
+.curator-light .border-\[\#1E5A3E\]:not(.curator-keep *) {
+  border-color: #A7F3D0 !important;
+}
+.curator-light .bg-\[\#3A2A10\]:not(.curator-keep *) {
+  background-color: #FFFBEB !important;
+}
+.curator-light .text-\[\#F0B54C\]:not(.curator-keep *) {
+  color: #B45309 !important;
+}

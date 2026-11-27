@@ -428,6 +428,8 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
   // 1. Client
   const [selectedAccountId, setSelectedAccountId] = useState<string>(() => {
     if (sourceTrip?.accountNumber) return sourceTrip.accountNumber;
+    // Revising: never start on another account; the version's own client is used until it is matched
+    if (effectiveReviseId) return "";
     if (sourceRequest) {
       const match = accounts.find(
         (a) =>
@@ -1274,8 +1276,22 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
     const legPhoto = (i: number, which: "exteriorPhoto" | "cabinPhoto", v: any) =>
       v === "__saved__" ? savedLegs[i]?.aircraftSpec?.[which] || "" : v;
 
-    // Client and people
-    if (t.accountNumber) setSelectedAccountId(t.accountNumber);
+    // Client and people: the version's own account (matched by number, else by the client's email or name)
+    {
+      const cl = t.client || {};
+      const mail = String(cl.email || "").toLowerCase();
+      const names = [cl.companyName, cl.fullName].filter(Boolean).map((x: string) => String(x).toLowerCase());
+      const match =
+        accounts.find((a: any) => t.accountNumber && (a.accountNumber === t.accountNumber || a.id === t.accountNumber)) ||
+        accounts.find((a: any) => {
+          const mails = [a.email, a.preferredContactEmail, ...(a.authorizedPersons || []).map((p: any) => p.email)]
+            .filter(Boolean)
+            .map((x: string) => String(x).toLowerCase());
+          return Boolean(mail) && mails.includes(mail);
+        }) ||
+        accounts.find((a: any) => names.includes(String(a.name || "").toLowerCase()));
+      setSelectedAccountId(match ? (match as any).accountNumber || match.id : t.accountNumber || "");
+    }
     const owner = has("leadPaxName") ? s.leadPaxName : t.authorisedOwnerName || t.client?.fullName;
     if (owner) setLeadPaxName(owner);
     const pa = Boolean(t.isHandledByPa || t.client?.isHandledByPa);
@@ -2180,6 +2196,22 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
   const activeAccount = useMemo(() => {
     const found = accounts.find((a) => a.accountNumber === selectedAccountId || a.id === selectedAccountId);
     if (found) return found;
+    // Revising a version whose client is not a saved account: keep that version's client as it is
+    if (sourceTrip) {
+      const cl: any = sourceTrip.client || {};
+      return {
+        id: sourceTrip.accountNumber || "",
+        name: cl.companyName || cl.fullName || (sourceTrip as any).authorisedOwnerName || "",
+        accountNumber: sourceTrip.accountNumber || "",
+        billingAddress: cl.streetAddress || "",
+        country: cl.cityPostalCountry || "",
+        email: cl.email || "",
+        phone: cl.phone || "",
+        vatNumber: cl.vatNumber || "",
+        agentName: sourceTrip.agentName || "",
+        isAgent: false
+      } as any;
+    }
     if (sourceRequest) {
       return {
         id: sourceRequest.accountId || (sourceRequest as any).clientId || "",
@@ -2194,8 +2226,9 @@ export default function QuoteBuilderView({ reviseTripId, fromRequestId, mode }: 
         isAgent: false
       };
     }
-    return accounts[0];
-  }, [accounts, selectedAccountId, sourceRequest]);
+    // A brand-new quote with nothing picked yet starts on the first account; a revision never does
+    return effectiveReviseId ? undefined : accounts[0];
+  }, [accounts, selectedAccountId, sourceRequest, sourceTrip, effectiveReviseId]);
 
   // ===== Step 01 · people on the selected account =====
   const accountPeople = useMemo(() => {

@@ -1,5 +1,6 @@
 "use client";
 
+import NewMessagesNotice from "@/components/admin/NewMessagesNotice";
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -479,6 +480,9 @@ export default function OperationsOverview() {
           </div>
         </div>
       </div>
+
+      {/* New Curator messages: who wrote and the request, quote or trip it is about */}
+      <NewMessagesNotice />
 
       {/* Connection status · the page only shows live data */}
       {loadState === "offline" && (

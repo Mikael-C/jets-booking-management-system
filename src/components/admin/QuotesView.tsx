@@ -82,14 +82,8 @@ export default function QuotesView() {
 
   // Group unbooked quotes by root trip ID and get latest iteration dynamically
   const allQuotes: QuoteItemData[] = useMemo(() => {
-    const unbookedTrips = bookings.filter((b) => {
-      const isBooked = Boolean(
-        b.isBooked ||
-        b.isContractSigned ||
-        ["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(b.status)
-      );
-      return !isBooked;
-    });
+    const isBookedVersion = (b: Booking) =>
+      Boolean(b.isBooked || b.isContractSigned || ["confirmed", "dispatched", "in_flight", "completed", "flown"].includes(b.status));
 
     const getQuoteGroupRoot = (b: Booking): string => {
       const feToken = extractFeToken(b.tripId || b.tripNumber || b.quoteReference || b.id);
@@ -98,6 +92,10 @@ export default function QuotesView() {
       if (b.tripId) return b.tripId;
       return b.id;
     };
+
+    // Once any version of a trip is booked, the whole trip moves to Bookings (its older versions leave Quotes too)
+    const bookedRoots = new Set(bookings.filter(isBookedVersion).map(getQuoteGroupRoot));
+    const unbookedTrips = bookings.filter((b) => !isBookedVersion(b) && !bookedRoots.has(getQuoteGroupRoot(b)));
 
     const rootMap = new Map<string, Booking[]>();
     unbookedTrips.forEach((b) => {
@@ -163,7 +161,16 @@ export default function QuotesView() {
         clientPrice,
         clientPriceNum,
         expiresIn: latest.quoteExpirationDate || "3 h",
-        status: (latest.quoteStatus as any) || (latest.status === "draft" ? "draft" : "open"),
+        status: (() => {
+          // Curator confirmed, agreement sent or signed copy uploaded: waiting on the desk
+          const l: any = latest;
+          const qs = String(l.quoteStatus || "");
+          if (l.clientConfirmedAt || l.agreementSentAt || (l.wetSignature && l.wetSignature.uploadedAt) || ["client_confirmed", "contract_sent", "curator_confirmed"].includes(qs))
+            return "curator_confirmed";
+          if (qs === "draft" || l.isDraft || latest.status === "draft") return "draft";
+          if (qs === "expired" || qs === "declined") return qs;
+          return "open";
+        })() as QuoteItemData["status"],
         operatorCost: clientPriceNum > 0 ? formatCurrency(operatorCostNum, latest.pricing?.currency || "EUR") : "Awaiting sourcing",
         companyMargin: clientPriceNum > 0 ? formatCurrency(companyMarginNum, latest.pricing?.currency || "EUR") : "—",
         companyMarginLabel: "Company margin 10 % · tier € 10k–35k",

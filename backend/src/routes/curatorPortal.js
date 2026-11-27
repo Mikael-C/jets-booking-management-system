@@ -40,18 +40,25 @@ const { getNextFeSequence } = require('../services/bookingIdentifiers');
 const { createAuditEntry } = require('../services/auditService');
 const airports = require('../utils/airportData');
 const P = require('../services/curatorPortalService');
+const { postToCurator, notifyDesk } = require('../services/curatorThread');
 
 const audit = (req, action, entityType, entityId, details) =>
   createAuditEntry({ user: req.user, action, entityType, entityId: String(entityId || ''), details, req }).catch(() => {});
 
 const myEmail = (req) => String((req.user && req.user.email) || '').toLowerCase();
 
+// Uploaded files and signing secrets are never needed for lists (they are fetched one at a time)
+const HEAVY_FIELDS = '-signedDocuments -wetSignature.file -signOtp -contractSignature.signatureImage';
+
 async function loadMine(req) {
   const email = myEmail(req);
   const [requests, bookings] = await Promise.all([
     AgentRequest.find({ agentEmail: P.emailFilter(email), isDeleted: { $ne: true } }).sort({ createdAt: -1 }).lean(),
     // Drafts saved on the quote builder stay with the desk until they are sent
-    Booking.find({ agentEmail: P.emailFilter(email), isDeleted: { $ne: true }, isDraft: { $ne: true } }).sort({ createdAt: -1 }).lean()
+    Booking.find({ agentEmail: P.emailFilter(email), isDeleted: { $ne: true }, isDraft: { $ne: true } })
+      .select(HEAVY_FIELDS)
+      .sort({ createdAt: -1 })
+      .lean()
   ]);
   // Revisions saved before they carried the Curator's email still belong to the same trip
   const tripIds = [...new Set(bookings.map((b) => b.tripId).filter(Boolean))];
@@ -63,6 +70,7 @@ async function loadMine(req) {
       isDeleted: { $ne: true },
       isDraft: { $ne: true }
     })
+      .select(HEAVY_FIELDS)
       .lean()
       .catch(() => []);
     strays.forEach((b) => {
@@ -110,6 +118,27 @@ function findGroup(groups, id) {
 }
 
 const docRef = (prefix, token, version) => ({ prefix, token, suffix: version ? `-${version}` : '' });
+
+/**
+ * Where an open quote stands on the way to a booking:
+ *   quoted → confirmed (Curator confirms) → agreement_sent (desk sends the charter agreement)
+ *   → signed_uploaded (Curator uploads the signed copy) → booked (desk confirms it)
+ */
+function dealOf(g) {
+  if (g.booked) return { state: 'booked' };
+  const q = g.latest || {};
+  const wet = q.wetSignature || {};
+  const base = { quoteId: q.id || String(q._id || ''), agreementRef: docRef('CA', g.token, P.versionOf(q)) };
+  if (wet.uploadedAt && !wet.confirmedAt) return { ...base, state: 'signed_uploaded', uploadedAt: wet.uploadedAt, fileName: wet.fileName || '' };
+  if (q.agreementSentAt) return { ...base, state: 'agreement_sent', sentAt: q.agreementSentAt };
+  if (q.clientConfirmedAt) return { ...base, state: 'confirmed', confirmedAt: q.clientConfirmedAt };
+  return { ...base, state: 'quoted' };
+}
+const DEAL_LABEL = {
+  confirmed: 'Confirmed · desk preparing the agreement',
+  agreement_sent: 'Agreement ready · upload the signed copy',
+  signed_uploaded: 'Signed copy sent · desk confirming'
+};
 
 /* ─────────────────────────── messages with the desk ───────────────────────────
  * One conversation per request. A trip the desk made without a request keeps its conversation on
@@ -203,8 +232,16 @@ router.get('/me', async (req, res) => {
   const config = await getConfig();
   const { requests, bookings, groups } = await loadMine(req);
   if (P.syncTokens(user, config, { requests, bookings })) await user.save();
-  const unreadMessages = threadIndex(requests, groups).reduce((n, t) => n + t.unread, 0);
-  res.json({ success: true, data: { name: user.name, email: user.email, tokens: user.tokens || 0, tier: P.tierOf(user, config).tier, unreadMessages } });
+  const threads = threadIndex(requests, groups);
+  const unreadMessages = threads.reduce((n, t) => n + t.unread, 0);
+  // New desk messages, split by where they belong: a booked trip (My trips) or a request / quote (My requests)
+  const isTrip = (t) => /^\/agent\/trips\//.test(t.href || '');
+  const unreadTrips = threads.filter(isTrip).reduce((n, t) => n + t.unread, 0);
+  const unreadRequests = unreadMessages - unreadTrips;
+  res.json({
+    success: true,
+    data: { name: user.name, email: user.email, tokens: user.tokens || 0, tier: P.tierOf(user, config).tier, unreadMessages, unreadRequests, unreadTrips }
+  });
 });
 
 /* ─────────────────────────── messages ─────────────────────────── */
@@ -279,6 +316,8 @@ function requestRows(requests, groups) {
     r ? { threadKey: requestKey(r), unread: unreadOf(r.messages) } : { threadKey: `TRI-${g.token}`, unread: unreadOf(threadVersion(g).curatorMessages) };
 
   const groupRow = (g, r) => {
+    // Booked trips are listed under My trips only
+    if (g.booked) return null;
     if (g.booked) {
       const b = g.booked;
       const p = b.pricing || {};
@@ -304,9 +343,13 @@ function requestRows(requests, groups) {
     const q = g.latest;
     const p = q.pricing || {};
     const exp = P.expiryOf(q);
-    const confirmed = Boolean(q.clientConfirmedAt);
+    const deal = dealOf(g);
+    const confirmed = deal.state !== 'quoted';
     const expired = !confirmed && ((exp && exp.getTime() < now) || (q.isCancelled && !g.versions.some((v) => !v.isCancelled)));
     return {
+      deal,
+      canConfirm: deal.state === 'quoted' && !expired,
+      canUploadSigned: deal.state === 'agreement_sent',
       id: `quote-${q._id}`,
       kind: 'quote',
       ref: docRef('QUO', g.token, P.versionOf(q)),
@@ -315,7 +358,7 @@ function requestRows(requests, groups) {
       flight: P.dayLabel(P.firstDeparture(q)),
       flightAt: P.firstDeparture(q),
       status: confirmed ? 'confirmed' : expired ? 'expired' : 'quoted',
-      statusLabel: confirmed ? 'Client confirmed' : expired ? 'Expired' : exp ? `Quoted · expires ${P.leftText(exp.getTime() - now)}` : 'Quoted',
+      statusLabel: confirmed ? DEAL_LABEL[deal.state] || 'Client confirmed' : expired ? 'Expired' : exp ? `Quoted · expires ${P.leftText(exp.getTime() - now)}` : 'Quoted',
       clientPrice: P.round2(p.totalFlightPrice),
       currency: p.currency || 'EUR',
       expires: confirmed || expired || !exp ? null : P.leftText(exp.getTime() - now),
@@ -354,13 +397,21 @@ function requestRows(requests, groups) {
       }
       return;
     }
-    gs.forEach((g) => rows.push(groupRow(g, r)));
+    // A request whose trip is booked has moved to My trips
+    if (gs.some((g) => g.booked)) return;
+    gs.forEach((g) => {
+      const row = groupRow(g, r);
+      if (row) rows.push(row);
+    });
     const open = gs.find((g) => !g.booked);
-    if (open && !gs.some((g) => g.booked)) {
+    if (open) {
       rows.push({ ...base, status: 'quoted', statusLabel: 'Quoted', statusRef: docRef('QUO', open.token, ''), action: null });
     }
   });
-  orphanGroups.forEach((g) => rows.push(groupRow(g, null)));
+  orphanGroups.forEach((g) => {
+    const row = groupRow(g, null);
+    if (row) rows.push(row);
+  });
   rows.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
   return rows;
 }
@@ -438,6 +489,49 @@ router.get('/requests/:id', async (req, res) => {
         r.meetAndAssist ? 'Meet & assist' : ''
       ].filter(Boolean),
       notes: r.specialRequests || '',
+      // Where the open quote stands (Confirm → agreement → signed copy → booked)
+      deal: (() => {
+        const open = mine.find((g) => !g.booked);
+        const booked = mine.find((g) => g.booked);
+        if (booked) return { state: 'booked', tripHref: `/agent/trips/${booked.token}`, tripRef: docRef('TRI', booked.token, '') };
+        if (!open) return null;
+        const d = dealOf(open);
+        const exp = P.expiryOf(open.latest);
+        return { ...d, quoteRef: docRef('QUO', open.token, P.versionOf(open.latest)), expired: d.state === 'quoted' && Boolean(exp && exp.getTime() < Date.now()) };
+      })(),
+      // Every document the desk sent for this request, newest first
+      documents: (() => {
+        const out = [];
+        mine.forEach((g) => {
+          g.versions.forEach((v) => {
+            const vid = v.id || String(v._id);
+            const sent = Array.isArray(v.sentDocuments) ? v.sentDocuments : [];
+            out.push({
+              label: P.isBooked(v) ? 'Booking' : 'Quote',
+              ref: docRef(P.isBooked(v) ? 'TRI' : 'QUO', g.token, P.versionOf(v)),
+              bookingId: vid,
+              docType: 'quotation',
+              at: (sent.find((x) => x.kind === 'quotation') || {}).at || v.quoteSentAt || v.createdAt
+            });
+            sent
+              .filter((x) => x.kind === 'charter_agreement')
+              .slice(-1)
+              .forEach((x) => out.push({ label: 'Charter agreement', ref: docRef('CA', g.token, P.versionOf(v)), bookingId: vid, docType: 'charter_agreement', at: x.at }));
+            const wet = v.wetSignature || {};
+            if (wet.uploadedAt) {
+              out.push({
+                label: wet.confirmedAt ? 'Signed agreement · confirmed' : 'Signed agreement · sent to the desk',
+                ref: docRef('CA', g.token, P.versionOf(v)),
+                bookingId: vid,
+                file: 'signed_upload',
+                fileOwner: vid,
+                at: wet.uploadedAt
+              });
+            }
+          });
+        });
+        return out.sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0));
+      })(),
       marginPct: r.agentMarginPct,
       tokensUsed: r.tokensUsed || 0,
       quotes: mine.flatMap((g) =>
@@ -787,9 +881,57 @@ router.post('/quotes/:id/confirm', async (req, res) => {
   doc.quoteStatus = 'client_confirmed';
   await doc.save();
   const ref = `QUO-${g.token}-${P.versionOf(q)}`;
-  await tellDesk(req, P.requestForGroup(g, requests), `Client agrees to ${ref}. Please recheck the aircraft and send the contract.`);
+  await postToCurator(doc, { text: `Quote ${ref} confirmed: the client agrees. Please recheck the aircraft and send the charter agreement.`, user: req.user, fromCurator: true });
+  await notifyDesk({ title: 'Quote confirmed by the Curator', message: `${req.user.name || req.user.email} confirmed ${ref}. Send the charter agreement.`, entityId: ref, link: `/quotes/${encodeURIComponent(q.id || q._id)}` });
   audit(req, 'curator_client_confirmed', 'Quote', ref, { ref });
   res.json({ success: true, data: { confirmedAt: doc.clientConfirmedAt } });
+});
+
+/** The signed charter agreement, uploaded by the Curator; the desk confirms it and books the trip. */
+async function uploadSigned(req, res, g) {
+  if (!g) return res.status(404).json({ success: false, message: 'Quote not found' });
+  if (g.booked) return res.status(409).json({ success: false, message: 'This trip is already booked.' });
+  const q = g.latest;
+  const doc = await Booking.findById(q._id);
+  if (!doc) return res.status(404).json({ success: false, message: 'Quote not found' });
+  if (!doc.agreementSentAt) return res.status(409).json({ success: false, message: 'The desk has not sent the charter agreement for this quote yet.' });
+  const b = req.body || {};
+  const file = String(b.file || '');
+  if (!/^data:(application\/pdf|image\/(png|jpeg));base64,/.test(file) || file.length > 8 * 1024 * 1024) {
+    return res.status(400).json({ success: false, message: 'Upload the signed agreement as a PDF or image (up to 6 MB).' });
+  }
+  const signerName = String(b.signerName || '').trim();
+  if (!signerName) return res.status(400).json({ success: false, message: 'Enter the name of the person who signed.' });
+  doc.wetSignature = {
+    uploadedAt: new Date(),
+    uploadedBy: req.user.name || req.user.email,
+    uploadedByRole: 'curator',
+    fileName: String(b.fileName || 'signed-agreement.pdf').slice(0, 120),
+    file,
+    signerName,
+    signerPosition: String(b.signerPosition || '').trim(),
+    confirmedAt: null
+  };
+  await doc.save();
+  const ref = `CA-${g.token}-${P.versionOf(q)}`;
+  await postToCurator(doc, { text: `Signed charter agreement ${ref} uploaded (signed by ${signerName}). Please confirm it to book the trip.`, user: req.user, fromCurator: true });
+  await notifyDesk({ title: 'Signed agreement received', message: `${req.user.name || req.user.email} uploaded the signed ${ref}. Confirm it to book the trip.`, entityId: ref, link: `/quotes/${encodeURIComponent(q.id || q._id)}` });
+  audit(req, 'curator_signed_agreement_uploaded', 'Quote', ref, { ref, signerName });
+  res.status(201).json({ success: true, data: { ref, uploadedAt: doc.wetSignature.uploadedAt } });
+}
+
+router.post('/quotes/:id/signed-agreement', async (req, res) => {
+  const { groups } = await loadMine(req);
+  return uploadSigned(req, res, findGroup(groups, req.params.id));
+});
+
+router.post('/requests/:id/signed-agreement', async (req, res) => {
+  const { requests, groups } = await loadMine(req);
+  const id = String(req.params.id);
+  const r = requests.find((x) => [x.id, x.requestNumber, String(x._id)].filter(Boolean).map(String).includes(id));
+  if (!r) return res.status(404).json({ success: false, message: 'Request not found' });
+  const g = groups.find((x) => !x.booked && P.requestForGroup(x, requests) === r);
+  return uploadSigned(req, res, g || null);
 });
 
 router.post('/quotes/:id/change', async (req, res) => {
@@ -950,6 +1092,16 @@ router.get('/trips/:id', async (req, res) => {
       });
     });
   documents.push({ label: 'Flight brief', ref: null, bookingId: b.id || String(b._id), docType: 'flight_brief', ready: Boolean(b.lastBriefIssuedAt) });
+  // The signed charter agreement and its signature certificate (online signing), or the signed copy uploaded
+  const signedFiles = Array.isArray(b.signedDocuments) ? b.signedDocuments : [];
+  if (signedFiles.some((f) => f.kind === 'agreement')) {
+    documents.push({ label: 'Signed agreement', ref: docRef('CA', g.token, v), bookingId: b.id || String(b._id), file: 'agreement', ready: true });
+  } else if (b.wetSignature && b.wetSignature.file) {
+    documents.push({ label: 'Signed agreement', ref: docRef('CA', g.token, v), bookingId: b.id || String(b._id), file: 'signed_upload', ready: true });
+  }
+  if (signedFiles.some((f) => f.kind === 'certificate')) {
+    documents.push({ label: 'Signature certificate', ref: null, bookingId: b.id || String(b._id), file: 'certificate', ready: true });
+  }
 
   const ac = b.aircraft || {};
   const st = String(b.status || '').toLowerCase();
@@ -977,6 +1129,24 @@ router.get('/trips/:id', async (req, res) => {
       commission: { pct: c.pct, amount: c.amount, currency, note: 'Paid 1 week after the flight' }
     }
   });
+});
+
+router.get('/trips/:id/files/:kind', async (req, res) => {
+  const { groups } = await loadMine(req);
+  const g = findGroup(groups, req.params.id);
+  if (!g) return res.status(404).json({ success: false, message: 'Not found' });
+  const v = g.versions.find((x) => matchesId(x, req.params.id)) || g.booked || g.latest;
+  const doc = await Booking.findById(v._id).select('signedDocuments wetSignature').lean();
+  if (!doc) return res.status(404).json({ success: false, message: 'Not found' });
+  const kind = String(req.params.kind);
+  if (kind === 'signed_upload') {
+    const w = doc.wetSignature || {};
+    if (!w.file) return res.status(404).json({ success: false, message: 'No signed copy was uploaded.' });
+    return res.json({ success: true, data: { fileName: w.fileName || 'signed-agreement.pdf', dataUrl: w.file } });
+  }
+  const f = (Array.isArray(doc.signedDocuments) ? doc.signedDocuments : []).find((x) => x.kind === kind);
+  if (!f) return res.status(404).json({ success: false, message: 'This file is not ready yet.' });
+  res.json({ success: true, data: { fileName: f.fileName, dataUrl: f.dataUrl } });
 });
 
 router.post('/trips/:id/proof', async (req, res) => {

@@ -2,10 +2,15 @@ import { Booking } from "@/types/aviation";
 import { api } from "@/lib/api";
 
 /** A booking shaped so the invoice document prints this one invoice (number and amount). */
-export function invoiceDocBooking(booking: Booking, inv: { number: string; amount: number }): Booking {
+export function invoiceDocBooking(
+  booking: Booking,
+  inv: { number: string; amount: number; title?: string; description?: string; exact?: boolean }
+): Booking {
   return {
     ...booking,
     invoiceNumber: inv.number,
+    // exact: print this amount and wording even when the ledger holds the number with another amount
+    ...(inv.exact ? { docInvoice: { amount: inv.amount, title: inv.title || "", description: inv.description || "" } } : {}),
     pricing: { ...booking.pricing, totalFlightPrice: inv.amount },
     totalWithCardFee: undefined
   };

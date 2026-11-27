@@ -10,6 +10,12 @@ import { formatCurrency } from "@/lib/pricingCalculator";
 import { renderFormattedId, formatDocumentId, extractFeToken } from "@/lib/idGenerator";
 import StatusPill from "@/components/ui/StatusPill";
 import { HeaderId } from "@/components/ui/DocId";
+import { api } from "@/lib/api";
+import { toast } from "@/components/ui/Toaster";
+import CharterAgreementDoc from "@/components/documents/CharterAgreementDoc";
+import AgreementSigningBar from "@/components/documents/AgreementSigningBar";
+import { downloadDocumentAsPdf } from "@/lib/pdfExporter";
+import { agreementNo, quoteNo } from "@/lib/documentData";
 import {
   FileText,
   Plane,
@@ -49,11 +55,16 @@ export default function QuoteDetailPage() {
     advanceQuoteToContract,
     convertQuoteToBooked,
     role,
-    currentUser
+    currentUser,
+    refreshBookings
   } = useAviation();
 
   const [sendSuccess, setSendSuccess] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
+  // Charter agreement pop-up (Advance to Charter Agreement): read it, send it to the Curator, confirm the signed copy
+  const [agreementOpen, setAgreementOpen] = useState(false);
+  const [sendingAgreement, setSendingAgreement] = useState(false);
+  const [downloadingAgreement, setDownloadingAgreement] = useState(false);
 
   // Find quote matching decodedId
   const quote = useMemo(() => {
@@ -115,22 +126,61 @@ export default function QuoteDetailPage() {
   );
   const isSuperAdminOrAdmin = role === "super_admin" || role === "admin" || role === "operations";
 
+  const hasCurator = Boolean(quote.agentEmail || (quote as any).sourceAgentRequestId || quote.agentName);
+  const wet: any = (quote as any).wetSignature || null;
+  const signedCopyWaiting = Boolean(wet?.uploadedAt && !wet?.confirmedAt);
+
   // Actions
-  const handleSendToCurator = () => {
+  const handleSendToCurator = async () => {
+    if (isSending) return;
     setIsSending(true);
-    setTimeout(() => {
+    try {
+      const res = await api.quotes.sendToCurator(quote.id, "quotation");
+      const who = res.data?.curator || "the Curator";
+      setSendSuccess(`Quote ${res.data?.ref || ""} sent to ${who}. It shows on their request page.`);
+      toast(`Quote ${res.data?.ref || ""} sent to ${who}.`);
+      setTimeout(() => setSendSuccess(null), 5000);
+      refreshBookings().catch(() => undefined);
+    } catch (err: any) {
+      toast(err?.message || "The quote could not be sent to the Curator.", "error");
+    } finally {
       setIsSending(false);
-      setSendSuccess("Quotation officially dispatched to Curator via WhatsApp & Email notification.");
-      setTimeout(() => setSendSuccess(null), 4000);
-    }, 600);
+    }
   };
 
+  // Opens the charter agreement in a pop-up; the quote moves to the contract stage (no page change)
   const handleAdvanceToContract = async () => {
+    setAgreementOpen(true);
+    if (["contract_sent"].includes(String(quote.status))) return;
     try {
       await advanceQuoteToContract(quote.id, {});
-      router.push(`/contracts`);
-    } catch {
-      router.push(`/contracts`);
+    } catch (err: any) {
+      toast(err?.message || "The quote could not be moved to the contract stage.", "error");
+    }
+  };
+
+  const handleSendAgreementToCurator = async () => {
+    if (sendingAgreement) return;
+    setSendingAgreement(true);
+    try {
+      const res = await api.quotes.sendToCurator(quote.id, "charter_agreement");
+      const who = res.data?.curator || "the Curator";
+      toast(`Charter agreement ${res.data?.ref || ""} sent to ${who}. They download it, have the client sign and upload the signed copy.`);
+      refreshBookings().catch(() => undefined);
+    } catch (err: any) {
+      toast(err?.message || "The agreement could not be sent to the Curator.", "error");
+    } finally {
+      setSendingAgreement(false);
+    }
+  };
+
+  const handleDownloadAgreement = async () => {
+    setDownloadingAgreement(true);
+    try {
+      const ok = await downloadDocumentAsPdf("quote-agreement-modal-doc", { fileName: `${agreementNo(quote)}.pdf` });
+      if (!ok) toast("The PDF could not be made. Try again.", "error");
+    } finally {
+      setDownloadingAgreement(false);
     }
   };
 
@@ -198,7 +248,7 @@ export default function QuoteDetailPage() {
                 className="btn-primary text-xs flex items-center gap-1.5"
               >
                 <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>Advance to Charter Agreement</span>
+                <span>{signedCopyWaiting ? "Review signed agreement" : "Advance to Charter Agreement"}</span>
               </button>
             )}
 
@@ -578,14 +628,42 @@ export default function QuoteDetailPage() {
               {isSuperAdminOrAdmin && (
                 <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-lg text-xs space-y-1">
                   <span className="font-bold text-[10px] uppercase text-amber-900 block">INTERNAL MARGIN BREAKDOWN (ADMIN ONLY)</span>
-                  <div className="flex justify-between text-amber-800 text-[11px] font-mono">
-                    <span>Company Margin:</span>
-                    <span>{(quote.pricing as any)?.companyMargin || (quote.pricing as any)?.adminMarginPercentage || 10}%</span>
-                  </div>
-                  <div className="flex justify-between text-amber-800 text-[11px] font-mono">
-                    <span>Curator Mark-up:</span>
-                    <span>{quote.commissionPercentage || 8}%</span>
-                  </div>
+                  {(() => {
+                    // The builder saves margins as amounts (pricing.companyMargin / agentCommission) and as
+                    // percentages of the buying cost (adminMarginValue / commissionPercentage). A margin typed in
+                    // euros must never be shown as a percentage.
+                    const p: any = quote.pricing || {};
+                    const cur = p.currency || "EUR";
+                    const cost = Number(p.operatorCost ?? p.flightPrice) || 0;
+                    const coAmt = Number(p.companyMargin);
+                    const agAmt = Number(p.agentCommission);
+                    const coPct =
+                      typeof (quote as any).adminMarginValue === "number"
+                        ? (quote as any).adminMarginValue
+                        : cost > 0 && Number.isFinite(coAmt)
+                          ? Math.round((coAmt / cost) * 1000) / 10
+                          : null;
+                    const agPct =
+                      typeof quote.commissionPercentage === "number"
+                        ? quote.commissionPercentage
+                        : cost + (coAmt || 0) > 0 && Number.isFinite(agAmt)
+                          ? Math.round((agAmt / (cost + (coAmt || 0))) * 1000) / 10
+                          : null;
+                    const line = (amt: number, pct: number | null) =>
+                      [Number.isFinite(amt) ? formatCurrency(amt, cur) : "", pct !== null ? `${pct} %` : ""].filter(Boolean).join(" · ") || "—";
+                    return (
+                      <>
+                        <div className="flex justify-between text-amber-800 text-[11px] font-mono">
+                          <span>Company Margin:</span>
+                          <span>{line(coAmt, coPct)}</span>
+                        </div>
+                        <div className="flex justify-between text-amber-800 text-[11px] font-mono">
+                          <span>Curator Mark-up:</span>
+                          <span>{line(agAmt, agPct)}</span>
+                        </div>
+                      </>
+                    );
+                  })()}
                   <span className="text-[10px] text-amber-700/80 block italic">Folded into charter total on client documents (MOD-09, MOD-15).</span>
                 </div>
               )}
@@ -629,6 +707,57 @@ export default function QuoteDetailPage() {
         </div>
         )}
       </div>
+      {agreementOpen && (
+        <div className="fixed inset-0 z-[60] bg-slate-900/70 backdrop-blur-sm overflow-y-auto" onMouseDown={() => setAgreementOpen(false)}>
+          <div className="max-w-[880px] mx-auto my-8 px-4" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 bg-[#0B1320] text-white rounded-xl px-4 py-3 mb-4 shadow-xl">
+              <div className="text-sm">
+                <div className="font-bold">Charter agreement · {agreementNo(quote)}</div>
+                <div className="text-slate-300 text-xs">
+                  Based on {quoteNo(quote)}
+                  {(quote as any).agreementSentAt
+                    ? ` · sent to the Curator ${new Date((quote as any).agreementSentAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`
+                    : ""}
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleDownloadAgreement}
+                  disabled={downloadingAgreement}
+                  className="px-3 py-1.5 rounded-md text-xs font-semibold border border-white/20 hover:bg-white/10 disabled:opacity-50"
+                >
+                  {downloadingAgreement ? "Making PDF…" : "Download PDF"}
+                </button>
+                {hasCurator && !isBooked && (
+                  <button
+                    type="button"
+                    onClick={handleSendAgreementToCurator}
+                    disabled={sendingAgreement}
+                    className="px-3 py-1.5 rounded-md text-xs font-bold bg-[#C9A24A] text-[#0B121C] hover:bg-[#D7B05A] disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    {sendingAgreement ? "Sending…" : (quote as any).agreementSentAt ? "Send again to Curator" : "Send to Curator"}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setAgreementOpen(false)}
+                  className="px-3 py-1.5 rounded-md text-xs font-semibold border border-white/20 hover:bg-white/10"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+            <div className="bg-[#0B1320] rounded-xl p-4">
+              <AgreementSigningBar booking={quote} />
+              <div id="quote-agreement-modal-doc">
+                <CharterAgreementDoc booking={quote} />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </AppShell>
   );
 }

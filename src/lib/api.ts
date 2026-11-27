@@ -559,7 +559,7 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ origin }),
       }),
-    file: (id: string, kind: "agreement" | "certificate") =>
+    file: (id: string, kind: "agreement" | "certificate" | "signed_upload") =>
       request<{ success: boolean; data: { fileName: string; dataUrl: string } }>(`/agreements/${encodeURIComponent(id)}/files/${kind}`),
   },
 
@@ -597,6 +597,20 @@ export const api = {
     quote: (id: string) => request<{ success: boolean; data: any }>(`/curator/quotes/${encodeURIComponent(id)}`),
     confirmQuote: (id: string) =>
       request<{ success: boolean; data: any }>(`/curator/quotes/${encodeURIComponent(id)}/confirm`, { method: "POST" }),
+    /** The charter agreement signed by the client, uploaded for the desk to confirm (by quote or by request). */
+    uploadSignedAgreement: (
+      target: { quoteId?: string; requestId?: string },
+      body: { file: string; fileName: string; signerName: string; signerPosition?: string }
+    ) =>
+      request<{ success: boolean; data: any }>(
+        target.requestId
+          ? `/curator/requests/${encodeURIComponent(target.requestId)}/signed-agreement`
+          : `/curator/quotes/${encodeURIComponent(String(target.quoteId || ""))}/signed-agreement`,
+        { method: "POST", body: JSON.stringify(body) }
+      ),
+    /** Signed agreement or signature certificate of a booked trip. */
+    tripFile: (id: string, kind: "agreement" | "certificate" | "signed_upload") =>
+      request<{ success: boolean; data: { fileName: string; dataUrl: string } }>(`/curator/trips/${encodeURIComponent(id)}/files/${kind}`),
     askChange: (id: string, message: string) =>
       request<{ success: boolean; data: any }>(`/curator/quotes/${encodeURIComponent(id)}/change`, {
         method: "POST",
@@ -768,6 +782,12 @@ export const api = {
         method: "POST",
         body: JSON.stringify(data),
       }),
+    /** The quote or the charter agreement to the Curator: a message in their conversation, the document on their pages, an email. */
+    sendToCurator: (id: string, document: "quotation" | "charter_agreement") =>
+      request<{ success: boolean; data: { ref: string; sentAt: string; emailed: boolean; curator: string } }>(
+        `/quotes/${encodeURIComponent(id)}/send-to-curator`,
+        { method: "POST", body: JSON.stringify({ document, origin: typeof window !== "undefined" ? window.location.origin : undefined }) }
+      ),
     /** Email the quote; `to` picks the client or the Curator (default: the Curator, else the client). */
     send: (id: string, to?: "client" | "curator") =>
       request<{ message: string; quoteStatus: string; to?: string }>(`/quotes/${encodeURIComponent(id)}/send`, {

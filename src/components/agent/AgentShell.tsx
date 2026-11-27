@@ -12,7 +12,6 @@ const NAV = [
   { label: "New request", href: "/agent/requests/new", also: ["/agent/estimate"] },
   { label: "My requests", href: "/agent/requests", also: ["/agent/quotes"] },
   { label: "My trips", href: "/agent/trips", also: [] },
-  { label: "Messages", href: "/agent/messages", also: [] },
   { label: "My clients", href: "/agent/clients", also: [] },
   { label: "Tokens", href: "/agent/tokens", also: [] },
   { label: "Documents", href: "/agent/documents", also: [] }
@@ -22,7 +21,7 @@ export default function AgentShell({ children }: { children: React.ReactNode }) 
   const { currentUser, isAuthenticated, logout } = useAviation();
   const pathname = usePathname() || "";
   const [showUserMenu, setShowUserMenu] = React.useState(false);
-  const [me, setMe] = React.useState<{ name: string; tokens: number; unreadMessages: number } | null>(null);
+  const [me, setMe] = React.useState<{ name: string; tokens: number; unreadRequests: number; unreadTrips: number } | null>(null);
 
   // Top bar: name and token balance straight from the backend
   React.useEffect(() => {
@@ -35,13 +34,18 @@ export default function AgentShell({ children }: { children: React.ReactNode }) 
           (res) =>
             alive &&
             res?.data &&
-            setMe({ name: res.data.name, tokens: Number(res.data.tokens) || 0, unreadMessages: Number(res.data.unreadMessages) || 0 })
+            setMe({
+              name: res.data.name,
+              tokens: Number(res.data.tokens) || 0,
+              unreadRequests: Number(res.data.unreadRequests) || 0,
+              unreadTrips: Number(res.data.unreadTrips) || 0
+            })
         )
         .catch(() => undefined);
     load();
     window.addEventListener("curator-tokens-changed", load);
     window.addEventListener("curator-messages-changed", load);
-    // Desk replies show on the Messages tab without a page reload
+    // New desk messages show on My requests / My trips without a page reload
     const poll = window.setInterval(load, 60000);
     return () => {
       alive = false;
@@ -69,7 +73,7 @@ export default function AgentShell({ children }: { children: React.ReactNode }) 
   const name = me?.name || currentUser?.name || "";
 
   return (
-    <div className="min-h-screen bg-[#0B121C] text-white">
+    <div className="curator-light min-h-screen bg-[#0B121C] text-white">
       <nav className="bg-[#0B121C] border-b border-white/[0.07] px-6 lg:px-8 h-[72px] flex items-center justify-between sticky top-0 z-40">
         <div className="flex items-center gap-8 min-w-0">
           <Link href="/agent/requests" className="flex items-center gap-3 shrink-0">
@@ -87,9 +91,14 @@ export default function AgentShell({ children }: { children: React.ReactNode }) 
                 }`}
               >
                 {item.label}
-                {item.href === "/agent/messages" && me?.unreadMessages ? (
-                  <span className="ml-1.5 bg-[#C9A24A] text-[#0B121C] text-[11px] font-bold rounded-full px-1.5 py-0.5 leading-none">{me.unreadMessages}</span>
-                ) : null}
+                {(() => {
+                  const n = item.href === "/agent/requests" ? me?.unreadRequests || 0 : item.href === "/agent/trips" ? me?.unreadTrips || 0 : 0;
+                  return n > 0 ? (
+                    <span className="ml-2 bg-[#C9A24A] text-[#0B121C] text-[11px] font-bold rounded-full px-2 py-0.5 leading-none whitespace-nowrap">
+                      {n} new message{n === 1 ? "" : "s"}
+                    </span>
+                  ) : null;
+                })()}
               </Link>
             ))}
           </div>
@@ -128,7 +137,9 @@ export default function AgentShell({ children }: { children: React.ReactNode }) 
 
       <main className="mx-auto max-w-[1240px] px-6 lg:px-8 py-10">{children}</main>
 
-      <DocumentViewerModal />
+      <div className="curator-keep">
+        <DocumentViewerModal />
+      </div>
       <TokenSubscriptionModal />
     </div>
   );

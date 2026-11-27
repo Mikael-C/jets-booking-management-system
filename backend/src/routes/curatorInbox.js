@@ -15,6 +15,7 @@ const crypto = require('crypto');
 const router = express.Router();
 const AgentRequest = require('../models/AgentRequest');
 const Booking = require('../models/Booking');
+const User = require('../models/User');
 
 const DESK = new Set(['super_admin', 'admin', 'finance', 'operations', 'system']);
 
@@ -56,7 +57,7 @@ async function findThread(id) {
   };
 }
 
-const toThread = ({ key, curator, curatorEmail, client, route, flightDate, status, kind, raw }) => {
+const toThread = ({ key, curator, curatorEmail, client, route, flightDate, status, kind, raw, related }) => {
   const msgs = (raw || [])
     .map((m) => ({
       id: m.id || String(m._id),
@@ -74,6 +75,8 @@ const toThread = ({ key, curator, curatorEmail, client, route, flightDate, statu
   return {
     requestId: key,
     kind,
+    // What the conversation is about now: the request, its quote, or the booked trip
+    related: related || { kind: kind === 'trip' ? 'trip' : 'request', ref: key },
     curator: curator || (curatorMsgs[0] && curatorMsgs[0].from) || 'Curator',
     curatorEmail: curatorEmail || '',
     client: client || '',
@@ -97,6 +100,29 @@ router.get('/', async (req, res) => {
       .select('tripId agentName agentEmail client legs status curatorMessages')
       .lean()
   ]);
+  // A request may have become a quote or a booked trip: name that in notices
+  const pad3 = (n) => String(Number(n) || 1).padStart(3, '0');
+  const tokenOf = (b) => String(b.tripId || '').replace(/^TRI-/i, '');
+  const relatedByRequest = new Map();
+  const ids = requests.flatMap((r) => [r.id, r.requestNumber, String(r._id)].filter(Boolean).map(String));
+  if (ids.length) {
+    const linked = await Booking.find({ sourceAgentRequestId: { $in: ids }, isDeleted: { $ne: true }, isDraft: { $ne: true } })
+      .select('sourceAgentRequestId tripId quoteVersion isBooked isCancelled status')
+      .lean()
+      .catch(() => []);
+    linked.forEach((b) => {
+      const k = String(b.sourceAgentRequestId);
+      const cur = relatedByRequest.get(k);
+      const booked = b.isBooked && !b.isCancelled;
+      const ref = booked ? `TRI-${tokenOf(b)}` : `QUO-${tokenOf(b)}-${pad3(b.quoteVersion)}`;
+      const entry = { kind: booked ? 'trip' : 'quote', ref, version: Number(b.quoteVersion) || 1 };
+      if (!tokenOf(b)) return;
+      if (!cur || (entry.kind === 'trip' && cur.kind !== 'trip') || (cur.kind !== 'trip' && entry.version > cur.version)) relatedByRequest.set(k, entry);
+    });
+  }
+  const relatedOf = (r) =>
+    [r.requestNumber, r.id, String(r._id)].filter(Boolean).map((k) => relatedByRequest.get(String(k))).find(Boolean) || null;
+
   const threads = [
     ...requests.map((r) =>
       toThread({
@@ -108,7 +134,11 @@ router.get('/', async (req, res) => {
         route: r.route,
         flightDate: r.flightDate,
         status: r.status,
-        raw: r.messages
+        raw: r.messages,
+        related: (() => {
+          const rel = relatedOf(r);
+          return rel ? { kind: rel.kind, ref: rel.ref, request: r.requestNumber || r.id } : { kind: 'request', ref: r.requestNumber || r.id };
+        })()
       })
     ),
     ...trips.map((b) => {
@@ -129,7 +159,20 @@ router.get('/', async (req, res) => {
   ]
     .filter(Boolean)
     .sort((a, b) => new Date(b.lastAt || 0) - new Date(a.lastAt || 0));
-  res.json({ success: true, data: { threads, unread: threads.reduce((n, t) => n + t.unread, 0) } });
+  // Every Curator account, so the desk sees Curators even before they write
+  const curators = await User.find({ role: 'agent', isDeleted: { $ne: true } })
+    .select('name email isActive')
+    .sort({ name: 1 })
+    .lean()
+    .catch(() => []);
+  res.json({
+    success: true,
+    data: {
+      threads,
+      unread: threads.reduce((n, t) => n + t.unread, 0),
+      curators: curators.map((u) => ({ name: u.name || u.email, email: String(u.email || '').toLowerCase(), active: u.isActive !== false }))
+    }
+  });
 });
 
 router.post('/:requestId/read', async (req, res) => {

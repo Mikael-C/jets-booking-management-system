@@ -41,9 +41,11 @@ export default function InvoiceDoc({ booking }: InvoiceDocProps) {
     (!wanted ? invoices.find((i) => i.kind === "charter" && !["combined", "void"].includes(i.status)) || invoices[0] : undefined);
   const currency = inv?.currency || ledger?.currency || booking.pricing?.currency || "EUR";
   const number = inv?.number || wanted || `INV-${tripToken(booking)}-${versionOf(booking)}-1`;
-  const amount = round2(inv ? inv.amount : booking.pricing?.totalFlightPrice);
-  const isCharter = inv ? inv.kind === "charter" || /^charter/i.test(inv.line || "") : true;
-  const isCombined = Array.isArray(inv?.combinedFrom) && inv.combinedFrom.length > 0;
+  // A revision invoice or the booking's total invoice: the amount and wording come with the request
+  const override = (booking as any).docInvoice as { amount: number; title?: string; description?: string } | undefined;
+  const amount = round2(override ? override.amount : inv ? inv.amount : booking.pricing?.totalFlightPrice);
+  const isCharter = override ? true : inv ? inv.kind === "charter" || /^charter/i.test(inv.line || "") : true;
+  const isCombined = !override && Array.isArray(inv?.combinedFrom) && inv.combinedFrom.length > 0;
   const payments: any[] = (ledger?.payments || []).filter((p: any) => p.invoiceNumber === number);
   const received = payments.filter((p) => p.status === "received");
   const lastReceived = received[received.length - 1];
@@ -116,7 +118,8 @@ export default function InvoiceDoc({ booking }: InvoiceDocProps) {
                   </>
                 ) : isCharter ? (
                   <>
-                    <div className="font-bold">Private charter flight</div>
+                    <div className="font-bold">{override?.title || "Private charter flight"}</div>
+                    {override?.description && <div className="text-[#4B5563]">{override.description}</div>}
                     {legs.map((l, i) => {
                       const ac = legAircraft(booking, l, i);
                       const pax = l.paxCount || l.passengers?.length || 0;

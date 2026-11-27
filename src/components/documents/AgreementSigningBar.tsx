@@ -25,7 +25,11 @@ export default function AgreementSigningBar({ booking }: { booking: Booking }) {
   const [signerName, setSignerName] = useState(b.authorisedOwnerName || booking.client?.fullName || "");
   const [signerPosition, setSignerPosition] = useState("");
   const [busy, setBusy] = useState(false);
-  const isMd = currentUser?.role === "super_admin";
+  // The MD (super admin) or an admin confirms a signed copy and books the trip
+  const isMd = currentUser?.role === "super_admin" || currentUser?.role === "admin";
+
+  // Curators see the agreement only; signing tools are the desk's
+  if (currentUser?.role === "agent") return null;
 
   const pick = (f?: File) => {
     if (!f) return;
@@ -73,7 +77,7 @@ export default function AgreementSigningBar({ booking }: { booking: Booking }) {
     }
   };
 
-  const download = async (kind: "agreement" | "certificate") => {
+  const download = async (kind: "agreement" | "certificate" | "signed_upload") => {
     try {
       const res = await api.agreements.file(booking.id, kind);
       const a = document.createElement("a");
@@ -109,7 +113,9 @@ export default function AgreementSigningBar({ booking }: { booking: Booking }) {
             </span>
           ) : wet?.uploadedAt && !wet?.confirmedAt ? (
             <span className="text-amber-300 font-semibold">
-              Wet-signed copy uploaded by {wet.uploadedBy} · waiting for the MD to confirm
+              Signed copy uploaded by {wet.uploadedBy}
+              {wet.uploadedByRole === "curator" ? " (Curator)" : ""}
+              {wet.signerName ? ` · signed by ${wet.signerName}` : ""} · waiting for confirmation
             </span>
           ) : (
             <span className="text-slate-300">Waiting for the client&apos;s signature</span>
@@ -126,9 +132,14 @@ export default function AgreementSigningBar({ booking }: { booking: Booking }) {
               Upload wet-signed copy
             </button>
           )}
+          {!signed && wet?.uploadedAt && !wet?.confirmedAt && (
+            <button type="button" className={btn} onClick={() => download("signed_upload")}>
+              View signed copy
+            </button>
+          )}
           {!signed && wet?.uploadedAt && !wet?.confirmedAt && isMd && (
             <button type="button" className={`${btn} !bg-emerald-600 !border-emerald-600`} disabled={busy} onClick={confirm}>
-              Confirm signed copy (MD)
+              Confirm signed copy and book
             </button>
           )}
           {signed && (b.signedDocuments || sig) && (

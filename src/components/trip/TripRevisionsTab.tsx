@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { Booking } from "@/types/aviation";
 import type { DocumentType } from "@/lib/aviationContext";
+import { creditNoteDocBooking, invoiceDocBooking } from "@/lib/financeDocs";
 
 interface RevisionRow {
   version: number;
@@ -16,12 +17,16 @@ interface RevisionRow {
   amountChange: number;
   amountIsTotal: boolean;
   currency: string;
-  state: "current" | "booked" | "superseded" | "cancelled" | "cancelled_route";
+  state: "current" | "booked" | "amended" | "superseded" | "cancelled" | "cancelled_route";
   stateLabel: string;
   by: string;
   byFull: string;
   at: string | null;
   documents: { quote: boolean; invoice: boolean; brief: boolean; creditNote: boolean };
+  /** This revision's own document: the full invoice for the first booking, else the change (invoice or credit note). */
+  revisionInvoice?: { kind: "invoice" | "credit_note"; number: string; amount: number; currency: string; note?: any } | null;
+  /** The booking's running total up to and including this revision. */
+  totalInvoice?: { kind: "invoice"; number: string; amount: number; currency: string; parts: string[] } | null;
 }
 
 interface RevisionsData {
@@ -55,6 +60,7 @@ const day = (iso: string | null) => {
 const STATE_CLS: Record<RevisionRow["state"], string> = {
   current: "text-emerald-600 font-medium",
   booked: "bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded text-[11px]",
+  amended: "bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-[11px]",
   superseded: "bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-[11px]",
   cancelled: "bg-rose-50 text-rose-600 border border-rose-100 px-2 py-0.5 rounded text-[11px]",
   cancelled_route: "bg-rose-50 text-rose-600 border border-rose-100 px-2 py-0.5 rounded text-[11px]"
@@ -130,6 +136,89 @@ export default function TripRevisionsTab({ trip, bookings, normalize, openDocume
       setOpening(null);
     }
   };
+
+  /** Only this revision: its own invoice, or its credit note when the price went down. */
+  const openRevisionInvoice = async (row: RevisionRow) => {
+    const ri = row.revisionInvoice;
+    if (!ri) return;
+    setOpening(`${row.label}-rev`);
+    try {
+      const base = await versionBooking(row).catch(() => trip);
+      if (ri.kind === "credit_note") {
+        openDocument(
+          creditNoteDocBooking(base, {
+            number: ri.number,
+            amount: ri.amount,
+            against: row.totalInvoice?.number,
+            reasonCategory: row.reason || `Revision ${row.label}`,
+            issuedAt: ri.note?.issueDate || ri.note?.date || row.at || undefined
+          }),
+          "credit_note"
+        );
+      } else {
+        openDocument(
+          invoiceDocBooking(base, {
+            number: ri.number,
+            amount: ri.amount,
+            exact: true,
+            title: row.amountIsTotal ? "Private charter flight" : `Booking revision ${row.label}`,
+            description: row.amountIsTotal ? "" : `Additional charge for this revision only${row.reason ? ` · ${row.reason}` : ""}`
+          }),
+          "invoice"
+        );
+      }
+    } finally {
+      setOpening(null);
+    }
+  };
+
+  /** The whole booking: every booked revision up to this one, added together. */
+  const openTotalInvoice = async (row: RevisionRow) => {
+    const ti = row.totalInvoice;
+    if (!ti) return;
+    setOpening(`${row.label}-total`);
+    try {
+      const base = await versionBooking(row).catch(() => trip);
+      openDocument(
+        invoiceDocBooking(base, {
+          number: ti.number,
+          amount: ti.amount,
+          exact: true,
+          title: "Private charter flight · total",
+          description: ti.parts.length > 1 ? `Booking total including revisions ${ti.parts.join(", ")}` : ""
+        }),
+        "invoice"
+      );
+    } finally {
+      setOpening(null);
+    }
+  };
+
+  const docBtn = (key: string, text: string, onClick: () => void, title?: string) => (
+    <button type="button" disabled={opening === key} onClick={onClick} title={title} className="hover:underline disabled:opacity-50">
+      {text}
+    </button>
+  );
+
+  const invoiceLinks = (row: RevisionRow) => (
+    <>
+      {row.revisionInvoice &&
+        !row.amountIsTotal &&
+        docBtn(
+          `${row.label}-rev`,
+          row.revisionInvoice.kind === "credit_note" ? "Revision credit" : "Revision invoice",
+          () => openRevisionInvoice(row),
+          `${row.revisionInvoice.number} · ${money(row.revisionInvoice.amount, row.revisionInvoice.currency)} (this revision only)`
+        )}
+      {row.totalInvoice &&
+        docBtn(
+          `${row.label}-total`,
+          row.amountIsTotal ? "Invoice" : "Total invoice",
+          () => openTotalInvoice(row),
+          `${row.totalInvoice.number} · ${money(row.totalInvoice.amount, row.totalInvoice.currency)} (whole booking)`
+        )}
+    </>
+  );
 
   const link = (row: RevisionRow, type: DocumentType, text: string) => (
     <button
@@ -215,7 +304,7 @@ export default function TripRevisionsTab({ trip, bookings, normalize, openDocume
                         {isCurrent ? (
                           <>
                             {link(row, "quotation", "Quote")}
-                            {row.documents.invoice && link(row, "invoice", "Invoice")}
+                            {row.totalInvoice ? invoiceLinks(row) : row.documents.invoice && link(row, "invoice", "Invoice")}
                             {row.documents.creditNote && (
                               <button type="button" onClick={onCreditNote} className="hover:underline">
                                 Credit
@@ -226,7 +315,7 @@ export default function TripRevisionsTab({ trip, bookings, normalize, openDocume
                           link(row, "quotation", "Quote PDF")
                         ) : (
                           <>
-                            {row.amountIsTotal && link(row, "invoice", "Invoice PDF")}
+                            {row.totalInvoice ? invoiceLinks(row) : row.amountIsTotal && link(row, "invoice", "Invoice PDF")}
                             {link(row, "flight_brief", "Brief PDF")}
                           </>
                         )}
@@ -241,7 +330,7 @@ export default function TripRevisionsTab({ trip, bookings, normalize, openDocume
 
         <p className="text-xs text-slate-400 pt-2 leading-relaxed m-0">
           Revise always opens the full form with the latest details. Saving with &quot;Complete Booking&quot; creates the next number, saves it
-          and brings you back here (R-008). Old versions can&apos;t be revised again, but every document they produced can still be printed.
+          and brings you back here (R-008). A booking revision adds to or subtracts from the booking rather than replacing it: each one has its own revision invoice (or credit note) and the total invoice for the whole booking.
         </p>
       </div>
 

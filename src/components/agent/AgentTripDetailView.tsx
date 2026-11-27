@@ -23,7 +23,8 @@ import {
   useLoad,
   useOpenTripDocument
 } from "./curatorUi";
-import { DeskThreadModal, MessageDeskButton } from "./DeskThread";
+import { DeskThread, DeskThreadModal, MessageDeskButton } from "./DeskThread";
+import { downloadCuratorFile } from "./AgreementActions";
 
 interface TripData {
   token: string;
@@ -40,7 +41,9 @@ interface TripData {
     label: string;
     ref: Ref | null;
     bookingId: string;
-    docType: DocumentType;
+    docType?: DocumentType;
+    /** A stored file (signed agreement, certificate) instead of a generated document */
+    file?: "agreement" | "certificate" | "signed_upload";
     ready: boolean;
     invoice?: { number: string; amount: number };
     creditNote?: any;
@@ -235,7 +238,9 @@ export default function AgentTripDetailView({ tripId }: { tripId: string }) {
                       <button
                         type="button"
                         disabled={busy === key}
-                        onClick={() => open(key, d.bookingId, d.docType, { invoice: d.invoice, creditNote: d.creditNote })}
+                        onClick={() =>
+                          d.file ? downloadCuratorFile(d.bookingId, d.file) : d.docType && open(key, d.bookingId, d.docType, { invoice: d.invoice, creditNote: d.creditNote })
+                        }
                         className={`${goldLinkCls} disabled:opacity-50`}
                       >
                         {busy === key ? "…" : "PDF"}
@@ -247,6 +252,10 @@ export default function AgentTripDetailView({ tripId }: { tripId: string }) {
                 );
               })}
             </div>
+          </Card>
+
+          <Card title="Messages with the desk">
+            <DeskThread threadKey={t.threadKey || `TRI-${t.token}`} height="max-h-[360px]" />
           </Card>
 
           <Card title="My commission">

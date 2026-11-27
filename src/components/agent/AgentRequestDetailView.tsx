@@ -3,7 +3,9 @@ import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { toast } from "@/components/ui/Toaster";
 import { api } from "@/lib/api";
-import { Badge, Card, DocRef, GoldButton, HeadingRef, LoadState, Ref, fieldCls, goldLinkCls, money, useLoad } from "./curatorUi";
+import type { DocumentType } from "@/lib/aviationContext";
+import { Badge, Card, DocRef, GoldButton, HeadingRef, LoadState, Ref, fieldCls, goldLinkCls, money, refText, useLoad, useOpenTripDocument } from "./curatorUi";
+import { ConfirmQuoteButton, UploadSignedButton, UploadSignedModal, announceDealChanged, downloadCuratorFile } from "./AgreementActions";
 
 interface RequestDetail {
   id: string;
@@ -26,6 +28,20 @@ interface RequestDetail {
   tokensUsed: number;
   quotes: { ref: Ref; href: string; price: number; currency: string; at: string; booked: boolean }[];
   messages: { id: string; from: string; fromDesk: boolean; text: string; at: string }[];
+  /** Where the open quote stands on the way to a booking */
+  deal?: {
+    state: "quoted" | "confirmed" | "agreement_sent" | "signed_uploaded" | "booked";
+    quoteId?: string;
+    quoteRef?: Ref;
+    agreementRef?: Ref;
+    expired?: boolean;
+    sentAt?: string;
+    uploadedAt?: string;
+    tripHref?: string;
+    tripRef?: Ref;
+  } | null;
+  /** Documents the desk sent for this request (and the signed copy the Curator uploaded) */
+  documents?: { label: string; ref: Ref | null; bookingId: string; docType?: DocumentType; file?: "signed_upload" | "agreement" | "certificate"; at?: string }[];
 }
 
 const day = (v?: string) => {
@@ -51,6 +67,8 @@ export default function AgentRequestDetailView({ requestId }: { requestId: strin
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const bottom = useRef<HTMLDivElement>(null);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const { open, busy } = useOpenTripDocument();
 
   // New desk replies show up without reloading the page
   useEffect(() => {
@@ -60,6 +78,10 @@ export default function AgentRequestDetailView({ requestId }: { requestId: strin
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: "nearest" });
   }, [r?.messages.length]);
+  // Opening the request reads the desk's messages: the "new message" label on My requests updates
+  useEffect(() => {
+    if (r?.id) announceDealChanged();
+  }, [r?.id, r?.messages.length]);
 
   if (!r) {
     return (
@@ -110,6 +132,72 @@ export default function AgentRequestDetailView({ requestId }: { requestId: strin
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-6 items-start">
         <div className="space-y-6">
+          {r.deal && (
+            <Card title="Next step">
+              {r.deal.state === "booked" ? (
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <span className="text-[16px] text-white">
+                    Booked{r.deal.tripRef ? <> as <DocRef value={r.deal.tripRef} /></> : null}. The trip is under My trips.
+                  </span>
+                  {r.deal.tripHref && (
+                    <Link href={r.deal.tripHref} className={goldLinkCls}>
+                      Open trip
+                    </Link>
+                  )}
+                </div>
+              ) : r.deal.state === "quoted" ? (
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <span className="text-[16px] text-white">
+                    {r.deal.expired ? (
+                      <>
+                        Quote <DocRef value={r.deal.quoteRef} /> has expired. Message the desk for a new one.
+                      </>
+                    ) : (
+                      <>
+                        Quote <DocRef value={r.deal.quoteRef} /> is ready. If your client agrees, confirm it and the desk sends the charter agreement.
+                      </>
+                    )}
+                  </span>
+                  {!r.deal.expired && r.deal.quoteId && (
+                    <ConfirmQuoteButton quoteId={r.deal.quoteId} refLabel={refText(r.deal.quoteRef)} onDone={reload} className="!text-[15px] !px-5 !py-2.5" />
+                  )}
+                </div>
+              ) : r.deal.state === "confirmed" ? (
+                <p className="text-[16px] text-white m-0">
+                  You confirmed <DocRef value={r.deal.quoteRef} />. The desk is preparing the charter agreement; it shows here when it is sent.
+                </p>
+              ) : r.deal.state === "agreement_sent" ? (
+                <div className="space-y-3">
+                  <p className="text-[16px] text-white m-0">
+                    Charter agreement <DocRef value={r.deal.agreementRef} /> is ready. Download it, have your client sign it, then upload the signed copy.
+                  </p>
+                  <div className="flex items-center gap-4 flex-wrap">
+                    <button
+                      type="button"
+                      disabled={busy === "deal-ca"}
+                      onClick={() => r.deal?.quoteId && open("deal-ca", r.deal.quoteId, "charter_agreement")}
+                      className={`${goldLinkCls} disabled:opacity-50`}
+                    >
+                      {busy === "deal-ca" ? "Opening…" : "Download agreement"}
+                    </button>
+                    <UploadSignedButton onClick={() => setUploadOpen(true)} className="!text-[15px] !px-5 !py-2.5" />
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <span className="text-[16px] text-white">
+                    Signed <DocRef value={r.deal.agreementRef} /> sent to the desk. They confirm it and book the trip.
+                  </span>
+                  {r.deal.quoteId && (
+                    <button type="button" onClick={() => downloadCuratorFile(String(r.deal?.quoteId), "signed_upload")} className={goldLinkCls}>
+                      View signed copy
+                    </button>
+                  )}
+                </div>
+              )}
+            </Card>
+          )}
+
           <Card title="Route and aircraft">
             <div className="space-y-4">
               {r.legs.map((l) => (
@@ -146,6 +234,34 @@ export default function AgentRequestDetailView({ requestId }: { requestId: strin
             </div>
           </Card>
 
+          <Card title="Documents">
+            {!r.documents || r.documents.length === 0 ? (
+              <p className="text-[15px] text-[#93A1B5] m-0">Documents the desk sends for this request show here.</p>
+            ) : (
+              <div className="space-y-2.5">
+                {r.documents.map((d, i) => {
+                  const key = `doc-${i}`;
+                  return (
+                    <div key={key} className="flex items-center justify-between gap-4">
+                      <span className="text-[16px] text-white">
+                        {d.label} {d.ref && <DocRef value={d.ref} mono={false} className="text-[15px]" />}
+                        {d.at ? <span className="text-[13px] text-[#93A1B5]"> · {stamp(d.at)}</span> : null}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={busy === key}
+                        onClick={() => (d.file ? downloadCuratorFile(d.bookingId, d.file) : d.docType && open(key, d.bookingId, d.docType))}
+                        className={`${goldLinkCls} disabled:opacity-50`}
+                      >
+                        {busy === key ? "…" : d.file ? "Download" : "PDF"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Card>
+
           <Card title="Quotes from this request">
             {r.quotes.length === 0 ? (
               <p className="text-[15px] text-[#93A1B5] m-0">No quote yet. It shows here as soon as the desk completes it.</p>
@@ -163,6 +279,16 @@ export default function AgentRequestDetailView({ requestId }: { requestId: strin
             )}
           </Card>
         </div>
+
+        {uploadOpen && r.deal && (
+          <UploadSignedModal
+            target={{ requestId: r.id }}
+            refLabel={refText(r.deal.agreementRef)}
+            defaultSigner={r.owner || r.client}
+            onClose={() => setUploadOpen(false)}
+            onDone={reload}
+          />
+        )}
 
         <Card title="Messages with the desk" className="lg:sticky lg:top-24">
           <div className="max-h-[420px] overflow-y-auto space-y-3 pr-1">

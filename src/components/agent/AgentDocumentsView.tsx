@@ -1,8 +1,9 @@
 "use client";
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
+import TablePager, { usePagedRows } from "@/components/ui/TablePager";
 import { api } from "@/lib/api";
 import type { DocumentType } from "@/lib/aviationContext";
-import { Badge, DocRef, LoadState, PageTitle, Ref, cardCls, goldLinkCls, tdCls, thCls, useLoad, useOpenTripDocument } from "./curatorUi";
+import { Badge, DocRef, LoadState, PageTitle, Ref, cardCls, fieldCls, goldLinkCls, refText, tdCls, thCls, useLoad, useOpenTripDocument } from "./curatorUi";
 
 interface SharedDoc {
   code: string;
@@ -66,6 +67,26 @@ export default function AgentDocumentsView() {
   const { open, busy } = useOpenTripDocument();
   const [working, setWorking] = useState<string | null>(null);
 
+  // Search across both lists; each list shows 10 per page
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const sharedRows = useMemo(
+    () =>
+      (data?.shared || []).filter(
+        (d) => !q || [d.title, d.note, d.code, d.version, d.updated].filter(Boolean).join(" ").toLowerCase().includes(q)
+      ),
+    [data, q]
+  );
+  const deskRows = useMemo(
+    () =>
+      (data?.desk || []).filter(
+        (d) => !q || [d.label, refText(d.ref), d.title, d.version, d.updated].filter(Boolean).join(" ").toLowerCase().includes(q)
+      ),
+    [data, q]
+  );
+  const sharedPage = usePagedRows(sharedRows, 10, q);
+  const deskPage = usePagedRows(deskRows, 10, q);
+
   const openShared = async (code: string, forward = false) => {
     setWorking(code);
     try {
@@ -111,11 +132,21 @@ export default function AgentDocumentsView() {
   return (
     <div>
       <PageTitle title="Documents" sub="What OrbAero has shared with you. Your own signed agreement is always here." />
+      <div className="mb-6 max-w-md">
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search documents, trip or quote number…"
+          className={fieldCls}
+          aria-label="Search documents"
+        />
+      </div>
       {!data ? (
         <LoadState loading={loading} error={error} onRetry={reload} />
       ) : (
         <div className="space-y-6">
-          <div className={`${cardCls} overflow-hidden px-3 py-1`}>
+          <div id="curator-shared-docs" className={`${cardCls} overflow-hidden px-3 py-1`}>
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
@@ -127,14 +158,14 @@ export default function AgentDocumentsView() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.shared.length === 0 && (
+                  {sharedRows.length === 0 && (
                     <tr>
                       <td colSpan={4} className="px-4 py-10 text-center text-[15px] text-[#93A1B5]">
-                        Nothing shared with you yet.
+                        {q ? "No shared document matches your search." : "Nothing shared with you yet."}
                       </td>
                     </tr>
                   )}
-                  {data.shared.map((d) => (
+                  {sharedPage.pageRows.map((d) => (
                     <tr key={d.code} className="border-b border-white/[0.05] last:border-0">
                       <td className={`${tdCls} text-[16px]`}>
                         <span className="font-bold text-white">{d.title}</span>
@@ -176,9 +207,10 @@ export default function AgentDocumentsView() {
                 </tbody>
               </table>
             </div>
+            <TablePager {...sharedPage} label="documents" scrollToId="curator-shared-docs" />
           </div>
 
-          <div>
+          <div id="curator-desk-docs">
             <h2 className="text-[19px] font-bold text-white mt-2 mb-3">From the desk</h2>
             <div className={`${cardCls} overflow-hidden px-3 py-1`}>
               <div className="overflow-x-auto">
@@ -192,14 +224,16 @@ export default function AgentDocumentsView() {
                     </tr>
                   </thead>
                   <tbody>
-                    {data.desk.length === 0 && (
+                    {deskRows.length === 0 && (
                       <tr>
                         <td colSpan={4} className="px-4 py-10 text-center text-[15px] text-[#93A1B5]">
-                          Quotes, contracts, invoices and flight briefs for your trips show here as soon as the desk produces them.
+                          {q
+                            ? "No document from the desk matches your search."
+                            : "Quotes, contracts, invoices and flight briefs for your trips show here as soon as the desk produces them."}
                         </td>
                       </tr>
                     )}
-                    {data.desk.map((d) => (
+                    {deskPage.pageRows.map((d) => (
                       <tr key={d.key} className="border-b border-white/[0.05] last:border-0">
                         <td className={`${tdCls} text-[16px]`}>
                           <span className="font-bold text-white">{d.label}</span> <DocRef value={d.ref} className="text-[15px]" />
@@ -222,6 +256,7 @@ export default function AgentDocumentsView() {
                   </tbody>
                 </table>
               </div>
+              <TablePager {...deskPage} label="documents" scrollToId="curator-desk-docs" />
             </div>
           </div>
         </div>

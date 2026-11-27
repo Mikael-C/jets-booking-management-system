@@ -456,7 +456,7 @@ deskRouter.post('/:id/wet-signed', authorize('super_admin', 'admin', 'operations
   res.json({ success: true, message: 'Uploaded. The MD confirms it to book the trip.' });
 });
 
-deskRouter.post('/:id/wet-signed/confirm', authorize('super_admin'), async (req, res) => {
+deskRouter.post('/:id/wet-signed/confirm', authorize('super_admin', 'admin'), async (req, res) => {
   const doc = await findDesk(req.params.id);
   if (!doc) return res.status(404).json({ success: false, message: 'Quote not found.' });
   const wet = doc.get('wetSignature') || {};
@@ -486,6 +486,11 @@ deskRouter.post('/:id/wet-signed/confirm', authorize('super_admin'), async (req,
 deskRouter.get('/:id/files/:kind', authorize('super_admin', 'admin', 'operations', 'finance'), async (req, res) => {
   const doc = await findDesk(req.params.id);
   if (!doc) return res.status(404).json({ success: false, message: 'Not found.' });
+  if (req.params.kind === 'signed_upload') {
+    const w = doc.get('wetSignature') || {};
+    if (!w.file) return res.status(404).json({ success: false, message: 'No signed copy was uploaded.' });
+    return res.json({ success: true, data: { fileName: w.fileName || 'signed-agreement.pdf', dataUrl: w.file } });
+  }
   const f = (doc.get('signedDocuments') || []).find((x) => x.kind === req.params.kind);
   if (!f) return res.status(404).json({ success: false, message: 'No such file on this trip.' });
   res.json({ success: true, data: { fileName: f.fileName, dataUrl: f.dataUrl } });
