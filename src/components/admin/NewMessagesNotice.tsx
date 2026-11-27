@@ -68,8 +68,16 @@ export default function NewMessagesNotice() {
 
   useEffect(() => {
     load();
-    const t = setInterval(load, 30000);
-    return () => clearInterval(t);
+    // Every 60 s while the tab is visible; straight away when the person comes back to it
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") load();
+    }, 60000);
+    const onVisible = () => document.visibilityState === "visible" && load();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [load]);
 
   const visible = items.filter((t) => new Date(t.lastAt).getTime() > dismissedAt);

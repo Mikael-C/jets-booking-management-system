@@ -93,7 +93,10 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  // Let browsers remember the preflight (OPTIONS) answer for a day instead of asking before every call.
+  // Chrome caps this at 2 hours, Firefox at 24 hours.
+  maxAge: 86400
 }));
 
 // ─── URL Normalization & Auto-API Prefix Middleware ───────────────────────────

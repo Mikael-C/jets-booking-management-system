@@ -1344,14 +1344,42 @@ export function AviationProvider({ children }: { children: React.ReactNode }) {
     }
   }, [users, bookings, agentRequests, clients, operators, auditLog, notifications, messages]);
 
-  // Periodic background synchronization of in-app messages every 6 seconds so incoming messages appear live
+  // Background check for new in-app messages. Every 60 s in general, every 10 s while a Messages page is
+  // open (so a conversation feels live), paused while the browser tab is hidden, and once straight away
+  // when the person comes back to the tab.
   useEffect(() => {
     if (!isAuthenticated) return;
-    refreshMessages().catch(() => {});
-    const interval = setInterval(() => {
-      refreshMessages().catch(() => {});
-    }, 6000);
-    return () => clearInterval(interval);
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let stopped = false;
+    const delay = () => (/\/messages/i.test(window.location.pathname) ? 10000 : 60000);
+    const schedule = () => {
+      if (stopped) return;
+      if (timer) clearTimeout(timer);
+      if (document.visibilityState === "hidden") return; // resumes on visibilitychange
+      timer = setTimeout(tick, delay());
+    };
+    const tick = () => {
+      refreshMessages()
+        .catch(() => {})
+        .finally(schedule);
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        if (timer) clearTimeout(timer);
+        tick();
+      } else if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    };
+    tick();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated, currentUser?.email]);
 
   const addAuditEntry = (entry: Omit<AuditLogEntry, "id" | "timestamp">) => {
